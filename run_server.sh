@@ -110,12 +110,11 @@ while true; do
     fi
   fi
 
-  RELOAD_ARGS=()
   if [ "$AUTO_RELOAD" = "1" ]; then
-    RELOAD_ARGS=(--reload --reload-dir "$APP_DIR")
+    "$VENV_PY" -m uvicorn --app-dir "$APP_DIR" kiwi_scan.server:app --host 0.0.0.0 --port "$PORT" --reload --reload-dir "$APP_DIR"
+  else
+    "$VENV_PY" -m uvicorn --app-dir "$APP_DIR" kiwi_scan.server:app --host 0.0.0.0 --port "$PORT"
   fi
-
-  "$VENV_PY" -m uvicorn --app-dir "$APP_DIR" kiwi_scan.server:app --host 0.0.0.0 --port "$PORT" "${RELOAD_ARGS[@]}"
   code=$?
   if [ "${NO_RESTART}" = "1" ]; then
     exit "$code"
