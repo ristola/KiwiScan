@@ -6359,6 +6359,90 @@
             }
         }
 
+        function readSkippedUpdateCommit() {
+            try {
+                return String(localStorage.getItem('update_skip_commit') || '').trim();
+            } catch (e) { }
+            return '';
+        }
+
+        function saveSkippedUpdateCommit(commit) {
+            try {
+                const value = String(commit || '').trim();
+                if (!value) return;
+                localStorage.setItem('update_skip_commit', value);
+            } catch (e) { }
+        }
+
+        function clearSkippedUpdateCommit() {
+            try {
+                localStorage.removeItem('update_skip_commit');
+            } catch (e) { }
+        }
+
+        async function applyLatestUpdate(checkData) {
+            const beforeCommit = String((checkData && checkData.current_commit) || '').trim();
+            const targetCommit = String((checkData && checkData.latest_commit) || '').trim();
+            try {
+                const resp = await fetch('/update/apply', { method: 'POST' });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                showToast('Updating to latest version and restarting server…', 'warn', 3000);
+            } catch (e) {
+                showToast('Update failed to start.', 'error', 2500);
+                return;
+            }
+
+            const startMs = Date.now();
+            const timeoutMs = 180000;
+            while ((Date.now() - startMs) < timeoutMs) {
+                await new Promise((resolve) => setTimeout(resolve, 2500));
+                try {
+                    const resp = await fetch('/version', { cache: 'no-store' });
+                    if (!resp.ok) continue;
+                    const data = await resp.json();
+                    const current = String((data && data.commit) || '').trim();
+                    if (targetCommit && current === targetCommit) {
+                        location.reload();
+                        return;
+                    }
+                    if (!targetCommit && beforeCommit && current && current !== beforeCommit) {
+                        location.reload();
+                        return;
+                    }
+                } catch (e) { }
+            }
+            showToast('Update may still be running. Please refresh shortly.', 'warn', 4000);
+        }
+
+        async function checkForUpdatesPrompt() {
+            try {
+                const resp = await fetch('/update/check', { cache: 'no-store' });
+                if (!resp.ok) return;
+                const data = await resp.json();
+                if (!data || data.update_in_progress) return;
+                if (!data.update_available) {
+                    clearSkippedUpdateCommit();
+                    return;
+                }
+
+                const latestCommit = String(data.latest_commit || '').trim();
+                const currentCommit = String(data.current_commit || '').trim();
+                const latestVersion = String(data.latest_version || '').trim();
+                const currentVersion = String(data.current_version || '').trim();
+                const skipKey = latestCommit || latestVersion;
+
+                const skipped = readSkippedUpdateCommit();
+                if (skipKey && skipped && skipped === skipKey) return;
+
+                const msg = `A newer KiwiScan build is available.\nCurrent: v${currentVersion || 'unknown'}${currentCommit ? ` (${currentCommit})` : ''}\nLatest: v${latestVersion || 'unknown'}${latestCommit ? ` (${latestCommit})` : ''}\n\nUpgrade now?\nThis will pull latest, restart server, and auto-refresh this page.`;
+                if (window.confirm(msg)) {
+                    await applyLatestUpdate(data);
+                } else {
+                    saveSkippedUpdateCommit(skipKey);
+                }
+            } catch (e) { }
+        }
+
         async function updateInfoMetrics() {
             try {
                 const resp = await fetch('/metrics', { cache: 'no-store' });
@@ -6803,6 +6887,7 @@
             initMapFilters();
             initSsbWaterfallPanel();
             updateAppVersion();
+            setTimeout(() => { checkForUpdatesPrompt(); }, 1200);
             applyUiTheme(readUiTheme());
             applyUiDensity(readUiDensity());
             const themeSel = document.getElementById('ui_theme');
@@ -6861,6 +6946,7 @@
             updateInfoMetrics();
             setInterval(updateInfoMetrics, 10000);
             setInterval(refreshAutoUiTheme, 60000);
+            setInterval(checkForUpdatesPrompt, 10 * 60 * 1000);
             setInterval(() => {
                 if (rxHealthPanelVisible) {
                     renderRxHealthPanel();

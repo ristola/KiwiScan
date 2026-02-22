@@ -6,10 +6,14 @@ import time
 import asyncio
 import threading
 import subprocess
+import os
+import re
+import shlex
 from collections import deque
 from importlib.metadata import PackageNotFoundError, version as package_version
-import re
 from typing import Dict, List, Optional
+from urllib.error import URLError
+from urllib.request import urlopen
 
 try:
     import tomllib  # type: ignore[attr-defined]
@@ -106,6 +110,9 @@ def _resolve_git_commit() -> str | None:
 APP_VERSION = _resolve_app_version()
 APP_COMMIT = _resolve_git_commit()
 
+_update_lock = threading.Lock()
+_update_in_progress = False
+
 _api_metrics_lock = threading.Lock()
 _api_latency_ms: deque[float] = deque(maxlen=2000)
 _api_request_total = 0
@@ -115,6 +122,128 @@ _api_error_total = 0
 @app.get("/version")
 def get_version() -> Dict[str, str | None]:
     return {"version": APP_VERSION, "commit": APP_COMMIT}
+
+
+def _safe_update_target() -> tuple[str, str]:
+    repo = str(os.environ.get("KIWISCAN_UPDATE_REPO", "ristola/KiwiScan") or "ristola/KiwiScan").strip()
+    branch = str(os.environ.get("KIWISCAN_UPDATE_BRANCH", "main") or "main").strip()
+    if not re.match(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", repo):
+        repo = "ristola/KiwiScan"
+    if not re.match(r"^[A-Za-z0-9_.\-/]+$", branch):
+        branch = "main"
+    return repo, branch
+
+
+def _fetch_latest_commit(repo: str, branch: str) -> str:
+    url = f"https://api.github.com/repos/{repo}/commits/{branch}"
+    req_headers = {"User-Agent": "kiwi-scan-updater"}
+    with urlopen(url, timeout=4.0) as resp:  # nosec - trusted GitHub API endpoint
+        raw = resp.read(512 * 1024).decode("utf-8", errors="ignore")
+    data = json.loads(raw)
+    sha = str(data.get("sha") or "").strip()
+    if not sha:
+        return ""
+    return sha[:7]
+
+
+def _fetch_latest_version(repo: str, branch: str) -> str:
+    url = f"https://raw.githubusercontent.com/{repo}/{branch}/pyproject.toml"
+    with urlopen(url, timeout=4.0) as resp:  # nosec - trusted GitHub raw endpoint
+        raw = resp.read(512 * 1024).decode("utf-8", errors="ignore")
+    if tomllib is not None:
+        try:
+            data = tomllib.loads(raw)
+            project = data.get("project") if isinstance(data, dict) else None
+            version = project.get("version") if isinstance(project, dict) else None
+            if isinstance(version, str) and version.strip():
+                return version.strip()
+        except Exception:
+            pass
+    m = re.search(r'^version\s*=\s*"([^"]+)"\s*$', raw, flags=re.MULTILINE)
+    return m.group(1).strip() if m else ""
+
+
+def _background_apply_update(repo: str, branch: str) -> None:
+    global _update_in_progress
+    try:
+        root = Path(__file__).resolve().parents[2]
+        install_url = f"https://raw.githubusercontent.com/{repo}/{branch}/tools/install_latest.sh"
+        cmd = (
+            "set -euo pipefail; "
+            f"curl -fsSL {shlex.quote(install_url)} | bash -s -- {shlex.quote(str(root))}; "
+            f"cd {shlex.quote(str(root))}; "
+            "nohup ./run_server.sh >/tmp/kiwi_run_server.out 2>&1 &"
+        )
+        subprocess.Popen(
+            ["/bin/bash", "-lc", cmd],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception:
+        logger.exception("Self-update failed to start")
+        with _update_lock:
+            _update_in_progress = False
+
+
+@app.get("/update/check")
+def check_update() -> Dict[str, object]:
+    repo, branch = _safe_update_target()
+    latest_commit = ""
+    latest_version = ""
+    latest_error = ""
+    try:
+        latest_commit = _fetch_latest_commit(repo, branch)
+        latest_version = _fetch_latest_version(repo, branch)
+    except (URLError, TimeoutError) as exc:
+        latest_error = f"network: {exc}"
+    except Exception as exc:
+        latest_error = str(exc)
+
+    current_commit = str(APP_COMMIT or "")
+    by_commit = bool(latest_commit and current_commit and latest_commit != current_commit)
+    by_version = bool(latest_version and APP_VERSION and latest_version != APP_VERSION)
+    by_unknown_commit = bool(latest_commit and not current_commit)
+    update_available = bool(by_commit or by_version or by_unknown_commit)
+    return {
+        "repo": repo,
+        "branch": branch,
+        "current_version": APP_VERSION,
+        "latest_version": latest_version,
+        "current_commit": current_commit,
+        "latest_commit": latest_commit,
+        "update_by_commit": by_commit,
+        "update_by_version": by_version,
+        "update_by_unknown_commit": by_unknown_commit,
+        "update_available": update_available,
+        "update_in_progress": bool(_update_in_progress),
+        "error": latest_error,
+    }
+
+
+@app.post("/update/apply")
+def apply_update() -> Dict[str, object]:
+    global _update_in_progress
+    repo, branch = _safe_update_target()
+    with _update_lock:
+        if _update_in_progress:
+            return {
+                "ok": True,
+                "status": "already_in_progress",
+                "repo": repo,
+                "branch": branch,
+            }
+        _update_in_progress = True
+
+    thread = threading.Thread(target=_background_apply_update, args=(repo, branch), daemon=True)
+    thread.start()
+    return {
+        "ok": True,
+        "status": "started",
+        "repo": repo,
+        "branch": branch,
+    }
 
 
 def _get_api_metrics() -> Dict[str, float | int]:
