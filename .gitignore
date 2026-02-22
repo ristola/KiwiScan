@@ -10,6 +10,7 @@ build/
 outputs/
 detections*.jsonl
 *.log
+*.wav
 server.pid
 
 # Local backups
