@@ -39,6 +39,22 @@ cd "$HOME/KiwiScan"
 - macOS helper command file:
   - https://github.com/ristola/KiwiScan/raw/main/tools/install_latest.command
 
+## macOS clickable installer (.pkg)
+
+If you want users to click an installer file instead of running a Terminal command,
+build and share the unsigned macOS package:
+
+```bash
+cd /opt/ShackMate/kiwi_scan
+./tools/build_macos_installer_pkg.sh
+```
+
+Output:
+- `dist/KiwiScan-Installer-<version>-unsigned.pkg`
+
+Then upload that `.pkg` to a GitHub Release and share the release asset URL.
+Users can download and open the package installer from Finder.
+
 ## Notes
 
 - Opening the raw installer URL in a browser will show script text (expected).
