@@ -99,6 +99,22 @@ class _ReceiverWorker(threading.Thread):
             return path.exists() and path.is_file() and os.access(str(path), os.X_OK)
         except Exception:
             return False
+
+    @classmethod
+    def _resolve_tool_path(cls, binary_name: str, fallback_path: Path) -> Optional[Path]:
+        try:
+            resolved = shutil.which(binary_name)
+        except Exception:
+            resolved = None
+        if resolved:
+            resolved_text = str(resolved).strip()
+            if resolved_text and not resolved_text.startswith("/opt/local/"):
+                candidate = Path(resolved_text)
+                if cls._is_executable_file(candidate):
+                    return candidate
+        if cls._is_executable_file(fallback_path):
+            return fallback_path
+        return None
         proc = self._proc
         if proc is None:
             return
@@ -416,7 +432,8 @@ class _ReceiverWorker(threading.Thread):
             time.sleep(0.5)
 
     def _start_decoder(self, udp_port: int, mode: str) -> None:
-        if not self._is_executable_file(self._ft8modem_path):
+        ft8modem_path = self._resolve_tool_path("ft8modem", self._ft8modem_path)
+        if ft8modem_path is None:
             return
         try:
             subprocess.run(
@@ -430,7 +447,7 @@ class _ReceiverWorker(threading.Thread):
         log_suffix = mode.lower()
         log_path = Path("/tmp") / f"ft8modem_rx{self._rx}_{log_suffix}.log"
         cmd = [
-            str(self._ft8modem_path),
+            str(ft8modem_path),
             "-r",
             "48000",
             mode,
@@ -535,8 +552,9 @@ class _ReceiverWorker(threading.Thread):
         freq_khz = self._format_freq_khz(self._freq_hz)
         mode_tag = self._mode_label.strip().upper().replace(" ", "").replace("/", "")
         if self._is_digital_mode():
-            if not self._is_executable_file(self._af2udp_path):
-                logger.warning("af2udp not executable at %s", self._af2udp_path)
+            af2udp_path = self._resolve_tool_path("af2udp", self._af2udp_path)
+            if af2udp_path is None:
+                logger.warning("af2udp not executable on PATH or fallback at %s", self._af2udp_path)
                 return None
             if not self._sox_path:
                 logger.warning("sox not found in PATH")
@@ -564,7 +582,7 @@ class _ReceiverWorker(threading.Thread):
                     f"--rx-chan {self._rx} --user 'AUTO_{self._band}_{mode_tag}' --nc --quiet | "
                     f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
                     f"-t raw -r 48000 -e signed -b 16 -c 1 - gain 3 | "
-                    f"{self._af2udp_path} {udp_port}"
+                    f"{af2udp_path} {udp_port}"
                 )
             try:
                 log_path = Path("/tmp") / f"kiwi_rx{self._rx}_pipeline.log"
