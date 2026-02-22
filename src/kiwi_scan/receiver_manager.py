@@ -771,8 +771,6 @@ class ReceiverManager:
             missing.append("sox")
         if not numpy_ok:
             missing.append("numpy")
-        if not (kiwi_ok or kiwiclient_ok):
-            missing.append("kiwi/kiwiclient")
 
         report: Dict[str, object] = {
             "checked_unix": time.time(),
@@ -825,8 +823,6 @@ class ReceiverManager:
                 errs.append("sox missing on PATH")
             if not bool(modules.get("numpy", False)):
                 errs.append("python module missing: numpy")
-            if not (bool(modules.get("kiwi", False)) or bool(modules.get("kiwiclient", False))):
-                errs.append("python module missing: kiwi/kiwiclient")
 
         if requires_wspr and not bool(status.get("wsprd", False)):
             errs.append("wsprd missing (required for WSPR decode)")

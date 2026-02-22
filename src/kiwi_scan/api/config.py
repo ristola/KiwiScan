@@ -203,10 +203,7 @@ def make_router(*, mgr: object, waterholes: Dict[str, float]) -> APIRouter:
         with mgr.lock:  # type: ignore[attr-defined]
             runtime_deps = {}
             try:
-                if hasattr(mgr, "get_runtime_dependencies"):
-                    runtime_deps = mgr.get_runtime_dependencies()  # type: ignore[attr-defined]
-                else:
-                    runtime_deps = dict(getattr(mgr, "runtime_dependencies", {}) or {})
+                runtime_deps = dict(getattr(mgr, "runtime_dependencies", {}) or {})
             except Exception:
                 runtime_deps = {}
             return {
