@@ -36,7 +36,17 @@ if [[ -z "$SRC_DIR" || ! -d "$SRC_DIR" ]]; then
 fi
 
 echo "Installing to ${DEST_DIR} ..."
-mkdir -p "$DEST_DIR"
+if ! mkdir -p "$DEST_DIR" 2>/dev/null; then
+  echo "Error: cannot create destination: $DEST_DIR" >&2
+  if [ "${EUID:-$(id -u)}" -ne 0 ]; then
+    echo "Hint: /opt typically requires admin rights." >&2
+    echo "Run either:" >&2
+    echo "  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/tools/install_latest.sh | sudo bash -s -- $DEST_DIR" >&2
+    echo "or install without sudo to your home directory:" >&2
+    echo "  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/tools/install_latest.sh | bash -s -- \"$HOME/KiwiScan\"" >&2
+  fi
+  exit 1
+fi
 rsync -a --delete \
   --exclude '.git/' \
   --exclude '.github/' \
