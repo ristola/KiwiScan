@@ -1,0 +1,138 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>KiwiSDR Scanner - Config</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        label {
+            display: inline-block;
+            width: 160px;
+            margin-right: 8px;
+        }
+
+        input {
+            width: 220px;
+            margin-bottom: 8px;
+        }
+
+        .row {
+            margin-bottom: 8px;
+        }
+
+        .meta {
+            color: #666;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>KiwiSDR Scanner - Config</h1>
+    <div style="margin-bottom: 12px;">
+        <a href="/"><button>Back to Dashboard</button></a>
+    </div>
+
+    <div class="row">
+        <label>KiwiSDR IP:</label>
+        <input id="host" type="text" placeholder="192.168.1.93" />
+    </div>
+    <div class="row">
+        <label>KiwiSDR Port:</label>
+        <input id="port" type="number" placeholder="8073" />
+    </div>
+    <div class="row">
+        <label>Latitude:</label>
+        <input id="latitude" type="number" step="0.0001" placeholder="38.6" />
+    </div>
+    <div class="row">
+        <label>Longitude:</label>
+        <input id="longitude" type="number" step="0.0001" placeholder="-78.4" />
+    </div>
+
+    <div class="row">
+        <button id="auto">Auto-discover</button>
+        <button id="save">Save</button>
+    </div>
+    <div id="status" class="meta"></div>
+
+    <script>
+        async function fetchConfig() {
+            const r = await fetch('/config');
+            return r.json();
+        }
+
+        async function saveConfig(data) {
+            const r = await fetch('/config', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            return r.json();
+        }
+
+        async function discover() {
+            const status = document.getElementById('status');
+            status.textContent = 'Discovering from my.kiwisdr.com…';
+            try {
+                const r = await fetch('/kiwi_discover');
+                const d = await r.json();
+                if (d.ip) document.getElementById('host').value = d.ip;
+                if (d.port) document.getElementById('port').value = d.port;
+                if (d.latitude !== null && d.latitude !== undefined) document.getElementById('latitude').value = d.latitude;
+                if (d.longitude !== null && d.longitude !== undefined) document.getElementById('longitude').value = d.longitude;
+                const src = d.source ? JSON.stringify(d.source) : '';
+                if (d.ip) {
+                    const latTxt = (d.latitude !== null && d.latitude !== undefined) ? ` • lat ${d.latitude}` : '';
+                    const lonTxt = (d.longitude !== null && d.longitude !== undefined) ? ` • lon ${d.longitude}` : '';
+                    status.textContent = `Using ${d.ip}:${d.port}${latTxt}${lonTxt} (${src})`;
+                } else {
+                    status.textContent = `Discovery failed. ${src}`;
+                }
+            } catch (e) {
+                status.textContent = 'Discovery failed.';
+            }
+        }
+
+        async function init() {
+            try {
+                const cfg = await fetchConfig();
+                if (cfg.host !== undefined) document.getElementById('host').value = cfg.host;
+                if (cfg.port !== undefined) document.getElementById('port').value = cfg.port;
+                if (cfg.latitude !== undefined) document.getElementById('latitude').value = cfg.latitude;
+                if (cfg.longitude !== undefined) document.getElementById('longitude').value = cfg.longitude;
+            } catch (e) { }
+
+            document.getElementById('auto').addEventListener('click', async () => {
+                await discover();
+            });
+
+            document.getElementById('save').addEventListener('click', async () => {
+                const data = {
+                    host: document.getElementById('host').value,
+                    port: parseInt(document.getElementById('port').value, 10),
+                    latitude: parseFloat(document.getElementById('latitude').value),
+                    longitude: parseFloat(document.getElementById('longitude').value)
+                };
+                try {
+                    await saveConfig(data);
+                    document.getElementById('status').textContent = 'Saved.';
+                } catch (e) {
+                    document.getElementById('status').textContent = 'Save failed.';
+                }
+            });
+
+            // Auto-discover on load to populate fields.
+            await discover();
+        }
+
+        init();
+    </script>
+</body>
+
+</html>
