@@ -9,6 +9,7 @@ VENV_PY=""
 APP_DIR="$ROOT_DIR/src"
 REQ_FILE="$ROOT_DIR/requirements.txt"
 AUTO_SETUP="${AUTO_SETUP:-1}"
+AUTO_SYSTEM_DEPS="${AUTO_SYSTEM_DEPS:-1}"
 
 ensure_venv() {
   if [ -x "$VENV_PRIMARY/bin/python" ]; then
@@ -53,8 +54,33 @@ install_requirements_if_needed() {
   fi
 }
 
+bootstrap_runtime_tools_if_needed() {
+  if [ "$AUTO_SETUP" != "1" ] || [ "$AUTO_SYSTEM_DEPS" != "1" ]; then
+    return 0
+  fi
+
+  if [ -x "$ROOT_DIR/tools/check_runtime_deps.sh" ]; then
+    echo "[setup] Checking/building runtime tools (ft8modem/af2udp)" >&2
+    "$ROOT_DIR/tools/check_runtime_deps.sh" --build-missing --quiet >/dev/null 2>&1 || true
+  fi
+
+  if command -v sox >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [ "$(uname -s)" = "Darwin" ]; then
+    if command -v brew >/dev/null 2>&1; then
+      echo "[setup] sox missing; installing via Homebrew" >&2
+      brew list sox >/dev/null 2>&1 || brew install sox || true
+    else
+      echo "[setup] sox missing and Homebrew not found; install Homebrew or run: brew install sox" >&2
+    fi
+  fi
+}
+
 ensure_venv
 install_requirements_if_needed
+bootstrap_runtime_tools_if_needed
 
 PORT="${PORT:-4020}"
 RESTART_DELAY_S="${RESTART_DELAY_S:-2}"
