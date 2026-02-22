@@ -1934,6 +1934,10 @@
                             <option value="dense">Dense</option>
                         </select>
                     </div>
+                    <div class="config-row">
+                        <label>Update status</label>
+                        <span id="ui_update_status" class="meta">Checking…</span>
+                    </div>
                     <div class="config-actions">
                         <button id="ui_check_updates_btn" type="button">Check for Updates</button>
                         <button id="ui_reset_btn" type="button">Reset UI</button>
@@ -6381,6 +6385,30 @@
             } catch (e) { }
         }
 
+        function setUpdateStatusText(text) {
+            const el = document.getElementById('ui_update_status');
+            if (!el) return;
+            el.textContent = String(text || 'Unknown');
+        }
+
+        function renderUpdateStatus(data) {
+            if (!data || typeof data !== 'object') {
+                setUpdateStatusText('Unavailable');
+                return;
+            }
+            const currentVersion = String(data.current_version || 'unknown');
+            const currentCommit = String(data.current_commit || '').trim();
+            const latestVersion = String(data.latest_version || 'unknown');
+            const latestCommit = String(data.latest_commit || '').trim();
+            const current = `v${currentVersion}${currentCommit ? ` (${currentCommit})` : ''}`;
+            const latest = `v${latestVersion}${latestCommit ? ` (${latestCommit})` : ''}`;
+            if (data.update_available) {
+                setUpdateStatusText(`Update available: ${current} → ${latest}`);
+            } else {
+                setUpdateStatusText(`Up to date: ${current}`);
+            }
+        }
+
         async function applyLatestUpdate(checkData) {
             const beforeCommit = String((checkData && checkData.current_commit) || '').trim();
             const targetCommit = String((checkData && checkData.latest_commit) || '').trim();
@@ -6420,6 +6448,7 @@
                 const resp = await fetch('/update/check', { cache: 'no-store' });
                 if (!resp.ok) return;
                 const data = await resp.json();
+                renderUpdateStatus(data);
                 if (!data || data.update_in_progress) return;
                 if (!data.update_available) {
                     clearSkippedUpdateCommit();
@@ -6444,7 +6473,9 @@
                 } else {
                     saveSkippedUpdateCommit(skipKey);
                 }
-            } catch (e) { }
+            } catch (e) {
+                setUpdateStatusText('Update check failed');
+            }
         }
 
         async function updateInfoMetrics() {
