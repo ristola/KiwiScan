@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import concurrent.futures
+import ipaddress
+import logging
 import re
 import socket
 import time
@@ -11,7 +13,10 @@ from typing import Dict
 from fastapi import APIRouter, HTTPException, Request
 
 
-def make_router(*, mgr: object, waterholes: Dict[str, float]) -> APIRouter:
+logger = logging.getLogger(__name__)
+
+
+def make_router(*, mgr: object, waterholes: Dict[str, float], receiver_mgr: object | None = None) -> APIRouter:
     """Create router for GET/POST /config.
 
     Extracted from server.py for cleanliness; keeps behavior identical.
@@ -62,21 +67,19 @@ def make_router(*, mgr: object, waterholes: Dict[str, float]) -> APIRouter:
             return None
 
     def _parse_my_kiwisdr_for_lan_hosts(html: str) -> list[tuple[str, int]]:
-        # Extract RFC1918 host:port strings shown as links, e.g. 192.168.1.93:8073
-        pat = re.compile(
-            r"\b(?:10\.(?:\d{1,3}\.){2}\d{1,3}"
-            r"|192\.168\.(?:\d{1,3}\.)\d{1,3}"
-            r"|172\.(?:1[6-9]|2\d|3[0-1])\.(?:\d{1,3}\.)\d{1,3})"
-            r":(\d{1,5})\b"
-        )
+        # Extract private IPv4 host:port strings shown in page content.
+        pat = re.compile(r"\b((?:\d{1,3}\.){3}\d{1,3}):(\d{1,5})\b")
         out: list[tuple[str, int]] = []
         seen: set[tuple[str, int]] = set()
         for m in pat.finditer(html or ""):
-            hostport = m.group(0)
-            host, port_s = hostport.split(":", 1)
+            host = str(m.group(1) or "").strip()
+            port_s = str(m.group(2) or "").strip()
             try:
+                ip_obj = ipaddress.IPv4Address(host)
                 port = int(port_s)
             except Exception:
+                continue
+            if not ip_obj.is_private:
                 continue
             if port < 1 or port > 65535:
                 continue
@@ -87,12 +90,57 @@ def make_router(*, mgr: object, waterholes: Dict[str, float]) -> APIRouter:
             out.append(t)
         return out
 
+    def _private_prefixes_for_lan_scan(client_ip: str) -> list[str]:
+        prefixes: list[str] = []
+
+        def _add_prefix(ip_text: str) -> None:
+            try:
+                ip_obj = ipaddress.IPv4Address(str(ip_text or "").strip())
+            except Exception:
+                return
+            if not ip_obj.is_private:
+                return
+            octets = str(ip_obj).split(".")
+            if len(octets) != 4:
+                return
+            prefix = f"{octets[0]}.{octets[1]}.{octets[2]}"
+            if prefix not in prefixes:
+                prefixes.append(prefix)
+
+        _add_prefix(client_ip)
+
+        try:
+            # Infer primary outbound interface IP.
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.connect(("8.8.8.8", 80))
+                _add_prefix(s.getsockname()[0])
+        except Exception:
+            pass
+
+        try:
+            # Include local interface addresses resolved for this host.
+            host = socket.gethostname()
+            infos = socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_STREAM)
+            for info in infos:
+                if not isinstance(info, tuple) or len(info) < 5:
+                    continue
+                sockaddr = info[4]
+                if isinstance(sockaddr, tuple) and sockaddr:
+                    _add_prefix(str(sockaddr[0]))
+        except Exception:
+            pass
+
+        if not prefixes:
+            prefixes = ["192.168.1", "192.168.0", "10.0.0", "10.0.1", "172.16.0", "172.20.0", "172.31.0"]
+        return prefixes[:8]
+
     @router.get("/config/discover")
     def discover_kiwi(request: Request, port: int = 8073, timeout_s: float = 0.20, max_hosts: int = 32):
         """Best-effort LAN discovery for KiwiSDR.
 
-        Scans the caller's /24 (based on request.client.host) for the given TCP port
-        and returns any hosts whose HTTP root page looks like a KiwiSDR.
+        Tries my.kiwisdr.com first, then scans likely private /24 subnets inferred
+        from caller and server interface IPs for the given TCP port, returning hosts
+        whose HTTP root page looks like a KiwiSDR.
 
         This is intentionally conservative (small timeouts, bounded results) so it
         can't hang the server.
@@ -119,14 +167,10 @@ def make_router(*, mgr: object, waterholes: Dict[str, float]) -> APIRouter:
         except Exception:
             candidates = []
 
-        # Fallback: scan the caller's /24 based on request.client.host.
+        # Fallback: scan likely private /24 prefixes based on caller + local interfaces.
         if not candidates:
             client_ip = (request.client.host if request.client else "") or ""
-            m = re.match(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$", client_ip)
-            if not m:
-                prefixes = ["192.168.1", "192.168.0", "10.0.0"]
-            else:
-                prefixes = [f"{m.group(1)}.{m.group(2)}.{m.group(3)}"]
+            prefixes = _private_prefixes_for_lan_scan(client_ip)
             source = "lan_scan"
 
             def has_port_open(ip: str) -> bool:
@@ -144,7 +188,7 @@ def make_router(*, mgr: object, waterholes: Dict[str, float]) -> APIRouter:
                             candidates.append((ip, port))
                             if len(candidates) >= max_hosts:
                                 break
-                if candidates:
+                if len(candidates) >= max_hosts:
                     break
 
         found: list[dict[str, object]] = []
@@ -229,6 +273,50 @@ def make_router(*, mgr: object, waterholes: Dict[str, float]) -> APIRouter:
                 "kiwi_gps_good": kiwi_gps_good,
                 "runtime_dependencies": runtime_deps,
             }
+
+    @router.post("/config/runtime-deps/refresh")
+    def refresh_runtime_dependencies():
+        if receiver_mgr is None:
+            raise HTTPException(status_code=503, detail="receiver manager unavailable")
+        try:
+            report = receiver_mgr.dependency_report()  # type: ignore[attr-defined]
+        except Exception as exc:
+            logger.exception("Runtime dependency refresh failed")
+            raise HTTPException(status_code=500, detail=f"dependency refresh failed: {exc}") from exc
+
+        try:
+            mgr.set_runtime_dependencies(report, save=True)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+        return {"ok": True, "runtime_dependencies": report}
+
+    @router.post("/config/runtime-deps/test-path-failures")
+    def test_runtime_dependency_path_failures():
+        if receiver_mgr is None:
+            raise HTTPException(status_code=503, detail="receiver manager unavailable")
+        try:
+            report = receiver_mgr.dependency_report(test_injected_failures=True, apply_corrections=False)  # type: ignore[attr-defined]
+        except Exception as exc:
+            logger.exception("Runtime dependency path failure test failed")
+            raise HTTPException(status_code=500, detail=f"path failure test failed: {exc}") from exc
+
+        try:
+            mgr.set_runtime_dependencies(report, save=True)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+        path_checks = report.get("path_checks") if isinstance(report, dict) else {}
+        path_checks = path_checks if isinstance(path_checks, dict) else {}
+        corrected = sum(1 for item in path_checks.values() if isinstance(item, dict) and bool(item.get("corrected")))
+        unresolved = sum(1 for item in path_checks.values() if isinstance(item, dict) and not bool(item.get("ok")))
+
+        return {
+            "ok": True,
+            "corrected": int(corrected),
+            "unresolved": int(unresolved),
+            "runtime_dependencies": report,
+        }
 
     @router.post("/config")
     async def set_config(request: Request):
