@@ -65,25 +65,26 @@ app = FastAPI(title="KiwiSDR Scanner")
 
 def _resolve_app_version() -> str:
     try:
-        return str(package_version("kiwi-scan"))
-    except PackageNotFoundError:
-        pass
+        pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+        if pyproject.exists():
+            raw = pyproject.read_text(encoding="utf-8")
+            if tomllib is not None:
+                data = tomllib.loads(raw)
+                project = data.get("project") if isinstance(data, dict) else None
+                version = project.get("version") if isinstance(project, dict) else None
+                if isinstance(version, str) and version.strip():
+                    return version.strip()
+            else:
+                m = re.search(r'^version\s*=\s*"([^"]+)"\s*$', raw, flags=re.MULTILINE)
+                if m:
+                    return m.group(1).strip()
     except Exception:
         pass
 
     try:
-        pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
-        raw = pyproject.read_text(encoding="utf-8")
-        if tomllib is not None:
-            data = tomllib.loads(raw)
-            project = data.get("project") if isinstance(data, dict) else None
-            version = project.get("version") if isinstance(project, dict) else None
-            if isinstance(version, str) and version.strip():
-                return version.strip()
-        else:
-            m = re.search(r'^version\s*=\s*"([^"]+)"\s*$', raw, flags=re.MULTILINE)
-            if m:
-                return m.group(1).strip()
+        return str(package_version("kiwi-scan"))
+    except PackageNotFoundError:
+        pass
     except Exception:
         pass
 
@@ -163,6 +164,41 @@ def _fetch_latest_version(repo: str, branch: str) -> str:
     return m.group(1).strip() if m else ""
 
 
+def _normalize_version(value: str | None) -> str:
+    text = str(value or "").strip()
+    if text.lower().startswith("v"):
+        text = text[1:].strip()
+    return text
+
+
+def _is_version_newer(latest: str | None, current: str | None) -> bool:
+    latest_norm = _normalize_version(latest)
+    current_norm = _normalize_version(current)
+    if not latest_norm or not current_norm or current_norm == "unknown":
+        return False
+
+    token_re = re.compile(r"[.-]")
+    l_tokens = token_re.split(latest_norm)
+    c_tokens = token_re.split(current_norm)
+
+    def to_key(token: str) -> tuple[int, int | str]:
+        t = str(token or "").strip()
+        if t.isdigit():
+            return (1, int(t))
+        return (0, t.lower())
+
+    max_len = max(len(l_tokens), len(c_tokens))
+    for idx in range(max_len):
+        l = l_tokens[idx] if idx < len(l_tokens) else "0"
+        c = c_tokens[idx] if idx < len(c_tokens) else "0"
+        lk = to_key(l)
+        ck = to_key(c)
+        if lk == ck:
+            continue
+        return lk > ck
+    return False
+
+
 def _background_apply_update(repo: str, branch: str) -> None:
     global _update_in_progress
     try:
@@ -202,9 +238,21 @@ def check_update() -> Dict[str, object]:
         latest_error = str(exc)
 
     current_commit = str(APP_COMMIT or "")
+    current_version_norm = _normalize_version(APP_VERSION)
+    latest_version_norm = _normalize_version(latest_version)
+    latest_is_newer = _is_version_newer(latest_version_norm, current_version_norm)
     by_commit = bool(latest_commit and current_commit and latest_commit != current_commit)
-    by_version = bool(latest_version and APP_VERSION and latest_version != APP_VERSION)
-    by_unknown_commit = bool(latest_commit and not current_commit)
+    by_version = bool(latest_is_newer)
+    by_unknown_commit = bool(
+        latest_commit
+        and not current_commit
+        and (
+            not latest_version_norm
+            or not current_version_norm
+            or current_version_norm == "unknown"
+            or latest_is_newer
+        )
+    )
     update_available = bool(by_commit or by_version or by_unknown_commit)
     return {
         "repo": repo,
@@ -384,7 +432,7 @@ rx_monitor = RxMonitor(kiwirecorder_path=_KIWIRECORDER_PATH, mgr=mgr)
 loop: Optional[asyncio.AbstractEventLoop] = None
 
 app.include_router(make_band_scan_router(mgr=mgr, band_scanner=band_scanner))
-app.include_router(make_config_router(mgr=mgr, waterholes=FT8_WATERHOLES))
+app.include_router(make_config_router(mgr=mgr, waterholes=FT8_WATERHOLES, receiver_mgr=receiver_mgr))
 app.include_router(make_status_router(mgr=mgr, waterholes=FT8_WATERHOLES))
 app.include_router(make_schedule_router())
 app.include_router(

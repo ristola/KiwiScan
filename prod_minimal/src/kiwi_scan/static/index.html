@@ -837,6 +837,18 @@
             margin-top: 8px;
         }
 
+        .config-runtime-paths {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin-top: 6px;
+        }
+
+        .config-runtime-paths .meta {
+            line-height: 1.35;
+            word-break: break-word;
+        }
+
         #cfg_status {
             margin-top: 10px;
             display: inline-flex;
@@ -1979,6 +1991,14 @@
                         <button id="ui_reset_btn" type="button">Reset UI</button>
                     </div>
                 </div>
+                <div id="cfg_runtime_paths_card" class="config-card" style="display:none;">
+                    <div class="config-title">Runtime Paths</div>
+                    <div class="config-row">
+                        <label>Dependency paths</label>
+                        <span id="cfg_runtime_paths_summary" class="meta">Not checked</span>
+                    </div>
+                    <div id="cfg_runtime_paths" class="config-runtime-paths"></div>
+                </div>
             </div>
         </div>
         <div id="cfg_status" class="meta"></div>
@@ -2455,6 +2475,14 @@
             return Math.max(1, safeSeconds) * 1000;
         }
 
+        function getDigitalWindowMs() {
+            return 60 * 60 * 1000;
+        }
+
+        function getDecodeHistoryWindowMs() {
+            return Math.max(getWsprWindowMs(), getDigitalWindowMs());
+        }
+
         function pruneDecodeHistory(windowMs) {
             const cutoff = Date.now() - windowMs;
             decodeHistory = decodeHistory.filter(d => d.receivedAt >= cutoff);
@@ -2481,7 +2509,7 @@
 
         function computeWsprConditionsForBand(band) {
             const windowMs = getWsprWindowMs();
-            pruneDecodeHistory(windowMs);
+            pruneDecodeHistory(getDecodeHistoryWindowMs());
             const now = Date.now();
             const candidates = decodeHistory.filter(d => d.mode === 'WSPR' && d.band === band && (now - d.receivedAt) <= windowMs);
             return computeWsprConditionsForCandidates(candidates);
@@ -2509,10 +2537,10 @@
         }
 
         function buildConditionsTooltip(band, modeKind) {
-            const windowMs = getWsprWindowMs();
-            pruneDecodeHistory(windowMs);
-            const now = Date.now();
             const norm = String(modeKind || '').toUpperCase();
+            const windowMs = norm === 'WSPR' ? getWsprWindowMs() : getDigitalWindowMs();
+            pruneDecodeHistory(getDecodeHistoryWindowMs());
+            const now = Date.now();
             const windowSec = Math.max(1, windowMs / 1000);
             const activeBlock = viewedBlock || currentBlock;
             const mode = currentMode();
@@ -2699,16 +2727,18 @@
             const tip = document.getElementById('conditions_tooltip');
             if (!tip) return;
             if (text) tip.textContent = text;
+            tip.style.display = 'block';
+            tip.style.visibility = 'hidden';
             const padding = 12;
+            const w = Math.ceil(tip.offsetWidth || tip.scrollWidth || 240);
+            const h = Math.ceil(tip.offsetHeight || tip.scrollHeight || 120);
             if (Number.isFinite(clientX) && Number.isFinite(clientY)) {
-                const w = tip.offsetWidth || 240;
-                const h = tip.offsetHeight || 120;
                 const x = Math.max(padding, Math.min(window.innerWidth - w - padding, clientX + 14));
                 const y = Math.max(padding, Math.min(window.innerHeight - h - padding, clientY + 14));
                 tip.style.left = `${x}px`;
                 tip.style.top = `${y}px`;
             }
-            tip.style.display = 'block';
+            tip.style.visibility = 'visible';
         }
 
         function hideConditionsTooltip() {
@@ -2777,8 +2807,8 @@
         }
 
         function computeDigitalConditionsForBand(band) {
-            const windowMs = getWsprWindowMs();
-            pruneDecodeHistory(windowMs);
+            const windowMs = getDigitalWindowMs();
+            pruneDecodeHistory(getDecodeHistoryWindowMs());
             const now = Date.now();
             const candidates = decodeHistory.filter(d => (d.mode === 'FT8' || d.mode === 'FT4')
                 && d.band === band
@@ -3127,6 +3157,118 @@
             if (tone === 'ok') el.classList.add('status-ok');
             else if (tone === 'warn') el.classList.add('status-warn');
             else if (tone === 'error') el.classList.add('status-error');
+        }
+
+        function renderRuntimeDependencies(runtimeDeps) {
+            const card = document.getElementById('cfg_runtime_paths_card');
+            const summary = document.getElementById('cfg_runtime_paths_summary');
+            const wrap = document.getElementById('cfg_runtime_paths');
+            if (!card || !summary || !wrap) return;
+
+            const report = (runtimeDeps && typeof runtimeDeps === 'object') ? runtimeDeps : {};
+            const checks = (report.path_checks && typeof report.path_checks === 'object') ? report.path_checks : {};
+            const names = ['kiwirecorder', 'ft8modem', 'af2udp', 'sox', 'wsprd'];
+
+            summary.classList.remove('status-ok', 'status-warn', 'status-error');
+            wrap.textContent = '';
+
+            if (!Object.keys(checks).length) {
+                card.style.display = 'none';
+                return;
+            }
+
+            let corrected = 0;
+            let missing = 0;
+
+            for (const name of names) {
+                const item = (checks && checks[name] && typeof checks[name] === 'object') ? checks[name] : null;
+                if (!item) continue;
+
+                const isOk = !!item.ok;
+                const isCorrected = !!item.corrected;
+                if (isCorrected) corrected += 1;
+                if (!isOk) missing += 1;
+
+                const configured = String(item.configured || '');
+                const resolved = String(item.resolved || '');
+                const state = isCorrected ? 'Corrected' : (isOk ? 'OK' : 'Missing');
+
+                const row = document.createElement('div');
+                row.className = 'meta';
+                row.textContent = `${name}: ${state}${configured ? ` | configured: ${configured}` : ''}${resolved ? ` | resolved: ${resolved}` : ''}`;
+                wrap.appendChild(row);
+            }
+
+            const hasIssue = !!report.test_injected_failures || missing > 0 || corrected > 0;
+            if (!hasIssue) {
+                card.style.display = 'none';
+                return;
+            }
+
+            card.style.display = '';
+
+            const mode = report.test_injected_failures ? ' (test mode)' : '';
+            if (missing > 0) {
+                summary.textContent = `${missing} unresolved, ${corrected} corrected${mode}`;
+                summary.classList.add('status-error');
+            } else if (corrected > 0) {
+                summary.textContent = `All resolved, ${corrected} corrected by search${mode}`;
+                summary.classList.add('status-warn');
+            } else {
+                summary.textContent = `All dependency paths OK${mode}`;
+                summary.classList.add('status-ok');
+            }
+        }
+
+        async function refreshRuntimeDependencies(testMode = false, showStatus = true) {
+            const endpoint = testMode ? '/config/runtime-deps/test-path-failures' : '/config/runtime-deps/refresh';
+            if (showStatus) {
+                setConfigStatus(testMode ? 'Testing path failures…' : 'Refreshing runtime paths…', 'info');
+            }
+            try {
+                const resp = await fetch(endpoint, { method: 'POST' });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                const report = (data && data.runtime_dependencies) ? data.runtime_dependencies : {};
+                renderRuntimeDependencies(report);
+
+                const checks = (report && typeof report.path_checks === 'object') ? report.path_checks : {};
+                let correctedFound = 0;
+                let unresolvedFound = 0;
+                for (const item of Object.values(checks || {})) {
+                    if (!item || typeof item !== 'object') continue;
+                    if (item.corrected) correctedFound += 1;
+                    if (!item.ok) unresolvedFound += 1;
+                }
+
+                if (testMode) {
+                    const corrected = Number((data && data.corrected) || 0);
+                    const unresolved = Number((data && data.unresolved) || 0);
+                    if (unresolved > 0) {
+                        setConfigStatus(`Path failure test: ${unresolved} unresolved, ${corrected} corrected by search.`, 'error');
+                        showToast(`Path test: ${unresolved} unresolved dependency path(s).`, 'error', 2600);
+                    } else {
+                        setConfigStatus(`Path failure test: all dependencies recovered (${corrected} corrected by search).`, 'ok');
+                        showToast(`Path test passed: ${corrected} corrected by search.`, 'success', 2200);
+                    }
+                } else if (showStatus) {
+                    if (unresolvedFound > 0) {
+                        setConfigStatus(`Runtime path issue detected (${unresolvedFound} unresolved).`, 'error');
+                    } else if (correctedFound > 0) {
+                        setConfigStatus(`Runtime path corrected by search (${correctedFound} fixed).`, 'info');
+                    } else {
+                        setConfigStatus('');
+                    }
+                }
+                return report;
+            } catch (e) {
+                const msg = testMode ? 'Path failure test failed.' : 'Runtime path refresh failed.';
+                if (showStatus || testMode) {
+                    setConfigStatus(msg, 'error');
+                    showToast(msg, 'error', 2200);
+                }
+                return null;
+            }
         }
 
         function isViewingCurrentBlock() {
@@ -3523,16 +3665,18 @@
             const tip = document.getElementById('ssb_wf_tooltip');
             if (!tip) return;
             if (text) tip.textContent = text;
+            tip.style.display = 'block';
+            tip.style.visibility = 'hidden';
             const padding = 12;
+            const w = Math.ceil(tip.offsetWidth || tip.scrollWidth || 240);
+            const h = Math.ceil(tip.offsetHeight || tip.scrollHeight || 90);
             if (Number.isFinite(clientX) && Number.isFinite(clientY)) {
-                const w = tip.offsetWidth || 240;
-                const h = tip.offsetHeight || 90;
                 const x = Math.max(padding, Math.min(window.innerWidth - w - padding, clientX + 12));
                 const y = Math.max(padding, Math.min(window.innerHeight - h - padding, clientY + 12));
                 tip.style.left = `${x}px`;
                 tip.style.top = `${y}px`;
             }
-            tip.style.display = 'block';
+            tip.style.visibility = 'visible';
         }
 
         function hideSsbWfTooltip() {
@@ -5863,7 +6007,7 @@
                     dt: metrics.dt,
                     drift: metrics.drift,
                 });
-                pruneDecodeHistory(getWsprWindowMs());
+                pruneDecodeHistory(getDecodeHistoryWindowMs());
                 if (modeLabel === 'WSPR' && data.band) {
                     const blockKey = currentBlock || viewedBlock || 'unknown';
                     const cached = getCachedWsprCondition(blockKey, data.band);
@@ -6450,9 +6594,44 @@
             }
         }
 
+        function normalizeVersionToken(value) {
+            let text = String(value || '').trim();
+            if (text.toLowerCase().startsWith('v')) text = text.slice(1).trim();
+            return text;
+        }
+
+        function isVersionAtLeast(current, target) {
+            const c = normalizeVersionToken(current);
+            const t = normalizeVersionToken(target);
+            if (!c || !t || c === 'unknown' || t === 'unknown') return false;
+            const cParts = c.split(/[.-]/g);
+            const tParts = t.split(/[.-]/g);
+            const len = Math.max(cParts.length, tParts.length);
+
+            for (let i = 0; i < len; i += 1) {
+                const cv = cParts[i] || '0';
+                const tv = tParts[i] || '0';
+                const cNum = /^\d+$/.test(cv);
+                const tNum = /^\d+$/.test(tv);
+                if (cNum && tNum) {
+                    const ci = Number(cv);
+                    const ti = Number(tv);
+                    if (ci === ti) continue;
+                    return ci > ti;
+                }
+                const cs = cv.toLowerCase();
+                const ts = tv.toLowerCase();
+                if (cs === ts) continue;
+                return cs > ts;
+            }
+            return true;
+        }
+
         async function applyLatestUpdate(checkData) {
             const beforeCommit = String((checkData && checkData.current_commit) || '').trim();
             const targetCommit = String((checkData && checkData.latest_commit) || '').trim();
+            const beforeVersion = String((checkData && checkData.current_version) || '').trim();
+            const targetVersion = String((checkData && checkData.latest_version) || '').trim();
             try {
                 const resp = await fetch('/update/apply', { method: 'POST' });
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -6470,12 +6649,21 @@
                     const resp = await fetch('/version', { cache: 'no-store' });
                     if (!resp.ok) continue;
                     const data = await resp.json();
-                    const current = String((data && data.commit) || '').trim();
-                    if (targetCommit && current === targetCommit) {
+                    const currentCommit = String((data && data.commit) || '').trim();
+                    const currentVersion = String((data && data.version) || '').trim();
+                    if (targetCommit && currentCommit === targetCommit) {
                         location.reload();
                         return;
                     }
-                    if (!targetCommit && beforeCommit && current && current !== beforeCommit) {
+                    if (targetVersion && isVersionAtLeast(currentVersion, targetVersion)) {
+                        location.reload();
+                        return;
+                    }
+                    if (!targetCommit && beforeCommit && currentCommit && currentCommit !== beforeCommit) {
+                        location.reload();
+                        return;
+                    }
+                    if (!targetVersion && beforeVersion && currentVersion && currentVersion !== beforeVersion) {
                         location.reload();
                         return;
                     }
@@ -6529,7 +6717,14 @@
                 const raw = await resp.text();
                 const metrics = parsePrometheusMetrics(raw);
                 const decodePerSec = Number(metrics.kiwi_scan_decode_rate_60s);
-                const decodePerMin = Number.isFinite(decodePerSec) ? decodePerSec * 60.0 : NaN;
+                let decodePerMin = Number.isFinite(decodePerSec) ? decodePerSec * 60.0 : NaN;
+                if (!Number.isFinite(decodePerMin) || decodePerMin <= 0) {
+                    const nowMs = Date.now();
+                    const localLast60 = decodeHistory.filter(d => d && Number.isFinite(d.receivedAt) && (nowMs - d.receivedAt) <= 60000).length;
+                    if (localLast60 > 0) {
+                        decodePerMin = Number(localLast60);
+                    }
+                }
                 const decodesTotal = Number(metrics.kiwi_scan_decodes_total);
                 const restartTotal = Number(metrics.kiwi_scan_receiver_restarts_total);
                 const apiP95 = Number(metrics.kiwi_scan_api_latency_p95_ms);
@@ -7320,7 +7515,12 @@
                 if (cfg.latitude !== undefined) document.getElementById('cfg_lat').value = cfg.latitude;
                 if (cfg.longitude !== undefined) document.getElementById('cfg_lon').value = cfg.longitude;
                 updateStationGridDisplay(resolveStationGridFromConfig(cfg));
+                renderRuntimeDependencies(cfg.runtime_dependencies || {});
             } catch (e) { }
+
+            setTimeout(() => {
+                refreshRuntimeDependencies(false, false);
+            }, 1200);
 
             setTimeout(() => {
                 refreshStationGridFromConfig();
@@ -7386,7 +7586,6 @@
                     }
                 });
             }
-
 
             try {
                 const mode = (document.getElementById('mode_phone') && document.getElementById('mode_phone').checked) ? 'phone' : 'ft8';
