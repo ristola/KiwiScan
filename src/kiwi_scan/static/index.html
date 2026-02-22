@@ -1908,7 +1908,7 @@
                     </div>
                     <div class="config-row">
                         <label>Night starts (hour)</label>
-                        <input id="ui_theme_night_hour" type="number" min="0" max="23" step="1" placeholder="19" />
+                        <input id="ui_theme_night_hour" type="number" min="0" max="23" step="1" placeholder="21" />
                     </div>
                     <div class="config-row">
                         <label>Density</label>
@@ -2316,9 +2316,10 @@
         const MAP_LEGEND_HINT_DISMISSED_KEY = 'map_legend_hint_dismissed';
         const UI_THEME_STORAGE_KEY = 'ui_theme_mode';
         const UI_THEME_NIGHT_HOUR_STORAGE_KEY = 'ui_theme_night_hour';
+        const UI_THEME_DEFAULT_MODE = 'auto';
         const SSB_WF_SCOUT_PRESET_STORAGE_KEY = 'ssb_wf_scout_preset';
         const SSB_WF_RX_MODE_STORAGE_KEY = 'ssb_wf_rx_mode';
-        const UI_THEME_DEFAULT_NIGHT_HOUR = 19;
+        const UI_THEME_DEFAULT_NIGHT_HOUR = 21;
         const UI_THEME_AUTO_DAY_HOUR = 7;
         let mapSelectedBand = 'ALL';
         let mapSelectedModes = new Set(MAP_MODE_FILTERS);
@@ -5938,7 +5939,7 @@
                 if (raw === 'auto') return 'auto';
                 if (raw === 'dark') return 'dark';
             } catch (e) { }
-            return 'light';
+            return UI_THEME_DEFAULT_MODE;
         }
 
         function saveUiTheme(theme) {
@@ -6242,7 +6243,7 @@
             if (mapAgeFilterEl) mapAgeFilterEl.value = 'ALL';
             setMapLegendHintVisible(true);
             rxHealthPanelVisible = false;
-            applyUiTheme('light');
+            applyUiTheme(UI_THEME_DEFAULT_MODE);
             applyUiDensity('normal');
             updateMapFilterSummary();
             clearMapAutoFitStatus();
