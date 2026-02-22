@@ -2226,11 +2226,11 @@
             '160m': [1.800, 2.000],
         };
         const DEFAULT_AUTOMATION = {
-            autoScanOnBlock: true,
-            autoScanWspr: false,
+            autoScanOnBlock: false,
+            autoScanWspr: true,
             autoScanOnStartup: false,
             autoRefreshSchedule: true,
-            bandHopSeconds: 115,
+            bandHopSeconds: 105,
             wsprStartBand: '10m',
             quietStart: '22:00',
             quietEnd: '06:00',
@@ -2396,6 +2396,14 @@
             return Math.max(1, safeSeconds) * 1000;
         }
 
+        function getDigitalWindowMs() {
+            return 60 * 60 * 1000;
+        }
+
+        function getDecodeHistoryWindowMs() {
+            return Math.max(getWsprWindowMs(), getDigitalWindowMs());
+        }
+
         function pruneDecodeHistory(windowMs) {
             const cutoff = Date.now() - windowMs;
             decodeHistory = decodeHistory.filter(d => d.receivedAt >= cutoff);
@@ -2422,7 +2430,7 @@
 
         function computeWsprConditionsForBand(band) {
             const windowMs = getWsprWindowMs();
-            pruneDecodeHistory(windowMs);
+            pruneDecodeHistory(getDecodeHistoryWindowMs());
             const now = Date.now();
             const candidates = decodeHistory.filter(d => d.mode === 'WSPR' && d.band === band && (now - d.receivedAt) <= windowMs);
             return computeWsprConditionsForCandidates(candidates);
@@ -2450,10 +2458,10 @@
         }
 
         function buildConditionsTooltip(band, modeKind) {
-            const windowMs = getWsprWindowMs();
-            pruneDecodeHistory(windowMs);
-            const now = Date.now();
             const norm = String(modeKind || '').toUpperCase();
+            const windowMs = norm === 'WSPR' ? getWsprWindowMs() : getDigitalWindowMs();
+            pruneDecodeHistory(getDecodeHistoryWindowMs());
+            const now = Date.now();
             const windowSec = Math.max(1, windowMs / 1000);
             const activeBlock = viewedBlock || currentBlock;
             const mode = currentMode();
@@ -2640,16 +2648,18 @@
             const tip = document.getElementById('conditions_tooltip');
             if (!tip) return;
             if (text) tip.textContent = text;
+            tip.style.display = 'block';
+            tip.style.visibility = 'hidden';
             const padding = 12;
+            const w = Math.ceil(tip.offsetWidth || tip.scrollWidth || 240);
+            const h = Math.ceil(tip.offsetHeight || tip.scrollHeight || 120);
             if (Number.isFinite(clientX) && Number.isFinite(clientY)) {
-                const w = tip.offsetWidth || 240;
-                const h = tip.offsetHeight || 120;
                 const x = Math.max(padding, Math.min(window.innerWidth - w - padding, clientX + 14));
                 const y = Math.max(padding, Math.min(window.innerHeight - h - padding, clientY + 14));
                 tip.style.left = `${x}px`;
                 tip.style.top = `${y}px`;
             }
-            tip.style.display = 'block';
+            tip.style.visibility = 'visible';
         }
 
         function hideConditionsTooltip() {
@@ -2718,8 +2728,8 @@
         }
 
         function computeDigitalConditionsForBand(band) {
-            const windowMs = getWsprWindowMs();
-            pruneDecodeHistory(windowMs);
+            const windowMs = getDigitalWindowMs();
+            pruneDecodeHistory(getDecodeHistoryWindowMs());
             const now = Date.now();
             const candidates = decodeHistory.filter(d => (d.mode === 'FT8' || d.mode === 'FT4')
                 && d.band === band
@@ -3464,16 +3474,18 @@
             const tip = document.getElementById('ssb_wf_tooltip');
             if (!tip) return;
             if (text) tip.textContent = text;
+            tip.style.display = 'block';
+            tip.style.visibility = 'hidden';
             const padding = 12;
+            const w = Math.ceil(tip.offsetWidth || tip.scrollWidth || 240);
+            const h = Math.ceil(tip.offsetHeight || tip.scrollHeight || 90);
             if (Number.isFinite(clientX) && Number.isFinite(clientY)) {
-                const w = tip.offsetWidth || 240;
-                const h = tip.offsetHeight || 90;
                 const x = Math.max(padding, Math.min(window.innerWidth - w - padding, clientX + 12));
                 const y = Math.max(padding, Math.min(window.innerHeight - h - padding, clientY + 12));
                 tip.style.left = `${x}px`;
                 tip.style.top = `${y}px`;
             }
-            tip.style.display = 'block';
+            tip.style.visibility = 'visible';
         }
 
         function hideSsbWfTooltip() {
@@ -5804,7 +5816,7 @@
                     dt: metrics.dt,
                     drift: metrics.drift,
                 });
-                pruneDecodeHistory(getWsprWindowMs());
+                pruneDecodeHistory(getDecodeHistoryWindowMs());
                 if (modeLabel === 'WSPR' && data.band) {
                     const blockKey = currentBlock || viewedBlock || 'unknown';
                     const cached = getCachedWsprCondition(blockKey, data.band);
@@ -6327,7 +6339,14 @@
                 const raw = await resp.text();
                 const metrics = parsePrometheusMetrics(raw);
                 const decodePerSec = Number(metrics.kiwi_scan_decode_rate_60s);
-                const decodePerMin = Number.isFinite(decodePerSec) ? decodePerSec * 60.0 : NaN;
+                let decodePerMin = Number.isFinite(decodePerSec) ? decodePerSec * 60.0 : NaN;
+                if (!Number.isFinite(decodePerMin) || decodePerMin <= 0) {
+                    const nowMs = Date.now();
+                    const localLast60 = decodeHistory.filter(d => d && Number.isFinite(d.receivedAt) && (nowMs - d.receivedAt) <= 60000).length;
+                    if (localLast60 > 0) {
+                        decodePerMin = Number(localLast60);
+                    }
+                }
                 const decodesTotal = Number(metrics.kiwi_scan_decodes_total);
                 const restartTotal = Number(metrics.kiwi_scan_receiver_restarts_total);
                 const apiP95 = Number(metrics.kiwi_scan_api_latency_p95_ms);
