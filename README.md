@@ -23,6 +23,18 @@ Operator shell/env reference:
 ./run_server.sh
 ```
 
+Check runtime dependencies used by receiver automation (kiwirecorder/ft8modem/af2udp/sox):
+
+```zsh
+./tools/check_runtime_deps.sh
+```
+
+Optionally attempt a local build of missing `ft8modem`/`af2udp` from `../ft8modem`:
+
+```zsh
+./tools/check_runtime_deps.sh --build-missing
+```
+
 `run_server.sh` can now auto-bootstrap by default:
 - Creates `.venv-py3` if missing (falls back to `.venv` if present).
 - Installs required Python packages if `fastapi`/`uvicorn` are missing.
