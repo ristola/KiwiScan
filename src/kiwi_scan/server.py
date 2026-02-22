@@ -432,7 +432,10 @@ rx_monitor = RxMonitor(kiwirecorder_path=_KIWIRECORDER_PATH, mgr=mgr)
 loop: Optional[asyncio.AbstractEventLoop] = None
 
 app.include_router(make_band_scan_router(mgr=mgr, band_scanner=band_scanner))
-app.include_router(make_config_router(mgr=mgr, waterholes=FT8_WATERHOLES, receiver_mgr=receiver_mgr))
+try:
+    app.include_router(make_config_router(mgr=mgr, waterholes=FT8_WATERHOLES, receiver_mgr=receiver_mgr))
+except TypeError:
+    app.include_router(make_config_router(mgr=mgr, waterholes=FT8_WATERHOLES))
 app.include_router(make_status_router(mgr=mgr, waterholes=FT8_WATERHOLES))
 app.include_router(make_schedule_router())
 app.include_router(
