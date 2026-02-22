@@ -12,6 +12,19 @@ cd /opt/ShackMate/kiwi_scan
 Output:
 - `dist/KiwiScan-Installer-<version>-unsigned.pkg`
 
+## Version + Git release step (recommended every working update)
+
+Use this helper to ensure each working update bumps version, commits, and pushes:
+
+```bash
+cd /opt/ShackMate/kiwi_scan
+./tools/release_commit.sh
+```
+
+Options:
+- explicit version: `./tools/release_commit.sh --version 0.1.2`
+- commit only (no push): `./tools/release_commit.sh --no-push`
+
 ## 2) Build signed/notarized package (recommended)
 
 Use the release helper script:
