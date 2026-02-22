@@ -786,6 +786,13 @@ class ReceiverManager:
         except Exception:
             return False
 
+    @staticmethod
+    def _is_executable_file(path: Path) -> bool:
+        try:
+            return path.exists() and path.is_file() and os.access(str(path), os.X_OK)
+        except Exception:
+            return False
+
     def dependency_report(self) -> Dict[str, object]:
         kiwirecorder_ok = self._kiwirecorder_path.exists()
         ft8modem_ok = self._is_executable_file(self._ft8modem_path)
