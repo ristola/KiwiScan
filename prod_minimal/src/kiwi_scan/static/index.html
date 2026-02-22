@@ -1935,6 +1935,7 @@
                         </select>
                     </div>
                     <div class="config-actions">
+                        <button id="ui_check_updates_btn" type="button">Check for Updates</button>
                         <button id="ui_reset_btn" type="button">Reset UI</button>
                     </div>
                 </div>
@@ -6414,7 +6415,7 @@
             showToast('Update may still be running. Please refresh shortly.', 'warn', 4000);
         }
 
-        async function checkForUpdatesPrompt() {
+        async function checkForUpdatesPrompt(force = false) {
             try {
                 const resp = await fetch('/update/check', { cache: 'no-store' });
                 if (!resp.ok) return;
@@ -6422,6 +6423,9 @@
                 if (!data || data.update_in_progress) return;
                 if (!data.update_available) {
                     clearSkippedUpdateCommit();
+                    if (force) {
+                        showToast('KiwiScan is already up to date.', 'success', 1800);
+                    }
                     return;
                 }
 
@@ -6432,7 +6436,7 @@
                 const skipKey = latestCommit || latestVersion;
 
                 const skipped = readSkippedUpdateCommit();
-                if (skipKey && skipped && skipped === skipKey) return;
+                if (!force && skipKey && skipped && skipped === skipKey) return;
 
                 const msg = `A newer KiwiScan build is available.\nCurrent: v${currentVersion || 'unknown'}${currentCommit ? ` (${currentCommit})` : ''}\nLatest: v${latestVersion || 'unknown'}${latestCommit ? ` (${latestCommit})` : ''}\n\nUpgrade now?\nThis will pull latest, restart server, and auto-refresh this page.`;
                 if (window.confirm(msg)) {
@@ -6932,6 +6936,12 @@
                 resetUiBtn.addEventListener('click', () => {
                     resetUiPreferences();
                     showToast('UI preferences reset.', 'success', 1600);
+                });
+            }
+            const checkUpdatesBtn = document.getElementById('ui_check_updates_btn');
+            if (checkUpdatesBtn) {
+                checkUpdatesBtn.addEventListener('click', () => {
+                    checkForUpdatesPrompt(true);
                 });
             }
             const rxHealthBadge = document.getElementById('rx_health_badge');
