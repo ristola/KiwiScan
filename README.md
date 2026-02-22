@@ -14,6 +14,17 @@ kiwi-scan --help
 kiwi-scan scan --help
 ```
 
+## Installer (shareable URL)
+
+Use the browser-friendly install page:
+- `INSTALL.md`
+
+Direct one-line installer:
+
+```zsh
+curl -fsSL https://raw.githubusercontent.com/ristola/KiwiScan/main/tools/install_latest.sh | bash
+```
+
 Operator shell/env reference:
 - See `.env.example` for preferred `.venv-py3` activation and common run/test commands.
 
