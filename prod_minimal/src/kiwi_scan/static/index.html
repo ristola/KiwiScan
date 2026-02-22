@@ -6458,6 +6458,35 @@
             return Math.max(0, Math.floor((Date.now() - ms) / 1000));
         }
 
+        function describeRxReason(reason) {
+            const r = String(reason || 'unknown').toLowerCase();
+            if (r === 'dependency_missing' || r === 'kiwirecorder_missing' || r === 'af2udp_missing' || r === 'sox_missing' || r === 'missing_numpy') {
+                return 'Local dependency missing';
+            }
+            if (r === 'kiwi_busy') return 'Kiwi receiver busy';
+            if (r === 'kiwi_connect_failed') return 'Kiwi connection failed';
+            if (r === 'spawn_exception' || r === 'spawn_io_error' || r === 'spawn_failed') return 'Spawn failed';
+            if (r === 'process_exited') return 'Worker exited';
+            return r.replaceAll('_', ' ');
+        }
+
+        function rxHealthWarningFromCounts(counts) {
+            const c = (counts && typeof counts === 'object') ? counts : {};
+            if (Number(c.dependency_missing || 0) > 0 || Number(c.kiwirecorder_missing || 0) > 0 || Number(c.af2udp_missing || 0) > 0 || Number(c.sox_missing || 0) > 0 || Number(c.missing_numpy || 0) > 0) {
+                return 'Warning: local dependency issue is preventing receiver workers from starting.';
+            }
+            if (Number(c.kiwi_busy || 0) > 0) {
+                return 'Warning: Kiwi reports receivers are busy (capacity/session contention).';
+            }
+            if (Number(c.kiwi_connect_failed || 0) > 0) {
+                return 'Warning: cannot connect to Kiwi host/port.';
+            }
+            if (Number(c.spawn_exception || 0) > 0 || Number(c.spawn_io_error || 0) > 0 || Number(c.spawn_failed || 0) > 0) {
+                return 'Warning: local process spawn failure (permissions/path/runtime).';
+            }
+            return '';
+        }
+
         function renderRxHealthPanel() {
             const panel = document.getElementById('rx_health_panel');
             const lastChip = document.getElementById('status_last_chip');
@@ -6469,15 +6498,18 @@
 
             const data = latestRxHealth || {};
             const channels = (data && typeof data.channels === 'object' && data.channels) ? data.channels : {};
+            const reasonCounts = (data && typeof data.reason_counts === 'object' && data.reason_counts) ? data.reason_counts : {};
             const rows = Object.keys(channels)
                 .sort((a, b) => Number(a) - Number(b))
                 .map((key) => channels[key])
                 .filter((item) => item && item.is_unstable);
+            const warningText = rxHealthWarningFromCounts(reasonCounts);
             const ageSec = rxHealthAgeSec(rxHealthLastFetchMs);
             const staleHint = (ageSec !== null && ageSec >= 30)
                 ? ' — stale'
                 : (ageSec !== null && ageSec >= 15 ? ' — delayed' : '');
             const refreshLine = `<div class="rx-health-row">Last refresh: ${formatRxHealthTime(rxHealthLastFetchMs)} (${formatRxHealthAge(rxHealthLastFetchMs)})${staleHint}</div>`;
+            const warningLine = warningText ? `<div class="rx-health-row"><strong>${warningText}</strong></div>` : '';
             if (lastChip) {
                 lastChip.classList.remove('status-ok', 'status-warn', 'status-error');
                 lastChip.textContent = `Last Update: ${formatRxHealthTime(rxHealthLastFetchMs)} (${formatRxHealthAge(rxHealthLastFetchMs)})`;
@@ -6487,7 +6519,7 @@
             }
 
             if (!rows.length) {
-                panel.innerHTML = '<div class="rx-health-row">All active receivers look stable.</div>' + refreshLine;
+                panel.innerHTML = warningLine + '<div class="rx-health-row">All active receivers look stable.</div>' + refreshLine;
                 panel.style.display = 'block';
                 return;
             }
@@ -6499,8 +6531,9 @@
                 const fails = Number(item.consecutive_failures || 0);
                 const backoff = Number(item.backoff_s || 0).toFixed(1);
                 const reason = item.last_reason ? String(item.last_reason) : 'unknown';
-                return `<div class="rx-health-row">RX${rx} ${band} ${mode} — failures: ${fails}, backoff: ${backoff}s, reason: ${reason}</div>`;
-            }).join('') + refreshLine;
+                const reasonText = describeRxReason(reason);
+                return `<div class="rx-health-row">RX${rx} ${band} ${mode} — failures: ${fails}, backoff: ${backoff}s, reason: ${reasonText} (${reason})</div>`;
+            }).join('') + warningLine + refreshLine;
             panel.style.display = 'block';
         }
 

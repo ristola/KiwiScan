@@ -70,6 +70,29 @@ class _ReceiverWorker(threading.Thread):
         self._decoder_procs: list[subprocess.Popen] = []
         self._decoder_threads: list[threading.Thread] = []
         self._decoder_log_fps: list[Optional[object]] = []
+        self._last_spawn_error_reason = "spawn_failed"
+
+    def _pipeline_log_path(self) -> Path:
+        return Path("/tmp") / f"kiwi_rx{self._rx}_pipeline.log"
+
+    def _classify_process_exit_reason(self) -> str:
+        log_path = self._pipeline_log_path()
+        if not log_path.exists():
+            return "process_exited"
+        try:
+            lines = log_path.read_text(encoding="utf-8", errors="ignore").splitlines()[-120:]
+            joined = "\n".join(lines)
+            if "Too busy now" in joined:
+                return "kiwi_busy"
+            if re.search(r"Connection refused|timed out|No route to host|Name or service not known|Temporary failure", joined, re.IGNORECASE):
+                return "kiwi_connect_failed"
+            if "ModuleNotFoundError" in joined and "numpy" in joined:
+                return "missing_numpy"
+            if re.search(r"No such file or directory|permission denied", joined, re.IGNORECASE):
+                return "spawn_io_error"
+        except Exception:
+            pass
+        return "process_exited"
 
     @staticmethod
     def _resolve_python_cmd() -> str:
@@ -547,15 +570,18 @@ class _ReceiverWorker(threading.Thread):
     def _spawn(self) -> Optional[subprocess.Popen]:
         if not self._kiwirecorder_path.exists():
             logger.warning("kiwirecorder not found at %s", self._kiwirecorder_path)
+            self._last_spawn_error_reason = "kiwirecorder_missing"
             return None
         freq_khz = self._format_freq_khz(self._freq_hz)
         mode_tag = self._mode_label.strip().upper().replace(" ", "").replace("/", "")
         if self._is_digital_mode():
             if not self._af2udp_path.exists():
                 logger.warning("af2udp not found at %s", self._af2udp_path)
+                self._last_spawn_error_reason = "af2udp_missing"
                 return None
             if not self._sox_path:
                 logger.warning("sox not found in PATH")
+                self._last_spawn_error_reason = "sox_missing"
                 return None
             if self._is_dual_mode():
                 udp_port_ft8 = 3100 + self._rx
@@ -585,6 +611,7 @@ class _ReceiverWorker(threading.Thread):
             try:
                 log_path = Path("/tmp") / f"kiwi_rx{self._rx}_pipeline.log"
                 log_fp = open(log_path, "a", encoding="utf-8")
+                self._last_spawn_error_reason = "process_exited"
                 return subprocess.Popen(
                     pipeline_cmd,
                     shell=True,
@@ -595,6 +622,7 @@ class _ReceiverWorker(threading.Thread):
                 )
             except Exception as e:
                 logger.warning("auto-set spawn failed: %s", e)
+                self._last_spawn_error_reason = "spawn_exception"
                 return None
         mode = "usb"
         if self._mode_label.strip().upper() in {"SSB", "PHONE"}:
@@ -618,6 +646,7 @@ class _ReceiverWorker(threading.Thread):
             "--quiet",
         ]
         try:
+            self._last_spawn_error_reason = "process_exited"
             return subprocess.Popen(
                 cmd,
                 stdout=subprocess.DEVNULL,
@@ -627,6 +656,7 @@ class _ReceiverWorker(threading.Thread):
             )
         except Exception as e:
             logger.warning("auto-set spawn failed: %s", e)
+            self._last_spawn_error_reason = "spawn_exception"
             return None
 
     def run(self) -> None:
@@ -644,7 +674,7 @@ class _ReceiverWorker(threading.Thread):
                 backoff_s = min(max_backoff_s, float(2 ** min(consecutive_failures, 5)))
                 if self._on_restart is not None:
                     try:
-                        self._on_restart(self._rx, self._band, "spawn_failed", backoff_s, consecutive_failures)
+                        self._on_restart(self._rx, self._band, str(self._last_spawn_error_reason or "spawn_failed"), backoff_s, consecutive_failures)
                     except Exception:
                         pass
                 time.sleep(backoff_s)
@@ -666,7 +696,7 @@ class _ReceiverWorker(threading.Thread):
                 backoff_s = min(max_backoff_s, float(2 ** min(consecutive_failures, 5)))
                 if proc_exited and self._on_restart is not None:
                     try:
-                        self._on_restart(self._rx, self._band, "process_exited", backoff_s, consecutive_failures)
+                        self._on_restart(self._rx, self._band, self._classify_process_exit_reason(), backoff_s, consecutive_failures)
                     except Exception:
                         pass
                 time.sleep(backoff_s)
@@ -860,6 +890,7 @@ class ReceiverManager:
         with self._lock:
             channels: Dict[str, Dict[str, object]] = {}
             unstable = 0
+            reason_counts: Dict[str, int] = {}
             for rx in sorted(set(list(self._assignments.keys()) + list(self._watchdog_state_by_rx.keys()))):
                 assignment = self._assignments.get(rx)
                 wd = self._watchdog_state_by_rx.get(rx, {})
@@ -868,6 +899,8 @@ class ReceiverManager:
                 is_unstable = consecutive >= 3 or backoff_s >= 8.0
                 if is_unstable:
                     unstable += 1
+                reason = str(wd.get("reason") or "unknown")
+                reason_counts[reason] = int(reason_counts.get(reason, 0)) + 1
                 channels[str(rx)] = {
                     "rx": int(rx),
                     "band": assignment.band if assignment else wd.get("band"),
@@ -909,6 +942,7 @@ class ReceiverManager:
                 "unstable_receivers": unstable,
                 "restart_total": int(self._restart_total),
                 "health_stale_seconds": stale_seconds,
+                "reason_counts": reason_counts,
                 "channels": channels,
             }
 
