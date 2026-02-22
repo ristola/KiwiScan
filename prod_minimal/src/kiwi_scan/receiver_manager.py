@@ -92,6 +92,13 @@ class _ReceiverWorker(threading.Thread):
             except Exception:
                 pass
         self._decoder_log_fps.clear()
+
+    @staticmethod
+    def _is_executable_file(path: Path) -> bool:
+        try:
+            return path.exists() and path.is_file() and os.access(str(path), os.X_OK)
+        except Exception:
+            return False
         proc = self._proc
         if proc is None:
             return
@@ -409,7 +416,7 @@ class _ReceiverWorker(threading.Thread):
             time.sleep(0.5)
 
     def _start_decoder(self, udp_port: int, mode: str) -> None:
-        if not self._ft8modem_path.exists():
+        if not self._is_executable_file(self._ft8modem_path):
             return
         try:
             subprocess.run(
@@ -528,8 +535,8 @@ class _ReceiverWorker(threading.Thread):
         freq_khz = self._format_freq_khz(self._freq_hz)
         mode_tag = self._mode_label.strip().upper().replace(" ", "").replace("/", "")
         if self._is_digital_mode():
-            if not self._af2udp_path.exists():
-                logger.warning("af2udp not found at %s", self._af2udp_path)
+            if not self._is_executable_file(self._af2udp_path):
+                logger.warning("af2udp not executable at %s", self._af2udp_path)
                 return None
             if not self._sox_path:
                 logger.warning("sox not found in PATH")

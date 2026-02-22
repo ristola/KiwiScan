@@ -115,6 +115,13 @@ class _ReceiverWorker(threading.Thread):
                 continue
         return shutil.which("python3") or "python3"
 
+    @staticmethod
+    def _is_executable_file(path: Path) -> bool:
+        try:
+            return path.exists() and path.is_file() and os.access(str(path), os.X_OK)
+        except Exception:
+            return False
+
     def stop(self) -> None:
         self._stop.set()
         self._terminate_proc()
@@ -455,7 +462,7 @@ class _ReceiverWorker(threading.Thread):
             time.sleep(0.5)
 
     def _start_decoder(self, udp_port: int, mode: str) -> None:
-        if not self._ft8modem_path.exists():
+        if not self._is_executable_file(self._ft8modem_path):
             return
         try:
             subprocess.run(
@@ -575,8 +582,8 @@ class _ReceiverWorker(threading.Thread):
         freq_khz = self._format_freq_khz(self._freq_hz)
         mode_tag = self._mode_label.strip().upper().replace(" ", "").replace("/", "")
         if self._is_digital_mode():
-            if not self._af2udp_path.exists():
-                logger.warning("af2udp not found at %s", self._af2udp_path)
+            if not self._is_executable_file(self._af2udp_path):
+                logger.warning("af2udp not executable at %s", self._af2udp_path)
                 self._last_spawn_error_reason = "af2udp_missing"
                 return None
             if not self._sox_path:
@@ -781,9 +788,9 @@ class ReceiverManager:
 
     def dependency_report(self) -> Dict[str, object]:
         kiwirecorder_ok = self._kiwirecorder_path.exists()
-        ft8modem_ok = self._ft8modem_path.exists()
-        af2udp_ok = self._af2udp_path.exists()
-        sox_ok = bool(self._sox_path and Path(self._sox_path).exists())
+        ft8modem_ok = self._is_executable_file(self._ft8modem_path)
+        af2udp_ok = self._is_executable_file(self._af2udp_path)
+        sox_ok = bool(self._sox_path and self._is_executable_file(Path(self._sox_path)))
         wsprd_path = self._find_wsprd_path()
         wsprd_ok = bool(wsprd_path)
         numpy_ok = self._module_available("numpy")

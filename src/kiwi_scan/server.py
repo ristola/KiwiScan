@@ -9,6 +9,7 @@ import subprocess
 import os
 import re
 import shlex
+import shutil
 from collections import deque
 from importlib.metadata import PackageNotFoundError, version as package_version
 from typing import Dict, List, Optional
@@ -408,14 +409,22 @@ _KIWIRECORDER_PATH = Path(__file__).resolve().parents[2] / "vendor" / "kiwiclien
 def _first_existing_path(paths: List[Path]) -> Path:
     for path in paths:
         try:
-            if path.exists():
+            if path.exists() and path.is_file() and os.access(str(path), os.X_OK):
                 return path
         except Exception:
             continue
     return paths[0]
 
 
-_FT8MODEM_PATH = _first_existing_path(
+def _resolve_binary_path(binary_name: str, candidates: List[Path]) -> Path:
+    resolved = shutil.which(binary_name)
+    if resolved and not resolved.startswith("/opt/local/"):
+        return Path(resolved)
+    return _first_existing_path(candidates)
+
+
+_FT8MODEM_PATH = _resolve_binary_path(
+    "ft8modem",
     [
         Path(__file__).resolve().parents[3] / "ft8modem" / "ft8modem",
         Path("/usr/local/bin/ft8modem"),
@@ -424,7 +433,8 @@ _FT8MODEM_PATH = _first_existing_path(
     ]
 )
 
-_AF2UDP_PATH = _first_existing_path(
+_AF2UDP_PATH = _resolve_binary_path(
+    "af2udp",
     [
         Path("/usr/local/bin/af2udp"),
         Path("/opt/homebrew/bin/af2udp"),

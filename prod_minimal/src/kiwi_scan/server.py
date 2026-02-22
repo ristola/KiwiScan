@@ -5,6 +5,8 @@ import logging
 import time
 import asyncio
 import threading
+import os
+import shutil
 from collections import deque
 from typing import Dict, List, Optional
 
@@ -153,12 +155,43 @@ BAND_WSPR_FREQS_HZ: Dict[str, float] = {
 }
 AUTO_SET_RX: List[int] = [0, 1, 2, 3, 4, 5, 6, 7]
 _KIWIRECORDER_PATH = Path(__file__).resolve().parents[2] / "vendor" / "kiwiclient-jks" / "kiwirecorder.py"
-_FT8MODEM_PATH = Path(__file__).resolve().parents[3] / "ft8modem" / "ft8modem"
-_AF2UDP_PATH = Path("/usr/local/bin/af2udp")
-if not _AF2UDP_PATH.exists():
-    alt_af2udp = Path(__file__).resolve().parents[2] / "ft8modem" / "af2udp"
-    if alt_af2udp.exists():
-        _AF2UDP_PATH = alt_af2udp
+
+
+def _first_existing_path(paths: List[Path]) -> Path:
+    for path in paths:
+        try:
+            if path.exists() and path.is_file() and os.access(str(path), os.X_OK):
+                return path
+        except Exception:
+            continue
+    return paths[0]
+
+
+def _resolve_binary_path(binary_name: str, candidates: List[Path]) -> Path:
+    resolved = shutil.which(binary_name)
+    if resolved and not resolved.startswith("/opt/local/"):
+        return Path(resolved)
+    return _first_existing_path(candidates)
+
+
+_FT8MODEM_PATH = _resolve_binary_path(
+    "ft8modem",
+    [
+        Path(__file__).resolve().parents[3] / "ft8modem" / "ft8modem",
+        Path("/usr/local/bin/ft8modem"),
+        Path("/opt/homebrew/bin/ft8modem"),
+        Path(__file__).resolve().parents[2] / "ft8modem" / "ft8modem",
+    ],
+)
+_AF2UDP_PATH = _resolve_binary_path(
+    "af2udp",
+    [
+        Path("/usr/local/bin/af2udp"),
+        Path("/opt/homebrew/bin/af2udp"),
+        Path(__file__).resolve().parents[3] / "ft8modem" / "af2udp",
+        Path(__file__).resolve().parents[2] / "ft8modem" / "af2udp",
+    ],
+)
 
 
 receiver_mgr = ReceiverManager(

@@ -46,6 +46,16 @@ find_first_path() {
   return 1
 }
 
+find_first_executable_path() {
+  for p in "$@"; do
+    if [ -n "$p" ] && [ -f "$p" ] && [ -x "$p" ]; then
+      echo "$p"
+      return 0
+    fi
+  done
+  return 1
+}
+
 find_first_cmd() {
   for c in "$@"; do
     if command -v "$c" >/dev/null 2>&1; then
@@ -73,11 +83,19 @@ kiwi_path="$(find_first_path "$kiwi_vendor" "$kiwi_cmd" || true)"
 
 ft8_local="$SHACKMATE_ROOT/ft8modem/ft8modem"
 ft8_sys="/usr/local/bin/ft8modem"
-ft8_path="$(find_first_path "$ft8_sys" "$ft8_local" || true)"
+ft8_cmd="$(find_first_cmd ft8modem || true)"
+if [[ "$ft8_cmd" == /opt/local/* ]]; then
+  ft8_cmd=""
+fi
+ft8_path="$(find_first_executable_path "$ft8_cmd" "$ft8_local" "$ft8_sys" || true)"
 
 af2_local="$SHACKMATE_ROOT/ft8modem/af2udp"
 af2_sys="/usr/local/bin/af2udp"
-af2_path="$(find_first_path "$af2_sys" "$af2_local" || true)"
+af2_cmd="$(find_first_cmd af2udp || true)"
+if [[ "$af2_cmd" == /opt/local/* ]]; then
+  af2_cmd=""
+fi
+af2_path="$(find_first_executable_path "$af2_cmd" "$af2_local" "$af2_sys" || true)"
 
 sox_path="$(find_first_cmd sox || true)"
 
@@ -90,8 +108,16 @@ fi
 
 if [ "$BUILD_MISSING" = "1" ] && { [ -z "$ft8_path" ] || [ -z "$af2_path" ]; }; then
   if try_build_ft8modem; then
-    ft8_path="$(find_first_path "$ft8_sys" "$ft8_local" || true)"
-    af2_path="$(find_first_path "$af2_sys" "$af2_local" || true)"
+    ft8_cmd="$(find_first_cmd ft8modem || true)"
+    af2_cmd="$(find_first_cmd af2udp || true)"
+    if [[ "$ft8_cmd" == /opt/local/* ]]; then
+      ft8_cmd=""
+    fi
+    if [[ "$af2_cmd" == /opt/local/* ]]; then
+      af2_cmd=""
+    fi
+    ft8_path="$(find_first_executable_path "$ft8_cmd" "$ft8_local" "$ft8_sys" || true)"
+    af2_path="$(find_first_executable_path "$af2_cmd" "$af2_local" "$af2_sys" || true)"
   fi
 fi
 
@@ -108,14 +134,14 @@ fi
 if [ -n "$ft8_path" ]; then
   say "[ok]  ft8modem: $ft8_path"
 else
-  echo "[err] ft8modem not found (expected $ft8_local or $ft8_sys)" >&2
+  echo "[err] ft8modem not found (checked PATH excluding /opt/local, $ft8_local, $ft8_sys)" >&2
   missing=$((missing+1))
 fi
 
 if [ -n "$af2_path" ]; then
   say "[ok]  af2udp: $af2_path"
 else
-  echo "[err] af2udp not found (expected $af2_local or $af2_sys)" >&2
+  echo "[err] af2udp not found (checked PATH excluding /opt/local, $af2_local, $af2_sys)" >&2
   missing=$((missing+1))
 fi
 
