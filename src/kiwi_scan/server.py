@@ -5,7 +5,10 @@ import logging
 import time
 import asyncio
 import threading
+import subprocess
+import tomllib
 from collections import deque
+from importlib.metadata import PackageNotFoundError, version as package_version
 from typing import Dict, List, Optional
 
 from fastapi import FastAPI, HTTPException, Request
@@ -50,10 +53,57 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="KiwiSDR Scanner")
 
+
+def _resolve_app_version() -> str:
+    try:
+        return str(package_version("kiwi-scan"))
+    except PackageNotFoundError:
+        pass
+    except Exception:
+        pass
+
+    try:
+        pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+        project = data.get("project") if isinstance(data, dict) else None
+        version = project.get("version") if isinstance(project, dict) else None
+        if isinstance(version, str) and version.strip():
+            return version.strip()
+    except Exception:
+        pass
+
+    return "unknown"
+
+
+def _resolve_git_commit() -> str | None:
+    try:
+        root = Path(__file__).resolve().parents[2]
+        git_dir = root / ".git"
+        if not git_dir.exists():
+            return None
+        out = subprocess.check_output(
+            ["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            timeout=1.5,
+        )
+        value = out.decode("utf-8", errors="ignore").strip()
+        return value or None
+    except Exception:
+        return None
+
+
+APP_VERSION = _resolve_app_version()
+APP_COMMIT = _resolve_git_commit()
+
 _api_metrics_lock = threading.Lock()
 _api_latency_ms: deque[float] = deque(maxlen=2000)
 _api_request_total = 0
 _api_error_total = 0
+
+
+@app.get("/version")
+def get_version() -> Dict[str, str | None]:
+    return {"version": APP_VERSION, "commit": APP_COMMIT}
 
 
 def _get_api_metrics() -> Dict[str, float | int]:

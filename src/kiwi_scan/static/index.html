@@ -234,6 +234,23 @@
             backdrop-filter: blur(4px);
         }
 
+        .app-title {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 10px;
+        }
+
+        .app-version {
+            font-size: 0.48em;
+            font-weight: 500;
+            color: #64748b;
+            letter-spacing: 0.02em;
+        }
+
+        body.theme-dark .app-version {
+            color: #94a3b8;
+        }
+
         body.theme-dark .header {
             background: rgba(15, 23, 42, 0.92);
         }
@@ -1693,7 +1710,7 @@
 
 <body>
     <div class="header">
-        <h1>KiwiSDR Scanner</h1>
+        <h1 class="app-title">KiwiSDR Scanner <span id="app_version" class="app-version">v...</span></h1>
         <div class="tabs">
             <button id="tab_schedule" class="active">Schedule</button>
             <button id="tab_map">Map</button>
@@ -6333,6 +6350,27 @@
             return `${hh}:${mm}:${ss}`;
         }
 
+        async function updateAppVersion() {
+            const el = document.getElementById('app_version');
+            if (!el) return;
+            try {
+                const resp = await fetch('/version', { cache: 'no-store' });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                const version = (data && data.version) ? String(data.version).trim() : '';
+                const commit = (data && data.commit) ? String(data.commit).trim() : '';
+                if (version && commit) {
+                    el.textContent = `v${version} (${commit})`;
+                } else if (version) {
+                    el.textContent = `v${version}`;
+                } else {
+                    el.textContent = 'vunknown';
+                }
+            } catch (e) {
+                el.textContent = 'vunknown';
+            }
+        }
+
         async function updateInfoMetrics() {
             try {
                 const resp = await fetch('/metrics', { cache: 'no-store' });
@@ -6750,6 +6788,7 @@
             initRxMonitorPanel();
             initMapFilters();
             initSsbWaterfallPanel();
+            updateAppVersion();
             applyUiTheme(readUiTheme());
             applyUiDensity(readUiDensity());
             const themeSel = document.getElementById('ui_theme');

@@ -234,6 +234,23 @@
             backdrop-filter: blur(4px);
         }
 
+        .app-title {
+            display: inline-flex;
+            align-items: baseline;
+            gap: 10px;
+        }
+
+        .app-version {
+            font-size: 0.48em;
+            font-weight: 500;
+            color: #64748b;
+            letter-spacing: 0.02em;
+        }
+
+        body.theme-dark .app-version {
+            color: #94a3b8;
+        }
+
         body.theme-dark .header {
             background: rgba(15, 23, 42, 0.92);
         }
@@ -1693,7 +1710,7 @@
 
 <body>
     <div class="header">
-        <h1>KiwiSDR Scanner</h1>
+        <h1 class="app-title">KiwiSDR Scanner <span id="app_version" class="app-version">v...</span></h1>
         <div class="tabs">
             <button id="tab_schedule" class="active">Schedule</button>
             <button id="tab_map">Map</button>
@@ -1908,7 +1925,7 @@
                     </div>
                     <div class="config-row">
                         <label>Night starts (hour)</label>
-                        <input id="ui_theme_night_hour" type="number" min="0" max="23" step="1" placeholder="19" />
+                        <input id="ui_theme_night_hour" type="number" min="0" max="23" step="1" placeholder="21" />
                     </div>
                     <div class="config-row">
                         <label>Density</label>
@@ -2226,11 +2243,11 @@
             '160m': [1.800, 2.000],
         };
         const DEFAULT_AUTOMATION = {
-            autoScanOnBlock: true,
-            autoScanWspr: false,
+            autoScanOnBlock: false,
+            autoScanWspr: true,
             autoScanOnStartup: false,
             autoRefreshSchedule: true,
-            bandHopSeconds: 115,
+            bandHopSeconds: 105,
             wsprStartBand: '10m',
             quietStart: '22:00',
             quietEnd: '06:00',
@@ -2316,9 +2333,10 @@
         const MAP_LEGEND_HINT_DISMISSED_KEY = 'map_legend_hint_dismissed';
         const UI_THEME_STORAGE_KEY = 'ui_theme_mode';
         const UI_THEME_NIGHT_HOUR_STORAGE_KEY = 'ui_theme_night_hour';
+        const UI_THEME_DEFAULT_MODE = 'auto';
         const SSB_WF_SCOUT_PRESET_STORAGE_KEY = 'ssb_wf_scout_preset';
         const SSB_WF_RX_MODE_STORAGE_KEY = 'ssb_wf_rx_mode';
-        const UI_THEME_DEFAULT_NIGHT_HOUR = 19;
+        const UI_THEME_DEFAULT_NIGHT_HOUR = 21;
         const UI_THEME_AUTO_DAY_HOUR = 7;
         let mapSelectedBand = 'ALL';
         let mapSelectedModes = new Set(MAP_MODE_FILTERS);
@@ -5926,7 +5944,7 @@
                 if (raw === 'auto') return 'auto';
                 if (raw === 'dark') return 'dark';
             } catch (e) { }
-            return 'light';
+            return UI_THEME_DEFAULT_MODE;
         }
 
         function saveUiTheme(theme) {
@@ -6230,7 +6248,7 @@
             if (mapAgeFilterEl) mapAgeFilterEl.value = 'ALL';
             setMapLegendHintVisible(true);
             rxHealthPanelVisible = false;
-            applyUiTheme('light');
+            applyUiTheme(UI_THEME_DEFAULT_MODE);
             applyUiDensity('normal');
             updateMapFilterSummary();
             clearMapAutoFitStatus();
@@ -6318,6 +6336,27 @@
             const mm = String(d.getMinutes()).padStart(2, '0');
             const ss = String(d.getSeconds()).padStart(2, '0');
             return `${hh}:${mm}:${ss}`;
+        }
+
+        async function updateAppVersion() {
+            const el = document.getElementById('app_version');
+            if (!el) return;
+            try {
+                const resp = await fetch('/version', { cache: 'no-store' });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                const version = (data && data.version) ? String(data.version).trim() : '';
+                const commit = (data && data.commit) ? String(data.commit).trim() : '';
+                if (version && commit) {
+                    el.textContent = `v${version} (${commit})`;
+                } else if (version) {
+                    el.textContent = `v${version}`;
+                } else {
+                    el.textContent = 'vunknown';
+                }
+            } catch (e) {
+                el.textContent = 'vunknown';
+            }
         }
 
         async function updateInfoMetrics() {
@@ -6730,6 +6769,7 @@
             initRxMonitorPanel();
             initMapFilters();
             initSsbWaterfallPanel();
+            updateAppVersion();
             applyUiTheme(readUiTheme());
             applyUiDensity(readUiDensity());
             const themeSel = document.getElementById('ui_theme');
