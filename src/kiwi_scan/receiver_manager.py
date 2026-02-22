@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import time
+import importlib.util
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, Optional
@@ -698,7 +699,139 @@ class ReceiverManager:
         self._restart_by_rx: Dict[int, int] = {}
         self._restart_last_unix: Optional[float] = None
         self._watchdog_state_by_rx: Dict[int, Dict[str, object]] = {}
+        self._last_dependency_report: Dict[str, object] = {}
         self._cleanup_orphan_processes()
+        self._last_dependency_report = self.dependency_report()
+        missing = self._last_dependency_report.get("missing")
+        if isinstance(missing, list) and missing:
+            logger.error("Receiver runtime dependencies missing: %s", ", ".join(str(m) for m in missing))
+
+    @staticmethod
+    def _mode_requires_digital(mode_label: str) -> bool:
+        norm = str(mode_label or "").strip().upper()
+        return norm in {"FT4", "FT8", "FT4 / FT8", "FT4/FT8", "FT8 / FT4", "FT8/FT4", "WSPR"}
+
+    @staticmethod
+    def _mode_is_wspr(mode_label: str) -> bool:
+        return str(mode_label or "").strip().upper() == "WSPR"
+
+    @staticmethod
+    def _find_wsprd_path() -> str:
+        direct = shutil.which("wsprd")
+        if direct:
+            return direct
+        candidates = [
+            Path("/Applications/WSJT-X.app/Contents/MacOS/wsprd"),
+            Path("/Applications/WSJTX.app/Contents/MacOS/wsprd"),
+            Path("/Applications/wsjtx.app/Contents/MacOS/wsprd"),
+        ]
+        try:
+            apps_dir = Path("/Applications")
+            if apps_dir.exists():
+                for app in apps_dir.glob("*.app"):
+                    if "wsjt" not in app.name.lower():
+                        continue
+                    candidates.append(app / "Contents" / "MacOS" / "wsprd")
+        except Exception:
+            pass
+        for c in candidates:
+            try:
+                if c.exists() and os.access(str(c), os.X_OK):
+                    return str(c)
+            except Exception:
+                continue
+        return ""
+
+    @staticmethod
+    def _module_available(module_name: str) -> bool:
+        try:
+            return importlib.util.find_spec(module_name) is not None
+        except Exception:
+            return False
+
+    def dependency_report(self) -> Dict[str, object]:
+        kiwirecorder_ok = self._kiwirecorder_path.exists()
+        ft8modem_ok = self._ft8modem_path.exists()
+        af2udp_ok = self._af2udp_path.exists()
+        sox_ok = bool(self._sox_path and Path(self._sox_path).exists())
+        wsprd_path = self._find_wsprd_path()
+        wsprd_ok = bool(wsprd_path)
+        numpy_ok = self._module_available("numpy")
+        kiwi_ok = self._module_available("kiwi")
+        kiwiclient_ok = self._module_available("kiwiclient")
+
+        missing: list[str] = []
+        if not kiwirecorder_ok:
+            missing.append("kiwirecorder")
+        if not ft8modem_ok:
+            missing.append("ft8modem")
+        if not af2udp_ok:
+            missing.append("af2udp")
+        if not sox_ok:
+            missing.append("sox")
+        if not numpy_ok:
+            missing.append("numpy")
+        if not (kiwi_ok or kiwiclient_ok):
+            missing.append("kiwi/kiwiclient")
+
+        report: Dict[str, object] = {
+            "checked_unix": time.time(),
+            "paths": {
+                "kiwirecorder": str(self._kiwirecorder_path),
+                "ft8modem": str(self._ft8modem_path),
+                "af2udp": str(self._af2udp_path),
+                "sox": str(self._sox_path or ""),
+                "wsprd": wsprd_path,
+            },
+            "status": {
+                "kiwirecorder": bool(kiwirecorder_ok),
+                "ft8modem": bool(ft8modem_ok),
+                "af2udp": bool(af2udp_ok),
+                "sox": bool(sox_ok),
+                "wsprd": bool(wsprd_ok),
+            },
+            "python_modules": {
+                "numpy": bool(numpy_ok),
+                "kiwi": bool(kiwi_ok),
+                "kiwiclient": bool(kiwiclient_ok),
+            },
+            "missing": missing,
+            "ready_core": bool(kiwirecorder_ok),
+            "ready_digital": bool(kiwirecorder_ok and ft8modem_ok and af2udp_ok and sox_ok and numpy_ok and (kiwi_ok or kiwiclient_ok)),
+        }
+        self._last_dependency_report = dict(report)
+        return report
+
+    def _required_dependency_errors(self, assignments: Dict[int, ReceiverAssignment]) -> list[str]:
+        report = self.dependency_report()
+        status = report.get("status") if isinstance(report, dict) else {}
+        modules = report.get("python_modules") if isinstance(report, dict) else {}
+        status = status if isinstance(status, dict) else {}
+        modules = modules if isinstance(modules, dict) else {}
+
+        errs: list[str] = []
+        if not bool(status.get("kiwirecorder", False)):
+            errs.append(f"kiwirecorder missing: {self._kiwirecorder_path}")
+
+        requires_digital = any(self._mode_requires_digital(a.mode_label) for a in assignments.values())
+        requires_wspr = any(self._mode_is_wspr(a.mode_label) for a in assignments.values())
+
+        if requires_digital:
+            if not bool(status.get("ft8modem", False)):
+                errs.append(f"ft8modem missing: {self._ft8modem_path}")
+            if not bool(status.get("af2udp", False)):
+                errs.append(f"af2udp missing: {self._af2udp_path}")
+            if not bool(status.get("sox", False)):
+                errs.append("sox missing on PATH")
+            if not bool(modules.get("numpy", False)):
+                errs.append("python module missing: numpy")
+            if not (bool(modules.get("kiwi", False)) or bool(modules.get("kiwiclient", False))):
+                errs.append("python module missing: kiwi/kiwiclient")
+
+        if requires_wspr and not bool(status.get("wsprd", False)):
+            errs.append("wsprd missing (required for WSPR decode)")
+
+        return errs
 
     def _on_worker_restart(self, rx: int, band: str, reason: str, backoff_s: float, consecutive_failures: int) -> None:
         with self._lock:
@@ -806,6 +939,20 @@ class ReceiverManager:
     def apply_assignments(self, host: str, port: int, assignments: Dict[int, ReceiverAssignment]) -> None:
         with self._lock:
             if self._assignments == assignments:
+                return
+
+            dep_errors = self._required_dependency_errors(assignments)
+            if dep_errors:
+                logger.error("Cannot apply Kiwi receiver assignments due to missing runtime dependencies: %s", "; ".join(dep_errors))
+                now = time.time()
+                for rx in sorted(assignments.keys()):
+                    self._watchdog_state_by_rx[int(rx)] = {
+                        "band": str(assignments[rx].band),
+                        "reason": "dependency_missing",
+                        "backoff_s": 30.0,
+                        "consecutive_failures": 1,
+                        "updated_unix": float(now),
+                    }
                 return
 
             for worker in list(self._workers.values()):

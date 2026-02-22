@@ -6,10 +6,15 @@ import time
 import asyncio
 import threading
 import subprocess
-import tomllib
 from collections import deque
 from importlib.metadata import PackageNotFoundError, version as package_version
+import re
 from typing import Dict, List, Optional
+
+try:
+    import tomllib  # type: ignore[attr-defined]
+except Exception:  # pragma: no cover - Python < 3.11
+    tomllib = None  # type: ignore[assignment]
 
 from fastapi import FastAPI, HTTPException, Request
 from pathlib import Path
@@ -64,11 +69,17 @@ def _resolve_app_version() -> str:
 
     try:
         pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
-        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-        project = data.get("project") if isinstance(data, dict) else None
-        version = project.get("version") if isinstance(project, dict) else None
-        if isinstance(version, str) and version.strip():
-            return version.strip()
+        raw = pyproject.read_text(encoding="utf-8")
+        if tomllib is not None:
+            data = tomllib.loads(raw)
+            project = data.get("project") if isinstance(data, dict) else None
+            version = project.get("version") if isinstance(project, dict) else None
+            if isinstance(version, str) and version.strip():
+                return version.strip()
+        else:
+            m = re.search(r'^version\s*=\s*"([^"]+)"\s*$', raw, flags=re.MULTILINE)
+            if m:
+                return m.group(1).strip()
     except Exception:
         pass
 

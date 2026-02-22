@@ -78,6 +78,7 @@ class DiscoveryManager:
         self._stop = threading.Event()
         self._pause = threading.Event()
         self._paused = threading.Event()
+        self.runtime_dependencies: Dict[str, object] = {}
 
         # Persist thresholds between restarts
         root = Path(__file__).resolve().parents[2]
@@ -200,6 +201,9 @@ class DiscoveryManager:
         val = _read_bool("debug")
         if val is not None:
             self.debug = val
+        rd = data.get("runtime_dependencies")
+        if isinstance(rd, dict):
+            self.runtime_dependencies = dict(rd)
 
     def _save_config(self) -> None:
         try:
@@ -221,11 +225,24 @@ class DiscoveryManager:
                 "host": str(self.host),
                 "port": int(self.port),
                 "debug": bool(self.debug),
+                "runtime_dependencies": dict(self.runtime_dependencies),
                 "saved_unix": time.time(),
             }
             self._config_path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
         except Exception:
             pass
+
+    def set_runtime_dependencies(self, report: Dict[str, object], *, save: bool = True) -> None:
+        with self.lock:
+            payload = dict(report or {})
+            payload["updated_unix"] = time.time()
+            self.runtime_dependencies = payload
+            if save:
+                self._save_config()
+
+    def get_runtime_dependencies(self) -> Dict[str, object]:
+        with self.lock:
+            return dict(self.runtime_dependencies)
 
     def pause(self) -> None:
         self._pause.set()

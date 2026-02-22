@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Callable, Optional
 
 from fastapi import FastAPI
+
+logger = logging.getLogger(__name__)
 
 
 def register_lifecycle(
@@ -24,6 +27,17 @@ def register_lifecycle(
         loop = asyncio.get_event_loop()
         set_loop(loop)
         set_decodes_loop(loop)
+
+        try:
+            if hasattr(receiver_mgr, "dependency_report"):
+                report = receiver_mgr.dependency_report()  # type: ignore[attr-defined]
+                if hasattr(mgr, "set_runtime_dependencies"):
+                    mgr.set_runtime_dependencies(report, save=True)  # type: ignore[attr-defined]
+                missing = report.get("missing") if isinstance(report, dict) else []
+                if isinstance(missing, list) and missing:
+                    logger.error("Receiver runtime dependencies missing at startup: %s", ", ".join(str(m) for m in missing))
+        except Exception:
+            logger.exception("Runtime dependency detection failed during startup")
 
         # Optional: dedicated WebSocket server for legacy clients (ws://<host>:4010/)
         try:

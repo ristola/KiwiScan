@@ -297,6 +297,13 @@ def make_router(
                 "ok": True,
             })
 
+        try:
+            if hasattr(receiver_mgr, "dependency_report") and hasattr(mgr, "set_runtime_dependencies"):
+                report = receiver_mgr.dependency_report()  # type: ignore[attr-defined]
+                mgr.set_runtime_dependencies(report, save=True)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
         receiver_mgr.apply_assignments(host, port, assignments)  # type: ignore[attr-defined]
         if adaptive_enabled:
             try:
