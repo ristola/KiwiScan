@@ -92,20 +92,32 @@ def _resolve_app_version() -> str:
 
 
 def _resolve_git_commit() -> str | None:
+    root = Path(__file__).resolve().parents[2]
     try:
-        root = Path(__file__).resolve().parents[2]
         git_dir = root / ".git"
         if not git_dir.exists():
-            return None
+            raise FileNotFoundError(".git not present")
         out = subprocess.check_output(
             ["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
             stderr=subprocess.DEVNULL,
             timeout=1.5,
         )
         value = out.decode("utf-8", errors="ignore").strip()
-        return value or None
+        if value:
+            return value
     except Exception:
-        return None
+        pass
+
+    try:
+        marker = root / "outputs" / "installed_commit.txt"
+        if marker.exists():
+            value = marker.read_text(encoding="utf-8", errors="ignore").strip()
+            if re.match(r"^[0-9a-fA-F]{7,40}$", value):
+                return value[:7].lower()
+    except Exception:
+        pass
+
+    return None
 
 
 APP_VERSION = _resolve_app_version()

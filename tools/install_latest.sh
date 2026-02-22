@@ -5,6 +5,7 @@ REPO="${REPO:-ristola/KiwiScan}"
 BRANCH="${BRANCH:-main}"
 DEST_DIR="${1:-/opt/kiwi_scan_prod}"
 ARCHIVE_URL="https://github.com/${REPO}/archive/refs/heads/${BRANCH}.zip"
+COMMIT_API_URL="https://api.github.com/repos/${REPO}/commits/${BRANCH}"
 
 need_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -57,6 +58,33 @@ rsync -a --delete \
   --exclude '.mypy_cache/' \
   --exclude '.ruff_cache/' \
   "$SRC_DIR/" "$DEST_DIR/"
+
+INSTALLED_COMMIT=""
+if INSTALLED_COMMIT="$(COMMIT_API_URL="$COMMIT_API_URL" python3 - <<'PY'
+import json
+import os
+import urllib.request
+
+url = str(os.environ.get("COMMIT_API_URL") or "").strip()
+if not url:
+  print("")
+  raise SystemExit(0)
+req = urllib.request.Request(url, headers={"User-Agent": "kiwi-scan-installer"})
+try:
+    with urllib.request.urlopen(req, timeout=4.0) as resp:
+        raw = resp.read().decode("utf-8", errors="ignore")
+    data = json.loads(raw)
+    sha = str(data.get("sha") or "").strip()
+    print(sha[:7] if sha else "")
+except Exception:
+    print("")
+PY
+)"; then
+  if [[ -n "$INSTALLED_COMMIT" ]]; then
+    mkdir -p "$DEST_DIR/outputs" || true
+    printf '%s\n' "$INSTALLED_COMMIT" > "$DEST_DIR/outputs/installed_commit.txt" || true
+  fi
+fi
 
 if [[ -f "$DEST_DIR/run_server.sh" ]]; then
   chmod +x "$DEST_DIR/run_server.sh" || true
