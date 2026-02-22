@@ -86,7 +86,7 @@ PORT="${PORT:-4020}"
 RESTART_DELAY_S="${RESTART_DELAY_S:-2}"
 ALWAYS_RESTART="${ALWAYS_RESTART:-0}"
 NO_RESTART="${NO_RESTART:-0}"
-AUTO_RELOAD="${AUTO_RELOAD:-1}"
+AUTO_RELOAD="${AUTO_RELOAD:-0}"
 
 echo "Starting uvicorn using: $VENV_PY (app-dir=$APP_DIR, port=$PORT)"
 echo "Tip: see $ROOT_DIR/.env.example for preferred .venv-py3 activation and common run/test commands."
