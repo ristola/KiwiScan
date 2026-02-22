@@ -6523,6 +6523,20 @@
             return `${hh}:${mm}:${ss}`;
         }
 
+        function setAppVersionText(versionValue, commitValue) {
+            const el = document.getElementById('app_version');
+            if (!el) return;
+            const version = versionValue ? String(versionValue).trim() : '';
+            const commit = commitValue ? String(commitValue).trim() : '';
+            if (version && commit) {
+                el.textContent = `v${version} (${commit})`;
+            } else if (version) {
+                el.textContent = `v${version}`;
+            } else {
+                el.textContent = 'vunknown';
+            }
+        }
+
         async function updateAppVersion() {
             const el = document.getElementById('app_version');
             if (!el) return;
@@ -6530,17 +6544,9 @@
                 const resp = await fetch('/version', { cache: 'no-store' });
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                 const data = await resp.json();
-                const version = (data && data.version) ? String(data.version).trim() : '';
-                const commit = (data && data.commit) ? String(data.commit).trim() : '';
-                if (version && commit) {
-                    el.textContent = `v${version} (${commit})`;
-                } else if (version) {
-                    el.textContent = `v${version}`;
-                } else {
-                    el.textContent = 'vunknown';
-                }
+                setAppVersionText(data && data.version, data && data.commit);
             } catch (e) {
-                el.textContent = 'vunknown';
+                setAppVersionText('', '');
             }
         }
 
@@ -6583,6 +6589,7 @@
             }
             const currentVersion = String(data.current_version || 'unknown');
             const currentCommit = String(data.current_commit || '').trim();
+            setAppVersionText(currentVersion, currentCommit);
             const latestVersion = String(data.latest_version || 'unknown');
             const latestCommit = String(data.latest_commit || '').trim();
             const current = `v${currentVersion}${currentCommit ? ` (${currentCommit})` : ''}`;
