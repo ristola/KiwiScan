@@ -5,6 +5,7 @@ Minimal starter for a KiWi SDR scanning/monitoring utility.
 ## Install now
 
 - Install guide (share this URL): https://github.com/ristola/KiwiScan/blob/main/INSTALL.md
+- Maintainer release guide (signed/notarized `.pkg`): `RELEASE.md`
 - One-line installer:
 
 ```zsh
