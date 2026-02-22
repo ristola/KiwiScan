@@ -147,8 +147,8 @@ def _fetch_latest_commit(repo: str, branch: str) -> str:
     return sha[:7]
 
 
-def _fetch_latest_version(repo: str, branch: str) -> str:
-    url = f"https://raw.githubusercontent.com/{repo}/{branch}/pyproject.toml"
+def _fetch_latest_version(repo: str, ref: str) -> str:
+    url = f"https://raw.githubusercontent.com/{repo}/{ref}/pyproject.toml"
     with urlopen(url, timeout=4.0) as resp:  # nosec - trusted GitHub raw endpoint
         raw = resp.read(512 * 1024).decode("utf-8", errors="ignore")
     if tomllib is not None:
@@ -231,7 +231,7 @@ def check_update() -> Dict[str, object]:
     latest_error = ""
     try:
         latest_commit = _fetch_latest_commit(repo, branch)
-        latest_version = _fetch_latest_version(repo, branch)
+        latest_version = _fetch_latest_version(repo, latest_commit or branch)
     except (URLError, TimeoutError) as exc:
         latest_error = f"network: {exc}"
     except Exception as exc:
