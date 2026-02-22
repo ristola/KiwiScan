@@ -127,8 +127,8 @@ else
 fi
 
 if [ -n "$venv_py" ]; then
-  if "$venv_py" -c "import fastapi,uvicorn,websockets" >/dev/null 2>&1; then
-    say "[ok]  python deps (fastapi/uvicorn/websockets) in $(dirname "$venv_py")"
+  if "$venv_py" -c "import fastapi,uvicorn,websockets,numpy" >/dev/null 2>&1; then
+    say "[ok]  python deps (fastapi/uvicorn/websockets/numpy) in $(dirname "$venv_py")"
   else
     echo "[err] missing python deps in $(dirname "$venv_py") (run: $venv_py -m pip install -r $ROOT_DIR/requirements.txt)" >&2
     missing=$((missing+1))

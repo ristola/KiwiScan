@@ -63,11 +63,33 @@ class _ReceiverWorker(threading.Thread):
         self._sideband = str(sideband).strip().upper() if sideband else None
         self._decode_callback = decode_callback
         self._on_restart = on_restart
+        self._python_cmd = self._resolve_python_cmd()
         self._stop = threading.Event()
         self._proc: Optional[subprocess.Popen] = None
         self._decoder_procs: list[subprocess.Popen] = []
         self._decoder_threads: list[threading.Thread] = []
         self._decoder_log_fps: list[Optional[object]] = []
+
+    @staticmethod
+    def _resolve_python_cmd() -> str:
+        candidates: list[Path] = []
+        venv = os.environ.get("VIRTUAL_ENV")
+        if venv:
+            candidates.append(Path(venv) / "bin" / "python")
+            candidates.append(Path(venv) / "bin" / "python3")
+        candidates.append(Path(sys.prefix) / "bin" / "python")
+        candidates.append(Path(sys.prefix) / "bin" / "python3")
+        try:
+            candidates.append(Path(sys.executable))
+        except Exception:
+            pass
+        for c in candidates:
+            try:
+                if c.exists() and os.access(str(c), os.X_OK):
+                    return str(c)
+            except Exception:
+                continue
+        return shutil.which("python3") or "python3"
 
     def stop(self) -> None:
         self._stop.set()
@@ -256,7 +278,7 @@ class _ReceiverWorker(threading.Thread):
                 continue
 
             cmd = [
-                sys.executable or "python3",
+                self._python_cmd,
                 str(self._kiwirecorder_path),
                 "-s",
                 str(self._host),
@@ -541,18 +563,18 @@ class _ReceiverWorker(threading.Thread):
                 self._start_decoder(udp_port_ft4, "FT4")
                 fanout_path = Path(__file__).resolve().parent / "udp_fanout.py"
                 pipeline_cmd = (
-                    f"{sys.executable or 'python3'} {self._kiwirecorder_path} "
+                    f"{self._python_cmd} {self._kiwirecorder_path} "
                     f"-s {self._host} -p {self._port} -f {freq_khz} -m usb "
                     f"--rx-chan {self._rx} --user 'AUTO_{self._band}_{mode_tag}' --nc --quiet | "
                     f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
                     f"-t raw -r 48000 -e signed -b 16 -c 1 - gain 3 | "
-                    f"{sys.executable or 'python3'} -u {fanout_path} 127.0.0.1 {udp_port_ft8} {udp_port_ft4}"
+                    f"{self._python_cmd} -u {fanout_path} 127.0.0.1 {udp_port_ft8} {udp_port_ft4}"
                 )
             else:
                 udp_port = 3100 + self._rx
                 self._start_decoder(udp_port, self._decoder_mode())
                 pipeline_cmd = (
-                    f"{sys.executable or 'python3'} {self._kiwirecorder_path} "
+                    f"{self._python_cmd} {self._kiwirecorder_path} "
                     f"-s {self._host} -p {self._port} -f {freq_khz} -m usb "
                     f"--rx-chan {self._rx} --user 'AUTO_{self._band}_{mode_tag}' --nc --quiet | "
                     f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
@@ -577,7 +599,7 @@ class _ReceiverWorker(threading.Thread):
         if self._mode_label.strip().upper() in {"SSB", "PHONE"}:
             mode = self._ssb_assignment_sideband()
         cmd = [
-            sys.executable or "python3",
+            self._python_cmd,
             str(self._kiwirecorder_path),
             "-s",
             str(self._host),
