@@ -236,6 +236,14 @@ def _background_apply_update(repo: str, branch: str) -> None:
             stdin=subprocess.DEVNULL,
         )
         try:
+            installed_commit = _fetch_latest_commit(repo, branch)
+            if installed_commit:
+                marker = root / "outputs" / "installed_commit.txt"
+                marker.parent.mkdir(parents=True, exist_ok=True)
+                marker.write_text(f"{installed_commit}\n", encoding="utf-8")
+        except Exception:
+            logger.debug("Could not refresh installed_commit marker after update", exc_info=True)
+        try:
             os.kill(current_pid, signal.SIGTERM)
         except Exception:
             logger.warning("Self-update installed but failed to terminate current process; restart manually")

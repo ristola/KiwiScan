@@ -6719,6 +6719,7 @@
 
                 const msg = `A newer KiwiScan build is available.\nCurrent: v${currentVersion || 'unknown'}${currentCommit ? ` (${currentCommit})` : ''}\nLatest: v${latestVersion || 'unknown'}${latestCommit ? ` (${latestCommit})` : ''}\n\nUpgrade now?\nThis will pull latest, restart server, and auto-refresh this page.`;
                 if (window.confirm(msg)) {
+                    clearSkippedUpdateCommit();
                     await applyLatestUpdate(data);
                 } else {
                     saveSkippedUpdateCommit(skipKey);
