@@ -6711,7 +6711,8 @@
                     }
                     const data = await resp.json();
                     renderUpdateStatus(data);
-                    if (!data || data.update_in_progress) return;
+                    if (!data) return;
+                    if (data.update_in_progress && !force) return;
                     if (!data.update_available) {
                         clearSkippedUpdateCommit();
                         if (force) {
