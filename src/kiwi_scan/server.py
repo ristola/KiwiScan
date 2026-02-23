@@ -136,7 +136,10 @@ _api_error_total = 0
 
 @app.get("/version")
 def get_version() -> Dict[str, str | None]:
-    return {"version": APP_VERSION, "commit": APP_COMMIT}
+    return {
+        "version": _resolve_app_version(),
+        "commit": _resolve_git_commit(),
+    }
 
 
 def _safe_update_target() -> tuple[str, str]:
@@ -245,6 +248,8 @@ def _background_apply_update(repo: str, branch: str) -> None:
 @app.get("/update/check")
 def check_update() -> Dict[str, object]:
     repo, branch = _safe_update_target()
+    current_version = _resolve_app_version()
+    current_commit = str(_resolve_git_commit() or "")
     latest_commit = ""
     latest_version = ""
     latest_error = ""
@@ -256,8 +261,7 @@ def check_update() -> Dict[str, object]:
     except Exception as exc:
         latest_error = str(exc)
 
-    current_commit = str(APP_COMMIT or "")
-    current_version_norm = _normalize_version(APP_VERSION)
+    current_version_norm = _normalize_version(current_version)
     latest_version_norm = _normalize_version(latest_version)
     latest_is_newer = _is_version_newer(latest_version_norm, current_version_norm)
     by_commit = bool(latest_commit and current_commit and latest_commit != current_commit)
@@ -276,7 +280,7 @@ def check_update() -> Dict[str, object]:
     return {
         "repo": repo,
         "branch": branch,
-        "current_version": APP_VERSION,
+        "current_version": current_version,
         "latest_version": latest_version,
         "current_commit": current_commit,
         "latest_commit": latest_commit,
