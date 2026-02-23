@@ -7,6 +7,7 @@ import asyncio
 import threading
 import subprocess
 import os
+import signal
 import re
 import shlex
 import shutil
@@ -216,20 +217,24 @@ def _background_apply_update(repo: str, branch: str) -> None:
     global _update_in_progress
     try:
         root = Path(__file__).resolve().parents[2]
+        current_pid = os.getpid()
         install_url = f"https://raw.githubusercontent.com/{repo}/{branch}/tools/install_latest.sh"
         cmd = (
             "set -euo pipefail; "
             f"curl -fsSL {shlex.quote(install_url)} | bash -s -- {shlex.quote(str(root))}; "
-            f"cd {shlex.quote(str(root))}; "
-            "nohup env AUTO_RELOAD=0 NO_RESTART=1 ./run_server.sh >/tmp/kiwi_run_server.out 2>&1 &"
+            "true"
         )
-        subprocess.Popen(
+        subprocess.run(
             ["/bin/bash", "-lc", cmd],
+            check=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
-            start_new_session=True,
         )
+        try:
+            os.kill(current_pid, signal.SIGTERM)
+        except Exception:
+            logger.warning("Self-update installed but failed to terminate current process; restart manually")
     except Exception:
         logger.exception("Self-update failed to start")
     finally:
