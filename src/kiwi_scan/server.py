@@ -232,6 +232,7 @@ def _background_apply_update(repo: str, branch: str) -> None:
         )
     except Exception:
         logger.exception("Self-update failed to start")
+    finally:
         with _update_lock:
             _update_in_progress = False
 
