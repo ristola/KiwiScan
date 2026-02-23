@@ -3098,6 +3098,15 @@
         }
 
         function resolveStationGridFromConfig(cfg) {
+            const fromConfigGrid = normalizeGridSquare(cfg && cfg.grid);
+            if (fromConfigGrid) return fromConfigGrid;
+
+            const configuredPos = getConfigLatLon(cfg, '');
+            if (configuredPos) {
+                const g = normalizeGridSquare(latLonToGrid(configuredPos.lat, configuredPos.lon));
+                if (g) return g;
+            }
+
             const fromKiwiGrid = normalizeGridSquare(cfg && cfg.kiwi_grid);
             if (fromKiwiGrid) return fromKiwiGrid;
 
@@ -3106,15 +3115,18 @@
                 const g = normalizeGridSquare(latLonToGrid(kiwiPos.lat, kiwiPos.lon));
                 if (g) return g;
             }
-
-            const fromConfigGrid = normalizeGridSquare(cfg && cfg.grid);
-            if (fromConfigGrid) return fromConfigGrid;
-
-            const configuredPos = getConfigLatLon(cfg, '');
-            if (configuredPos) {
-                return normalizeGridSquare(latLonToGrid(configuredPos.lat, configuredPos.lon));
-            }
             return '';
+        }
+
+        function resolveGridFromInputs() {
+            const latEl = document.getElementById('cfg_lat');
+            const lonEl = document.getElementById('cfg_lon');
+            if (!latEl || !lonEl) return '';
+            const lat = Number.parseFloat(String(latEl.value || ''));
+            const lon = Number.parseFloat(String(lonEl.value || ''));
+            if (!Number.isFinite(lat) || !Number.isFinite(lon)) return '';
+            if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return '';
+            return normalizeGridSquare(latLonToGrid(lat, lon));
         }
 
         function updateStationGridDisplay(grid) {
@@ -7539,11 +7551,19 @@
                 try {
                     await saveConfig(data);
                     setConfigStatus('Saved.', 'ok');
+                    const inputGrid = resolveGridFromInputs();
+                    if (inputGrid) {
+                        updateStationGridDisplay(inputGrid);
+                    }
                     try {
                         const refreshed = await fetchConfig();
-                        updateStationGridDisplay(resolveStationGridFromConfig(refreshed));
+                        if (!inputGrid) {
+                            updateStationGridDisplay(resolveStationGridFromConfig(refreshed));
+                        }
                     } catch (e) {
-                        updateStationGridDisplay(resolveStationGridFromConfig(data));
+                        if (!inputGrid) {
+                            updateStationGridDisplay(resolveStationGridFromConfig(data));
+                        }
                     }
                     showToast('Config saved.', 'success', 1600);
                 } catch (e) {
@@ -7574,7 +7594,8 @@
                             document.getElementById('cfg_lon').value = String(first.longitude);
                         }
 
-                        updateStationGridDisplay(resolveStationGridFromConfig(first));
+                        const discoveredGrid = resolveGridFromInputs() || resolveStationGridFromConfig(first);
+                        updateStationGridDisplay(discoveredGrid);
 
                         const src = res && res.source ? String(res.source) : '';
                         const srcTxt = src ? ` (${src})` : '';
