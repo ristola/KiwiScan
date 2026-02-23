@@ -138,6 +138,25 @@ class _ReceiverWorker(threading.Thread):
             return fallback_path
         return None
 
+    @staticmethod
+    def _resolve_ft8modem_temp_root() -> Optional[Path]:
+        candidates: list[Path] = []
+        override = str(os.environ.get("KIWISCAN_FT8MODEM_TMP", "")).strip()
+        if override:
+            candidates.append(Path(override))
+        candidates.extend([
+            Path("/tmp/ft8modem"),
+            Path("/var/tmp/ft8modem"),
+        ])
+        for candidate in candidates:
+            try:
+                candidate.mkdir(mode=0o700, parents=True, exist_ok=True)
+                if candidate.is_dir() and os.access(str(candidate), os.W_OK | os.X_OK):
+                    return candidate
+            except Exception:
+                continue
+        return None
+
     def stop(self) -> None:
         self._stop.set()
         self._terminate_proc()
@@ -481,6 +500,10 @@ class _ReceiverWorker(threading.Thread):
         ft8modem_path = self._resolve_tool_path("ft8modem", self._ft8modem_path)
         if ft8modem_path is None:
             return
+        temp_root = self._resolve_ft8modem_temp_root()
+        if temp_root is None:
+            logger.warning("ft8modem temp root unavailable (tried /tmp/ft8modem, /var/tmp/ft8modem)")
+            return
         try:
             subprocess.run(
                 ["pkill", "-f", f"ft8modem.*udp:{udp_port}"],
@@ -494,6 +517,8 @@ class _ReceiverWorker(threading.Thread):
         log_path = Path("/tmp") / f"ft8modem_rx{self._rx}_{log_suffix}.log"
         cmd = [
             str(ft8modem_path),
+            "-t",
+            str(temp_root),
             "-r",
             "48000",
             mode,
