@@ -6597,10 +6597,15 @@
             const currentCommit = String(data.current_commit || '').trim();
             const latestVersion = String(data.latest_version || 'unknown');
             const latestCommit = String(data.latest_commit || '').trim();
+            const sameVersion = normalizeVersionToken(currentVersion) === normalizeVersionToken(latestVersion);
             const current = `v${currentVersion}${currentCommit ? ` (${currentCommit})` : ''}`;
             const latest = `v${latestVersion}${latestCommit ? ` (${latestCommit})` : ''}`;
             if (data.update_available) {
-                setUpdateStatusText(`Update available: ${current} → ${latest}`, 'warn');
+                if (sameVersion) {
+                    setUpdateStatusText(`Latest version: ${latest}`, 'ok');
+                } else {
+                    setUpdateStatusText(`Update available: ${current} → ${latest}`, 'warn');
+                }
             } else {
                 setUpdateStatusText(`Up to date: ${current}`, 'ok');
             }
