@@ -10,6 +10,37 @@ APP_DIR="$ROOT_DIR/src"
 REQ_FILE="$ROOT_DIR/requirements.txt"
 AUTO_SETUP="${AUTO_SETUP:-1}"
 AUTO_SYSTEM_DEPS="${AUTO_SYSTEM_DEPS:-1}"
+LOCK_DIR="/tmp/kiwi_scan_run_server.lock"
+
+acquire_single_instance_lock() {
+  if mkdir "$LOCK_DIR" 2>/dev/null; then
+    echo "$$" > "$LOCK_DIR/pid" 2>/dev/null || true
+    return 0
+  fi
+
+  local prior_pid=""
+  if [ -f "$LOCK_DIR/pid" ]; then
+    prior_pid="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
+  fi
+
+  if [ -n "$prior_pid" ] && kill -0 "$prior_pid" 2>/dev/null; then
+    echo "Another run_server.sh supervisor is already running (pid $prior_pid); exiting." >&2
+    exit 0
+  fi
+
+  rm -rf "$LOCK_DIR" 2>/dev/null || true
+  if mkdir "$LOCK_DIR" 2>/dev/null; then
+    echo "$$" > "$LOCK_DIR/pid" 2>/dev/null || true
+    return 0
+  fi
+
+  echo "Failed to acquire run_server lock at $LOCK_DIR" >&2
+  exit 1
+}
+
+release_single_instance_lock() {
+  rm -rf "$LOCK_DIR" 2>/dev/null || true
+}
 
 ensure_venv() {
   if [ -x "$VENV_PRIMARY/bin/python" ]; then
@@ -81,6 +112,8 @@ bootstrap_runtime_tools_if_needed() {
 ensure_venv
 install_requirements_if_needed
 bootstrap_runtime_tools_if_needed
+acquire_single_instance_lock
+trap release_single_instance_lock EXIT INT TERM
 
 PORT="${PORT:-4020}"
 RESTART_DELAY_S="${RESTART_DELAY_S:-2}"
