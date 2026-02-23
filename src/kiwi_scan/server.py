@@ -95,6 +95,16 @@ def _resolve_app_version() -> str:
 
 def _resolve_git_commit() -> str | None:
     root = Path(__file__).resolve().parents[2]
+
+    try:
+        marker = root / "outputs" / "installed_commit.txt"
+        if marker.exists():
+            value = marker.read_text(encoding="utf-8", errors="ignore").strip()
+            if re.match(r"^[0-9a-fA-F]{7,40}$", value):
+                return value[:7].lower()
+    except Exception:
+        pass
+
     try:
         git_dir = root / ".git"
         if not git_dir.exists():
@@ -107,15 +117,6 @@ def _resolve_git_commit() -> str | None:
         value = out.decode("utf-8", errors="ignore").strip()
         if value:
             return value
-    except Exception:
-        pass
-
-    try:
-        marker = root / "outputs" / "installed_commit.txt"
-        if marker.exists():
-            value = marker.read_text(encoding="utf-8", errors="ignore").strip()
-            if re.match(r"^[0-9a-fA-F]{7,40}$", value):
-                return value[:7].lower()
     except Exception:
         pass
 
