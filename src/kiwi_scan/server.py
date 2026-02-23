@@ -221,7 +221,7 @@ def _background_apply_update(repo: str, branch: str) -> None:
             "set -euo pipefail; "
             f"curl -fsSL {shlex.quote(install_url)} | bash -s -- {shlex.quote(str(root))}; "
             f"cd {shlex.quote(str(root))}; "
-            "nohup env AUTO_RELOAD=0 NO_RESTART=1 ./run_server.sh >/tmp/kiwi_run_server.out 2>&1 &"
+            "nohup env AUTO_RELOAD=0 NO_RESTART=0 ./run_server.sh >/tmp/kiwi_run_server.out 2>&1 &"
         )
         subprocess.Popen(
             ["/bin/bash", "-lc", cmd],
