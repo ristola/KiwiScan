@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+dist/
+build/
+*.egg-info/
+
+# Runtime outputs / generated data
+outputs/
+detections*.jsonl
+*.log
+*.wav
+server.pid
+
+# Local backups
+_backups/
