@@ -5962,11 +5962,19 @@
         function applyAutomationRuntimeSettings(settings) {
             const enableWspr = !!(settings && settings.autoScanWspr);
             const enableSsb = !!(settings && settings.ssbEnabled);
+            const activeMode = currentMode();
+            const activeBlock = viewedBlock || currentBlock;
+            const selectedBands = Array.from(getSelectedBands(activeMode, activeBlock));
+            const hasSelectedSsbBand = selectedBands.some((band) => {
+                const modeLabel = getBandModeCached(activeMode, activeBlock, band);
+                return String(modeLabel || '').toUpperCase() === 'SSB';
+            });
             const nextHopSeconds = Number(settings && settings.bandHopSeconds ? settings.bandHopSeconds : DEFAULT_AUTOMATION.bandHopSeconds);
             const hopChanged = Number.isFinite(nextHopSeconds) && nextHopSeconds !== wsprScanHopSeconds;
             const nextStartBand = (settings && settings.wsprStartBand) ? settings.wsprStartBand : DEFAULT_AUTOMATION.wsprStartBand;
             const startChanged = wsprScanStartBand !== null && nextStartBand !== wsprScanStartBand;
-            if (enableWspr) {
+            const allowWsprHop = enableWspr && !(enableSsb && hasSelectedSsbBand);
+            if (allowWsprHop) {
                 if (!wsprScanEnabled || hopChanged || startChanged) {
                     startWsprBandScan(settings);
                 }
@@ -5974,7 +5982,11 @@
                 stopWsprBandScan();
             }
             if (enableWspr && enableSsb) {
-                setScheduleAutoSetStatus('Auto-Set: WSPR scan active (SSB auto-scan deferred)', 'info');
+                if (hasSelectedSsbBand) {
+                    setScheduleAutoSetStatus('Auto-Set: WSPR scan paused while selected SSB band(s) are active', 'warn');
+                } else {
+                    setScheduleAutoSetStatus('Auto-Set: WSPR scan active (no selected SSB bands)', 'info');
+                }
             }
         }
 
@@ -8661,7 +8673,6 @@
                 try {
                     const settings = readAutomationSettings();
                     if (settings && settings.ssbEnabled === false) return;
-                    if (settings && settings.autoScanWspr) return;
                     const ssb = getFirstSsbBand(selectedBands, bandModes);
                     if (!ssb) return;
 
