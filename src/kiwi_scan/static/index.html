@@ -6044,13 +6044,6 @@
         function applyAutomationRuntimeSettings(settings) {
             const enableWspr = !!(settings && settings.autoScanWspr);
             const enableSsb = !!(settings && settings.ssbEnabled);
-            if (enableWspr && enableSsb) {
-                if (wsprScanEnabled) {
-                    stopWsprBandScan();
-                }
-                setScheduleAutoSetStatus('Auto-Set: WSPR scan paused while SSB scan is enabled', 'warn');
-                return;
-            }
             const nextHopSeconds = Number(settings && settings.bandHopSeconds ? settings.bandHopSeconds : DEFAULT_AUTOMATION.bandHopSeconds);
             const hopChanged = Number.isFinite(nextHopSeconds) && nextHopSeconds !== wsprScanHopSeconds;
             const nextStartBand = (settings && settings.wsprStartBand) ? settings.wsprStartBand : DEFAULT_AUTOMATION.wsprStartBand;
@@ -6061,6 +6054,9 @@
                 }
             } else {
                 stopWsprBandScan();
+            }
+            if (enableWspr && enableSsb) {
+                setScheduleAutoSetStatus('Auto-Set: WSPR scan active (SSB auto-scan deferred)', 'info');
             }
         }
 
@@ -6090,10 +6086,6 @@
         }
 
         function startWsprBandScan(settings) {
-            if (settings && settings.ssbEnabled) {
-                wsprScanEnabled = false;
-                return;
-            }
             wsprScanEnabled = true;
             const startBand = (settings && settings.wsprStartBand) ? settings.wsprStartBand : DEFAULT_AUTOMATION.wsprStartBand;
             wsprScanBands = BAND_OPTIONS.slice();
@@ -8914,6 +8906,7 @@
                 try {
                     const settings = readAutomationSettings();
                     if (settings && settings.ssbEnabled === false) return;
+                    if (settings && settings.autoScanWspr) return;
                     const ssb = getFirstSsbBand(selectedBands, bandModes);
                     if (!ssb) return;
 
