@@ -9,6 +9,35 @@ from fastapi import APIRouter, HTTPException, Request
 
 _lock = threading.Lock()
 
+_DEFAULT_SETTINGS: Dict[str, Any] = {
+    "autoScanOnBlock": False,
+    "autoScanWspr": True,
+    "autoScanOnStartup": False,
+    "autoRefreshSchedule": True,
+    "bandHopSeconds": 105,
+    "wsprStartBand": "10m",
+    "quietStart": "22:00",
+    "quietEnd": "06:00",
+    "alertsEnabled": True,
+    "alertThreshold": 12,
+    "ssbEnabled": True,
+    "ssbSideband": "USB",
+    "ssbThresholdDb": 20,
+    "ssbAdaptiveThreshold": True,
+    "ssbUseKiwiSnr": True,
+    "ssbWaitS": 1.0,
+    "ssbDwellS": 6.0,
+    "ssbTailS": 1.0,
+    "ssbStepStrategy": "adaptive",
+    "ssbStepKHz": 10.0,
+    "headlessEnabled": True,
+    "useLaunchd": False,
+    "uiThemeMode": "auto",
+    "uiThemeNightHour": 21,
+    "uiDensity": "normal",
+    "scheduleProfiles": {},
+}
+
 
 def _settings_path() -> Path:
     root = Path(__file__).resolve().parents[3]
@@ -34,6 +63,12 @@ def _save_settings(payload: Dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _with_defaults(payload: Dict[str, Any]) -> Dict[str, Any]:
+    merged = dict(_DEFAULT_SETTINGS)
+    merged.update(payload or {})
+    return merged
+
+
 def make_router() -> APIRouter:
     """Create router for automation settings endpoints."""
 
@@ -42,7 +77,11 @@ def make_router() -> APIRouter:
     @router.get("/automation/settings")
     def get_settings() -> Dict[str, Any]:
         with _lock:
-            return _load_settings()
+            current = _load_settings()
+            merged = _with_defaults(current)
+            if merged != current:
+                _save_settings(merged)
+            return merged
 
     @router.post("/automation/settings")
     async def put_settings(request: Request) -> Dict[str, str]:
@@ -53,7 +92,7 @@ def make_router() -> APIRouter:
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail="Settings must be a JSON object")
         with _lock:
-            _save_settings(payload)
+            _save_settings(_with_defaults(payload))
         return {"status": "ok"}
 
     return router

@@ -161,10 +161,56 @@ def make_router(
         if not block or block not in table.blocks:
             block = block_for_hour(local_dt.hour, mode=mode)
 
+        settings = _load_automation_settings()
+
+        def _profile_for(mode_key: str, block_key: str) -> tuple[Optional[List[str]], Dict[str, str]]:
+            if not isinstance(settings, dict):
+                return None, {}
+            raw_profiles = settings.get("scheduleProfiles")
+            if not isinstance(raw_profiles, dict):
+                return None, {}
+            by_mode = raw_profiles.get(str(mode_key).lower())
+            if not isinstance(by_mode, dict):
+                return None, {}
+            entry = by_mode.get(str(block_key))
+            if not isinstance(entry, dict):
+                return None, {}
+
+            selected_raw = entry.get("selectedBands")
+            selected: Optional[List[str]] = None
+            if isinstance(selected_raw, list):
+                selected = []
+                seen: set[str] = set()
+                for item in selected_raw:
+                    band = str(item)
+                    if band in band_order and band not in seen:
+                        selected.append(band)
+                        seen.add(band)
+
+            band_modes_out: Dict[str, str] = {}
+            band_modes_raw = entry.get("bandModes")
+            if isinstance(band_modes_raw, dict):
+                for band in band_order:
+                    if band not in band_modes_raw:
+                        continue
+                    val = str(band_modes_raw.get(band) or "FT8").strip().upper()
+                    if val == "WSPR":
+                        val = "FT8"
+                    if val in {"FT8", "FT4", "FT4 / FT8", "SSB"}:
+                        band_modes_out[band] = val
+                    else:
+                        band_modes_out[band] = "FT8"
+            return selected, band_modes_out
+
         selected_bands = payload.get("selected_bands")
         selected_set = set(selected_bands) if isinstance(selected_bands, list) else None
         band_modes_raw = payload.get("band_modes")
         band_modes = band_modes_raw if isinstance(band_modes_raw, dict) else {}
+        profile_selected, profile_band_modes = _profile_for(mode, block)
+        if selected_set is None and profile_selected is not None:
+            selected_set = set(profile_selected)
+        if not band_modes and profile_band_modes:
+            band_modes = dict(profile_band_modes)
 
         block_data = table.blocks.get(block, {})
         open_bands = [
@@ -186,7 +232,6 @@ def make_router(
         adaptive_alpha = 0.35
         adaptive_min_db = 6.0
         adaptive_max_db = 40.0
-        settings = _load_automation_settings()
         adaptive_state_raw = settings.get("ssbAdaptiveThresholdByBand") if isinstance(settings, dict) else None
         adaptive_state: Dict[str, float] = {}
         if isinstance(adaptive_state_raw, dict):

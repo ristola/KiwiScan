@@ -2532,6 +2532,7 @@
             ssbTailS: 1.0,
             ssbStepStrategy: 'adaptive',
             ssbStepKHz: 10.0,
+            scheduleProfiles: {},
         };
         let currentBlock = null;
         let lastCurrentBlock = null;
@@ -2565,6 +2566,7 @@
         let ssbScanBandCounts = {};
         let ssbScanLastHitByBand = {};
         let ssbScanStatusByBand = {};
+        let scheduleProfilePersistTimer = null;
         const MAP_MODE_COLORS = {
             WSPR: '#a855f7',
             FT8: '#3b82f6',
@@ -5672,6 +5674,23 @@
             }
         }
 
+        async function persistUiPrefsToServer() {
+            const baseAutomation = await loadAutomationSettingsFromServer() || readAutomationSettings();
+            const nextAutomation = {
+                ...DEFAULT_AUTOMATION,
+                ...(baseAutomation || {}),
+                uiThemeMode: readUiTheme(),
+                uiThemeNightHour: readUiThemeNightHour(),
+                uiDensity: readUiDensity(),
+            };
+            saveAutomationSettings(nextAutomation);
+            const result = await saveAutomationSettingsToServer(nextAutomation);
+            if (!result || result.ok !== true) {
+                throw new Error((result && result.error) ? String(result.error) : 'save failed');
+            }
+            return nextAutomation;
+        }
+
         function readAutomationSettings() {
             try {
                 const raw = localStorage.getItem('automation_settings');
@@ -5806,7 +5825,14 @@
             });
 
             const save = async () => {
-                const settings = captureSettings();
+                const base = { ...DEFAULT_AUTOMATION, ...(readAutomationSettings() || {}) };
+                const settings = {
+                    ...base,
+                    ...captureSettings(),
+                    scheduleProfiles: (base.scheduleProfiles && typeof base.scheduleProfiles === 'object')
+                        ? base.scheduleProfiles
+                        : {},
+                };
                 saveAutomationSettings(settings);
                 const result = await saveAutomationSettingsToServer(settings);
                 if (status) {
@@ -5882,7 +5908,16 @@
 
             resetBtn.addEventListener('click', () => {
                 applySettings(DEFAULT_AUTOMATION);
-                saveAutomationSettings({ ...DEFAULT_AUTOMATION });
+                const base = { ...DEFAULT_AUTOMATION, ...(readAutomationSettings() || {}) };
+                const merged = {
+                    ...base,
+                    ...DEFAULT_AUTOMATION,
+                    scheduleProfiles: (base.scheduleProfiles && typeof base.scheduleProfiles === 'object')
+                        ? base.scheduleProfiles
+                        : {},
+                };
+                saveAutomationSettings(merged);
+                saveAutomationSettingsToServer(merged).catch(() => { });
                 if (status) {
                     status.textContent = 'Defaults restored.';
                 }
@@ -5902,6 +5937,9 @@
                 saveAutomationSettings(merged);
                 applySettings(merged);
                 applyAutomationRuntimeSettings(merged);
+                if (lastScheduleData) {
+                    renderSchedule(lastScheduleData, true);
+                }
                 if (status) {
                     status.textContent = `Loaded server settings at ${new Date().toLocaleTimeString()}.`;
                 }
@@ -6146,7 +6184,98 @@
             return `band_mode_${mode}_${b}_${band}`;
         }
 
+        function normalizeScheduleMode(mode) {
+            return String(mode || 'ft8').toLowerCase() === 'phone' ? 'phone' : 'ft8';
+        }
+
+        function normalizeScheduleBlock(block) {
+            return String(block || 'unknown');
+        }
+
+        function normalizeStoredBandMode(band, value) {
+            const raw = String(value || '').trim().toUpperCase();
+            if (!raw || raw === 'WSPR') return 'FT8';
+            if (!MODE_OPTIONS.includes(raw)) return 'FT8';
+            if (raw === 'SSB' && !Object.prototype.hasOwnProperty.call(BAND_FREQS_SSB_MHZ, band)) {
+                return 'FT8';
+            }
+            return raw;
+        }
+
+        function getScheduleProfileEntry(settings, mode, block) {
+            const keyMode = normalizeScheduleMode(mode);
+            const keyBlock = normalizeScheduleBlock(block);
+            const root = (settings && typeof settings === 'object') ? settings : {};
+            const profiles = (root && root.scheduleProfiles && typeof root.scheduleProfiles === 'object')
+                ? root.scheduleProfiles
+                : {};
+            const byMode = (profiles[keyMode] && typeof profiles[keyMode] === 'object') ? profiles[keyMode] : null;
+            const entry = (byMode && byMode[keyBlock] && typeof byMode[keyBlock] === 'object') ? byMode[keyBlock] : null;
+            if (!entry) return null;
+            const selectedBands = Array.isArray(entry.selectedBands)
+                ? entry.selectedBands.filter(b => BAND_OPTIONS.includes(b))
+                : null;
+            const bandModesRaw = (entry.bandModes && typeof entry.bandModes === 'object') ? entry.bandModes : {};
+            const bandModes = {};
+            for (const band of BAND_OPTIONS) {
+                if (bandModesRaw[band] === undefined) continue;
+                bandModes[band] = normalizeStoredBandMode(band, bandModesRaw[band]);
+            }
+            return {
+                selectedBands,
+                bandModes,
+            };
+        }
+
+        function queueScheduleProfilePersist() {
+            if (scheduleProfilePersistTimer) {
+                clearTimeout(scheduleProfilePersistTimer);
+            }
+            scheduleProfilePersistTimer = setTimeout(async () => {
+                scheduleProfilePersistTimer = null;
+                const merged = { ...DEFAULT_AUTOMATION, ...(readAutomationSettings() || {}) };
+                saveAutomationSettings(merged);
+                try {
+                    await saveAutomationSettingsToServer(merged);
+                } catch (e) { }
+            }, 220);
+        }
+
+        function updateScheduleProfileEntry(mode, block, mutator) {
+            const keyMode = normalizeScheduleMode(mode);
+            const keyBlock = normalizeScheduleBlock(block);
+            const settings = { ...DEFAULT_AUTOMATION, ...(readAutomationSettings() || {}) };
+            const profiles = (settings.scheduleProfiles && typeof settings.scheduleProfiles === 'object')
+                ? { ...settings.scheduleProfiles }
+                : {};
+            const byModeBase = (profiles[keyMode] && typeof profiles[keyMode] === 'object') ? profiles[keyMode] : {};
+            const byMode = { ...byModeBase };
+            const current = (byMode[keyBlock] && typeof byMode[keyBlock] === 'object')
+                ? byMode[keyBlock]
+                : { selectedBands: null, bandModes: {} };
+            const next = mutator({
+                selectedBands: Array.isArray(current.selectedBands) ? [...current.selectedBands] : null,
+                bandModes: (current.bandModes && typeof current.bandModes === 'object') ? { ...current.bandModes } : {},
+            });
+            byMode[keyBlock] = {
+                selectedBands: Array.isArray(next && next.selectedBands)
+                    ? next.selectedBands.filter(b => BAND_OPTIONS.includes(b))
+                    : null,
+                bandModes: (next && next.bandModes && typeof next.bandModes === 'object') ? { ...next.bandModes } : {},
+            };
+            profiles[keyMode] = byMode;
+            settings.scheduleProfiles = profiles;
+            saveAutomationSettings(settings);
+            queueScheduleProfilePersist();
+        }
+
         function getSelectedBands(mode, block) {
+            const fromProfile = getScheduleProfileEntry(readAutomationSettings(), mode, block);
+            if (fromProfile && Array.isArray(fromProfile.selectedBands)) {
+                const chosen = fromProfile.selectedBands;
+                if (chosen.length === 0) return new Set(BAND_OPTIONS);
+                return new Set(chosen);
+            }
             try {
                 const raw = localStorage.getItem(storageKey(mode, block));
                 if (!raw) return new Set(BAND_OPTIONS);
@@ -6162,9 +6291,17 @@
             try {
                 localStorage.setItem(storageKey(mode, block), JSON.stringify(Array.from(selected)));
             } catch (e) { }
+            updateScheduleProfileEntry(mode, block, (current) => ({
+                ...current,
+                selectedBands: Array.from(selected),
+            }));
         }
 
         function getBandMode(mode, block, band) {
+            const fromProfile = getScheduleProfileEntry(readAutomationSettings(), mode, block);
+            if (fromProfile && fromProfile.bandModes && fromProfile.bandModes[band]) {
+                return normalizeStoredBandMode(band, fromProfile.bandModes[band]);
+            }
             try {
                 const raw = localStorage.getItem(modeStorageKey(mode, block, band));
                 if (!raw) return 'FT8';
@@ -6221,6 +6358,15 @@
                 if (String(value) === 'WSPR') return;
                 localStorage.setItem(modeStorageKey(mode, block, band), value);
             } catch (e) { }
+            if (String(value) === 'WSPR') return;
+            updateScheduleProfileEntry(mode, block, (current) => {
+                const nextModes = (current.bandModes && typeof current.bandModes === 'object') ? { ...current.bandModes } : {};
+                nextModes[band] = normalizeStoredBandMode(band, value);
+                return {
+                    ...current,
+                    bandModes: nextModes,
+                };
+            });
         }
 
         function freqForBandMode(band, modeLabel) {
@@ -8284,6 +8430,11 @@
             setInterval(updateLocalTimeNow, 1000);
             const infoMetricsHelp = initInfoMetricsHelp();
 
+            try {
+                applyUiTheme(readUiTheme());
+                applyUiDensity(readUiDensity());
+            } catch (e) { }
+
             const decodePanelToggle = document.getElementById('decode_panel_toggle');
             if (decodePanelToggle) {
                 decodePanelToggle.addEventListener('click', () => {
@@ -8420,8 +8571,26 @@
             initSsbWaterfallPanel();
             updateAppVersion();
             setTimeout(() => { checkForUpdatesPrompt(); }, 1200);
-            applyUiTheme(readUiTheme());
-            applyUiDensity(readUiDensity());
+
+            try {
+                const serverAutomation = await loadAutomationSettingsFromServer();
+                const mergedAutomation = { ...DEFAULT_AUTOMATION, ...(serverAutomation || {}) };
+                const savedTheme = String(mergedAutomation.uiThemeMode || '').toLowerCase();
+                const savedDensity = String(mergedAutomation.uiDensity || '').toLowerCase();
+                const nextTheme = (savedTheme === 'dark' || savedTheme === 'auto' || savedTheme === 'light')
+                    ? savedTheme
+                    : readUiTheme();
+                const nextDensity = (savedDensity === 'dense' || savedDensity === 'normal')
+                    ? savedDensity
+                    : readUiDensity();
+                const nextNightHour = clampUiThemeHour(mergedAutomation.uiThemeNightHour);
+                saveUiTheme(nextTheme);
+                saveUiThemeNightHour(nextNightHour);
+                saveUiDensity(nextDensity);
+                applyUiTheme(nextTheme);
+                applyUiDensity(nextDensity);
+            } catch (e) { }
+
             const themeSel = document.getElementById('ui_theme');
             const themeNightHourInput = document.getElementById('ui_theme_night_hour');
             if (themeSel) {
@@ -8431,6 +8600,7 @@
                         : (themeSel.value === 'dark' ? 'dark' : 'light');
                     applyUiTheme(theme);
                     saveUiTheme(theme);
+                    persistUiPrefsToServer().catch(() => { });
                     const nightHour = readUiThemeNightHour();
                     if (theme === 'auto') {
                         showToast(`Theme set to Auto (night starts ${nightHour}:00).`, 'info', 1600);
@@ -8444,6 +8614,7 @@
                     const hour = clampUiThemeHour(themeNightHourInput.value);
                     themeNightHourInput.value = String(hour);
                     saveUiThemeNightHour(hour);
+                    persistUiPrefsToServer().catch(() => { });
                     if (readUiTheme() === 'auto') {
                         applyUiTheme('auto');
                     }
@@ -8456,6 +8627,7 @@
                     const mode = densitySel.value === 'dense' ? 'dense' : 'normal';
                     applyUiDensity(mode);
                     saveUiDensity(mode);
+                    persistUiPrefsToServer().catch(() => { });
                     showToast(`Density set to ${mode === 'dense' ? 'Dense' : 'Normal'}.`, 'info', 1400);
                 });
             }
@@ -8463,6 +8635,7 @@
             if (resetUiBtn) {
                 resetUiBtn.addEventListener('click', () => {
                     resetUiPreferences();
+                    persistUiPrefsToServer().catch(() => { });
                     showToast('UI preferences reset.', 'success', 1600);
                 });
             }
