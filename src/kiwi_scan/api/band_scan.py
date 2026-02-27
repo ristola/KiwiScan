@@ -29,6 +29,20 @@ def make_router(*, mgr: object, band_scanner: object) -> APIRouter:
 		record_hits = bool(payload.get("record_hits", True))
 		detector = payload.get("detector", "waterfall")
 		ssb_probe_only = bool(payload.get("ssb_probe_only", True))
+		required_hits = payload.get("required_hits", None)
+		probe_freqs_mhz_raw = payload.get("probe_freqs_mhz")
+		probe_freqs_mhz = None
+		if isinstance(probe_freqs_mhz_raw, list):
+			vals = []
+			for value in probe_freqs_mhz_raw:
+				try:
+					mhz = float(value)
+				except Exception:
+					continue
+				if mhz > 0:
+					vals.append(mhz)
+			if vals:
+				probe_freqs_mhz = vals
 		allow_rx_fallback = bool(payload.get("allow_rx_fallback", True))
 		session_id = payload.get("session_id", None)
 		detector_key = str(detector or "waterfall").strip().lower()
@@ -91,6 +105,8 @@ def make_router(*, mgr: object, band_scanner: object) -> APIRouter:
 			record_hits=record_hits,
 			detector=str(detector) if detector is not None else "waterfall",
 			ssb_probe_only=ssb_probe_only,
+			required_hits=int(required_hits) if required_hits is not None else None,
+			probe_freqs_mhz=probe_freqs_mhz,
 			allow_rx_fallback=allow_rx_fallback,
 			on_hit=_emit_scan_hit,
 			session_id=str(session_id) if session_id else None,

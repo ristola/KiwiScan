@@ -72,6 +72,8 @@ Notes:
 - To force the old behavior, set `ALWAYS_RESTART=1`.
 - To run once with no restart loop, set `NO_RESTART=1`.
 - Auto-reload on code changes is enabled by default; set `AUTO_RELOAD=0` to disable.
+- Headless auto-set loop is enabled by default (`KIWISCAN_AUTOSET_LOOP=1`): it re-applies `/auto_set_receivers` server-side without any browser clients when Automation has `Auto-Run each block` and/or `Apply on startup` enabled.
+- Adjust the headless loop interval (seconds) with `KIWISCAN_AUTOSET_LOOP_S` (default: `30`, min: `5`, max: `600`).
 
 Automation note:
 - SSB scan now supports **Adaptive threshold** (Automation tab) which smooths per-band thresholding from live SNR conditions to reduce jumpy squelch behavior.

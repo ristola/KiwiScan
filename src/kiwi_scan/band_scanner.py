@@ -44,6 +44,8 @@ class BandScanner:
         record_dir: Path | None = None,
         detector: str = "waterfall",
         ssb_probe_only: bool = True,
+        required_hits: int | None = None,
+        probe_freqs_mhz: list[float] | None = None,
         allow_rx_fallback: bool = True,
         on_hit: Optional[Callable[[dict], None]] = None,
         session_id: Optional[str] = None,
@@ -109,12 +111,20 @@ class BandScanner:
         # - reject narrow/spiky digital/CW by requiring some occupied bandwidth
         min_width_hz = 1200.0 if ssb_mode else 0.0
         hold_s = 1.5 if ssb_mode else 5.0
-        ssb_required_hits = 1 if ssb_mode else 2
+        default_required_hits = 1 if ssb_mode else 2
+        try:
+            ssb_required_hits = int(required_hits) if required_hits is not None else int(default_required_hits)
+        except Exception:
+            ssb_required_hits = int(default_required_hits)
+        if ssb_required_hits < 1:
+            ssb_required_hits = 1
         ssb_occ_thresh_db = 5.0 if ssb_mode else 6.0
         ssb_voice_min_score = 0.45 if ssb_mode else 0.0
 
         centers: list[float] = []
-        if ssb_mode and ssb_probe_only and band_key in ssb_probes_mhz:
+        if ssb_mode and isinstance(probe_freqs_mhz, list) and probe_freqs_mhz:
+            centers = [float(mhz) * 1e6 for mhz in probe_freqs_mhz if mhz is not None and float(mhz) > 0]
+        elif ssb_mode and ssb_probe_only and band_key in ssb_probes_mhz:
             probes = list(ssb_probes_mhz[band_key])
             # Light time-of-day ordering: at night, put lower-frequency anchors first.
             try:
@@ -132,6 +142,8 @@ class BandScanner:
                 center += step
         if not centers:
             centers = [(band_start + band_end) / 2.0]
+        if centers:
+            centers = sorted({float(c) for c in centers if c is not None and float(c) > 0})
 
         def _run() -> None:
             hits: list[dict] = []
@@ -225,6 +237,13 @@ class BandScanner:
                             ssb_occ_thresh_db=float(ssb_occ_thresh_db),
                             ssb_voice_min_score=float(ssb_voice_min_score),
                             ssb_early_stop_frames=2 if ssb_mode else 0,
+                            ssb_warmup_frames=2 if ssb_mode else 0,
+                            ssb_adaptive_threshold=bool(ssb_mode),
+                            ssb_adaptive_min_db=8.0,
+                            ssb_adaptive_max_db=22.0,
+                            ssb_adaptive_spread_gain=0.18,
+                            ssb_adaptive_spread_offset_db=0.0,
+                            ssb_adaptive_spread_target_db=55.0,
                             rx_wait_timeout_s=12.0,
                             rx_wait_interval_s=1.0,
                             rx_wait_max_retries=12,
@@ -271,6 +290,13 @@ class BandScanner:
                                 ssb_occ_thresh_db=float(ssb_occ_thresh_db),
                                 ssb_voice_min_score=float(ssb_voice_min_score),
                                 ssb_early_stop_frames=2 if ssb_mode else 0,
+                                ssb_warmup_frames=2 if ssb_mode else 0,
+                                ssb_adaptive_threshold=bool(ssb_mode),
+                                ssb_adaptive_min_db=8.0,
+                                ssb_adaptive_max_db=22.0,
+                                ssb_adaptive_spread_gain=0.18,
+                                ssb_adaptive_spread_offset_db=0.0,
+                                ssb_adaptive_spread_target_db=55.0,
                                 rx_wait_timeout_s=12.0,
                                 rx_wait_interval_s=1.0,
                                 rx_wait_max_retries=12,

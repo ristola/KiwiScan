@@ -245,7 +245,7 @@ def make_router(
                 return band_ft4_freqs_hz.get(band) or band_freqs_hz.get(band)
             return band_freqs_hz.get(band)
 
-        ordered_bands = list(desired_bands)
+        ordered_bands = [b for b in band_order if b in desired_bands]
         tasks: List[Dict[str, str]] = []
         ssb_enabled = bool(ssb_scan_cfg.get("enabled", True))
         skipped_ssb_due_to_wspr = 0
@@ -264,8 +264,10 @@ def make_router(
         ssb_capacity = min(2, len(ssb_tasks))
         ssb_rx_request_list = [0, 1][:ssb_capacity]
         desired_ssb_tasks = ssb_tasks[: len(ssb_rx_request_list)]
-        reserved_ssb_slots = list(ssb_rx_request_list)
-        other_rx_request_list = [rx for rx in range(8) if rx not in reserved_ssb_slots]
+        if len(desired_ssb_tasks) > 0:
+            other_rx_request_list = [2, 3, 4, 5, 6, 7]
+        else:
+            other_rx_request_list = [0, 1, 2, 3, 4, 5, 6, 7]
 
         desired_other_tasks = other_tasks[: len(other_rx_request_list)]
         requested_ssb_tasks = len(ssb_tasks)

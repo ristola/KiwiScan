@@ -8,7 +8,7 @@ from fastapi import APIRouter
 from ..ws4010_server import restart_ws4010
 
 
-def make_router() -> APIRouter:
+def make_router(*, auto_set_loop: object | None = None) -> APIRouter:
     """Create router for admin endpoints."""
 
     router = APIRouter()
@@ -37,5 +37,25 @@ def make_router() -> APIRouter:
                 "ws4010_total_clients": 0,
                 "source": "ws4010",
             }
+
+    @router.get("/admin/headless/status")
+    def headless_status_endpoint() -> dict:
+        if auto_set_loop is None:
+            return {
+                "ok": False,
+                "error": "auto_set_loop_unavailable",
+            }
+        try:
+            status = auto_set_loop.status()  # type: ignore[attr-defined]
+        except Exception:
+            return {
+                "ok": False,
+                "error": "auto_set_loop_status_failed",
+            }
+        if not isinstance(status, dict):
+            status = {}
+        out = {"ok": True}
+        out.update(status)
+        return out
 
     return router

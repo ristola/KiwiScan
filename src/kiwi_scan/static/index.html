@@ -348,6 +348,7 @@
 
         body.theme-dark .info-metrics-card,
         body.theme-dark .decode-panel,
+        body.theme-dark .ssb-panel,
         body.theme-dark .rx-monitor-panel,
         body.theme-dark .ssb-log-wrap,
         body.theme-dark .config-card,
@@ -915,6 +916,16 @@
             display: flex;
             gap: 16px;
             align-items: flex-start;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        .side-panels {
+            position: relative;
+            width: 840px;
+            min-width: 840px;
+            max-width: 840px;
+            min-height: 450px;
         }
 
         .rx-monitor-panel {
@@ -977,10 +988,145 @@
             font-weight: 700;
         }
 
-        .decode-panel {
+        .decode-panel,
+        .ssb-panel {
             width: 840px;
+            min-width: 840px;
+            max-width: 840px;
             border: 1px solid #ddd;
             background: #fff;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.28s ease;
+        }
+
+        .side-panels .decode-panel,
+        .side-panels .ssb-panel {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        .schedule-layout.decode-collapsed .decode-panel {
+            transform: translateX(100%);
+            overflow: visible;
+        }
+
+        .schedule-layout.ssb-collapsed .ssb-panel {
+            transform: translateX(100%);
+            overflow: visible;
+        }
+
+        .schedule-layout.decode-collapsed .decode-header-row,
+        .schedule-layout.decode-collapsed .decode-list,
+        .schedule-layout.decode-collapsed #decode_stream_status {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .schedule-layout.ssb-collapsed #ssb_log_wrap {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .decode-slide-toggle,
+        .ssb-slide-toggle {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            left: auto;
+            transform: none;
+            width: 24px;
+            height: 24px;
+            border-radius: 999px;
+            border: 1px solid #9ca3af;
+            background: rgba(17, 24, 39, 0.72);
+            color: #f8fafc;
+            font-size: 0.82em;
+            font-weight: 700;
+            line-height: 1;
+            padding: 0;
+            z-index: 3;
+        }
+
+        .schedule-layout.decode-collapsed .decode-slide-toggle {
+            top: calc(50% + 18px);
+            left: -24px;
+            right: auto;
+            transform: translateY(-50%);
+            width: 24px;
+            height: 106px;
+            border-radius: 6px 0 0 6px;
+            border-top-left-radius: 10px;
+            writing-mode: vertical-lr;
+            text-orientation: upright;
+            letter-spacing: 0.04em;
+            font-size: 0.5em;
+            line-height: 0.9;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding-top: 1px;
+            background: #2563eb;
+            border-color: #1d4ed8;
+            color: #eff6ff;
+        }
+
+        .schedule-layout.ssb-collapsed .ssb-slide-toggle {
+            top: calc(50% + 126px);
+            left: -24px;
+            right: auto;
+            transform: translateY(-50%);
+            width: 24px;
+            height: 95px;
+            border-radius: 6px 0 0 6px;
+            writing-mode: vertical-lr;
+            text-orientation: upright;
+            letter-spacing: 0.04em;
+            font-size: 0.5em;
+            line-height: 0.9;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            background: #dc2626;
+            border-color: #b91c1c;
+            color: #fef2f2;
+            font-size: 0.58em;
+        }
+
+        .schedule-layout.decode-collapsed .decode-slide-toggle,
+        .schedule-layout.ssb-collapsed .ssb-slide-toggle {
+            font-size: 0.5em;
+            line-height: 0.9;
+            letter-spacing: 0.04em;
+            text-align: center;
+        }
+
+        .schedule-layout.decode-collapsed .decode-slide-toggle {
+            padding-top: 3px;
+        }
+
+        .decode-slide-toggle:hover,
+        .ssb-slide-toggle:hover {
+            background: rgba(17, 24, 39, 0.84);
+            border-color: #cbd5e1;
+        }
+
+        body.theme-dark .decode-slide-toggle,
+        body.theme-dark .ssb-slide-toggle {
+            border-color: #94a3b8;
+            background: rgba(15, 23, 42, 0.82);
+            color: #e2e8f0;
+        }
+
+        body.theme-dark .decode-slide-toggle:hover,
+        body.theme-dark .ssb-slide-toggle:hover {
+            background: rgba(30, 41, 59, 0.9);
+            border-color: #cbd5e1;
         }
 
         .ssb-scan-hits {
@@ -988,18 +1134,41 @@
             overflow-y: auto;
             font-family: "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
             font-size: 0.85em;
+            color: #111827;
             background: #f8fafc;
             border: 1px solid #e2e8f0;
             padding: 6px 8px;
             white-space: pre;
         }
 
+        body.theme-dark .ssb-scan-hits {
+            color: #111827;
+            background: #f8fafc;
+            border-color: #cbd5e1;
+        }
+
         .decode-header {
             background: #f4f4f4;
             padding: 8px;
+            padding-right: 34px;
             font-weight: 700;
             text-align: center;
             position: relative;
+        }
+
+        .decode-header #decode_stream_status {
+            display: none;
+        }
+
+        .ssb-panel .ssb-log-wrap {
+            margin-top: 0;
+            border: 0;
+            background: transparent;
+            padding: 8px;
+        }
+
+        .ssb-panel .ssb-scan-hits {
+            height: 320px;
         }
 
         body.theme-dark .decode-header {
@@ -1039,7 +1208,7 @@
         }
 
         .decode-list {
-            height: 360px;
+            height: 380px;
             overflow-y: auto;
             overflow-x: auto;
             font-family: "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -1653,6 +1822,27 @@
             gap: 10px;
         }
 
+        .ssbwf-indicator {
+            border: 1px solid #cbd5e1;
+            background: #f8fafc;
+            color: #334155;
+            border-radius: 999px;
+            font-size: 0.82em;
+            padding: 4px 10px;
+            cursor: pointer;
+            transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+        }
+
+        .ssbwf-indicator:hover {
+            background: #e2e8f0;
+        }
+
+        .ssbwf-indicator.is-active {
+            color: #ffffff;
+            border-color: #0f766e;
+            background: linear-gradient(90deg, #0ea5a4, #10b981);
+        }
+
         .ssbwf-status {
             color: #4b5563;
             font-size: 0.85em;
@@ -1792,6 +1982,8 @@
             <div class="info-metrics-head">
                 <span class="info-metrics-title">
                     <span>Info Metrics</span>
+                    <button id="info_metrics_reset_btn" type="button" title="Reset Info Metrics counters">Reset
+                        Metrics</button>
                     <button id="info_metrics_help_btn" class="info-metrics-help-btn" type="button" aria-expanded="false"
                         aria-controls="info_metrics_help_panel" title="Show metric definitions">?</button>
                 </span>
@@ -1849,7 +2041,7 @@
                 </div>
             </div>
         </div>
-        <div class="schedule-layout">
+        <div id="schedule_layout" class="schedule-layout">
             <div class="table-group">
                 <table id="schedule">
                     <colgroup>
@@ -1883,51 +2075,34 @@
                     <tbody></tbody>
                 </table>
             </div>
-            <div class="decode-panel">
-                <div class="decode-header">
-                    Decodes
-                    <span id="decode_stream_status" class="stream-status"></span>
+            <div class="side-panels">
+                <div id="decode_panel" class="decode-panel">
+                    <div class="decode-header">
+                        <button id="decode_panel_toggle" class="decode-slide-toggle" type="button" aria-expanded="true"
+                            title="Hide decoder window">▶</button>
+                        Decodes
+                        <span id="decode_stream_status" class="stream-status"></span>
+                    </div>
+                    <div id="decode_header_row" class="decode-header-row"></div>
+                    <div id="decode_list" class="decode-list">Waiting for decodes…</div>
                 </div>
-                <div id="decode_header_row" class="decode-header-row"></div>
-                <div id="decode_list" class="decode-list">Waiting for decodes…</div>
-            </div>
-        </div>
-        <div class="rx-monitor-panel" id="rx_monitor_panel">
-            <div class="rx-monitor-title">RX0 Monitor</div>
-            <div class="rx-monitor-grid">
-                <div class="rx-monitor-field">
-                    <label>RX</label>
-                    <input id="rx_monitor_rx" type="number" min="0" max="0" disabled />
+                <div id="ssb_panel" class="ssb-panel">
+                    <div class="decode-header">
+                        <button id="ssb_panel_toggle" class="ssb-slide-toggle" type="button" aria-expanded="false"
+                            title="Show SSB window">SSB</button>
+                        SSB
+                    </div>
+                    <div class="ssb-log-wrap" id="ssb_log_wrap">
+                        <div class="ssb-log-header">
+                            <span>SSB Log</span>
+                            <span id="ssb_scan_counts" style="color:#666;"></span>
+                        </div>
+                        <div id="ssb_scan_hits" class="ssb-scan-hits"></div>
+                        <div style="margin-top:6px;">
+                            <button id="ssb_scan_clear" type="button">Clear Log</button>
+                        </div>
+                    </div>
                 </div>
-                <div class="rx-monitor-field">
-                    <label>Freq (kHz)</label>
-                    <input id="rx_monitor_freq" type="number" step="0.1" min="1" />
-                </div>
-                <div class="rx-monitor-field">
-                    <label>Sideband</label>
-                    <select id="rx_monitor_sideband">
-                        <option value="LSB">LSB</option>
-                        <option value="USB">USB</option>
-                    </select>
-                </div>
-                <button id="rx_monitor_start" type="button">Start</button>
-                <button id="rx_monitor_stop" type="button">Stop</button>
-                <div class="rx-monitor-status">
-                    RSSI: <span id="rx_monitor_rssi">--</span> dB
-                </div>
-                <div class="rx-monitor-status">
-                    Status: <span id="rx_monitor_state">Idle</span>
-                </div>
-            </div>
-        </div>
-        <div class="ssb-log-wrap" id="ssb_log_wrap">
-            <div class="ssb-log-header">
-                <span>SSB Log</span>
-                <span id="ssb_scan_counts" style="color:#666;"></span>
-            </div>
-            <div id="ssb_scan_hits" class="ssb-scan-hits"></div>
-            <div style="margin-top:6px;">
-                <button id="ssb_scan_clear" type="button">Clear Log</button>
             </div>
         </div>
     </section>
@@ -1958,7 +2133,6 @@
                     </div>
                     <div class="config-actions">
                         <button id="cfg_discover_kiwi" type="button">Discover Kiwi</button>
-                        <button id="cfg_save">Save</button>
                     </div>
                 </div>
                 <div class="config-card">
@@ -1999,6 +2173,30 @@
                     </div>
                     <div id="cfg_runtime_paths" class="config-runtime-paths"></div>
                 </div>
+                <div class="config-card">
+                    <div class="config-title">Runtime</div>
+                    <div class="config-row">
+                        <label>Headless loop</label>
+                        <select id="cfg_headless_enabled">
+                            <option value="on">On</option>
+                            <option value="off">Off</option>
+                        </select>
+                    </div>
+                    <div class="config-row">
+                        <label>Use launchd</label>
+                        <select id="cfg_use_launchd">
+                            <option value="off">Off</option>
+                            <option value="on">On</option>
+                        </select>
+                    </div>
+                    <div class="config-row">
+                        <label>Runtime status</label>
+                        <span id="cfg_headless_status" class="meta">Checking…</span>
+                    </div>
+                    <div class="config-actions">
+                        <button id="cfg_headless_refresh" type="button">Refresh Runtime Status</button>
+                    </div>
+                </div>
             </div>
         </div>
         <div id="cfg_status" class="meta"></div>
@@ -2010,18 +2208,6 @@
             <div class="ssbwf-controls">
                 <label for="ssb_wf_band">Band</label>
                 <select id="ssb_wf_band"></select>
-                <label for="ssb_wf_rx_mode">RX</label>
-                <select id="ssb_wf_rx_mode">
-                    <option value="auto" selected>Auto</option>
-                    <option value="rx0">RX0</option>
-                    <option value="rx1">RX1</option>
-                    <option value="rx2">RX2</option>
-                    <option value="rx3">RX3</option>
-                    <option value="rx4">RX4</option>
-                    <option value="rx5">RX5</option>
-                    <option value="rx6">RX6</option>
-                    <option value="rx7">RX7</option>
-                </select>
                 <label for="ssb_wf_contrast_mode">Contrast</label>
                 <select id="ssb_wf_contrast_mode">
                     <option value="auto" selected>Auto</option>
@@ -2032,9 +2218,10 @@
                     <option value="fast">Fast</option>
                     <option value="balanced" selected>Balanced</option>
                     <option value="deep">Deep</option>
+                    <option value="wide">Wide</option>
                 </select>
-                <button id="ssb_wf_scout_btn" type="button">Quick Scout</button>
-                <button id="ssb_wf_start_btn" type="button">Start PHONE Scan</button>
+                <button id="ssb_wf_scout_btn" type="button" class="ssbwf-indicator">Quick Scout</button>
+                <button id="ssb_wf_start_btn" type="button" class="ssbwf-indicator">PHONE Scan</button>
                 <button id="ssb_wf_stop_btn" type="button">Stop</button>
                 <span id="ssb_wf_status" class="ssbwf-status">Idle</span>
             </div>
@@ -2046,10 +2233,12 @@
             </div>
             <div class="ssbwf-meta">
                 <span id="ssb_wf_range">Range: --</span>
+                <span id="ssb_wf_hover_freq">Hover: --</span>
                 <span id="ssb_wf_cursor">Scan cursor: --</span>
                 <span id="ssb_wf_rx">Active RX: --</span>
                 <span id="ssb_wf_last">Last Scan: --</span>
                 <span id="ssb_wf_click">Last click tune: --</span>
+                <span id="ssb_wf_in_use">In use: --</span>
                 <span id="ssb_wf_contrast">Contrast: --</span>
                 <span id="ssb_wf_stats">Noise/SNR: --</span>
                 <button id="ssb_wf_copy_status" type="button" class="ssbwf-meta-btn">Copy Status JSON</button>
@@ -2309,21 +2498,23 @@
             '160m': 1.843,
         };
         const SSB_WF_BAND_RANGES_MHZ = {
-            '10m': [28.000, 29.700],
-            '12m': [24.890, 24.990],
-            '15m': [21.000, 21.450],
-            '17m': [18.068, 18.168],
-            '20m': [14.000, 14.350],
+            '10m': [28.300, 29.700],
+            '12m': [24.930, 24.990],
+            '15m': [21.200, 21.450],
+            '17m': [18.110, 18.168],
+            '20m': [14.150, 14.350],
             '30m': [10.100, 10.150],
-            '40m': [7.000, 7.300],
-            '60m': [5.300, 5.450],
-            '80m': [3.500, 4.000],
+            '40m': [7.125, 7.300],
+            '60m': [5.330, 5.406],
+            '80m': [3.600, 4.000],
             '160m': [1.800, 2.000],
         };
         const DEFAULT_AUTOMATION = {
             autoScanOnBlock: false,
             autoScanWspr: true,
             autoScanOnStartup: false,
+            headlessEnabled: true,
+            useLaunchd: false,
             autoRefreshSchedule: true,
             bandHopSeconds: 105,
             wsprStartBand: '10m',
@@ -2413,6 +2604,8 @@
         const MAP_LEGEND_HINT_DISMISSED_KEY = 'map_legend_hint_dismissed';
         const UI_THEME_STORAGE_KEY = 'ui_theme_mode';
         const UI_THEME_NIGHT_HOUR_STORAGE_KEY = 'ui_theme_night_hour';
+        const DECODE_PANEL_COLLAPSED_KEY = 'decode_panel_collapsed';
+        const SSB_PANEL_COLLAPSED_KEY = 'ssb_panel_collapsed';
         const UI_THEME_DEFAULT_MODE = 'auto';
         const SSB_WF_SCOUT_PRESET_STORAGE_KEY = 'ssb_wf_scout_preset';
         const SSB_WF_RX_MODE_STORAGE_KEY = 'ssb_wf_rx_mode';
@@ -2432,9 +2625,13 @@
         let ssbWfEvents = [];
         let ssbWfScanRunning = false;
         let ssbWfScanCenterHz = null;
+        let ssbWfHoverFreqMhz = null;
         let ssbWfStatusTimer = null;
         let ssbWfHitsCursor = 0;
         let ssbWfContinuous = false;
+        let ssbWfMode = 'idle';
+        let ssbWfActiveFreqListMhz = [];
+        let ssbWfListCursor = 0;
         let ssbWfRxMode = readSsbWfRxMode();
         let ssbWfContrastMode = 'auto';
         let ssbWfScoutPreset = readSsbWfScoutPreset();
@@ -2442,6 +2639,16 @@
         let ssbWfTooltipTimer = null;
         let ssbWfTooltipPointKey = '';
         let ssbWfLastStatus = null;
+        let ssbWfInUseByBand = {};
+        let ssbWfEligibleBands = [];
+        let ssbWfBandRxAssignments = {};
+        let ssbWfZoomMinMhz = null;
+        let ssbWfZoomMaxMhz = null;
+        const SSB_WF_IN_USE_WINDOW_MS = 8 * 60 * 1000;
+        const SSB_WF_IN_USE_BIN_KHZ = 1.5;
+        const SSB_WF_MIN_SPAN_MHZ = 0.02;
+        const SSB_WF_LIST_MIN_REL_DB = 6;
+        const SSB_WF_LIST_MIN_SAMPLES = 2;
 
         function wsprOverrideKey(mode, block, band) {
             const keyMode = mode || 'ft8';
@@ -3025,8 +3232,14 @@
 
         function updateModeLogVisibility() {
             const ssbWrap = document.getElementById('ssb_log_wrap');
+            const ssbPanel = document.getElementById('ssb_panel');
             const showSsb = isModeSelected('SSB');
             if (ssbWrap) ssbWrap.style.display = showSsb ? '' : 'none';
+            if (ssbPanel) ssbPanel.style.display = showSsb ? '' : 'none';
+            if (!showSsb) {
+                applySsbPanelCollapsed(true);
+                saveSsbPanelCollapsed(true);
+            }
         }
 
         function currentMode() {
@@ -3188,6 +3401,30 @@
             if (tone === 'ok') statusEl.classList.add('cfg-status-ok');
             else if (tone === 'error') statusEl.classList.add('cfg-status-error');
             else if (text) statusEl.classList.add('cfg-status-info');
+        }
+
+        async function refreshHeadlessRuntimeStatus() {
+            const statusEl = document.getElementById('cfg_headless_status');
+            if (!statusEl) return null;
+            statusEl.textContent = 'Checking…';
+            try {
+                const r = await fetch('/admin/headless/status', { cache: 'no-store' });
+                const data = await r.json();
+                if (!r.ok || !data || data.ok === false) {
+                    statusEl.textContent = 'Unavailable';
+                    return null;
+                }
+                const running = !!data.thread_running;
+                const envEnabled = !!data.enabled_by_env;
+                const headless = !!data.headless_enabled;
+                const launchdPref = !!data.launchd_preferred;
+                const interval = Number(data.interval_s || 0);
+                statusEl.textContent = `Loop ${running ? 'running' : 'stopped'} · headless ${headless ? 'on' : 'off'} · launchd pref ${launchdPref ? 'on' : 'off'} · env ${envEnabled ? 'on' : 'off'} · ${interval || 0}s`;
+                return data;
+            } catch (e) {
+                statusEl.textContent = 'Unavailable';
+                return null;
+            }
         }
 
         function setScheduleAutoSetStatus(text, tone = null) {
@@ -3503,16 +3740,199 @@
             } catch (e) { }
         }
 
-        function getSsbWfRangeMhz() {
+        function getSsbWfBandRangeMhz() {
             const range = SSB_WF_BAND_RANGES_MHZ[ssbWfSelectedBand] || [14.000, 14.350];
             const min = Number(range[0]);
             const max = Number(range[1]);
             return [Math.min(min, max), Math.max(min, max)];
         }
 
+        function setSsbWfZoomRange(minMhz, maxMhz) {
+            const [bandMin, bandMax] = getSsbWfBandRangeMhz();
+            const bandSpan = Math.max(0.001, bandMax - bandMin);
+            let min = Number(minMhz);
+            let max = Number(maxMhz);
+            if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) {
+                ssbWfZoomMinMhz = null;
+                ssbWfZoomMaxMhz = null;
+                return;
+            }
+            let span = max - min;
+            const minSpan = Math.min(SSB_WF_MIN_SPAN_MHZ, bandSpan);
+            if (span < minSpan) span = minSpan;
+            if (span > bandSpan) span = bandSpan;
+
+            if (min < bandMin) {
+                max += (bandMin - min);
+                min = bandMin;
+            }
+            if (max > bandMax) {
+                min -= (max - bandMax);
+                max = bandMax;
+            }
+            min = Math.max(bandMin, min);
+            max = Math.min(bandMax, max);
+
+            if ((max - min) >= (bandSpan * 0.995)) {
+                ssbWfZoomMinMhz = null;
+                ssbWfZoomMaxMhz = null;
+                return;
+            }
+            ssbWfZoomMinMhz = min;
+            ssbWfZoomMaxMhz = max;
+        }
+
+        function zoomSsbWfAtFreq(anchorFreqMhz, factor) {
+            const [currMin, currMax] = getSsbWfRangeMhz();
+            const [bandMin, bandMax] = getSsbWfBandRangeMhz();
+            const currSpan = Math.max(0.0005, currMax - currMin);
+            const bandSpan = Math.max(0.0005, bandMax - bandMin);
+            const minSpan = Math.min(SSB_WF_MIN_SPAN_MHZ, bandSpan);
+            const f = Math.max(0.25, Math.min(4, Number(factor) || 1));
+            const targetSpan = Math.max(minSpan, Math.min(bandSpan, currSpan * f));
+            const anchor = Number.isFinite(anchorFreqMhz)
+                ? Math.max(currMin, Math.min(currMax, Number(anchorFreqMhz)))
+                : ((currMin + currMax) / 2);
+            const norm = (anchor - currMin) / currSpan;
+            let nextMin = anchor - (norm * targetSpan);
+            let nextMax = nextMin + targetSpan;
+            if (nextMin < bandMin) {
+                nextMax += (bandMin - nextMin);
+                nextMin = bandMin;
+            }
+            if (nextMax > bandMax) {
+                nextMin -= (nextMax - bandMax);
+                nextMax = bandMax;
+            }
+            setSsbWfZoomRange(nextMin, nextMax);
+        }
+
+        function getSsbWfRangeMhz() {
+            const [bandMin, bandMax] = getSsbWfBandRangeMhz();
+            if (Number.isFinite(ssbWfZoomMinMhz) && Number.isFinite(ssbWfZoomMaxMhz)) {
+                const zMin = Number(ssbWfZoomMinMhz);
+                const zMax = Number(ssbWfZoomMaxMhz);
+                if (zMax > zMin) {
+                    return [Math.max(bandMin, zMin), Math.min(bandMax, zMax)];
+                }
+            }
+            return [bandMin, bandMax];
+        }
+
         function setSsbWfStatus(text) {
             const el = document.getElementById('ssb_wf_status');
             if (el) el.textContent = text || '';
+        }
+
+        function updateSsbWfModeIndicators() {
+            const scoutBtn = document.getElementById('ssb_wf_scout_btn');
+            const startBtn = document.getElementById('ssb_wf_start_btn');
+            if (!scoutBtn || !startBtn) return;
+            const scoutActive = !!ssbWfScanRunning && ssbWfMode === 'scout';
+            const phoneActive = !!ssbWfScanRunning && (ssbWfMode === 'band' || ssbWfMode === 'list');
+            scoutBtn.classList.toggle('is-active', scoutActive);
+            startBtn.classList.toggle('is-active', phoneActive);
+            scoutBtn.textContent = 'Quick Scout';
+            startBtn.textContent = 'PHONE Scan';
+        }
+
+        function setSsbWfMode(nextMode) {
+            const mode = String(nextMode || 'idle').toLowerCase();
+            ssbWfMode = (mode === 'scout' || mode === 'band' || mode === 'list') ? mode : 'idle';
+            updateSsbWfModeIndicators();
+        }
+
+        function clearSsbWfInUseBand(band) {
+            const bandKey = String(band || '').toLowerCase();
+            if (!bandKey) return;
+            delete ssbWfInUseByBand[bandKey];
+        }
+
+        function buildSsbWfActivityFrequencyList(band) {
+            const rows = getSsbWfInUseFrequencies(band);
+            const chosen = [];
+            const bins = new Set();
+            for (const row of rows) {
+                const relDb = Number(row && row.relDb);
+                const samples = Number(row && row.samples);
+                const freqMhz = Number(row && row.freqMhz);
+                if (!Number.isFinite(freqMhz) || freqMhz <= 0) continue;
+                if (!Number.isFinite(relDb) || relDb < SSB_WF_LIST_MIN_REL_DB) continue;
+                if (!Number.isFinite(samples) || samples < SSB_WF_LIST_MIN_SAMPLES) continue;
+                const bin = String(Math.round((freqMhz * 1000) / 1.5));
+                if (bins.has(bin)) continue;
+                bins.add(bin);
+                chosen.push(Number(freqMhz.toFixed(3)));
+                if (chosen.length >= 12) break;
+            }
+            return chosen;
+        }
+
+        function seedSsbWfFrequencyListFromInUse() {
+            const list = buildSsbWfActivityFrequencyList(ssbWfSelectedBand);
+            ssbWfActiveFreqListMhz = list;
+            ssbWfListCursor = 0;
+            return list;
+        }
+
+        function nextSsbWfListFrequencyMhz() {
+            if (!Array.isArray(ssbWfActiveFreqListMhz) || !ssbWfActiveFreqListMhz.length) return null;
+            const idx = ((Number(ssbWfListCursor) || 0) % ssbWfActiveFreqListMhz.length + ssbWfActiveFreqListMhz.length) % ssbWfActiveFreqListMhz.length;
+            const value = Number(ssbWfActiveFreqListMhz[idx]);
+            ssbWfListCursor = idx + 1;
+            return Number.isFinite(value) ? value : null;
+        }
+
+        async function startSsbFrequencyListScan() {
+            if (ssbWfScanRunning) return;
+            const band = ssbWfSelectedBand;
+            const freqMhz = nextSsbWfListFrequencyMhz();
+            if (!band || !Number.isFinite(freqMhz)) {
+                ssbWfContinuous = false;
+                setSsbWfMode('idle');
+                setSsbWfStatus('No active PHONE frequencies found');
+                return;
+            }
+            try {
+                const assignedRx = Number(ssbWfBandRxAssignments[band]);
+                const rxLabel = Number.isFinite(assignedRx) ? `RX${assignedRx}` : 'AUTO';
+                const cycleN = ssbWfActiveFreqListMhz.length;
+                setSsbWfStatus(`PHONE list scan ${band} ${freqMhz.toFixed(3)} MHz (${rxLabel}, ${cycleN} freqs)`);
+                const rxPayload = Number.isFinite(assignedRx)
+                    ? { rx_chan: assignedRx, wf_rx_chan: assignedRx, allow_rx_fallback: false }
+                    : { rx_chan: null, wf_rx_chan: null, allow_rx_fallback: true };
+                await fetch('/band_scan', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({
+                        band,
+                        detector: 'phone',
+                        ssb_probe_only: true,
+                        probe_freqs_mhz: [Number(freqMhz.toFixed(3))],
+                        span_hz: 8000,
+                        max_frames: 1,
+                        step_hz: 8000,
+                        required_hits: 2,
+                        record_hits: false,
+                        ...rxPayload,
+                    })
+                });
+            } catch (e) {
+            } finally {
+                pollSsbWaterfallStatus();
+            }
+        }
+
+        function setSsbWfHoverFrequency(freqMhz) {
+            const el = document.getElementById('ssb_wf_hover_freq');
+            if (!el) return;
+            if (Number.isFinite(freqMhz) && freqMhz > 0) {
+                ssbWfHoverFreqMhz = Number(freqMhz);
+                el.textContent = `Hover: ${Number(freqMhz).toFixed(3)} MHz`;
+            } else {
+                ssbWfHoverFreqMhz = null;
+                el.textContent = 'Hover: --';
+            }
         }
 
         function setSsbWfSweepProgressPercent(pct) {
@@ -3642,9 +4062,11 @@
 
         function addSsbWaterfallEvent(evt) {
             if (!evt || !Number.isFinite(evt.freqMhz)) return;
+            const stepKHz = Number(evt.stepKHz);
             ssbWfEvents.push({
                 freqMhz: Number(evt.freqMhz),
                 relDb: Number.isFinite(evt.relDb) ? Number(evt.relDb) : 0,
+                stepKHz: (Number.isFinite(stepKHz) && stepKHz > 0) ? stepKHz : null,
                 ts: Date.now(),
                 source: String(evt.source || 'hit'),
             });
@@ -3823,6 +4245,23 @@
             return `${Number(freqMhz).toFixed(decimals)} MHz`;
         }
 
+        function deriveSsbWfRelDb(item) {
+            if (!item) return 0;
+            const rssi = Number(item.rssi_db);
+            const thr = Number(item.threshold_db);
+            if (Number.isFinite(rssi)) {
+                if (rssi < 0) {
+                    const base = rssi + 130;
+                    return Math.max(-12, Math.min(35, base));
+                }
+                if (Number.isFinite(thr)) {
+                    return rssi - thr;
+                }
+                return rssi;
+            }
+            return parseSsbScanRelDbFromMessage(item.message);
+        }
+
         async function pollSsbWaterfallHits() {
             try {
                 const r = await fetch(`/ssb_scan/hits?since=${encodeURIComponent(ssbWfHitsCursor)}`, { cache: 'no-store' });
@@ -3838,12 +4277,14 @@
                     if (band && band !== ssbWfSelectedBand) continue;
                     const freqKHz = Number(item.freq_khz);
                     if (!Number.isFinite(freqKHz) || freqKHz <= 0) continue;
-                    const relDb = Number.isFinite(Number(item.rssi_db)) && Number.isFinite(Number(item.threshold_db))
-                        ? Number(item.rssi_db) - Number(item.threshold_db)
-                        : 0;
+                    const relDb = deriveSsbWfRelDb(item);
+                    const kind = String(item.kind || '').toLowerCase();
+                    if (kind === 'status' && relDb < -12) continue;
+                    registerSsbWfInUse(item, relDb);
                     addSsbWaterfallEvent({
                         freqMhz: freqKHz / 1000,
                         relDb,
+                        stepKHz: Number(item.step_khz),
                     });
                 }
             } catch (e) { }
@@ -3855,6 +4296,99 @@
             if (!m) return 0;
             const v = Number(m[1]);
             return Number.isFinite(v) ? v : 0;
+        }
+
+        function registerSsbWfInUse(item, relDb) {
+            if (!item) return;
+            const band = String(item.band || '').toLowerCase();
+            if (!band) return;
+            const freqKHz = Number(item.freq_khz);
+            if (!Number.isFinite(freqKHz) || freqKHz <= 0) return;
+            const level = Number(relDb);
+            if (!Number.isFinite(level) || level < 2) return;
+            const tsMs = Number.isFinite(Number(item.ts)) ? Number(item.ts) * 1000 : Date.now();
+            if (!Number.isFinite(tsMs) || tsMs <= 0) return;
+
+            const bins = ssbWfInUseByBand[band] || {};
+            const binKey = String(Math.round(freqKHz / SSB_WF_IN_USE_BIN_KHZ));
+            const curr = bins[binKey] || {
+                freqSumKHz: 0,
+                samples: 0,
+                bestRelDb: -999,
+                lastTs: 0,
+            };
+            curr.freqSumKHz += freqKHz;
+            curr.samples += 1;
+            curr.bestRelDb = Math.max(Number(curr.bestRelDb) || -999, level);
+            curr.lastTs = Math.max(Number(curr.lastTs) || 0, tsMs);
+            bins[binKey] = curr;
+            ssbWfInUseByBand[band] = bins;
+        }
+
+        function getSsbWfInUseFrequencies(band) {
+            const bandKey = String(band || '').toLowerCase();
+            const bins = ssbWfInUseByBand[bandKey] || {};
+            const cutoffMs = Date.now() - SSB_WF_IN_USE_WINDOW_MS;
+            const rows = [];
+            for (const [key, value] of Object.entries(bins)) {
+                const lastTs = Number(value && value.lastTs);
+                if (!Number.isFinite(lastTs) || lastTs < cutoffMs) {
+                    delete bins[key];
+                    continue;
+                }
+                const samples = Number(value && value.samples);
+                const freqSumKHz = Number(value && value.freqSumKHz);
+                const bestRelDb = Number(value && value.bestRelDb);
+                if (!Number.isFinite(samples) || samples <= 0 || !Number.isFinite(freqSumKHz)) continue;
+                rows.push({
+                    freqMhz: (freqSumKHz / samples) / 1000,
+                    relDb: Number.isFinite(bestRelDb) ? bestRelDb : 0,
+                    lastTs,
+                    samples,
+                });
+            }
+            rows.sort((a, b) => {
+                const pA = (a.relDb * 10) + Math.min(90, a.samples * 6);
+                const pB = (b.relDb * 10) + Math.min(90, b.samples * 6);
+                if (pB !== pA) return pB - pA;
+                return b.lastTs - a.lastTs;
+            });
+            return rows;
+        }
+
+        function renderSsbWfInUseSummary() {
+            const inUseEl = document.getElementById('ssb_wf_in_use');
+            if (!inUseEl) return;
+            const rows = getSsbWfInUseFrequencies(ssbWfSelectedBand).slice(0, 5);
+            if (!rows.length) {
+                inUseEl.textContent = 'In use: --';
+                return;
+            }
+            const parts = rows.map((row) => {
+                const age = formatSsbWfAge(row.lastTs);
+                const rel = Number.isFinite(row.relDb) ? `${row.relDb >= 0 ? '+' : ''}${row.relDb.toFixed(0)}dB` : '--';
+                return `${row.freqMhz.toFixed(3)} (${rel}, ${age})`;
+            });
+            inUseEl.textContent = `In use: ${parts.join('  |  ')}`;
+        }
+
+        function ssbWfMixColor(a, b, t) {
+            const k = Math.max(0, Math.min(1, Number(t) || 0));
+            const r = Math.round(a[0] + ((b[0] - a[0]) * k));
+            const g = Math.round(a[1] + ((b[1] - a[1]) * k));
+            const bl = Math.round(a[2] + ((b[2] - a[2]) * k));
+            return `rgb(${r}, ${g}, ${bl})`;
+        }
+
+        function ssbWfHeatColor(level) {
+            const raw = Math.max(0, Math.min(1, Number(level) || 0));
+            const t = Math.pow(raw, 0.64);
+            if (t < 0.14) return ssbWfMixColor([22, 62, 208], [18, 128, 238], t / 0.14);
+            if (t < 0.30) return ssbWfMixColor([18, 128, 238], [0, 220, 255], (t - 0.14) / 0.16);
+            if (t < 0.46) return ssbWfMixColor([0, 220, 255], [255, 246, 70], (t - 0.30) / 0.16);
+            if (t < 0.66) return ssbWfMixColor([255, 246, 70], [255, 186, 46], (t - 0.46) / 0.20);
+            if (t < 0.84) return ssbWfMixColor([255, 186, 46], [255, 118, 38], (t - 0.66) / 0.18);
+            return ssbWfMixColor([255, 118, 38], [255, 46, 32], (t - 0.84) / 0.16);
         }
 
         function renderSsbWaterfall() {
@@ -3872,99 +4406,264 @@
             const span = Math.max(0.001, maxFreq - minFreq);
             const tickStep = chooseSsbWfBandTickStepMhz(ssbWfSelectedBand, span);
             const axisTicks = buildSsbWfTicks(minFreq, maxFreq, tickStep);
-            const axisHeight = 24;
-            const plotHeight = Math.max(60, canvas.height - axisHeight);
 
-            ctx.fillStyle = '#020617';
+            const rightScaleWidth = 52;
+            const graphRight = Math.max(80, canvas.width - rightScaleWidth);
+            const spectrumHeight = Math.max(62, Math.round(canvas.height * 0.34));
+            const midBandHeight = 26;
+            const rulerHeight = 22;
+            const spectrumTop = 0;
+            const spectrumBottom = spectrumTop + spectrumHeight;
+            const bandTop = spectrumBottom;
+            const bandBottom = bandTop + midBandHeight;
+            const rulerTop = bandBottom;
+            const rulerBottom = rulerTop + rulerHeight;
+            const plotTop = rulerBottom;
+            const plotHeight = Math.max(70, canvas.height - plotTop);
+            const plotBottom = plotTop + plotHeight;
+
+            ctx.fillStyle = '#000000';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            ctx.strokeStyle = 'rgba(148, 163, 184, 0.28)';
+            const wfBg = ctx.createLinearGradient(0, plotTop, 0, plotBottom);
+            wfBg.addColorStop(0, '#0826a8');
+            wfBg.addColorStop(1, '#1236c2');
+            ctx.fillStyle = wfBg;
+            ctx.fillRect(0, plotTop, graphRight, plotHeight);
+
+            const rulerBg = ctx.createLinearGradient(0, rulerTop, 0, rulerBottom);
+            rulerBg.addColorStop(0, '#8a8f96');
+            rulerBg.addColorStop(1, '#72777e');
+            ctx.fillStyle = rulerBg;
+            ctx.fillRect(0, rulerTop, graphRight, rulerHeight);
+
+            ctx.fillStyle = '#cfd4ff';
+            ctx.fillRect(0, bandTop, graphRight, midBandHeight);
+            ctx.strokeStyle = 'rgba(104, 113, 255, 0.35)';
             ctx.lineWidth = 1;
-            for (const tickFreq of axisTicks) {
-                const xNorm = (tickFreq - minFreq) / span;
-                const x = Math.round(xNorm * (canvas.width - 1)) + 0.5;
-                ctx.beginPath();
-                ctx.moveTo(x, 0);
-                ctx.lineTo(x, plotHeight);
-                ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, bandTop + 0.5);
+            ctx.lineTo(graphRight, bandTop + 0.5);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, bandBottom + 0.5);
+            ctx.lineTo(graphRight, bandBottom + 0.5);
+            ctx.stroke();
+
+            const bandLabel = `${String(ssbWfSelectedBand || '').toUpperCase()} Amateur`;
+            const tunedMhz = Number.isFinite(ssbWfScanCenterHz) ? (Number(ssbWfScanCenterHz) / 1e6) : null;
+            const hoverMhz = Number.isFinite(ssbWfHoverFreqMhz) ? Number(ssbWfHoverFreqMhz) : null;
+            const tunedText = tunedMhz != null ? `  |  Tuned ${tunedMhz.toFixed(3)} MHz` : '';
+            const cursorText = hoverMhz != null ? `  |  Cursor ${hoverMhz.toFixed(3)} MHz` : '';
+
+            ctx.font = '700 12px Arial, sans-serif';
+            ctx.textBaseline = 'middle';
+            const baseText = `${bandLabel}${tunedText}`;
+            const baseWidth = ctx.measureText(baseText).width;
+            const cursorWidth = hoverMhz != null ? ctx.measureText(cursorText).width : 0;
+            const totalWidth = baseWidth + cursorWidth;
+            const tx = Math.max(8, (graphRight - totalWidth) / 2);
+            const ty = bandTop + (midBandHeight / 2);
+
+            ctx.fillStyle = '#2f3ee4';
+            ctx.fillText(baseText, tx, ty);
+            if (hoverMhz != null) {
+                ctx.fillStyle = '#ef4444';
+                ctx.fillText(cursorText, tx + baseWidth, ty);
             }
 
-            ctx.strokeStyle = 'rgba(148, 163, 184, 0.48)';
-            ctx.beginPath();
-            ctx.moveTo(0, plotHeight + 0.5);
-            ctx.lineTo(canvas.width, plotHeight + 0.5);
-            ctx.stroke();
+            const dbTicks = [-90, -100, -110, -120, -130, -140];
+            const dbMin = -140;
+            const dbMax = -90;
+            ctx.fillStyle = '#0d1117';
+            ctx.fillRect(graphRight, 0, rightScaleWidth, canvas.height);
+            for (const db of dbTicks) {
+                const yNorm = (dbMax - db) / (dbMax - dbMin);
+                const y = spectrumTop + (yNorm * (spectrumHeight - 1));
+                let color = '#f87171';
+                if (db <= -100 && db > -110) color = '#f97316';
+                if (db <= -110 && db > -120) color = '#eab308';
+                if (db <= -120 && db > -130) color = '#84cc16';
+                if (db <= -130) color = '#3b82f6';
+
+                ctx.strokeStyle = 'rgba(203, 213, 225, 0.55)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(0, Math.round(y) + 0.5);
+                ctx.lineTo(graphRight, Math.round(y) + 0.5);
+                ctx.stroke();
+
+                ctx.fillStyle = color;
+                ctx.font = '700 11px Arial, sans-serif';
+                ctx.textBaseline = 'middle';
+                const label = `${db}`;
+                ctx.fillText(label, graphRight + 8, y);
+            }
 
             const rows = ssbWfEvents.slice(-Math.min(ssbWfEvents.length, plotHeight));
             const contrastStats = computeSsbWfContrastStats(rows);
             const useAutoContrast = ssbWfContrastMode !== 'fixed';
-            const traceHalfWidth = Math.max(2, Math.round(canvas.width * 0.0025));
+            const traceHalfWidth = Math.max(2, Math.round(graphRight * 0.0022));
+            const hzPerPixel = Math.max(1, (span * 1e6) / Math.max(1, graphRight));
+            const spectrumBins = new Float32Array(Math.max(1, graphRight));
+            for (let i = 0; i < spectrumBins.length; i += 1) spectrumBins[i] = 0.08;
             ssbWfRenderedPoints = [];
             for (let i = 0; i < rows.length; i += 1) {
                 const row = rows[rows.length - 1 - i];
-                const y = plotHeight - 1 - i;
+                const y = plotTop + i;
+                if (y >= plotBottom) break;
                 if (!row || !Number.isFinite(row.freqMhz)) continue;
                 const xNorm = (row.freqMhz - minFreq) / span;
                 if (xNorm < 0 || xNorm > 1) continue;
-                const x = Math.round(xNorm * (canvas.width - 1));
-                let intensity = Math.max(0.2, Math.min(1, 0.42 + ((Number(row.relDb) || 0) / 18)));
+                const x = Math.round(xNorm * (graphRight - 1));
+                let intensity = Math.max(0.26, Math.min(1, 0.52 + ((Number(row.relDb) || 0) / 15)));
                 if (useAutoContrast && contrastStats && Number.isFinite(row.relDb)) {
                     const den = Math.max(0.001, contrastStats.contrastMax - contrastStats.contrastMin);
                     const scaled = (Number(row.relDb) - contrastStats.contrastMin) / den;
-                    intensity = Math.max(0.08, Math.min(1, scaled));
+                    intensity = Math.max(0.18, Math.min(1, scaled));
                 }
-                ctx.fillStyle = `rgba(56, 189, 248, ${intensity})`;
-                ctx.fillRect(Math.max(0, x - traceHalfWidth), y, traceHalfWidth * 2 + 1, 1);
-                ctx.fillStyle = `rgba(56, 189, 248, ${Math.max(0.08, intensity * 0.4)})`;
-                ctx.fillRect(Math.max(0, x - traceHalfWidth * 2), y, traceHalfWidth * 4 + 1, 1);
+
+                const stepHz = Number(row.stepKHz) * 1000;
+                const nominalWidthHz = (Number.isFinite(stepHz) && stepHz > 0) ? stepHz : 2800;
+                const eventWidthPx = Math.max(2, Math.min(graphRight, nominalWidthHz / hzPerPixel));
+                const eventHalfWidthPx = Math.max(traceHalfWidth, Math.round(eventWidthPx * 0.5));
+                const spectrumHalfWidthPx = Math.max(1, Math.round(eventWidthPx * 0.34));
+
+                const s0 = x;
+                for (let dx = -spectrumHalfWidthPx; dx <= spectrumHalfWidthPx; dx += 1) {
+                    const sx = s0 + dx;
+                    if (sx < 0 || sx >= spectrumBins.length) continue;
+                    const taper = 1 - (Math.abs(dx) / Math.max(1, spectrumHalfWidthPx + 1));
+                    spectrumBins[sx] = Math.max(spectrumBins[sx], intensity * Math.max(0.25, taper));
+                }
+
+                ctx.fillStyle = ssbWfHeatColor(intensity);
+                ctx.fillRect(Math.max(0, x - eventHalfWidthPx), y, eventHalfWidthPx * 2 + 1, 1);
+                ctx.fillStyle = ssbWfHeatColor(Math.max(0.10, intensity * 0.78));
+                ctx.fillRect(Math.max(0, x - eventHalfWidthPx * 2), y, eventHalfWidthPx * 4 + 1, 1);
+                ctx.fillStyle = ssbWfHeatColor(Math.max(0.08, intensity * 0.52));
+                ctx.fillRect(Math.max(0, x - eventHalfWidthPx * 3), y, eventHalfWidthPx * 6 + 1, 1);
                 ssbWfRenderedPoints.push({
                     x,
                     y,
                     freqMhz: Number(row.freqMhz),
                     relDb: Number(row.relDb),
+                    stepKHz: Number.isFinite(Number(row.stepKHz)) ? Number(row.stepKHz) : null,
                     ts: Number(row.ts || 0),
                 });
             }
 
+            const smoothed = new Float32Array(spectrumBins.length);
+            for (let x = 0; x < spectrumBins.length; x += 1) {
+                const a = x > 0 ? spectrumBins[x - 1] : spectrumBins[x];
+                const b = spectrumBins[x];
+                const c = x + 1 < spectrumBins.length ? spectrumBins[x + 1] : spectrumBins[x];
+                smoothed[x] = (a * 0.25) + (b * 0.50) + (c * 0.25);
+            }
+
+            const spectrumBaseY = spectrumBottom - 7;
+            ctx.fillStyle = 'rgba(0, 80, 255, 0.35)';
+            ctx.fillRect(0, spectrumBaseY, graphRight, 7);
+            ctx.beginPath();
+            ctx.moveTo(0, spectrumBaseY);
+            for (let x = 0; x < smoothed.length; x += 1) {
+                const amp = Math.max(0, Math.min(1, smoothed[x]));
+                const y = spectrumBaseY - (amp * (spectrumHeight - 16));
+                ctx.lineTo(x, y);
+            }
+            ctx.lineTo(graphRight - 1, spectrumBaseY);
+            ctx.closePath();
+            const spectrumFill = ctx.createLinearGradient(0, 0, 0, spectrumBaseY);
+            spectrumFill.addColorStop(0, 'rgba(50, 255, 220, 0.82)');
+            spectrumFill.addColorStop(0.52, 'rgba(0, 220, 255, 0.58)');
+            spectrumFill.addColorStop(1, 'rgba(0, 110, 255, 0.36)');
+            ctx.fillStyle = spectrumFill;
+            ctx.fill();
+
+            ctx.beginPath();
+            for (let x = 0; x < smoothed.length; x += 1) {
+                const amp = Math.max(0, Math.min(1, smoothed[x]));
+                const y = spectrumBaseY - (amp * (spectrumHeight - 16));
+                if (x === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle = 'rgba(0, 245, 255, 0.95)';
+            ctx.lineWidth = 1.1;
+            ctx.stroke();
+
+            for (let x = 0; x < smoothed.length; x += 1) {
+                const amp = Math.max(0, Math.min(1, smoothed[x]));
+                if (amp < 0.82) continue;
+                const y = spectrumBaseY - (amp * (spectrumHeight - 16));
+                ctx.strokeStyle = 'rgba(132, 255, 0, 0.9)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(x + 0.5, y);
+                ctx.lineTo(x + 0.5, Math.max(0, y - 8));
+                ctx.stroke();
+            }
+
             if (!rows.length) {
-                ctx.fillStyle = 'rgba(148, 163, 184, 0.65)';
+                ctx.fillStyle = 'rgba(191, 219, 254, 0.78)';
                 ctx.font = '600 14px Arial, sans-serif';
-                ctx.fillText('Waiting for SSB scan events...', 12, 24);
+                ctx.fillText('Waiting for SSB scan events...', 12, plotTop + 24);
             }
 
             if (Number.isFinite(ssbWfScanCenterHz)) {
                 const scanMhz = Number(ssbWfScanCenterHz) / 1e6;
                 const xNorm = (scanMhz - minFreq) / span;
                 if (xNorm >= 0 && xNorm <= 1) {
-                    const x = Math.round(xNorm * canvas.width) + 0.5;
+                    const x = Math.round(xNorm * graphRight) + 0.5;
                     ctx.strokeStyle = 'rgba(250, 204, 21, 0.9)';
                     ctx.lineWidth = 1.25;
                     ctx.beginPath();
-                    ctx.moveTo(x, 0);
-                    ctx.lineTo(x, plotHeight);
+                    ctx.moveTo(x, plotTop);
+                    ctx.lineTo(x, plotBottom);
                     ctx.stroke();
                 }
             }
 
-            ctx.fillStyle = 'rgba(148, 163, 184, 0.92)';
-            ctx.font = '500 11px Arial, sans-serif';
-            ctx.textBaseline = 'top';
-            for (let i = 0; i < axisTicks.length; i += 1) {
-                const f = axisTicks[i];
-                const x = Math.round(((f - minFreq) / span) * (canvas.width - 1));
-                const label = formatSsbWfTickLabel(f, tickStep);
+            if (Number.isFinite(ssbWfHoverFreqMhz)) {
+                const hoverMhz = Number(ssbWfHoverFreqMhz);
+                const xNorm = (hoverMhz - minFreq) / span;
+                if (xNorm >= 0 && xNorm <= 1) {
+                    const x = Math.round(xNorm * graphRight) + 0.5;
+                    ctx.strokeStyle = 'rgba(239, 68, 68, 0.95)';
+                    ctx.lineWidth = 1.2;
+                    ctx.beginPath();
+                    ctx.moveTo(x, plotTop);
+                    ctx.lineTo(x, plotBottom);
+                    ctx.stroke();
+                }
+            }
+
+            ctx.strokeStyle = 'rgba(248, 250, 252, 0.88)';
+            ctx.lineWidth = 1;
+            for (let x = 8; x < graphRight - 8; x += 12) {
+                const xx = Math.round(x) + 0.5;
+                ctx.beginPath();
+                ctx.moveTo(xx, rulerTop + 3);
+                ctx.lineTo(xx, rulerTop + 11);
+                ctx.stroke();
+            }
+
+            ctx.strokeStyle = 'rgba(248, 250, 252, 0.98)';
+            ctx.fillStyle = 'rgba(248, 250, 252, 0.98)';
+            ctx.font = '700 11px Arial, sans-serif';
+            ctx.textBaseline = 'alphabetic';
+            for (const tickFreq of axisTicks) {
+                const xNorm = (tickFreq - minFreq) / span;
+                const x = Math.round(xNorm * (graphRight - 1));
+                const xx = x + 0.5;
+                ctx.beginPath();
+                ctx.moveTo(xx, rulerTop + 2);
+                ctx.lineTo(xx, rulerTop + 16);
+                ctx.stroke();
+                const label = formatSsbWfTickLabel(tickFreq, tickStep);
                 const w = ctx.measureText(label).width;
                 let tx = x - (w / 2);
-                if (i === 0) tx = 6;
-                if (i === axisTicks.length - 1) tx = canvas.width - w - 6;
-                tx = Math.max(6, Math.min(canvas.width - w - 6, tx));
-                ctx.beginPath();
-                ctx.moveTo(x + 0.5, plotHeight + 1);
-                ctx.lineTo(x + 0.5, plotHeight + 6);
-                ctx.strokeStyle = 'rgba(148, 163, 184, 0.55)';
-                ctx.lineWidth = 1;
-                ctx.stroke();
-                ctx.fillText(label, tx, plotHeight + 8);
+                tx = Math.max(6, Math.min(graphRight - w - 6, tx));
+                ctx.fillText(label, tx, rulerTop + 20);
             }
 
             const rangeEl = document.getElementById('ssb_wf_range');
@@ -3992,6 +4691,7 @@
                     statsEl.textContent = 'Noise/SNR: -- | samples 0';
                 }
             }
+            renderSsbWfInUseSummary();
         }
 
         async function pollSsbWaterfallStatus() {
@@ -4002,6 +4702,7 @@
                 const data = await r.json();
                 ssbWfLastStatus = data || null;
                 ssbWfScanRunning = !!(data && data.running);
+                updateSsbWfModeIndicators();
                 const stopRequested = !!(data && data.stop_requested);
                 const progress = (data && typeof data.progress === 'object' && data.progress) ? data.progress : {};
                 const lastProgress = (data && typeof data.last_progress === 'object' && data.last_progress) ? data.last_progress : {};
@@ -4027,10 +4728,27 @@
                     updateSsbWfRxStatus(effectiveProgress);
                     updateSsbWfLastScanStatus(data, effectiveProgress);
                 } else {
-                    if (ssbWfContinuous) {
-                        setSsbWfStatus('Starting next scan...');
+                    if (ssbWfMode === 'scout') {
+                        const seeded = seedSsbWfFrequencyListFromInUse();
+                        if (seeded.length > 0) {
+                            setSsbWfMode('list');
+                            ssbWfContinuous = true;
+                            setSsbWfStatus(`Scout complete: ${seeded.length} active frequencies`);
+                            startSsbFrequencyListScan();
+                        } else {
+                            ssbWfContinuous = false;
+                            setSsbWfMode('idle');
+                            setSsbWfStatus('Scout complete: no active PHONE frequencies found');
+                        }
+                    } else if (ssbWfMode === 'list' && ssbWfContinuous && ssbWfActiveFreqListMhz.length) {
+                        setSsbWfStatus('Starting next list frequency...');
+                        startSsbFrequencyListScan();
+                    } else if (ssbWfContinuous) {
+                        setSsbWfMode('band');
+                        setSsbWfStatus('Starting next band scan...');
                         startSsbBandScan();
                     } else {
+                        setSsbWfMode('idle');
                         setSsbWfStatus('Idle');
                         updateSsbWfSweepCoverage(effectiveProgress);
                         updateSsbWfRxStatus(effectiveProgress);
@@ -4044,7 +4762,7 @@
         function startSsbWaterfallPolling() {
             if (ssbWfStatusTimer) return;
             pollSsbWaterfallStatus();
-            ssbWfStatusTimer = setInterval(pollSsbWaterfallStatus, 1200);
+            ssbWfStatusTimer = setInterval(pollSsbWaterfallStatus, 160);
         }
 
         function stopSsbWaterfallPolling() {
@@ -4055,19 +4773,27 @@
 
         async function startSsbBandScan() {
             if (ssbWfScanRunning) return;
+            setSsbWfMode('band');
             const band = ssbWfSelectedBand;
+            if (!band) {
+                setSsbWfMode('idle');
+                setSsbWfStatus('No SSB bands configured in Schedule');
+                showToast('Set at least one selected band to SSB in Schedule first.', 'warn', 2200);
+                return;
+            }
             if (band === '30m') {
+                setSsbWfMode('idle');
                 setSsbWfStatus('30m: no phone operation');
                 showToast('30m has no phone operation. Select another band.', 'warn', 2000);
                 return;
             }
-            if (!await ensureSsbWfRxReadyForStart()) {
-                return;
-            }
             try {
-                const rxLabel = formatSsbWfRxModeLabel(ssbWfRxMode);
+                const assignedRx = Number(ssbWfBandRxAssignments[band]);
+                const rxLabel = Number.isFinite(assignedRx) ? `RX${assignedRx}` : 'AUTO';
                 setSsbWfStatus(`Starting PHONE scan on ${band} (${rxLabel})...`);
-                const rxPayload = buildSsbWfRxPayload();
+                const rxPayload = Number.isFinite(assignedRx)
+                    ? { rx_chan: assignedRx, wf_rx_chan: assignedRx, allow_rx_fallback: false }
+                    : { rx_chan: null, wf_rx_chan: null, allow_rx_fallback: true };
                 const r = await fetch('/band_scan', {
                     method: 'POST',
                     headers: { 'content-type': 'application/json' },
@@ -4076,7 +4802,8 @@
                         detector: 'phone',
                         ssb_probe_only: false,
                         span_hz: 16000,
-                        max_frames: 12,
+                        max_frames: 1,
+                        step_hz: 16000,
                         record_hits: false,
                         ...rxPayload,
                     })
@@ -4102,34 +4829,48 @@
                 return;
             }
             const band = ssbWfSelectedBand;
+            if (!band) {
+                setSsbWfMode('idle');
+                setSsbWfStatus('No SSB bands configured in Schedule');
+                showToast('Set at least one selected band to SSB in Schedule first.', 'warn', 2200);
+                return;
+            }
             if (band === '30m') {
+                setSsbWfMode('idle');
                 setSsbWfStatus('30m: no phone operation');
                 showToast('30m has no phone operation. Select another band.', 'warn', 2000);
                 return;
             }
-            if (!await ensureSsbWfRxReadyForStart()) {
-                return;
-            }
-            ssbWfContinuous = false;
+            clearSsbWfInUseBand(band);
+            ssbWfActiveFreqListMhz = [];
+            ssbWfListCursor = 0;
+            ssbWfContinuous = true;
+            setSsbWfMode('scout');
             const scoutProfiles = {
-                fast: { span_hz: 10000, max_frames: 3, label: 'Fast' },
-                balanced: { span_hz: 12000, max_frames: 4, label: 'Balanced' },
-                deep: { span_hz: 16000, max_frames: 6, label: 'Deep' },
+                fast: { span_hz: 8000, max_frames: 1, label: 'Fast', ssb_probe_only: false, step_hz: 8000 },
+                balanced: { span_hz: 10000, max_frames: 1, label: 'Balanced', ssb_probe_only: false, step_hz: 10000 },
+                deep: { span_hz: 12000, max_frames: 1, label: 'Deep', ssb_probe_only: false, step_hz: 12000 },
+                wide: { span_hz: 16000, max_frames: 1, label: 'Wide', ssb_probe_only: false, step_hz: 16000 },
             };
             const profile = scoutProfiles[ssbWfScoutPreset] || scoutProfiles.balanced;
             try {
-                const rxLabel = formatSsbWfRxModeLabel(ssbWfRxMode);
+                const assignedRx = Number(ssbWfBandRxAssignments[band]);
+                const rxLabel = Number.isFinite(assignedRx) ? `RX${assignedRx}` : 'AUTO';
                 setSsbWfStatus(`Quick scout (${profile.label}) on ${band} (${rxLabel})...`);
-                const rxPayload = buildSsbWfRxPayload();
+                const rxPayload = Number.isFinite(assignedRx)
+                    ? { rx_chan: assignedRx, wf_rx_chan: assignedRx, allow_rx_fallback: false }
+                    : { rx_chan: null, wf_rx_chan: null, allow_rx_fallback: true };
                 const r = await fetch('/band_scan', {
                     method: 'POST',
                     headers: { 'content-type': 'application/json' },
                     body: JSON.stringify({
                         band,
                         detector: 'phone',
-                        ssb_probe_only: true,
+                        ssb_probe_only: !!profile.ssb_probe_only,
                         span_hz: profile.span_hz,
                         max_frames: profile.max_frames,
+                        step_hz: Number.isFinite(Number(profile.step_hz)) ? Number(profile.step_hz) : undefined,
+                        required_hits: 2,
                         record_hits: false,
                         ...rxPayload,
                     })
@@ -4151,6 +4892,7 @@
 
         async function stopSsbBandScan() {
             ssbWfContinuous = false;
+            setSsbWfMode('idle');
             try {
                 const r = await fetch('/band_scan/stop', { method: 'POST' });
                 const data = await r.json();
@@ -4192,7 +4934,6 @@
 
         function initSsbWaterfallPanel() {
             const bandSel = document.getElementById('ssb_wf_band');
-            const rxModeSel = document.getElementById('ssb_wf_rx_mode');
             const contrastModeSel = document.getElementById('ssb_wf_contrast_mode');
             const scoutPresetSel = document.getElementById('ssb_wf_scout_preset');
             const scoutBtn = document.getElementById('ssb_wf_scout_btn');
@@ -4200,35 +4941,26 @@
             const startBtn = document.getElementById('ssb_wf_start_btn');
             const stopBtn = document.getElementById('ssb_wf_stop_btn');
             const canvas = document.getElementById('ssb_wf_canvas');
-            if (!bandSel || !rxModeSel || !contrastModeSel || !scoutPresetSel || !scoutBtn || !copyStatusBtn || !startBtn || !stopBtn || !canvas) return;
+            if (!bandSel || !contrastModeSel || !scoutPresetSel || !scoutBtn || !copyStatusBtn || !startBtn || !stopBtn || !canvas) return;
 
-            rxModeSel.value = ssbWfRxMode;
             contrastModeSel.value = ssbWfContrastMode;
             scoutPresetSel.value = ssbWfScoutPreset;
-
-            bandSel.innerHTML = '';
-            BAND_OPTIONS.forEach((band) => {
-                const opt = document.createElement('option');
-                opt.value = band;
-                opt.textContent = band === '30m' ? '30m (no phone)' : band;
-                opt.disabled = band === '30m';
-                if (band === ssbWfSelectedBand) opt.selected = true;
-                bandSel.appendChild(opt);
-            });
+            syncSsbWfBandSelectUi();
+            updateSsbWfModeIndicators();
 
             bandSel.addEventListener('change', () => {
-                ssbWfSelectedBand = BAND_OPTIONS.includes(bandSel.value) ? bandSel.value : '20m';
+                ssbWfSelectedBand = ssbWfEligibleBands.includes(bandSel.value)
+                    ? bandSel.value
+                    : (ssbWfEligibleBands[0] || '');
                 ssbWfEvents = [];
                 ssbWfScanCenterHz = null;
+                ssbWfZoomMinMhz = null;
+                ssbWfZoomMaxMhz = null;
                 ssbWfHitsCursor = 0;
+                setSsbWfHoverFrequency(null);
+                renderSsbWfInUseSummary();
                 renderSsbWaterfall();
                 pollSsbWaterfallHits();
-            });
-
-            rxModeSel.addEventListener('change', () => {
-                const v = String(rxModeSel.value || '').toLowerCase();
-                ssbWfRxMode = /^rx[0-7]$/.test(v) ? v : 'auto';
-                saveSsbWfRxMode(ssbWfRxMode);
             });
 
             contrastModeSel.addEventListener('change', () => {
@@ -4238,12 +4970,14 @@
 
             scoutPresetSel.addEventListener('change', () => {
                 const v = String(scoutPresetSel.value || '').toLowerCase();
-                ssbWfScoutPreset = (v === 'fast' || v === 'deep') ? v : 'balanced';
+                ssbWfScoutPreset = (v === 'fast' || v === 'deep' || v === 'wide') ? v : 'balanced';
                 saveSsbWfScoutPreset(ssbWfScoutPreset);
             });
 
             startBtn.addEventListener('click', () => {
                 ssbWfContinuous = true;
+                ssbWfMode = 'band';
+                updateSsbWfModeIndicators();
                 startSsbBandScan();
             });
 
@@ -4268,6 +5002,13 @@
             });
 
             canvas.addEventListener('mousemove', (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+                const [minFreq, maxFreq] = getSsbWfRangeMhz();
+                const freqMhz = minFreq + (x / Math.max(1, rect.width)) * (maxFreq - minFreq);
+                setSsbWfHoverFrequency(freqMhz);
+                renderSsbWaterfall();
+
                 const point = pickSsbWfPointAt(e.clientX, e.clientY, canvas);
                 if (!point) {
                     if (ssbWfTooltipTimer) {
@@ -4297,11 +5038,26 @@
                 }, 65);
             });
 
+            canvas.addEventListener('wheel', (e) => {
+                if (!e) return;
+                e.preventDefault();
+                const rect = canvas.getBoundingClientRect();
+                const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+                const [minFreq, maxFreq] = getSsbWfRangeMhz();
+                const anchorFreq = minFreq + (x / Math.max(1, rect.width)) * (maxFreq - minFreq);
+                const factor = e.deltaY < 0 ? 0.86 : 1.16;
+                zoomSsbWfAtFreq(anchorFreq, factor);
+                setSsbWfHoverFrequency(anchorFreq);
+                renderSsbWaterfall();
+            }, { passive: false });
+
             canvas.addEventListener('mouseleave', () => {
                 if (ssbWfTooltipTimer) {
                     clearTimeout(ssbWfTooltipTimer);
                     ssbWfTooltipTimer = null;
                 }
+                setSsbWfHoverFrequency(null);
+                renderSsbWaterfall();
                 ssbWfTooltipPointKey = '';
                 hideSsbWfTooltip();
             });
@@ -5501,6 +6257,78 @@
             return String(value || '').toUpperCase() === 'SSB';
         }
 
+        function parseRxFromReceiverLabel(label) {
+            const text = String(label || '');
+            const m = text.match(/\bRX\s*([0-7])\b/i);
+            if (!m) return null;
+            const rx = Number(m[1]);
+            return Number.isFinite(rx) ? rx : null;
+        }
+
+        function syncSsbWfBandSelectUi() {
+            const bandSel = document.getElementById('ssb_wf_band');
+            const startBtn = document.getElementById('ssb_wf_start_btn');
+            const scoutBtn = document.getElementById('ssb_wf_scout_btn');
+            if (!bandSel || !startBtn || !scoutBtn) return;
+
+            bandSel.innerHTML = '';
+            for (const band of ssbWfEligibleBands) {
+                const opt = document.createElement('option');
+                opt.value = band;
+                const assignedRx = Number(ssbWfBandRxAssignments[band]);
+                opt.textContent = Number.isFinite(assignedRx) ? `${band} (RX${assignedRx})` : band;
+                bandSel.appendChild(opt);
+            }
+
+            if (!ssbWfEligibleBands.length) {
+                ssbWfSelectedBand = '';
+                const placeholder = document.createElement('option');
+                placeholder.value = '';
+                placeholder.textContent = 'No SSB bands configured';
+                placeholder.selected = true;
+                placeholder.disabled = true;
+                bandSel.appendChild(placeholder);
+                bandSel.disabled = true;
+                startBtn.disabled = true;
+                scoutBtn.disabled = true;
+                return;
+            }
+
+            if (!ssbWfEligibleBands.includes(ssbWfSelectedBand)) {
+                ssbWfSelectedBand = ssbWfEligibleBands[0];
+            }
+            bandSel.value = ssbWfSelectedBand;
+            bandSel.disabled = false;
+            startBtn.disabled = false;
+            scoutBtn.disabled = false;
+        }
+
+        function rebuildSsbWfBandOptions(mode, block, selectedBands) {
+            const selectedSet = (selectedBands instanceof Set)
+                ? selectedBands
+                : new Set(Array.isArray(selectedBands) ? selectedBands : []);
+            const nextBands = [];
+            const nextRxByBand = {};
+            for (const band of BAND_OPTIONS) {
+                if (!selectedSet.has(band)) continue;
+                if (!isSsbModeLabel(getBandModeCached(mode, block, band))) continue;
+                nextBands.push(band);
+
+                const requestedRx = Number(receiverAssignmentRequests[band]);
+                if (Number.isFinite(requestedRx)) {
+                    nextRxByBand[band] = requestedRx;
+                    continue;
+                }
+                const parsedRx = parseRxFromReceiverLabel(receiverAssignments[band]);
+                if (Number.isFinite(parsedRx)) {
+                    nextRxByBand[band] = parsedRx;
+                }
+            }
+            ssbWfEligibleBands = nextBands;
+            ssbWfBandRxAssignments = nextRxByBand;
+            syncSsbWfBandSelectUi();
+        }
+
         function normalizeBandModesForSsbLimit(mode, block, selectedBands, bandModes, opts = {}) {
             const selected = (selectedBands instanceof Set)
                 ? new Set(Array.from(selectedBands))
@@ -5911,6 +6739,8 @@
                 setScheduleAutoSetStatus('Auto-Set: SSB limited to 2 bands (RX0/RX1 only)', 'warn');
             }
 
+            rebuildSsbWfBandOptions(mode, activeBlock, selected);
+
             applySsbOptionLimit(mode, activeBlock);
 
             if (!skipAutoSet && !autoSetInProgress) {
@@ -6030,7 +6860,14 @@
                     }
                     const previewSlots = [
                         ...ssbTasks.slice(0, 2).map((t, i) => ({ rx: [0, 1][i], task: t })),
-                        ...otherTasks.slice(0, 6).map((t, i) => ({ rx: [2, 3, 4, 5, 6, 7][i], task: t })),
+                        ...(() => {
+                            const otherRxList = ssbTasks.length > 0
+                                ? [2, 3, 4, 5, 6, 7]
+                                : [0, 1, 2, 3, 4, 5, 6, 7];
+                            return otherTasks
+                                .slice(0, otherRxList.length)
+                                .map((t, i) => ({ rx: otherRxList[i], task: t }));
+                        })(),
                     ];
                     for (let i = 0; i < Math.min(rxRequestList.length, previewSlots.length); i++) {
                         const slot = previewSlots[i];
@@ -6406,6 +7243,81 @@
             return 'normal';
         }
 
+        function readDecodePanelCollapsed() {
+            return false;
+        }
+
+        function readSsbPanelCollapsed() {
+            try {
+                const raw = localStorage.getItem(SSB_PANEL_COLLAPSED_KEY);
+                if (raw === '0') return false;
+                if (raw === '1') return true;
+            } catch (e) { }
+            return true;
+        }
+
+        function saveDecodePanelCollapsed(collapsed) {
+            try {
+                localStorage.setItem(DECODE_PANEL_COLLAPSED_KEY, collapsed ? '1' : '0');
+            } catch (e) { }
+        }
+
+        function saveSsbPanelCollapsed(collapsed) {
+            try {
+                localStorage.setItem(SSB_PANEL_COLLAPSED_KEY, collapsed ? '1' : '0');
+            } catch (e) { }
+        }
+
+        function applyDecodePanelCollapsed(collapsed) {
+            const layout = document.getElementById('schedule_layout');
+            const panel = document.getElementById('decode_panel');
+            const toggle = document.getElementById('decode_panel_toggle');
+            if (!layout || !panel || !toggle) return;
+            const isCollapsed = !!collapsed;
+            layout.classList.toggle('decode-collapsed', isCollapsed);
+            toggle.textContent = isCollapsed ? 'DECODED' : '▶';
+            toggle.title = isCollapsed ? 'Show decoder window' : 'Hide decoder window (slide right)';
+            toggle.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+            panel.setAttribute('aria-hidden', isCollapsed ? 'true' : 'false');
+        }
+
+        function applySsbPanelCollapsed(collapsed) {
+            const layout = document.getElementById('schedule_layout');
+            const panel = document.getElementById('ssb_panel');
+            const toggle = document.getElementById('ssb_panel_toggle');
+            if (!layout || !panel || !toggle) return;
+            const isCollapsed = !!collapsed;
+            layout.classList.toggle('ssb-collapsed', isCollapsed);
+            toggle.textContent = isCollapsed ? 'SSB' : '▶';
+            toggle.title = isCollapsed ? 'Show SSB window' : 'Hide SSB window (slide right)';
+            toggle.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+            panel.setAttribute('aria-hidden', isCollapsed ? 'true' : 'false');
+        }
+
+        function toggleDecodePanelCollapsed() {
+            const layout = document.getElementById('schedule_layout');
+            if (!layout) return;
+            const next = !layout.classList.contains('decode-collapsed');
+            applyDecodePanelCollapsed(next);
+            saveDecodePanelCollapsed(next);
+            if (next) {
+                applySsbPanelCollapsed(false);
+                saveSsbPanelCollapsed(false);
+            }
+        }
+
+        function toggleSsbPanelCollapsed() {
+            const layout = document.getElementById('schedule_layout');
+            if (!layout) return;
+            const next = !layout.classList.contains('ssb-collapsed');
+            applySsbPanelCollapsed(next);
+            saveSsbPanelCollapsed(next);
+            if (next) {
+                applyDecodePanelCollapsed(false);
+                saveDecodePanelCollapsed(false);
+            }
+        }
+
         function readUiTheme() {
             try {
                 const raw = localStorage.getItem(UI_THEME_STORAGE_KEY);
@@ -6449,7 +7361,7 @@
         function readSsbWfScoutPreset() {
             try {
                 const raw = String(localStorage.getItem(SSB_WF_SCOUT_PRESET_STORAGE_KEY) || '').toLowerCase();
-                if (raw === 'fast' || raw === 'deep') return raw;
+                if (raw === 'fast' || raw === 'deep' || raw === 'wide') return raw;
             } catch (e) { }
             return 'balanced';
         }
@@ -6457,7 +7369,7 @@
         function saveSsbWfScoutPreset(preset) {
             try {
                 const v = String(preset || '').toLowerCase();
-                const safe = (v === 'fast' || v === 'deep') ? v : 'balanced';
+                const safe = (v === 'fast' || v === 'deep' || v === 'wide') ? v : 'balanced';
                 localStorage.setItem(SSB_WF_SCOUT_PRESET_STORAGE_KEY, safe);
             } catch (e) { }
         }
@@ -6699,6 +7611,8 @@
                 localStorage.removeItem(MAP_LEGEND_HINT_DISMISSED_KEY);
                 localStorage.removeItem(SSB_WF_SCOUT_PRESET_STORAGE_KEY);
                 localStorage.removeItem(SSB_WF_RX_MODE_STORAGE_KEY);
+                localStorage.removeItem(DECODE_PANEL_COLLAPSED_KEY);
+                localStorage.removeItem(SSB_PANEL_COLLAPSED_KEY);
             } catch (e) { }
             mapSelectedBand = 'ALL';
             mapSelectedModes = new Set(MAP_MODE_FILTERS);
@@ -6716,6 +7630,8 @@
             if (mapAgeFilterEl) mapAgeFilterEl.value = 'ALL';
             setMapLegendHintVisible(true);
             rxHealthPanelVisible = false;
+            applyDecodePanelCollapsed(false);
+            applySsbPanelCollapsed(true);
             applyUiTheme(UI_THEME_DEFAULT_MODE);
             applyUiDensity('normal');
             updateMapFilterSummary();
@@ -7316,7 +8232,7 @@
                         try {
                             const u = new URL(urls[i]);
                             const is4010 = String(u.port || '') === '4010';
-                            const base = `WS ${u.hostname}:${u.port}${u.pathname}`;
+                            const base = is4010 ? 'WS' : 'WS connected';
                             setDecodeStreamStatus(is4010 ? `${base} (clients: 0)` : base, is4010 ? 'stream-status-polling' : 'stream-status-ws');
                             startDecodeWsClientPolling(urls[i]);
                         } catch (e) {
@@ -7367,6 +8283,28 @@
             updateLocalTimeNow();
             setInterval(updateLocalTimeNow, 1000);
             const infoMetricsHelp = initInfoMetricsHelp();
+
+            const decodePanelToggle = document.getElementById('decode_panel_toggle');
+            if (decodePanelToggle) {
+                decodePanelToggle.addEventListener('click', () => {
+                    toggleDecodePanelCollapsed();
+                });
+            }
+            const ssbPanelToggle = document.getElementById('ssb_panel_toggle');
+            if (ssbPanelToggle) {
+                ssbPanelToggle.addEventListener('click', () => {
+                    toggleSsbPanelCollapsed();
+                });
+            }
+            const decodeCollapsed = readDecodePanelCollapsed();
+            const ssbCollapsed = readSsbPanelCollapsed();
+            applyDecodePanelCollapsed(decodeCollapsed);
+            saveDecodePanelCollapsed(false);
+            applySsbPanelCollapsed(ssbCollapsed);
+            if (!decodeCollapsed && !ssbCollapsed) {
+                applySsbPanelCollapsed(true);
+                saveSsbPanelCollapsed(true);
+            }
 
             document.addEventListener('change', (e) => {
                 const t = e && e.target;
@@ -7539,6 +8477,19 @@
                 rxHealthBadge.addEventListener('click', () => {
                     rxHealthPanelVisible = !rxHealthPanelVisible;
                     renderRxHealthPanel();
+                });
+            }
+            const resetMetricsBtn = document.getElementById('info_metrics_reset_btn');
+            if (resetMetricsBtn) {
+                resetMetricsBtn.addEventListener('click', async () => {
+                    try {
+                        const resp = await fetch('/metrics/reset', { method: 'POST' });
+                        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                        await updateInfoMetrics();
+                        showToast('Info metrics reset.', 'success', 1400);
+                    } catch (e) {
+                        showToast('Metrics reset failed.', 'error', 1800);
+                    }
                 });
             }
             updateRxHealthBadge();
@@ -7847,6 +8798,66 @@
                 renderRuntimeDependencies(cfg.runtime_dependencies || {});
             } catch (e) { }
 
+            try {
+                const serverAutomation = await loadAutomationSettingsFromServer();
+                const mergedAutomation = { ...DEFAULT_AUTOMATION, ...(serverAutomation || readAutomationSettings()) };
+                const headlessSel = document.getElementById('cfg_headless_enabled');
+                const launchdSel = document.getElementById('cfg_use_launchd');
+                if (headlessSel) headlessSel.value = mergedAutomation.headlessEnabled ? 'on' : 'off';
+                if (launchdSel) launchdSel.value = mergedAutomation.useLaunchd ? 'on' : 'off';
+            } catch (e) { }
+
+            const persistRuntimePrefs = async () => {
+                const headlessSel = document.getElementById('cfg_headless_enabled');
+                const launchdSel = document.getElementById('cfg_use_launchd');
+                const baseAutomation = await loadAutomationSettingsFromServer() || readAutomationSettings();
+                const nextAutomation = {
+                    ...DEFAULT_AUTOMATION,
+                    ...(baseAutomation || {}),
+                    headlessEnabled: (headlessSel ? String(headlessSel.value) : 'on') !== 'off',
+                    useLaunchd: (launchdSel ? String(launchdSel.value) : 'off') === 'on',
+                };
+                saveAutomationSettings(nextAutomation);
+                const result = await saveAutomationSettingsToServer(nextAutomation);
+                if (!result || result.ok !== true) {
+                    throw new Error((result && result.error) ? String(result.error) : 'save failed');
+                }
+                return nextAutomation;
+            };
+
+            const headlessSel = document.getElementById('cfg_headless_enabled');
+            if (headlessSel) {
+                headlessSel.addEventListener('change', async () => {
+                    try {
+                        await persistRuntimePrefs();
+                        setConfigStatus('Runtime preference saved.', 'ok');
+                        await refreshHeadlessRuntimeStatus();
+                    } catch (e) {
+                        setConfigStatus('Runtime preference save failed.', 'error');
+                    }
+                });
+            }
+            const launchdSel = document.getElementById('cfg_use_launchd');
+            if (launchdSel) {
+                launchdSel.addEventListener('change', async () => {
+                    try {
+                        await persistRuntimePrefs();
+                        setConfigStatus('Runtime preference saved.', 'ok');
+                        await refreshHeadlessRuntimeStatus();
+                    } catch (e) {
+                        setConfigStatus('Runtime preference save failed.', 'error');
+                    }
+                });
+            }
+
+            const headlessRefreshBtn = document.getElementById('cfg_headless_refresh');
+            if (headlessRefreshBtn) {
+                headlessRefreshBtn.addEventListener('click', async () => {
+                    await refreshHeadlessRuntimeStatus();
+                });
+            }
+            refreshHeadlessRuntimeStatus();
+
             setTimeout(() => {
                 refreshRuntimeDependencies(false, false);
             }, 1200);
@@ -7858,7 +8869,7 @@
                 refreshStationGridFromConfig();
             }, 60000);
 
-            document.getElementById('cfg_save').addEventListener('click', async () => {
+            const persistConfigPanel = async ({ showSavedToast = false } = {}) => {
                 const data = {
                     host: document.getElementById('cfg_host').value,
                     port: parseInt(document.getElementById('cfg_port').value, 10),
@@ -7867,7 +8878,8 @@
                 };
                 try {
                     await saveConfig(data);
-                    setConfigStatus('Saved.', 'ok');
+                    await persistRuntimePrefs();
+                    setConfigStatus('Saved automatically.', 'ok');
                     const inputGrid = resolveGridFromInputs();
                     if (inputGrid) {
                         updateStationGridDisplay(inputGrid);
@@ -7882,11 +8894,24 @@
                             updateStationGridDisplay(resolveStationGridFromConfig(data));
                         }
                     }
-                    showToast('Config saved.', 'success', 1600);
+                    await refreshHeadlessRuntimeStatus();
+                    if (showSavedToast) {
+                        showToast('Config saved.', 'success', 1300);
+                    }
                 } catch (e) {
-                    setConfigStatus('Save failed.', 'error');
-                    showToast('Config save failed.', 'error', 1800);
+                    setConfigStatus('Auto-save failed.', 'error');
+                    if (showSavedToast) {
+                        showToast('Config save failed.', 'error', 1800);
+                    }
                 }
+            };
+
+            ['cfg_host', 'cfg_port', 'cfg_lat', 'cfg_lon'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.addEventListener('blur', async () => {
+                    await persistConfigPanel();
+                });
             });
 
             const discoverBtn = document.getElementById('cfg_discover_kiwi');
@@ -7914,9 +8939,11 @@
                         const discoveredGrid = resolveGridFromInputs() || resolveStationGridFromConfig(first);
                         updateStationGridDisplay(discoveredGrid);
 
+                        await persistConfigPanel();
+
                         const src = res && res.source ? String(res.source) : '';
                         const srcTxt = src ? ` (${src})` : '';
-                        setConfigStatus(`Found ${found.length} Kiwi(s). Using ${first.host}:${first.port}${srcTxt}`, 'ok');
+                        setConfigStatus(`Found ${found.length} Kiwi(s). Using ${first.host}:${first.port}${srcTxt}. Saved automatically.`, 'ok');
                         showToast(`Discovered ${found.length} Kiwi receiver(s).`, 'success', 1800);
                     } catch (e) {
                         setConfigStatus('Discover failed.', 'error');

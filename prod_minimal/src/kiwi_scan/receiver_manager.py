@@ -72,6 +72,8 @@ class _ReceiverWorker(threading.Thread):
         self._decoder_threads: list[threading.Thread] = []
         self._decoder_log_fps: list[Optional[object]] = []
         self._active_user_label: str = ""
+        self._cfg_lock = threading.Lock()
+        self._reconfigure = threading.Event()
         try:
             self._rx_chan_adjust = int(str(os.environ.get("KIWISCAN_RX_CHAN_OFFSET", "0")).strip())
         except Exception:
@@ -139,6 +141,9 @@ class _ReceiverWorker(threading.Thread):
                 pass
 
     def _kiwi_rx_chan(self) -> int:
+        mode_norm = self._mode_label.strip().upper()
+        if ("SSB" in mode_norm) or ("PHONE" in mode_norm):
+            return int(self._rx)
         return int((int(self._rx) + int(self._rx_chan_adjust)) % 8)
 
     def _adapt_rx_chan_adjust(self, *, expected_rx: int, actual_rx: int, user_label: str) -> None:
@@ -205,11 +210,20 @@ class _ReceiverWorker(threading.Thread):
                     found_rx,
                     bool(strict),
                 )
-                self._adapt_rx_chan_adjust(expected_rx=expected, actual_rx=found_rx, user_label=wanted)
+                if expected not in {0, 1}:
+                    self._adapt_rx_chan_adjust(expected_rx=expected, actual_rx=found_rx, user_label=wanted)
                 return False
             except Exception:
                 return True
         if bool(strict):
+            if bool(require_visible):
+                logger.warning(
+                    "Kiwi user=%s not visible on /users within %.1fs (expected_rx=%s); forcing retry",
+                    wanted,
+                    float(timeout_s),
+                    expected,
+                )
+                return False
             logger.debug(
                 "Kiwi user=%s not visible on /users within %.1fs (expected_rx=%s); keeping worker",
                 wanted,
@@ -407,8 +421,10 @@ class _ReceiverWorker(threading.Thread):
         tail_s = float(scan_cfg.get("tail_s") or 1.0)
         step_sequence = self._ssb_scan_step_sequence()
         step_index = 0
+        mismatch_failures = 0
 
         while not self._stop.is_set():
+            self._reconfigure.clear()
             step_khz = step_sequence[min(step_index, len(step_sequence) - 1)]
             freqs = self._ssb_scan_freqs_khz(step_khz)
             if not freqs:
@@ -460,11 +476,18 @@ class _ReceiverWorker(threading.Thread):
                 user_label=f"AUTO_{self._band}_SSBSCAN",
                 expected_rx=self._rx,
                 timeout_s=6.0,
-                strict=False,
+                strict=True,
                 require_visible=True,
             ):
                 self._terminate_external_proc(proc)
-                time.sleep(2.0)
+                mismatch_failures += 1
+                backoff_s = min(45.0, float(5 * (2 ** min(mismatch_failures - 1, 3))))
+                if self._on_restart is not None:
+                    try:
+                        self._on_restart(self._rx, self._band, "ssb_rx_mismatch", backoff_s, mismatch_failures)
+                    except Exception:
+                        pass
+                time.sleep(backoff_s)
                 continue
 
             self._proc = proc
@@ -574,6 +597,10 @@ class _ReceiverWorker(threading.Thread):
             rapid_exit = False
             next_channel_check = time.time() + 1.5
             while not self._stop.is_set() and time.time() < end_time:
+                if self._reconfigure.is_set():
+                    rapid_exit = True
+                    self._last_spawn_error_reason = "ssb_reconfigure"
+                    break
                 if proc.poll() is not None:
                     rapid_exit = (time.time() - proc_started_at) < 3.0
                     break
@@ -584,9 +611,16 @@ class _ReceiverWorker(threading.Thread):
                         expected_rx=self._rx,
                         timeout_s=0.9,
                         strict=True,
-                        require_visible=False,
+                        require_visible=True,
                     ):
                         self._last_spawn_error_reason = "ssb_rx_mismatch"
+                        mismatch_failures += 1
+                        backoff_s = min(45.0, float(5 * (2 ** min(max(mismatch_failures, 1) - 1, 3))))
+                        if self._on_restart is not None:
+                            try:
+                                self._on_restart(self._rx, self._band, "ssb_rx_mismatch", backoff_s, mismatch_failures)
+                            except Exception:
+                                pass
                         rapid_exit = True
                         break
                 time.sleep(0.2)
@@ -596,9 +630,19 @@ class _ReceiverWorker(threading.Thread):
             if self._stop.is_set():
                 break
 
-            if rapid_exit:
-                time.sleep(4.0)
+            if self._reconfigure.is_set():
+                time.sleep(0.2)
                 continue
+
+            if rapid_exit:
+                if str(self._last_spawn_error_reason or "") == "ssb_rx_mismatch":
+                    backoff_s = min(45.0, float(5 * (2 ** min(max(mismatch_failures, 1) - 1, 3))))
+                    time.sleep(backoff_s)
+                else:
+                    time.sleep(4.0)
+                continue
+
+            mismatch_failures = 0
 
             if len(step_sequence) > 1:
                 if hits["count"] > 0:
@@ -606,6 +650,24 @@ class _ReceiverWorker(threading.Thread):
                 else:
                     step_index = min(step_index + 1, len(step_sequence) - 1)
             time.sleep(0.5)
+
+    def update_assignment(
+        self,
+        *,
+        band: str,
+        freq_hz: float,
+        mode_label: str,
+        ssb_scan: Optional[dict],
+        sideband: Optional[str],
+    ) -> None:
+        with self._cfg_lock:
+            self._band = str(band)
+            self._freq_hz = float(freq_hz)
+            self._mode_label = str(mode_label or "FT8")
+            self._ssb_scan = dict(ssb_scan or {}) if ssb_scan else None
+            self._sideband = str(sideband).strip().upper() if sideband else None
+        self._reconfigure.set()
+        self._terminate_proc()
 
     def _start_decoder(self, udp_port: int, mode: str) -> None:
         ft8modem_path = self._resolve_tool_path("ft8modem", self._ft8modem_path)
@@ -832,7 +894,7 @@ class _ReceiverWorker(threading.Thread):
                 start_new_session=True,
             )
             if ("SSB" in self._mode_label.strip().upper()) or ("PHONE" in self._mode_label.strip().upper()):
-                if not self._verify_kiwi_rx_channel(user_label=user_label, expected_rx=self._rx, timeout_s=6.0, strict=False, require_visible=True):
+                if not self._verify_kiwi_rx_channel(user_label=user_label, expected_rx=self._rx, timeout_s=6.0, strict=True, require_visible=True):
                     self._terminate_external_proc(proc)
                     self._last_spawn_error_reason = "ssb_rx_mismatch"
                     return None
@@ -854,9 +916,11 @@ class _ReceiverWorker(threading.Thread):
             if self._proc is None:
                 consecutive_failures += 1
                 backoff_s = min(max_backoff_s, float(2 ** min(consecutive_failures, 5)))
+                if str(self._last_spawn_error_reason or "").startswith("ssb_rx_mismatch") and consecutive_failures >= 3:
+                    backoff_s = max(backoff_s, 45.0)
                 if self._on_restart is not None:
                     try:
-                        self._on_restart(self._rx, self._band, "spawn_failed", backoff_s, consecutive_failures)
+                        self._on_restart(self._rx, self._band, str(self._last_spawn_error_reason or "spawn_failed"), backoff_s, consecutive_failures)
                     except Exception:
                         pass
                 time.sleep(backoff_s)
@@ -871,13 +935,13 @@ class _ReceiverWorker(threading.Thread):
                     next_channel_check = time.time() + 2.0
                     mode_norm = self._mode_label.strip().upper()
                     is_ssb = ("SSB" in mode_norm) or ("PHONE" in mode_norm)
-                    strict = False
+                    strict = bool(is_ssb)
                     if not self._verify_kiwi_rx_channel(
                         user_label=self._active_user_label,
                         expected_rx=self._rx,
                         timeout_s=0.9,
                         strict=strict,
-                        require_visible=False,
+                        require_visible=is_ssb,
                     ):
                         self._last_spawn_error_reason = "ssb_rx_mismatch" if is_ssb else "nonssb_rx_mismatch"
                         proc_exited = True
@@ -892,9 +956,12 @@ class _ReceiverWorker(threading.Thread):
                     consecutive_failures = 0
 
                 backoff_s = min(max_backoff_s, float(2 ** min(consecutive_failures, 5)))
+                reason = str(self._last_spawn_error_reason or "process_exited")
+                if reason.startswith("ssb_rx_mismatch") and consecutive_failures >= 3:
+                    backoff_s = max(backoff_s, 45.0)
                 if proc_exited and self._on_restart is not None:
                     try:
-                        self._on_restart(self._rx, self._band, "process_exited", backoff_s, consecutive_failures)
+                        self._on_restart(self._rx, self._band, reason, backoff_s, consecutive_failures)
                     except Exception:
                         pass
                 time.sleep(backoff_s)
@@ -958,69 +1025,122 @@ class ReceiverManager:
 
     def health_summary(self) -> Dict[str, object]:
         with self._lock:
-            channels: Dict[str, Dict[str, object]] = {}
-            unstable = 0
-            reason_counts: Dict[str, int] = {}
-            for rx in sorted(set(list(self._assignments.keys()) + list(self._watchdog_state_by_rx.keys()))):
-                assignment = self._assignments.get(rx)
-                wd = self._watchdog_state_by_rx.get(rx, {})
-                consecutive = int(wd.get("consecutive_failures", 0) or 0)
-                backoff_s = float(wd.get("backoff_s", 0.0) or 0.0)
-                is_active = assignment is not None
-                is_unstable = is_active and (consecutive >= 3 or backoff_s >= 8.0)
-                if is_unstable:
-                    unstable += 1
-                    reason = str(wd.get("reason") or "unknown")
-                    reason_counts[reason] = int(reason_counts.get(reason, 0)) + 1
-                channels[str(rx)] = {
-                    "rx": int(rx),
-                    "band": assignment.band if assignment else wd.get("band"),
-                    "mode": assignment.mode_label if assignment else None,
-                    "active": is_active,
-                    "restart_count": int(self._restart_by_rx.get(rx, 0)),
-                    "consecutive_failures": consecutive,
-                    "backoff_s": backoff_s,
-                    "last_reason": wd.get("reason"),
-                    "last_updated_unix": wd.get("updated_unix"),
-                    "is_unstable": is_unstable,
-                }
+            assignments = dict(self._assignments)
+            watchdog_by_rx = {int(k): dict(v) for k, v in self._watchdog_state_by_rx.items()}
+            restart_by_rx = {int(k): int(v) for k, v in self._restart_by_rx.items()}
+            restart_total = int(self._restart_total)
+            active_host = str(getattr(self, "_active_host", "") or "")
+            active_port = int(getattr(self, "_active_port", 0) or 0)
 
-            active = len(self._assignments)
-            overall = "healthy"
-            if unstable > 0:
-                overall = "degraded"
-            if active == 0:
-                overall = "idle"
+        users_by_rx: Dict[int, str] = {}
+        if active_host and active_port > 0:
+            try:
+                status_url = f"http://{active_host}:{active_port}/users"
+                with urllib.request.urlopen(status_url, timeout=0.8) as resp:
+                    payload = json.loads(resp.read().decode("utf-8", errors="ignore"))
+                if isinstance(payload, list):
+                    for row in payload:
+                        if not isinstance(row, dict):
+                            continue
+                        try:
+                            rx_i = int(row.get("i"))
+                        except Exception:
+                            continue
+                        name = urllib.parse.unquote(str(row.get("n") or "")).strip()
+                        users_by_rx[int(rx_i)] = name
+            except Exception:
+                users_by_rx = {}
 
-            now = time.time()
-            latest_update = None
-            for rx, assignment in self._assignments.items():
-                if assignment is None:
-                    continue
-                payload = self._watchdog_state_by_rx.get(rx, {})
-                try:
-                    ts = float(payload.get("updated_unix"))
-                    latest_update = ts if latest_update is None else max(latest_update, ts)
-                except Exception:
-                    continue
-            stale_seconds = None
-            if active > 0:
-                if unstable <= 0:
-                    stale_seconds = 0.0
-                elif latest_update is None:
-                    stale_seconds = 0.0
-                else:
-                    stale_seconds = max(0.0, now - latest_update)
+        channels: Dict[str, Dict[str, object]] = {}
+        unstable = 0
+        reason_counts: Dict[str, int] = {}
+        now = time.time()
+        rx_set = sorted(set(list(assignments.keys()) + list(watchdog_by_rx.keys())))
+        for rx in rx_set:
+            assignment = assignments.get(rx)
+            wd = watchdog_by_rx.get(rx, {})
+            consecutive = int(wd.get("consecutive_failures", 0) or 0)
+            backoff_s = float(wd.get("backoff_s", 0.0) or 0.0)
+            updated_unix = wd.get("updated_unix")
+            try:
+                updated_unix_f = float(updated_unix)
+            except Exception:
+                updated_unix_f = None
+            cooldown_remaining_s = 0.0
+            if updated_unix_f is not None and backoff_s > 0.0:
+                cooldown_remaining_s = max(0.0, (updated_unix_f + backoff_s) - now)
+            cooling_down = cooldown_remaining_s > 0.0
+            mode_label = str(assignment.mode_label or "").strip().upper() if assignment else ""
+            is_ssb = mode_label in {"SSB", "PHONE"}
 
-            return {
-                "overall": overall,
-                "active_receivers": active,
-                "unstable_receivers": unstable,
-                "restart_total": int(self._restart_total),
-                "health_stale_seconds": stale_seconds,
-                "reason_counts": reason_counts,
-                "channels": channels,
+            is_active = assignment is not None
+            last_reason = wd.get("reason")
+            if is_ssb and assignment is not None:
+                seen = str(users_by_rx.get(int(rx), "") or "")
+                seen_upper = seen.upper()
+                expected_prefix = f"AUTO_{str(assignment.band).upper()}_SSB"
+                is_active = expected_prefix in seen_upper
+                if not is_active:
+                    last_reason = last_reason or "kiwi_not_visible"
+
+            is_unstable = (assignment is not None) and (
+                consecutive >= 3 or backoff_s >= 8.0 or (is_ssb and not is_active)
+            )
+            if is_unstable:
+                unstable += 1
+                reason = str(last_reason or "unknown")
+                reason_counts[reason] = int(reason_counts.get(reason, 0)) + 1
+
+            channels[str(rx)] = {
+                "rx": int(rx),
+                "band": assignment.band if assignment else wd.get("band"),
+                "mode": assignment.mode_label if assignment else None,
+                "active": bool(is_active),
+                "restart_count": int(restart_by_rx.get(rx, 0)),
+                "consecutive_failures": consecutive,
+                "backoff_s": backoff_s,
+                "cooling_down": bool(cooling_down),
+                "cooldown_remaining_s": float(cooldown_remaining_s),
+                "last_reason": last_reason,
+                "last_updated_unix": updated_unix_f,
+                "is_unstable": is_unstable,
             }
+
+        active = sum(1 for ch in channels.values() if bool(ch.get("active")))
+        overall = "healthy"
+        if unstable > 0:
+            overall = "degraded"
+        if active == 0:
+            overall = "idle"
+
+        latest_update = None
+        for rx, assignment in assignments.items():
+            if assignment is None:
+                continue
+            payload = watchdog_by_rx.get(rx, {})
+            try:
+                ts = float(payload.get("updated_unix"))
+                latest_update = ts if latest_update is None else max(latest_update, ts)
+            except Exception:
+                continue
+        stale_seconds = None
+        if active > 0:
+            if unstable <= 0:
+                stale_seconds = 0.0
+            elif latest_update is None:
+                stale_seconds = 0.0
+            else:
+                stale_seconds = max(0.0, now - latest_update)
+
+        return {
+            "overall": overall,
+            "active_receivers": active,
+            "unstable_receivers": unstable,
+            "restart_total": restart_total,
+            "health_stale_seconds": stale_seconds,
+            "reason_counts": reason_counts,
+            "channels": channels,
+        }
 
     def _cleanup_orphan_processes(self) -> None:
         try:
@@ -1136,6 +1256,14 @@ class ReceiverManager:
                 return False
         return True
 
+    @classmethod
+    def _can_hot_reconfigure_ssb(cls, current: ReceiverAssignment, desired: ReceiverAssignment) -> bool:
+        return (
+            int(current.rx) == int(desired.rx)
+            and cls._is_ssb_assignment(current)
+            and cls._is_ssb_assignment(desired)
+        )
+
     def _normalize_ssb_receivers(self, assignments: Dict[int, ReceiverAssignment]) -> Dict[int, ReceiverAssignment]:
         if not assignments:
             return {}
@@ -1224,6 +1352,7 @@ class ReceiverManager:
             desired_rxs = set(int(rx) for rx in assignments.keys())
 
             to_stop: set[int] = set()
+            to_reconfigure: set[int] = set()
             if host_changed:
                 to_stop |= current_rxs
             else:
@@ -1232,12 +1361,28 @@ class ReceiverManager:
                         to_stop.add(rx)
                         continue
                     if not self._assignment_equivalent(self._assignments[rx], assignments[rx]):
-                        to_stop.add(rx)
+                        if self._can_hot_reconfigure_ssb(self._assignments[rx], assignments[rx]):
+                            to_reconfigure.add(rx)
+                        else:
+                            to_stop.add(rx)
 
             for rx in sorted(to_stop):
                 worker = self._workers.pop(rx, None)
                 if worker is not None:
                     worker.stop()
+
+            for rx in sorted(to_reconfigure):
+                worker = self._workers.get(rx)
+                desired = assignments.get(rx)
+                if worker is None or desired is None:
+                    continue
+                worker.update_assignment(
+                    band=desired.band,
+                    freq_hz=desired.freq_hz,
+                    mode_label=desired.mode_label,
+                    ssb_scan=desired.ssb_scan,
+                    sideband=desired.sideband,
+                )
 
             if not assignments:
                 self._assignments.clear()
@@ -1251,6 +1396,8 @@ class ReceiverManager:
             time.sleep(0.2)
 
             for rx in sorted(desired_rxs):
+                if rx in to_reconfigure and rx in self._workers:
+                    continue
                 if rx in self._workers and rx in self._assignments and self._assignment_equivalent(self._assignments[rx], assignments[rx]) and not host_changed:
                     continue
                 desired = assignments[rx]

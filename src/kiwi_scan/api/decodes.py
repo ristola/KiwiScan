@@ -261,6 +261,18 @@ def get_decode_metrics() -> Dict[str, float | int]:
     }
 
 
+def reset_decode_metrics() -> Dict[str, int]:
+    global _decode_seq
+    with _decode_lock:
+        _decode_seq = 0
+        _decode_buffer.clear()
+        _decode_times.clear()
+    return {
+        "total_decodes": 0,
+        "buffer_size": 0,
+    }
+
+
 @router.get("/decodes")
 def get_decodes(since: int = 0):
     with _decode_lock:

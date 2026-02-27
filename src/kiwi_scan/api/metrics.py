@@ -4,14 +4,19 @@ from typing import Callable, Dict
 
 from fastapi import APIRouter, Response
 
-from .decodes import get_decode_metrics
+from .decodes import get_decode_metrics, reset_decode_metrics
 
 
 def _prom_name(name: str) -> str:
     return "kiwi_scan_" + name
 
 
-def make_router(*, receiver_mgr: object, get_api_metrics: Callable[[], Dict[str, float | int]]) -> APIRouter:
+def make_router(
+    *,
+    receiver_mgr: object,
+    get_api_metrics: Callable[[], Dict[str, float | int]],
+    reset_api_metrics: Callable[[], Dict[str, float | int]] | None = None,
+) -> APIRouter:
     """Create router for GET /metrics (Prometheus text format)."""
 
     router = APIRouter()
@@ -91,5 +96,27 @@ def make_router(*, receiver_mgr: object, get_api_metrics: Callable[[], Dict[str,
 
         body = "\n".join(lines) + "\n"
         return Response(content=body, media_type="text/plain; version=0.0.4; charset=utf-8")
+
+    @router.post("/metrics/reset")
+    def reset_metrics() -> Dict[str, object]:
+        decode_after = reset_decode_metrics()
+        rx_after: Dict[str, object] = {}
+        if hasattr(receiver_mgr, "reset_metrics"):
+            try:
+                rx_after = receiver_mgr.reset_metrics()  # type: ignore[attr-defined]
+            except Exception:
+                rx_after = {}
+        api_after: Dict[str, float | int] = {}
+        if reset_api_metrics is not None:
+            try:
+                api_after = reset_api_metrics()
+            except Exception:
+                api_after = {}
+        return {
+            "ok": True,
+            "decode": decode_after,
+            "receiver": rx_after,
+            "api": api_after,
+        }
 
     return router

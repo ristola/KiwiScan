@@ -54,6 +54,7 @@ from .api.metrics import make_router as make_metrics_router
 from .api.health import make_router as make_health_router
 from .rx_monitor import RxMonitor
 from .app_lifecycle import register_lifecycle
+from .auto_set_loop import AutoSetLoop
 
 # Configure logging to output to console (stderr) with timestamps
 logging.basicConfig(
@@ -351,6 +352,15 @@ def _get_api_metrics() -> Dict[str, float | int]:
     }
 
 
+def _reset_api_metrics() -> Dict[str, float | int]:
+    global _api_request_total, _api_error_total
+    with _api_metrics_lock:
+        _api_request_total = 0
+        _api_error_total = 0
+        _api_latency_ms.clear()
+    return _get_api_metrics()
+
+
 @app.middleware("http")
 async def _api_latency_middleware(request: Request, call_next):
     global _api_request_total, _api_error_total
@@ -491,6 +501,7 @@ mgr = DiscoveryManager(
     waterholes=FT8_WATERHOLES,
 )
 rx_monitor = RxMonitor(kiwirecorder_path=_KIWIRECORDER_PATH, mgr=mgr)
+auto_set_loop = AutoSetLoop()
 
 # Asyncio event loop for scheduling broadcasts from the discovery thread
 loop: Optional[asyncio.AbstractEventLoop] = None
@@ -514,9 +525,15 @@ app.include_router(
     )
 )
 app.include_router(make_rx_monitor_router(monitor=rx_monitor))
-app.include_router(make_admin_router())
+app.include_router(make_admin_router(auto_set_loop=auto_set_loop))
 app.include_router(make_automation_router())
-app.include_router(make_metrics_router(receiver_mgr=receiver_mgr, get_api_metrics=_get_api_metrics))
+app.include_router(
+    make_metrics_router(
+        receiver_mgr=receiver_mgr,
+        get_api_metrics=_get_api_metrics,
+        reset_api_metrics=_reset_api_metrics,
+    )
+)
 app.include_router(make_health_router(receiver_mgr=receiver_mgr))
 app.include_router(
     make_ws_status_router(
@@ -538,6 +555,7 @@ register_lifecycle(
     mgr=mgr,
     receiver_mgr=receiver_mgr,
     rx_monitor=rx_monitor,
+    auto_set_loop=auto_set_loop,
     set_decodes_loop=set_decodes_loop,
     set_loop=lambda v: globals().__setitem__("loop", v),
 )

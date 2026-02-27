@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -246,6 +247,45 @@ def _round_activity_entry(entry: dict) -> dict:
     return out
 
 
+def _percentile(values: list[float], pct: float) -> float:
+    if not values:
+        return 0.0
+    if len(values) == 1:
+        return float(values[0])
+    ordered = sorted(float(v) for v in values)
+    pos = (max(0.0, min(100.0, float(pct))) / 100.0) * float(len(ordered) - 1)
+    lo = int(math.floor(pos))
+    hi = int(math.ceil(pos))
+    if lo == hi:
+        return float(ordered[lo])
+    frac = pos - float(lo)
+    return float(ordered[lo] + (ordered[hi] - ordered[lo]) * frac)
+
+
+def _adaptive_ssb_threshold_db(
+    *,
+    power_bins: list[float],
+    base_threshold_db: float,
+    min_threshold_db: float,
+    max_threshold_db: float,
+    spread_gain: float,
+    spread_offset_db: float,
+    spread_target_db: float,
+) -> float:
+    if not power_bins:
+        return float(base_threshold_db)
+    p50 = _percentile(power_bins, 50.0)
+    p95 = _percentile(power_bins, 95.0)
+    spread = max(0.0, float(p95) - float(p50))
+    spread_delta = float(spread) - float(spread_target_db)
+    derived = float(base_threshold_db) + float(spread_offset_db) + float(spread_gain) * float(spread_delta)
+    bounded = max(float(min_threshold_db), min(float(max_threshold_db), float(derived)))
+    # Blend base and derived so adaptive mode can move in either direction
+    # while staying stable for brief frame-to-frame variance.
+    blended = (0.5 * float(base_threshold_db)) + (0.5 * float(bounded))
+    return float(max(float(min_threshold_db), min(float(max_threshold_db), float(blended))))
+
+
 def bin_to_hz(*, center_freq_hz: float, span_hz: float, n_bins: int, bin_center: float) -> float:
     # Assume bins evenly cover the span with DC at center.
     # Map bin index [0..n_bins-1] to offset [-span/2 .. +span/2].
@@ -312,6 +352,13 @@ def run_scan(
     ssb_occ_thresh_db: float = 6.0,
     ssb_voice_min_score: float = 0.0,
     ssb_early_stop_frames: int = 0,
+    ssb_warmup_frames: int = 1,
+    ssb_adaptive_threshold: bool = False,
+    ssb_adaptive_min_db: float = 5.0,
+    ssb_adaptive_max_db: float = 20.0,
+    ssb_adaptive_spread_gain: float = 0.35,
+    ssb_adaptive_spread_offset_db: float = 2.5,
+    ssb_adaptive_spread_target_db: float = 55.0,
 ) -> int:
     if phone_only:
         # Display bandplan-derived range so the user knows what is being kept.
@@ -355,12 +402,21 @@ def run_scan(
     ssb_frames_seen = 0
     ssb_seen_good = False
     ssb_stop = False
+    last_ssb_threshold_db = float(threshold_db)
+    min_ssb_threshold_db = float(threshold_db)
+    max_ssb_threshold_db = float(threshold_db)
+    last_ssb_spread_db = 0.0
+    min_ssb_spread_db = 0.0
+    max_ssb_spread_db = 0.0
     frames_seen = 0
     stop_reason: str | None = None
 
     def on_frame(frame: WaterfallFrame) -> None:
         nonlocal did_record
         nonlocal ssb_frames_seen, ssb_seen_good, ssb_stop
+        nonlocal last_ssb_threshold_db
+        nonlocal min_ssb_threshold_db, max_ssb_threshold_db
+        nonlocal last_ssb_spread_db, min_ssb_spread_db, max_ssb_spread_db
         nonlocal best
         nonlocal frames_seen
         frames_seen += 1
@@ -374,6 +430,32 @@ def run_scan(
             if not frame.power_bins:
                 return
             ssb_frames_seen += 1
+            if int(ssb_warmup_frames) > 0 and ssb_frames_seen <= int(ssb_warmup_frames):
+                return
+            threshold_for_ssb = float(threshold_db)
+            if bool(ssb_adaptive_threshold):
+                p50 = _percentile(frame.power_bins, 50.0)
+                p95 = _percentile(frame.power_bins, 95.0)
+                spread_db = max(0.0, float(p95) - float(p50))
+                last_ssb_spread_db = float(spread_db)
+                if int(ssb_frames_seen) <= int(ssb_warmup_frames) + 1:
+                    min_ssb_spread_db = float(spread_db)
+                    max_ssb_spread_db = float(spread_db)
+                else:
+                    min_ssb_spread_db = min(float(min_ssb_spread_db), float(spread_db))
+                    max_ssb_spread_db = max(float(max_ssb_spread_db), float(spread_db))
+                threshold_for_ssb = _adaptive_ssb_threshold_db(
+                    power_bins=frame.power_bins,
+                    base_threshold_db=float(threshold_db),
+                    min_threshold_db=float(ssb_adaptive_min_db),
+                    max_threshold_db=float(ssb_adaptive_max_db),
+                    spread_gain=float(ssb_adaptive_spread_gain),
+                    spread_offset_db=float(ssb_adaptive_spread_offset_db),
+                    spread_target_db=float(ssb_adaptive_spread_target_db),
+                )
+            last_ssb_threshold_db = float(threshold_for_ssb)
+            min_ssb_threshold_db = min(float(min_ssb_threshold_db), float(threshold_for_ssb))
+            max_ssb_threshold_db = max(float(max_ssb_threshold_db), float(threshold_for_ssb))
             peak_i = max(range(len(frame.power_bins)), key=lambda i: frame.power_bins[i])
             freq0 = bin_to_hz(
                 center_freq_hz=frame.center_freq_hz,
@@ -417,7 +499,7 @@ def run_scan(
                     }
             except Exception:
                 pass
-            if rel_bp >= float(threshold_db) and (float(ssb_voice_min_score) <= 0 or float(voice_score) >= float(ssb_voice_min_score)):
+            if rel_bp >= float(threshold_for_ssb) and (float(ssb_voice_min_score) <= 0 or float(voice_score) >= float(ssb_voice_min_score)):
                 bp = bandplan_label(float(freq0), region=bandplan_region)
                 if (not phone_only) or bp == "Phone":
                     width_guess = str(guess_signal_type(width_hz=float(occ_bw_hz)))
@@ -425,7 +507,7 @@ def run_scan(
                         t_unix=time.time(),
                         frame_index=frame.frame_index,
                         noise_floor=float(noise),
-                        threshold_db=float(threshold_db),
+                        threshold_db=float(threshold_for_ssb),
                         bin_center=float(peak_i),
                         width_bins=int(occ_bins) if int(occ_bins) > 0 else int(width_bins_bp),
                         width_hz=float(occ_bw_hz) if float(occ_bw_hz) > 0 else float(width_hz_bp),
@@ -565,6 +647,32 @@ def run_scan(
         # then compute bandpower across a ~2.4 kHz window.
         if bool(ssb_detect) and frame.power_bins:
             ssb_frames_seen += 1
+            if int(ssb_warmup_frames) > 0 and ssb_frames_seen <= int(ssb_warmup_frames):
+                return
+            threshold_for_ssb = float(threshold_db)
+            if bool(ssb_adaptive_threshold):
+                p50 = _percentile(frame.power_bins, 50.0)
+                p95 = _percentile(frame.power_bins, 95.0)
+                spread_db = max(0.0, float(p95) - float(p50))
+                last_ssb_spread_db = float(spread_db)
+                if int(ssb_frames_seen) <= int(ssb_warmup_frames) + 1:
+                    min_ssb_spread_db = float(spread_db)
+                    max_ssb_spread_db = float(spread_db)
+                else:
+                    min_ssb_spread_db = min(float(min_ssb_spread_db), float(spread_db))
+                    max_ssb_spread_db = max(float(max_ssb_spread_db), float(spread_db))
+                threshold_for_ssb = _adaptive_ssb_threshold_db(
+                    power_bins=frame.power_bins,
+                    base_threshold_db=float(threshold_db),
+                    min_threshold_db=float(ssb_adaptive_min_db),
+                    max_threshold_db=float(ssb_adaptive_max_db),
+                    spread_gain=float(ssb_adaptive_spread_gain),
+                    spread_offset_db=float(ssb_adaptive_spread_offset_db),
+                    spread_target_db=float(ssb_adaptive_spread_target_db),
+                )
+            last_ssb_threshold_db = float(threshold_for_ssb)
+            min_ssb_threshold_db = min(float(min_ssb_threshold_db), float(threshold_for_ssb))
+            max_ssb_threshold_db = max(float(max_ssb_threshold_db), float(threshold_for_ssb))
             peak_i = max(range(len(frame.power_bins)), key=lambda i: frame.power_bins[i])
             freq0 = bin_to_hz(
                 center_freq_hz=frame.center_freq_hz,
@@ -592,7 +700,7 @@ def run_scan(
                     ssb_seen_good = True
                 elif int(ssb_early_stop_frames) > 0 and (not ssb_seen_good) and ssb_frames_seen >= int(ssb_early_stop_frames):
                     ssb_stop = True
-            if rel_bp >= float(threshold_db) and (float(ssb_voice_min_score) <= 0 or float(voice_score) >= float(ssb_voice_min_score)):
+            if rel_bp >= float(threshold_for_ssb) and (float(ssb_voice_min_score) <= 0 or float(voice_score) >= float(ssb_voice_min_score)):
                 bp = bandplan_label(float(freq0), region=bandplan_region)
                 if (not phone_only) or bp == "Phone":
                     width_guess = str(guess_signal_type(width_hz=float(occ_bw_hz)))
@@ -600,7 +708,7 @@ def run_scan(
                         t_unix=time.time(),
                         frame_index=frame.frame_index,
                         noise_floor=float(noise),
-                        threshold_db=float(threshold_db),
+                        threshold_db=float(threshold_for_ssb),
                         bin_center=float(peak_i),
                         width_bins=int(occ_bins) if int(occ_bins) > 0 else int(width_bins_bp),
                         width_hz=float(occ_bw_hz) if float(occ_bw_hz) > 0 else float(width_hz_bp),
@@ -848,6 +956,15 @@ def run_scan(
                 "frames_seen": int(frames_seen),
                 "ssb_frames_seen": int(ssb_frames_seen),
                 "ssb_seen_good": bool(ssb_seen_good),
+                "ssb_threshold_base_db": float(threshold_db),
+                "ssb_threshold_last_db": float(last_ssb_threshold_db),
+                "ssb_threshold_min_db": float(min_ssb_threshold_db),
+                "ssb_threshold_max_db": float(max_ssb_threshold_db),
+                "ssb_spread_last_db": float(last_ssb_spread_db),
+                "ssb_spread_min_db": float(min_ssb_spread_db),
+                "ssb_spread_max_db": float(max_ssb_spread_db),
+                "ssb_warmup_frames": int(ssb_warmup_frames),
+                "ssb_adaptive_threshold": bool(ssb_adaptive_threshold),
                 "stop_reason": stop_reason,
             }
             json_report_path.write_text(json.dumps(report, sort_keys=True) + "\n", encoding="utf-8")
