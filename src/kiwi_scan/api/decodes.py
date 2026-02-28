@@ -78,6 +78,8 @@ def _normalize_band_mode(value: object) -> str:
     raw = str(value or "FT8").strip().upper().replace("_", " ")
     if raw in {"FT4/FT8", "FT4 + FT8", "FT4-FT8"}:
         return "FT4 / FT8"
+    if raw == "WSRP":
+        return "WSPR"
     if raw in {"PHONE", "LSB", "USB"}:
         return "SSB"
     if raw in _valid_band_modes:
@@ -126,9 +128,8 @@ def _trigger_auto_set_apply(settings: Dict[str, Any], mode: str) -> Dict[str, An
 
 
 def _apply_ws4010_band_command(payload: Dict[str, Any]) -> Dict[str, Any]:
-    mode = str(payload.get("mode") or "ft8").strip().lower()
-    if mode not in {"ft8", "phone"}:
-        raise ValueError("mode must be 'ft8' or 'phone'")
+    mode_raw = str(payload.get("mode") or "").strip()
+    profile_raw = str(payload.get("profile") or "").strip().lower()
 
     band_raw = str(payload.get("band") or payload.get("target_band") or "ALL").strip()
     band_upper = band_raw.upper()
@@ -148,6 +149,22 @@ def _apply_ws4010_band_command(payload: Dict[str, Any]) -> Dict[str, Any]:
         band_mode_raw = payload.get("mode_value")
     if band_mode_raw is None:
         band_mode_raw = payload.get("bandMode")
+
+    if band_mode_raw is None and mode_raw and mode_raw.lower() not in {"ft8", "phone"}:
+        band_mode_raw = mode_raw
+
+    if profile_raw:
+        mode = profile_raw
+    elif mode_raw.lower() in {"ft8", "phone"}:
+        mode = mode_raw.lower()
+    elif band_mode_raw is not None and str(band_mode_raw).strip() != "":
+        mode = "phone" if _normalize_band_mode(band_mode_raw) == "SSB" else "ft8"
+    else:
+        mode = "ft8"
+
+    if mode not in {"ft8", "phone"}:
+        raise ValueError("profile must be 'ft8' or 'phone'")
+
     has_band_mode = band_mode_raw is not None and str(band_mode_raw).strip() != ""
     band_mode = _normalize_band_mode(band_mode_raw) if has_band_mode else None
     block = str(payload.get("block") or "all").strip()
@@ -217,29 +234,28 @@ def _apply_ws4010_band_command(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 def _handle_ws4010_command(raw: str) -> Optional[Dict[str, Any]]:
     def _help_response() -> Dict[str, Any]:
+        disable_20m = {"command": "set_band", "enabled": False, "band": "20m"}
+        set_20m_ft4 = {"command": "set_band", "enabled": True, "band": "20m", "mode": "FT4"}
+        set_20m_ft4_ft8 = {"command": "set_band", "enabled": True, "band": "20m", "mode": "FT4 / FT8"}
+        set_20m_ft8 = {"command": "set_band", "enabled": True, "band": "20m", "mode": "FT8"}
+        set_20m_wspr = {"command": "set_band", "enabled": True, "band": "20m", "mode": "WSPR"}
+        set_40m_ssb = {"command": "set_band", "enabled": True, "band": "40m", "mode": "SSB"}
         return {
             "ok": True,
             "type": "command_help",
-            "message": "Copy/paste one command object below as your WS payload.",
+            "message": "Examples are labeled text to avoid auto-JSON parsing by monitors.",
             "examples": [
-                {
-                    "label": "Enable band only",
-                    "command": {"command": "set_band", "enabled": True, "band": "20m", "mode": "ft8"},
-                },
-                {
-                    "label": "Disable band only",
-                    "command": {"command": "set_band", "enabled": False, "band": "20m", "mode": "ft8"},
-                },
-                {
-                    "label": "Enable band and set FT4 / FT8",
-                    "command": {"command": "set_band", "enabled": True, "band": "20m", "mode": "ft8", "band_mode": "FT4 / FT8"},
-                },
-                {
-                    "label": "Enable 40m SSB",
-                    "command": {"command": "set_band", "enabled": True, "band": "40m", "mode": "phone", "band_mode": "SSB"},
-                },
+                "Band Disable Only : " + json.dumps(disable_20m, separators=(",", ":")),
+                "Band Mode FT4 : " + json.dumps(set_20m_ft4, separators=(",", ":")),
+                "Band Mode FT4/FT8 : " + json.dumps(set_20m_ft4_ft8, separators=(",", ":")),
+                "Band Mode FT8 : " + json.dumps(set_20m_ft8, separators=(",", ":")),
+                "Band Mode WSPR : " + json.dumps(set_20m_wspr, separators=(",", ":")),
+                "Band Mode SSB : " + json.dumps(set_40m_ssb, separators=(",", ":")),
             ],
             "notes": [
+                "Use the JSON part after ':' as the actual WS payload.",
+                "Simple form: mode can be FT4, FT4 / FT8, FT8, WSPR, or SSB.",
+                "Optional: use profile='ft8' or profile='phone' to force which schedule profile is edited.",
                 "Commands apply to the current time block only.",
                 "If band_mode is omitted, existing mode settings are preserved.",
             ],
