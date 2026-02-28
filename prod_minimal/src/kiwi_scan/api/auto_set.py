@@ -477,11 +477,14 @@ def make_router(
         receiver_mgr.apply_assignments(host, port, assignments)  # type: ignore[attr-defined]
         if adaptive_enabled:
             try:
-                settings["ssbAdaptiveThresholdByBand"] = {
+                latest_settings = _load_automation_settings()
+                if not isinstance(latest_settings, dict):
+                    latest_settings = {}
+                latest_settings["ssbAdaptiveThresholdByBand"] = {
                     str(k): round(float(v), 2)
                     for k, v in adaptive_state.items()
                 }
-                _save_automation_settings(settings)
+                _save_automation_settings(latest_settings)
             except Exception:
                 pass
         prune_decode_buffer(allowed_bands)

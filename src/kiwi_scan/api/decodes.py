@@ -90,23 +90,45 @@ def _normalize_band_mode(value: object) -> str:
 def _blocks_for_mode(mode: str, block: str) -> List[str]:
     _ = str(block or "").strip()
     now = datetime.now().astimezone()
-    return [block_for_hour(now.hour, mode=mode)]
+    current = block_for_hour(now.hour, mode=mode)
+    blocks: List[str] = [current]
+    m = re.match(r"^(\d{2})-(\d{2})$", current)
+    if m:
+        start, end = m.groups()
+        if end == "24":
+            blocks.append(f"{start}-00")
+        if end == "00":
+            blocks.append(f"{start}-24")
+    dedup: List[str] = []
+    for b in blocks:
+        if b not in dedup:
+            dedup.append(b)
+    return dedup
 
 
 def _trigger_auto_set_apply(settings: Dict[str, Any], mode: str) -> Dict[str, Any]:
     try:
         now = datetime.now().astimezone()
         block = block_for_hour(now.hour, mode=mode)
+        candidate_blocks = _blocks_for_mode(mode, block)
         schedule_profiles = settings.get("scheduleProfiles") if isinstance(settings, dict) else {}
         by_mode = schedule_profiles.get(mode) if isinstance(schedule_profiles, dict) else {}
-        entry = by_mode.get(block) if isinstance(by_mode, dict) else {}
+        selected_block = block
+        entry = {}
+        if isinstance(by_mode, dict):
+            for candidate in candidate_blocks:
+                candidate_entry = by_mode.get(candidate)
+                if isinstance(candidate_entry, dict):
+                    selected_block = candidate
+                    entry = candidate_entry
+                    break
 
         selected_bands = entry.get("selectedBands") if isinstance(entry, dict) else []
         band_modes = entry.get("bandModes") if isinstance(entry, dict) else {}
         payload = {
             "enabled": True,
             "mode": mode,
-            "block": block,
+            "block": selected_block,
             "selected_bands": selected_bands if isinstance(selected_bands, list) else [],
             "band_modes": band_modes if isinstance(band_modes, dict) else {},
             "wspr_scan_enabled": bool(settings.get("autoScanWspr", False)),
@@ -122,7 +144,7 @@ def _trigger_auto_set_apply(settings: Dict[str, Any], mode: str) -> Dict[str, An
         )
         with urllib_request.urlopen(req, timeout=3.0) as resp:
             body = json.loads(resp.read().decode("utf-8", errors="ignore"))
-        return {"ok": True, "block": block, "response": body}
+        return {"ok": True, "block": selected_block, "response": body}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
