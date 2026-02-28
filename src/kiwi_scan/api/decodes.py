@@ -17,7 +17,7 @@ from urllib import request as urllib_request
 from fastapi import APIRouter, WebSocket
 from fastapi.websockets import WebSocketDisconnect
 
-from ..scheduler import block_for_hour, expected_schedule_by_season
+from ..scheduler import block_for_hour, expected_schedule_by_season, season_for_date
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,7 @@ _loop_4010: asyncio.AbstractEventLoop | None = None
 _decode_ws4010_lock = threading.Lock()
 _decode_ws4010_clients: set[WebSocket] = set()
 _decode_ws4010_dashboard_clients: set[WebSocket] = set()
+_ws4010_debug_events: deque[Dict[str, Any]] = deque(maxlen=200)
 
 _automation_lock = threading.Lock()
 _valid_bands = ("10m", "12m", "15m", "17m", "20m", "30m", "40m", "60m", "80m", "160m")
@@ -51,6 +52,16 @@ def set_loop(loop: asyncio.AbstractEventLoop | None) -> None:
 def set_ws4010_loop(loop: asyncio.AbstractEventLoop | None) -> None:
     global _loop_4010
     _loop_4010 = loop
+
+
+def _record_ws4010_debug(event: str, **fields: Any) -> None:
+    row: Dict[str, Any] = {
+        "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "event": event,
+    }
+    row.update(fields)
+    with _decode_ws4010_lock:
+        _ws4010_debug_events.append(row)
 
 
 def _automation_settings_path() -> Path:
@@ -172,15 +183,17 @@ def _apply_ws4010_band_command(payload: Dict[str, Any]) -> Dict[str, Any]:
     if band_mode_raw is None:
         band_mode_raw = payload.get("bandMode")
 
-    if band_mode_raw is None and mode_raw and mode_raw.lower() not in {"ft8", "phone"}:
-        band_mode_raw = mode_raw
+    if band_mode_raw is None and mode_raw:
+        mode_as_band_mode = _normalize_band_mode(mode_raw)
+        if mode_as_band_mode in _valid_band_modes:
+            band_mode_raw = mode_raw
 
     if profile_raw:
         mode = profile_raw
+    elif band_mode_raw is not None and str(band_mode_raw).strip() != "":
+        mode = "ft8"
     elif mode_raw.lower() in {"ft8", "phone"}:
         mode = mode_raw.lower()
-    elif band_mode_raw is not None and str(band_mode_raw).strip() != "":
-        mode = "phone" if _normalize_band_mode(band_mode_raw) == "SSB" else "ft8"
     else:
         mode = "ft8"
 
@@ -254,33 +267,233 @@ def _apply_ws4010_band_command(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _coerce_bool(value: object, *, field_name: str = "enabled") -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value or "").strip().lower()
+    if text in {"1", "true", "yes", "on", "enable", "enabled"}:
+        return True
+    if text in {"0", "false", "no", "off", "disable", "disabled"}:
+        return False
+    raise ValueError(f"{field_name} must be true/false")
+
+
+def _apply_ws4010_wspr_scan_command(payload: Dict[str, Any]) -> Dict[str, Any]:
+    raw = payload.get("enabled")
+    if raw is None:
+        raw = payload.get("auto_scan_wspr")
+    if raw is None:
+        raw = payload.get("value")
+    if raw is None:
+        raise ValueError("enabled is required")
+
+    enabled = _coerce_bool(raw, field_name="enabled")
+    mode_raw = str(payload.get("mode") or payload.get("profile") or "ft8").strip().lower()
+    mode = mode_raw if mode_raw in {"ft8", "phone"} else "ft8"
+
+    with _automation_lock:
+        settings = _load_automation_settings()
+        settings["autoScanWspr"] = enabled
+        _save_automation_settings(settings)
+
+    apply_result = _trigger_auto_set_apply(settings, mode)
+    return {
+        "ok": True,
+        "action": "set_wspr_scan",
+        "wspr_scan_enabled": enabled,
+        "mode": mode,
+        "apply": apply_result,
+    }
+
+
+def _apply_ws4010_discover_kiwi_command(payload: Dict[str, Any]) -> Dict[str, Any]:
+    port = int(payload.get("port", 8073) or 8073)
+    timeout_s = float(payload.get("timeout_s", 0.20) or 0.20)
+    max_hosts = int(payload.get("max_hosts", 32) or 32)
+    url = f"http://127.0.0.1:4020/config/discover?port={port}&timeout_s={timeout_s}&max_hosts={max_hosts}"
+    req = urllib_request.Request(url, method="GET")
+    with urllib_request.urlopen(req, timeout=max(3.0, timeout_s * max_hosts + 1.0)) as resp:
+        body = json.loads(resp.read().decode("utf-8", errors="ignore"))
+    found = body.get("found") if isinstance(body, dict) else []
+    count = len(found) if isinstance(found, list) else 0
+    return {
+        "ok": True,
+        "action": "discover_kiwi",
+        "count": count,
+        "result": body,
+    }
+
+
+def _load_runtime_assignments() -> Dict[str, Any]:
+    try:
+        req = urllib_request.Request("http://127.0.0.1:4020/decodes/status", method="GET")
+        with urllib_request.urlopen(req, timeout=2.0) as resp:
+            body = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        if isinstance(body, dict):
+            assignments = body.get("assignments")
+            return assignments if isinstance(assignments, dict) else {}
+    except Exception:
+        pass
+    return {}
+
+
+def _apply_ws4010_status_command(payload: Dict[str, Any]) -> Dict[str, Any]:
+    verbose_raw = payload.get("verbose")
+    if isinstance(verbose_raw, bool):
+        verbose = verbose_raw
+    elif isinstance(verbose_raw, (int, float)):
+        verbose = bool(verbose_raw)
+    else:
+        verbose = str(verbose_raw or "").strip().lower() in {"1", "true", "yes", "on", "full", "verbose"}
+
+    mode_raw = str(payload.get("mode") or payload.get("profile") or "").strip().lower()
+
+    with _automation_lock:
+        settings = _load_automation_settings()
+
+    if mode_raw not in {"ft8", "phone"}:
+        auto_mode = str(settings.get("autoScanMode") or "ft8").strip().lower()
+        mode = auto_mode if auto_mode in {"ft8", "phone"} else "ft8"
+    else:
+        mode = mode_raw
+
+    now = datetime.now().astimezone()
+    season = season_for_date(now)
+    block = block_for_hour(now.hour, mode=mode)
+    candidate_blocks = _blocks_for_mode(mode, block)
+
+    schedule_profiles = settings.get("scheduleProfiles") if isinstance(settings, dict) else {}
+    by_mode = schedule_profiles.get(mode) if isinstance(schedule_profiles, dict) else {}
+    selected_block = block
+    entry: Dict[str, Any] = {}
+    if isinstance(by_mode, dict):
+        for candidate in candidate_blocks:
+            candidate_entry = by_mode.get(candidate)
+            if isinstance(candidate_entry, dict):
+                selected_block = candidate
+                entry = candidate_entry
+                break
+
+    selected_raw = entry.get("selectedBands") if isinstance(entry, dict) else []
+    selected_set = {b for b in selected_raw if b in _valid_bands} if isinstance(selected_raw, list) else set()
+
+    band_modes_raw = entry.get("bandModes") if isinstance(entry, dict) else {}
+    band_modes: Dict[str, str] = {}
+    if isinstance(band_modes_raw, dict):
+        for b in _valid_bands:
+            band_modes[b] = _normalize_band_mode(band_modes_raw.get(b) or "FT8")
+    else:
+        for b in _valid_bands:
+            band_modes[b] = "FT8"
+
+    seasonal_tables = expected_schedule_by_season(mode=mode)
+    season_blocks = seasonal_tables.get(season) if isinstance(seasonal_tables, dict) else {}
+    block_conditions = season_blocks.get(selected_block) if isinstance(season_blocks, dict) else {}
+    if not isinstance(block_conditions, dict):
+        block_conditions = {}
+
+    runtime_assignments = _load_runtime_assignments()
+    assignments_by_band: Dict[str, List[Dict[str, Any]]] = {}
+    if isinstance(runtime_assignments, dict):
+        for rx_key, row in runtime_assignments.items():
+            if not isinstance(row, dict):
+                continue
+            band = str(row.get("band") or "").strip()
+            if band not in _valid_bands:
+                continue
+            try:
+                rx = int(rx_key)
+            except Exception:
+                try:
+                    rx = int(row.get("rx"))
+                except Exception:
+                    continue
+            assignments_by_band.setdefault(band, []).append(
+                {
+                    "rx": rx,
+                    "mode": str(row.get("mode") or "").upper(),
+                    "freq_hz": row.get("freq_hz"),
+                }
+            )
+
+    bands: List[Dict[str, Any]] = []
+    active_conditions: List[str] = []
+    total_assignments = 0
+    for band in _valid_bands:
+        condition = str(block_conditions.get(band) or "CLOSED").upper()
+        assignments = assignments_by_band.get(band, [])
+        if condition == "OPEN":
+            active_conditions.append(band)
+        total_assignments += len(assignments)
+        bands.append(
+            {
+                "band": band,
+                "selected": band in selected_set,
+                "mode": band_modes.get(band, "FT8"),
+                "condition": condition,
+                "assignments": assignments,
+            }
+        )
+
+    response: Dict[str, Any] = {
+        "ok": True,
+        "action": "settings",
+        "message": "Compact status snapshot.",
+        "mode": mode,
+        "season": season,
+        "block": selected_block,
+        "verbose": verbose,
+        "auto_scan_mode": str(settings.get("autoScanMode") or mode),
+        "wspr_scan_enabled": bool(settings.get("autoScanWspr", False)),
+        "wspr_start_band": str(settings.get("wsprStartBand") or "10m"),
+        "band_hop_seconds": int(settings.get("bandHopSeconds", 105) or 105),
+        "selected_bands": [b for b in _valid_bands if b in selected_set],
+        "open_bands": active_conditions,
+        "assignment_count": total_assignments,
+        "band_settings": [
+            {
+                "band": band,
+                "enabled": band in selected_set,
+                "band_mode": band_modes.get(band, "FT8"),
+            }
+            for band in _valid_bands
+        ],
+        "status_lines": [
+            f"band:{band} enabled:{str(band in selected_set).lower()} band_mode:{band_modes.get(band, 'FT8')}"
+            for band in _valid_bands
+        ],
+    }
+    if verbose:
+        response["bands"] = bands
+    return response
+
+
 def _handle_ws4010_command(raw: str) -> Optional[Dict[str, Any]]:
+    def _bool_from_text(text_value: str) -> Optional[bool]:
+        m = re.search(r"\b(true|false|on|off|enable|enabled|disable|disabled)\b", str(text_value or "").lower())
+        if not m:
+            return None
+        token = m.group(1)
+        return token in {"true", "on", "enable", "enabled"}
+
     def _help_response() -> Dict[str, Any]:
-        disable_20m = {"command": "set_band", "enabled": False, "band": "20m"}
-        set_20m_ft4 = {"command": "set_band", "enabled": True, "band": "20m", "mode": "FT4"}
-        set_20m_ft4_ft8 = {"command": "set_band", "enabled": True, "band": "20m", "mode": "FT4 / FT8"}
-        set_20m_ft8 = {"command": "set_band", "enabled": True, "band": "20m", "mode": "FT8"}
-        set_20m_wspr = {"command": "set_band", "enabled": True, "band": "20m", "mode": "WSPR"}
-        set_40m_ssb = {"command": "set_band", "enabled": True, "band": "40m", "mode": "SSB"}
+        commands = ["set_band", "set_wspr_scan", "discover_kiwi", "status"]
+        examples = [
+            {"command": "set_band", "enabled": True, "band": "20m", "mode": "FT8"},
+            {"command": "set_wspr_scan", "enabled": True},
+            {"command": "discover_kiwi"},
+            {"command": "status"},
+            {"command": "status", "verbose": True},
+        ]
         return {
             "ok": True,
-            "type": "command_help",
-            "message": "Examples are labeled text to avoid auto-JSON parsing by monitors.",
-            "examples": [
-                "Band Disable Only : " + json.dumps(disable_20m, separators=(",", ":")),
-                "Band Mode FT4 : " + json.dumps(set_20m_ft4, separators=(",", ":")),
-                "Band Mode FT4/FT8 : " + json.dumps(set_20m_ft4_ft8, separators=(",", ":")),
-                "Band Mode FT8 : " + json.dumps(set_20m_ft8, separators=(",", ":")),
-                "Band Mode WSPR : " + json.dumps(set_20m_wspr, separators=(",", ":")),
-                "Band Mode SSB : " + json.dumps(set_40m_ssb, separators=(",", ":")),
-            ],
-            "notes": [
-                "Use the JSON part after ':' as the actual WS payload.",
-                "Simple form: mode can be FT4, FT4 / FT8, FT8, WSPR, or SSB.",
-                "Optional: use profile='ft8' or profile='phone' to force which schedule profile is edited.",
-                "Commands apply to the current time block only.",
-                "If band_mode is omitted, existing mode settings are preserved.",
-            ],
+            "type": "command_ack",
+            "action": "help",
+            "message": "Compact command reference.",
+            "commands": commands,
+            "examples": examples,
         }
 
     text = str(raw or "").strip()
@@ -292,6 +505,41 @@ def _handle_ws4010_command(raw: str) -> Optional[Dict[str, Any]]:
 
     if text.lower() in {"ping", "{\"type\":\"ping\"}"}:
         return {"ok": True, "type": "pong"}
+
+    lowered = text.lower()
+    if not text.startswith("{"):
+        if lowered in {"status", "get status", "get_status", "band status", "band_status", "settings", "show status"} or lowered.startswith("status "):
+            try:
+                verbose_flag = any(token in lowered for token in {"verbose", "full", "detail", "detailed"})
+                result = _apply_ws4010_status_command({"verbose": True} if verbose_flag else {})
+                result["type"] = "command_ack"
+                return result
+            except Exception as exc:
+                logger.exception("ws4010 status text command failed")
+                return {"ok": False, "type": "command_ack", "error": str(exc)}
+        if ("discover" in lowered) and ("kiwi" in lowered):
+            try:
+                result = _apply_ws4010_discover_kiwi_command({})
+                result["type"] = "command_ack"
+                return result
+            except Exception as exc:
+                logger.exception("ws4010 discover text command failed")
+                return {"ok": False, "type": "command_ack", "error": str(exc)}
+        if ("wspr" in lowered) and ("scan" in lowered):
+            enabled = _bool_from_text(lowered)
+            if enabled is None:
+                return {
+                    "ok": False,
+                    "type": "command_ack",
+                    "error": "wspr scan command requires true/false",
+                }
+            try:
+                result = _apply_ws4010_wspr_scan_command({"enabled": enabled})
+                result["type"] = "command_ack"
+                return result
+            except Exception as exc:
+                logger.exception("ws4010 wspr text command failed")
+                return {"ok": False, "type": "command_ack", "error": str(exc)}
 
     if not text.startswith("{"):
         return None
@@ -310,9 +558,125 @@ def _handle_ws4010_command(raw: str) -> Optional[Dict[str, Any]]:
     if not isinstance(payload, dict):
         return {"ok": False, "type": "command_ack", "error": "command must be a JSON object"}
 
-    action = str(payload.get("action") or payload.get("command") or payload.get("type") or "").strip().lower()
+    action = str(
+        payload.get("action")
+        or payload.get("command")
+        or payload.get("type")
+        or payload.get("message")
+        or payload.get("text")
+        or ""
+    ).strip().lower()
+
+    if action.startswith("{") and action.endswith("}"):
+        try:
+            nested = json.loads(action)
+            if isinstance(nested, dict):
+                merged: Dict[str, Any] = dict(payload)
+                merged.update(nested)
+                payload = merged
+                action = str(
+                    payload.get("action")
+                    or payload.get("command")
+                    or payload.get("type")
+                    or payload.get("message")
+                    or payload.get("text")
+                    or ""
+                ).strip().lower()
+        except Exception:
+            pass
     if action == "help":
         return _help_response()
+
+    if ("discover" in action) and ("kiwi" in action):
+        try:
+            result = _apply_ws4010_discover_kiwi_command(payload)
+            result["type"] = "command_ack"
+            return result
+        except ValueError as exc:
+            return {"ok": False, "type": "command_ack", "error": str(exc)}
+        except urllib_error.URLError as exc:
+            return {"ok": False, "type": "command_ack", "error": f"discover_failed: {exc}"}
+        except Exception as exc:
+            logger.exception("ws4010 discover command failed")
+            return {"ok": False, "type": "command_ack", "error": str(exc)}
+
+    if ("wspr" in action) and ("scan" in action):
+        enabled: Optional[bool]
+        if "enabled" in payload or "auto_scan_wspr" in payload or "value" in payload:
+            raw_enabled = payload.get("enabled")
+            if raw_enabled is None:
+                raw_enabled = payload.get("auto_scan_wspr")
+            if raw_enabled is None:
+                raw_enabled = payload.get("value")
+            try:
+                enabled = _coerce_bool(raw_enabled, field_name="enabled")
+            except Exception:
+                enabled = None
+        else:
+            enabled = _bool_from_text(action)
+        if enabled is None:
+            return {
+                "ok": False,
+                "type": "command_ack",
+                "error": "wspr scan command requires true/false",
+            }
+        try:
+            result = _apply_ws4010_wspr_scan_command({"enabled": enabled, **payload})
+            result["type"] = "command_ack"
+            return result
+        except ValueError as exc:
+            return {"ok": False, "type": "command_ack", "error": str(exc)}
+        except urllib_error.URLError as exc:
+            return {"ok": False, "type": "command_ack", "error": f"apply_failed: {exc}"}
+        except Exception as exc:
+            logger.exception("ws4010 wspr-scan command failed")
+            return {"ok": False, "type": "command_ack", "error": str(exc)}
+
+    if action in {"set_wspr_scan", "wspr_scan", "auto_scan_wspr", "run wspr band scan", "run_wspr_band_scan"}:
+        try:
+            result = _apply_ws4010_wspr_scan_command(payload)
+            result["type"] = "command_ack"
+            return result
+        except ValueError as exc:
+            return {"ok": False, "type": "command_ack", "error": str(exc)}
+        except urllib_error.URLError as exc:
+            return {"ok": False, "type": "command_ack", "error": f"apply_failed: {exc}"}
+        except Exception as exc:
+            logger.exception("ws4010 wspr-scan command failed")
+            return {"ok": False, "type": "command_ack", "error": str(exc)}
+
+    if action in {"discover_kiwi", "discover-kiwi", "config_discover", "discover kiwi", "discover"}:
+        try:
+            result = _apply_ws4010_discover_kiwi_command(payload)
+            result["type"] = "command_ack"
+            return result
+        except ValueError as exc:
+            return {"ok": False, "type": "command_ack", "error": str(exc)}
+        except urllib_error.URLError as exc:
+            return {"ok": False, "type": "command_ack", "error": f"discover_failed: {exc}"}
+        except Exception as exc:
+            logger.exception("ws4010 discover command failed")
+            return {"ok": False, "type": "command_ack", "error": str(exc)}
+
+    if action in {
+        "status",
+        "get_status",
+        "get status",
+        "band_status",
+        "band status",
+        "show_status",
+        "show status",
+        "settings",
+        "settings_status",
+        "settings status",
+    }:
+        try:
+            result = _apply_ws4010_status_command(payload)
+            result["type"] = "command_ack"
+            return result
+        except Exception as exc:
+            logger.exception("ws4010 status command failed")
+            return {"ok": False, "type": "command_ack", "error": str(exc)}
 
     is_band_command = (
         action in {"set_band", "band_set", "setband", "set_band_mode"}
@@ -445,7 +809,7 @@ async def _broadcast_decodes(payload: Dict) -> None:
 
 async def _broadcast_decodes_4010(payload: Dict) -> None:
     dead: List[WebSocket] = []
-    text = json.dumps(payload)
+    text = json.dumps(payload, default=str)
     with _decode_ws4010_lock:
         ws_list = list(_decode_ws4010_clients)
     for ws in ws_list:
@@ -461,7 +825,7 @@ async def _broadcast_decodes_4010(payload: Dict) -> None:
 
 async def _broadcast_ws4010_dashboard(payload: Dict, exclude: WebSocket | None = None) -> None:
     dead: List[WebSocket] = []
-    text = json.dumps(payload)
+    text = json.dumps(payload, default=str)
     with _decode_ws4010_lock:
         ws_list = [ws for ws in _decode_ws4010_dashboard_clients if ws is not exclude]
     for ws in ws_list:
@@ -474,6 +838,72 @@ async def _broadcast_ws4010_dashboard(payload: Dict, exclude: WebSocket | None =
             for d in dead:
                 _decode_ws4010_dashboard_clients.discard(d)
                 _decode_ws4010_clients.discard(d)
+
+
+def _ws4010_command_compat_frame(response: Dict[str, Any]) -> Dict[str, Any]:
+    now_str = datetime.now().astimezone().strftime("%H:%M:%S")
+    action = str(response.get("action") or "command")
+    ok = bool(response.get("ok", False))
+    summary = {
+        "type": str(response.get("type") or "command_ack"),
+        "action": action,
+        "ok": ok,
+    }
+    if action == "status":
+        summary["block"] = response.get("block")
+        summary["mode"] = response.get("mode")
+        summary["bands"] = len(response.get("bands", [])) if isinstance(response.get("bands"), list) else 0
+    elif action == "help":
+        summary["commands"] = len(response.get("commands", [])) if isinstance(response.get("commands"), list) else 0
+    return {
+        "timestamp": now_str,
+        "frequency_mhz": None,
+        "mode": "WS4010",
+        "callsign": "SERVER",
+        "grid": "WS40",
+        "message": json.dumps(summary, separators=(",", ":")),
+        "snr": None,
+        "dt": None,
+        "hz": None,
+        "band": "control",
+        "rx": -1,
+        "type": "command_notice",
+        "action": action,
+        "ok": ok,
+    }
+
+
+def _ws4010_settings_decode_frames(response: Dict[str, Any]) -> List[Dict[str, Any]]:
+    action = str(response.get("action") or "")
+    if action not in {"status", "settings"}:
+        return []
+    band_rows = response.get("band_settings")
+    if not isinstance(band_rows, list):
+        return []
+    now_str = datetime.now().astimezone().strftime("%H:%M:%S")
+    out: List[Dict[str, Any]] = []
+    for row in band_rows:
+        if not isinstance(row, dict):
+            continue
+        band = str(row.get("band") or "")
+        enabled = bool(row.get("enabled", False))
+        band_mode = str(row.get("band_mode") or "FT8")
+        out.append(
+            {
+                "timestamp": now_str,
+                "frequency_mhz": None,
+                "mode": "FT8",
+                "callsign": "SETTINGS",
+                "grid": "AA00",
+                "message": f"band:{band} enabled:{str(enabled).lower()} band_mode:{band_mode}",
+                "snr": 0,
+                "dt": 0.0,
+                "hz": 0,
+                "band": "control",
+                "rx": -1,
+            }
+        )
+    return out
 
 
 def publish_decode(payload: Dict) -> None:
@@ -620,6 +1050,17 @@ def get_decode_ws_status() -> Dict[str, object]:
     }
 
 
+@router.get("/decodes/ws4010/debug")
+def get_ws4010_debug(limit: int = 50) -> Dict[str, Any]:
+    n = max(1, min(int(limit or 50), 200))
+    with _decode_ws4010_lock:
+        rows = list(_ws4010_debug_events)[-n:]
+    return {
+        "count": len(rows),
+        "items": rows,
+    }
+
+
 @router.websocket("/ws/decodes")
 async def websocket_decodes(websocket: WebSocket):
     await websocket.accept()
@@ -655,14 +1096,42 @@ async def websocket_decodes_4010(websocket: WebSocket) -> None:
         while True:
             try:
                 raw = await websocket.receive_text()
+                try:
+                    peer = getattr(websocket, "client", None)
+                    peer_text = f"{peer.host}:{peer.port}" if peer is not None else "unknown"
+                except Exception:
+                    peer_text = "unknown"
+                logger.info("ws4010 recv peer=%s raw=%s", peer_text, (raw[:400] + "...") if len(raw) > 400 else raw)
+                _record_ws4010_debug("recv", peer=peer_text, raw=(raw[:400] + "...") if len(raw) > 400 else raw)
                 response = _handle_ws4010_command(raw)
                 if response is not None:
-                    await websocket.send_text(json.dumps(response))
+                    logger.info(
+                        "ws4010 ack action=%s type=%s ok=%s verbose=%s",
+                        response.get("action"),
+                        response.get("type"),
+                        response.get("ok"),
+                        response.get("verbose"),
+                    )
+                    _record_ws4010_debug(
+                        "ack",
+                        action=response.get("action"),
+                        type=response.get("type"),
+                        ok=response.get("ok"),
+                        verbose=response.get("verbose"),
+                    )
+                    try:
+                        await websocket.send_text(json.dumps(response, default=str))
+                    except Exception:
+                        pass
+                    await _broadcast_decodes_4010(response)
                     if str(response.get("type") or "") == "command_ack":
-                        await _broadcast_ws4010_dashboard(response, exclude=websocket)
+                        await _broadcast_decodes_4010(_ws4010_command_compat_frame(response))
+                        for settings_frame in _ws4010_settings_decode_frames(response):
+                            await _broadcast_decodes_4010(settings_frame)
             except WebSocketDisconnect:
                 break
             except Exception:
+                _record_ws4010_debug("error")
                 break
     finally:
         with _decode_ws4010_lock:

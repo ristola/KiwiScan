@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import threading
 import time
+from pathlib import Path
 from typing import Optional
 
 import uvicorn
@@ -37,6 +39,10 @@ def ensure_ws4010_started() -> None:
         if _thread is not None and not _thread.is_alive():
             _thread = None
             _server = None
+
+        src_dir = str(Path(__file__).resolve().parents[1])
+        if src_dir not in sys.path:
+            sys.path.insert(0, src_dir)
 
         config = uvicorn.Config(
             "kiwi_scan.ws4010_app:app",

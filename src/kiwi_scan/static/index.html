@@ -2069,7 +2069,9 @@
                             <th>Band</th>
                             <th>Mode</th>
                             <th>Conditions</th>
-                            <th>Receiver Used</th>
+                            <th>Receiver Used <span id="receiver_runtime_sync"
+                                    style="font-size:11px; opacity:.75; font-weight:500; margin-left:6px;">live:
+                                    --:--:--</span></th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -3202,6 +3204,13 @@
             if (chip) chip.textContent = text;
         }
 
+        function setReceiverRuntimeSyncLabel(when) {
+            const el = document.getElementById('receiver_runtime_sync');
+            if (!el) return;
+            const ts = (when instanceof Date && !Number.isNaN(when.getTime())) ? when : new Date();
+            el.textContent = `live: ${ts.toLocaleTimeString()}`;
+        }
+
         function getSelectedBandsForAutoSet(mode, block) {
             const base = getSelectedBands(mode, block);
             const next = new Set(base);
@@ -3303,6 +3312,32 @@
         async function fetchConfig() {
             const r = await fetch('/config');
             return r.json();
+        }
+
+        function applyDiscoverAckToConfigUi(payload) {
+            if (!payload || typeof payload !== 'object') return false;
+            const action = String(payload.action || '').toLowerCase();
+            if (action !== 'discover_kiwi') return false;
+            const result = (payload.result && typeof payload.result === 'object') ? payload.result : {};
+            const found = Array.isArray(result.found) ? result.found : [];
+            if (!found.length) return false;
+            const first = found[0] || {};
+
+            const hostEl = document.getElementById('cfg_host');
+            const portEl = document.getElementById('cfg_port');
+            const latEl = document.getElementById('cfg_lat');
+            const lonEl = document.getElementById('cfg_lon');
+
+            if (hostEl && first.host) hostEl.value = String(first.host);
+            if (portEl && first.port !== undefined && first.port !== null) portEl.value = String(first.port);
+            if (latEl && first.latitude !== undefined && first.latitude !== null) latEl.value = String(first.latitude);
+            if (lonEl && first.longitude !== undefined && first.longitude !== null) lonEl.value = String(first.longitude);
+
+            const discoveredGrid = resolveGridFromInputs() || resolveStationGridFromConfig(first);
+            updateStationGridDisplay(discoveredGrid);
+            const src = result && result.source ? ` (${String(result.source)})` : '';
+            setConfigStatus(`Found ${found.length} Kiwi(s). Using ${String(first.host || '')}:${String(first.port || '')}${src}`, 'ok');
+            return true;
         }
 
         function latLonToGrid(lat, lon) {
@@ -5684,6 +5719,31 @@
             }
         }
 
+        async function syncAutomationSettingsFromServer() {
+            const payload = await loadAutomationSettingsFromServer();
+            if (!payload || typeof payload !== 'object') return null;
+            const merged = { ...DEFAULT_AUTOMATION, ...payload };
+            saveAutomationSettings(merged);
+            bandModeCache = {};
+            const elAutoScanWspr = document.getElementById('auto_scan_wspr');
+            if (elAutoScanWspr) {
+                elAutoScanWspr.checked = !!merged.autoScanWspr;
+            }
+            applyAutomationRuntimeSettings(merged);
+            return merged;
+        }
+
+        function scheduleProfilesFingerprint(settings) {
+            try {
+                const profiles = (settings && settings.scheduleProfiles && typeof settings.scheduleProfiles === 'object')
+                    ? settings.scheduleProfiles
+                    : {};
+                return JSON.stringify(profiles);
+            } catch (e) {
+                return '';
+            }
+        }
+
         async function persistUiPrefsToServer() {
             const baseAutomation = await loadAutomationSettingsFromServer() || readAutomationSettings();
             const nextAutomation = {
@@ -6208,7 +6268,7 @@
 
         function normalizeStoredBandMode(band, value) {
             const raw = String(value || '').trim().toUpperCase();
-            if (!raw || raw === 'WSPR') return 'FT8';
+            if (!raw) return 'FT8';
             if (!MODE_OPTIONS.includes(raw)) return 'FT8';
             if (raw === 'SSB' && !Object.prototype.hasOwnProperty.call(BAND_FREQS_SSB_MHZ, band)) {
                 return 'FT8';
@@ -6320,8 +6380,6 @@
                 const raw = localStorage.getItem(modeStorageKey(mode, block, band));
                 if (!raw) return 'FT8';
                 const val = String(raw);
-                // WSPR is intentionally not persisted per time block.
-                if (val === 'WSPR') return 'FT8';
                 return MODE_OPTIONS.includes(val) ? val : 'FT8';
             } catch (e) {
                 return 'FT8';
@@ -6350,13 +6408,6 @@
             const keyBlock = block || 'unknown';
             const oKey = wsprOverrideKey(keyMode, keyBlock, band);
 
-            // WSPR is a temporary override only.
-            if (String(value) === 'WSPR') {
-                wsprOverrides[oKey] = true;
-                // Do not update the per-block cached/stored mode.
-                return;
-            }
-
             if (wsprOverrides[oKey]) {
                 delete wsprOverrides[oKey];
             }
@@ -6368,11 +6419,8 @@
 
         function saveBandMode(mode, block, band, value) {
             try {
-                // WSPR is a temporary override and should not affect stored per-block mode.
-                if (String(value) === 'WSPR') return;
                 localStorage.setItem(modeStorageKey(mode, block, band), value);
             } catch (e) { }
-            if (String(value) === 'WSPR') return;
             updateScheduleProfileEntry(mode, block, (current) => {
                 const nextModes = (current.bandModes && typeof current.bandModes === 'object') ? { ...current.bandModes } : {};
                 nextModes[band] = normalizeStoredBandMode(band, value);
@@ -6967,18 +7015,16 @@
                         bandModes[band] = 'WSPR';
                         continue;
                     }
+                    if (
+                        wsprScanEnabled
+                        && String(selValue || '').toUpperCase() === 'WSPR'
+                        && String(storedMode || '').toUpperCase() !== 'WSPR'
+                    ) {
+                        bandModes[band] = storedMode || 'FT8';
+                        continue;
+                    }
                     if (selValue) {
-                        if (selValue === 'WSPR' && wsprScanEnabled) {
-                            bandModes[band] = storedMode;
-                            continue;
-                        }
-                        const key = wsprOverrideKey(mode, activeBlock, band);
-                        const hasManualWspr = !!wsprOverrides[key];
-                        if (selValue === 'WSPR' && !hasManualWspr) {
-                            bandModes[band] = storedMode;
-                        } else {
-                            bandModes[band] = selValue;
-                        }
+                        bandModes[band] = selValue;
                     } else {
                         bandModes[band] = storedMode;
                     }
@@ -7095,12 +7141,12 @@
                         if (!a || !a.band || typeof a.rx !== 'number') continue;
                         assignmentCount += 1;
                         const mhz = (a.freq_hz && Number.isFinite(a.freq_hz)) ? (a.freq_hz / 1e6) : null;
-                        const actualRx = (typeof a.rx_request === 'number') ? Number(a.rx_request) : Number(a.rx);
+                        const actualRx = Number(a.rx);
                         const label = formatRxLabel(actualRx, a.mode, mhz, a.ok);
                         if (next[a.band]) next[a.band] += ' | ' + label;
                         else next[a.band] = label;
-                        if (typeof a.rx_request === 'number') {
-                            nextRequests[a.band] = a.rx_request;
+                        if (Number.isFinite(actualRx)) {
+                            nextRequests[a.band] = actualRx;
                         }
                         if (a.ok === false) failCount += 1;
                     }
@@ -7130,6 +7176,7 @@
                 if (lastScheduleData) {
                     renderSchedule(lastScheduleData, true);
                 }
+                await syncReceiverAssignmentsFromStatus(true);
 
                 const assignedBands = Object.keys(next).length;
                 const okAssignments = Math.max(0, assignmentCount - failCount);
@@ -7191,6 +7238,7 @@
         let decodePolling = false;
         let lastSelectedKey = '';
         let decodeHasData = false;
+        let lastAssignmentSyncMs = 0;
 
         function appendDecodeLine(data) {
             const list = document.getElementById('decode_list');
@@ -7295,9 +7343,67 @@
                 if (data && typeof data.latest === 'number') {
                     decodeCursor = data.latest;
                 }
+                await syncReceiverAssignmentsFromStatus();
             } catch (e) { }
             decodePolling = false;
             setTimeout(pollDecodes, 1500);
+        }
+
+        async function syncReceiverAssignmentsFromStatus(force = false) {
+            if (!force && (Date.now() - lastAssignmentSyncMs) < 1200) return false;
+            lastAssignmentSyncMs = Date.now();
+            try {
+                const resp = await fetch('/decodes/status', { cache: 'no-store' });
+                if (!resp.ok) return false;
+                const data = await resp.json();
+                const assignments = (data && typeof data.assignments === 'object' && data.assignments) ? data.assignments : null;
+                if (!assignments) return false;
+
+                const next = {};
+                const nextRequests = {};
+                const wsprBands = [];
+
+                for (const [rxKey, entry] of Object.entries(assignments)) {
+                    if (!entry || typeof entry !== 'object') continue;
+                    const band = String(entry.band || '').trim();
+                    if (!band) continue;
+                    const rx = Number.isFinite(Number(rxKey)) ? Number(rxKey) : Number(entry.rx);
+                    if (!Number.isFinite(rx)) continue;
+                    const mode = String(entry.mode || '').toUpperCase();
+                    const mhz = Number.isFinite(Number(entry.freq_hz)) ? (Number(entry.freq_hz) / 1e6) : null;
+                    const label = formatRxLabel(rx, mode, mhz, true);
+                    if (next[band]) next[band] += ' | ' + label;
+                    else next[band] = label;
+                    nextRequests[band] = rx;
+                    if (mode === 'WSPR') wsprBands.push(band);
+                }
+
+                receiverAssignments = next;
+                receiverAssignmentRequests = nextRequests;
+
+                if (wsprScanEnabled) {
+                    const activeBlock = viewedBlock || currentBlock;
+                    let activeFromRuntime = null;
+                    for (const band of wsprBands) {
+                        const stored = String(getBandModeCached(currentMode(), activeBlock, band) || '').toUpperCase();
+                        if (stored !== 'WSPR') {
+                            activeFromRuntime = band;
+                            break;
+                        }
+                    }
+                    if (!activeFromRuntime && wsprBands.length > 0) {
+                        activeFromRuntime = wsprBands[0];
+                    }
+                    wsprScanActiveBand = activeFromRuntime || null;
+                }
+
+                if (lastScheduleData && !autoSetInProgress) {
+                    renderSchedule(lastScheduleData, true);
+                }
+                setReceiverRuntimeSyncLabel(new Date());
+                return true;
+            } catch (e) { }
+            return false;
         }
 
         function setDecodeStreamStatus(text, cls) {
@@ -8448,11 +8554,9 @@
                                 if (String(data.type || '').toLowerCase() === 'command_ack') {
                                     (async () => {
                                         try {
-                                            const serverAutomation = await loadAutomationSettingsFromServer();
-                                            if (serverAutomation && typeof serverAutomation === 'object') {
-                                                const merged = { ...DEFAULT_AUTOMATION, ...serverAutomation };
-                                                saveAutomationSettings(merged);
-                                            }
+                                            applyDiscoverAckToConfigUi(data);
+                                            await syncAutomationSettingsFromServer();
+                                            await syncReceiverAssignmentsFromStatus(true);
                                         } catch (e) { }
                                         const mode = currentMode();
                                         fetchSchedule(mode).then(renderSchedule).catch(() => { });
@@ -8627,6 +8731,8 @@
             try {
                 const serverAutomation = await loadAutomationSettingsFromServer();
                 const mergedAutomation = { ...DEFAULT_AUTOMATION, ...(serverAutomation || {}) };
+                saveAutomationSettings(mergedAutomation);
+                bandModeCache = {};
                 const savedTheme = String(mergedAutomation.uiThemeMode || '').toLowerCase();
                 const savedDensity = String(mergedAutomation.uiDensity || '').toLowerCase();
                 const nextTheme = (savedTheme === 'dark' || savedTheme === 'auto' || savedTheme === 'light')
@@ -8723,6 +8829,19 @@
             setInterval(updateInfoMetrics, 10000);
             setInterval(refreshAutoUiTheme, 60000);
             setInterval(checkForUpdatesPrompt, 10 * 60 * 1000);
+            setInterval(async () => {
+                try {
+                    const before = scheduleProfilesFingerprint(readAutomationSettings());
+                    const merged = await syncAutomationSettingsFromServer();
+                    if (!merged) return;
+                    const after = scheduleProfilesFingerprint(merged);
+                    if (before !== after) {
+                        const mode = (document.getElementById('mode_phone') && document.getElementById('mode_phone').checked) ? 'phone' : 'ft8';
+                        const s = await fetchSchedule(mode);
+                        renderSchedule(s, true);
+                    }
+                } catch (e) { }
+            }, 5000);
             setInterval(() => {
                 if (rxHealthPanelVisible) {
                     renderRxHealthPanel();
@@ -9196,6 +9315,7 @@
                 fetchSchedule(mode).then(renderSchedule);
                 setInterval(async () => {
                     try {
+                        await syncAutomationSettingsFromServer();
                         const m = (document.getElementById('mode_phone') && document.getElementById('mode_phone').checked) ? 'phone' : 'ft8';
                         const s = await fetchSchedule(m);
                         renderSchedule(s);

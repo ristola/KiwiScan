@@ -1,0 +1,1443 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <title>ShackMate WebSocket Monitor</title>
+    <link rel="icon" href="/favicon.ico" />
+    <style>
+        :root {
+            --bg: #f5f7fb;
+            --panel-bg: #fff;
+            --border: #d0d4e0;
+            --text-main: #1f2933;
+            --accent: #2563eb;
+            --accent-dark: #1d4ed8;
+            --accent-alt: #7c3aed;
+            --danger: #ef4444;
+            --success: #10b981;
+            --toolbar-bg: #e5e7f0;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            box-sizing: border-box;
+            background: var(--bg);
+            color: var(--text-main);
+        }
+
+        body.cq-only #tableWrap {
+            background: #fefce8;
+        }
+
+        body.single-window #cmdRow {
+            display: none;
+        }
+
+        body.single-window #bandArea {
+            display: none;
+        }
+
+        body.single-window #output {
+            height: auto;
+            flex: 1 1 auto;
+        }
+
+        h1 {
+            margin: 0 0 10px;
+            font-size: 1.6rem;
+            font-weight: 600;
+            letter-spacing: .02em;
+        }
+
+        #connectionArea {
+            margin-bottom: 6px;
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            align-items: center;
+            padding: 6px 8px;
+            background: var(--toolbar-bg);
+            border-radius: 6px;
+        }
+
+        #quickPorts {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        #cmdRow {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+            padding: 4px 8px;
+            background: var(--toolbar-bg);
+            border-radius: 6px;
+        }
+
+        #cmdButtons {
+            display: none;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        #connStatus {
+            font-size: .8em;
+            padding: 3px 8px;
+            border-radius: 999px;
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+
+        .pillRow {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .tabbtn {
+            padding: 4px 10px;
+            font-size: .85em;
+            border-radius: 3px;
+            border: 1px solid #bbb;
+            background: #e0e0e0;
+            cursor: pointer;
+            user-select: none;
+            color: #000;
+            transition: background .15s ease, color .15s ease, transform .1s ease;
+        }
+
+        .tabbtn:hover {
+            background: #d4d4d8;
+            transform: translateY(-1px);
+        }
+
+        .tabbtn.active {
+            background: var(--accent);
+            border-color: var(--accent-dark);
+            color: #fff;
+            font-weight: bold;
+        }
+
+        .tabbtn.active:hover {
+            background: var(--accent-dark);
+        }
+
+        .modebtn.active {
+            background: var(--accent-alt);
+            border-color: #6d28d9;
+            color: #fff;
+        }
+
+        #bandStats {
+            margin-left: auto;
+            font-size: .8em;
+            color: #374151;
+            white-space: nowrap;
+        }
+
+        #cqFilterLabel,
+        #dxFilterLabel,
+        #autoScrollLabel {
+            font-size: .85em;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        #cqFilterLabel.disabled {
+            opacity: .55;
+        }
+
+        #cqOnlyCheckbox:disabled {
+            cursor: not-allowed;
+        }
+
+        #mainArea {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        #output {
+            border: 1px solid var(--border);
+            padding: 10px;
+            height: 120px;
+            flex: 0 0 auto;
+            overflow-y: auto;
+            background: var(--panel-bg);
+            margin-bottom: 8px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-family: Consolas, Monaco, monospace;
+            font-size: .9em;
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, .08);
+        }
+
+        .log-line {
+            margin: 0;
+        }
+
+        .log-info {
+            color: #555;
+        }
+
+        .log-recv {
+            color: #2e7d32;
+        }
+
+        .log-send {
+            color: #1565c0;
+        }
+
+        .log-error {
+            color: #c62828;
+        }
+
+        .log-json {
+            color: #4a148c;
+        }
+
+        #bandArea {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        #tableWrap {
+            flex: 1;
+            min-height: 0;
+            border: 1px solid var(--border);
+            background: var(--panel-bg);
+            border-radius: 6px;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, .08);
+            overflow: auto;
+        }
+
+        table {
+            border-collapse: separate;
+            border-spacing: 0;
+            width: 100%;
+            min-width: 980px;
+        }
+
+        thead th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: #eef2ff;
+            color: #111827;
+            font-weight: 700;
+            border-bottom: 1px solid var(--border);
+            padding: 8px 10px;
+            text-align: left;
+            font-family: Consolas, Monaco, monospace;
+        }
+
+        tbody td {
+            border-bottom: 1px solid #e5e7eb;
+            padding: 6px 10px;
+            font-family: Consolas, Monaco, monospace;
+            font-size: .9em;
+            white-space: nowrap;
+        }
+
+        tbody tr:hover {
+            background: #f8fafc;
+        }
+
+        .right {
+            text-align: right;
+        }
+
+        .wsprRow {
+            color: #6d28d9;
+        }
+
+        .ft8Row {
+            color: #1d4ed8;
+        }
+
+        .ft4Row {
+            color: #0f766e;
+        }
+
+        #inputArea {
+            display: flex;
+            gap: 6px;
+            margin-top: 5px;
+        }
+
+        #ipInput,
+        #portInput,
+        #messageInput,
+        #myGridInput {
+            flex: 1;
+            padding: 6px;
+            font-size: 1em;
+        }
+
+        button {
+            padding: 6px 12px;
+            font-size: .9em;
+            cursor: pointer;
+            border-radius: 4px;
+            border: 1px solid transparent;
+        }
+
+        #connectButton {
+            background: var(--accent);
+            border-color: var(--accent-dark);
+            color: #fff;
+        }
+
+        #clearButton {
+            background: var(--danger);
+            border-color: #b91c1c;
+            color: #fff;
+        }
+
+        #saveButton {
+            background: var(--success);
+            border-color: #047857;
+            color: #fff;
+        }
+
+        #sendButton {
+            background: #555;
+            border-color: #333;
+            color: #fff;
+        }
+
+        #helpButton {
+            background: var(--accent);
+            border: 1px solid var(--accent-dark);
+            color: #fff;
+        }
+
+        #settingsButton {
+            background: var(--accent-alt);
+            border: 1px solid #6d28d9;
+            color: #fff;
+        }
+
+        .cmd-btn:disabled {
+            opacity: .6;
+            cursor: not-allowed;
+        }
+
+        .quick-port {
+            background: #e0e0e0;
+            border: 1px solid #bdbdbd;
+            color: #333;
+            padding: 4px 8px;
+            font-size: .8em;
+            cursor: pointer;
+            border-radius: 3px;
+        }
+
+        .quick-port:hover {
+            background: #d5d5d5;
+        }
+
+        #footer {
+            margin-top: 4px;
+            font-size: .75em;
+            color: #6b7280;
+            text-align: right;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>ShackMate WebSocket Monitor</h1>
+
+    <div id="connectionArea">
+        <input type="text" id="ipInput" placeholder="Enter IP address" />
+        <input type="text" id="portInput" placeholder="Enter Port #" />
+        <button id="connectButton">Connect</button>
+        <button id="clearButton">Clear</button>
+        <button id="saveButton">Save Log</button>
+
+        <div id="quickPorts">
+            <span style="font-size:0.8em;">Quick Ports:</span>
+            <button class="quick-port" data-port="4009">4009</button>
+            <button class="quick-port" data-port="4010">4010</button>
+
+            <label>
+                <input type="checkbox" id="autoConnectCheckbox" />
+                Auto-connect
+            </label>
+        </div>
+
+        <span id="connStatus">Disconnected</span>
+    </div>
+
+    <div id="cmdRow">
+        <div id="cmdButtons">
+            <button id="helpButton" class="cmd-btn" disabled>Help</button>
+            <button id="settingsButton" class="cmd-btn" disabled>Settings</button>
+        </div>
+
+        <div class="pillRow" id="bandTabs"></div>
+        <div class="pillRow" id="modeTabs"></div>
+
+        <label style="margin-left:auto; display:flex; align-items:center; gap:6px; font-size:.85em;">
+            My Grid:
+            <input id="myGridInput" type="text" placeholder="FN31" style="max-width:120px;" />
+        </label>
+
+        <div id="bandStats"></div>
+
+        <label id="cqFilterLabel">
+            <input type="checkbox" id="cqOnlyCheckbox" />
+            CQ Only
+        </label>
+
+        <label id="dxFilterLabel">
+            <input type="checkbox" id="dxOnlyCheckbox" />
+            DX Only
+        </label>
+
+        <label id="autoScrollLabel">
+            <input type="checkbox" id="autoScrollBands" checked />
+            Auto-scroll
+        </label>
+    </div>
+
+    <div id="mainArea">
+        <div id="output"></div>
+
+        <div id="bandArea">
+            <div id="tableWrap">
+                <table id="decodeTable">
+                    <thead>
+                        <tr>
+                            <th style="width:120px;">Time</th>
+                            <th style="width:120px;">Freq (MHz)</th>
+                            <th style="width:90px;">Mode</th>
+                            <th style="width:120px;">Band</th>
+                            <th style="width:140px;">Callsign</th>
+                            <th style="width:110px;">Grid</th>
+                            <th style="width:120px;">Distance</th>
+                            <th>Message</th>
+                        </tr>
+                    </thead>
+                    <tbody id="decodeTbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="inputArea">
+        <input type="text" id="messageInput" placeholder="Type a message..." />
+        <button id="sendButton">Send</button>
+    </div>
+
+    <div id="footer">ShackMate Monitor · N4LDR</div>
+
+    <script>
+        const CONFIG = {
+            defaultPort: "4010",
+            settingsAutoPort: "4010",
+            reconnectDelayMs: 2000,
+        };
+
+        const MAX_ROWS = 5000;
+        const MIN_RATE_WINDOW_SEC = 60;
+        const BAND_ORDER = ['all', '10m', '12m', '15m', '17m', '20m', '30m', '40m', '60m', '80m', '160m'];
+
+        const DOMESTIC_GRID_PREFIXES = new Set(["CM", "CN", "DM", "DN", "EM", "EN", "FM", "FN"]);
+
+        let ws;
+        const output = document.getElementById("output");
+        const ipInput = document.getElementById("ipInput");
+        const portInput = document.getElementById("portInput");
+
+        const cmdButtons = document.getElementById("cmdButtons");
+        const helpBtn = document.getElementById("helpButton");
+        const settingsBtn = document.getElementById("settingsButton");
+
+        const bandTabsDiv = document.getElementById("bandTabs");
+        const modeTabsDiv = document.getElementById("modeTabs");
+
+        const bandStats = document.getElementById("bandStats");
+
+        const myGridInput = document.getElementById("myGridInput");
+
+        const autoConnectCheckbox = document.getElementById("autoConnectCheckbox");
+        const cqOnlyCheckbox = document.getElementById("cqOnlyCheckbox");
+        const dxOnlyCheckbox = document.getElementById("dxOnlyCheckbox");
+        const autoScrollBands = document.getElementById("autoScrollBands");
+        const cqFilterLabel = document.getElementById("cqFilterLabel");
+
+        const connStatus = document.getElementById("connStatus");
+
+        const decodeTbody = document.getElementById("decodeTbody");
+        const decodeTableWrap = document.getElementById("tableWrap");
+
+        let multiBandMode = false;
+        let allowedBands = new Set();
+        let activeBand = "all";
+        let activeMode = "ALL";
+
+        let cqOnlyPref = false;
+        let dxOnlyPref = false;
+
+        let cqOnly = false;
+        let dxOnly = false;
+
+        let decodes = [];
+        let settingsBundle = null;
+        let settingsFlushTimer = null;
+
+        const MODE_BUTTON_ORDER = ["ALL", "FT8", "FT4", "WSPR", "JS8", "RTTY", "PSK31"];
+
+        function commandPayload(name) {
+            return JSON.stringify({ command: name });
+        }
+
+        function updateTitle() {
+            const host = ipInput.value || "ShackMate";
+            const b = multiBandMode ? ` – ${activeBand.toUpperCase()} / ${activeMode}` : "";
+            document.title = `ShackMate Monitor – ${host}${b}`;
+        }
+
+        function setConnectedUI(connected) {
+            if (connected) {
+                connStatus.textContent = "Connected";
+                connStatus.style.background = "#dcfce7";
+                connStatus.style.color = "#166534";
+                document.getElementById("connectButton").textContent = "Disconnect";
+            } else {
+                connStatus.textContent = "Disconnected";
+                connStatus.style.background = "#fee2e2";
+                connStatus.style.color = "#b91c1c";
+                document.getElementById("connectButton").textContent = "Connect";
+            }
+        }
+
+        function setModeForPort(port) {
+            multiBandMode = (port === CONFIG.settingsAutoPort);
+            document.body.classList.toggle("single-window", !multiBandMode);
+            updateTitle();
+        }
+
+        function clearTopLog() {
+            output.innerHTML = "";
+            output.scrollTop = 0;
+        }
+
+        function appendLogToElement(el, message, type = "info", autoScroll = true) {
+            if (!el) return;
+            const line = document.createElement("div");
+            line.classList.add("log-line");
+
+            const validTypes = ["info", "recv", "send", "error", "json"];
+            if (!validTypes.includes(type)) type = "info";
+            line.classList.add("log-" + type);
+
+            const ts = new Date().toLocaleTimeString();
+            const trimmed = (message || "").toString().trim();
+
+            if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+                try {
+                    const obj = JSON.parse(trimmed);
+                    line.classList.add("log-json");
+                    line.textContent = `[${ts}] JSON:\n` + JSON.stringify(obj, null, 2);
+                } catch {
+                    line.textContent = `[${ts}] ${message}`;
+                }
+            } else {
+                line.textContent = `[${ts}] ${message}`;
+            }
+
+            el.appendChild(line);
+            if (autoScroll) el.scrollTop = el.scrollHeight;
+        }
+
+        function appendLog(message, type = "info") {
+            appendLogToElement(output, message, type, true);
+        }
+
+        function maidenheadToLatLon(grid) {
+            if (!grid) return null;
+            const g = grid.trim().toUpperCase();
+            if (g.length < 4) return null;
+
+            const A = "A".charCodeAt(0);
+
+            const lonField = g.charCodeAt(0) - A;
+            const latField = g.charCodeAt(1) - A;
+            const lonSquare = parseInt(g[2], 10);
+            const latSquare = parseInt(g[3], 10);
+            if (isNaN(lonSquare) || isNaN(latSquare)) return null;
+
+            let lon = lonField * 20 - 180 + lonSquare * 2;
+            let lat = latField * 10 - 90 + latSquare * 1;
+
+            if (g.length >= 6) {
+                const lonSub = g.charCodeAt(4) - A;
+                const latSub = g.charCodeAt(5) - A;
+                if (lonSub >= 0 && lonSub <= 23 && latSub >= 0 && latSub <= 23) {
+                    lon += lonSub * (2 / 24);
+                    lat += latSub * (1 / 24);
+                    lon += (2 / 24) / 2;
+                    lat += (1 / 24) / 2;
+                    return { lat, lon };
+                }
+            }
+
+            lon += 1;
+            lat += 0.5;
+            return { lat, lon };
+        }
+
+        function haversineMiles(lat1, lon1, lat2, lon2) {
+            const R = 3958.7613;
+            const toRad = (d) => d * Math.PI / 180;
+            const dLat = toRad(lat2 - lat1);
+            const dLon = toRad(lon2 - lon1);
+            const a = Math.sin(dLat / 2) ** 2 +
+                Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+                Math.sin(dLon / 2) ** 2;
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c;
+        }
+
+        function computeDistanceMiles(targetGrid) {
+            const myGrid = (myGridInput.value || "").trim().toUpperCase();
+            const a = maidenheadToLatLon(myGrid);
+            const b = maidenheadToLatLon(targetGrid);
+            if (!a || !b) return null;
+            const mi = haversineMiles(a.lat, a.lon, b.lat, b.lon);
+            if (!isFinite(mi)) return null;
+            return mi;
+        }
+
+        function applyPrefsToEffectiveFlags() {
+            dxOnly = dxOnlyPref;
+
+            if (activeMode === "WSPR") {
+                cqOnly = false;
+                cqOnlyCheckbox.disabled = true;
+                cqFilterLabel.classList.add("disabled");
+
+                cqOnlyCheckbox.checked = false;
+                document.body.classList.toggle("cq-only", false);
+            } else {
+                cqOnly = cqOnlyPref;
+                cqOnlyCheckbox.disabled = false;
+                cqFilterLabel.classList.remove("disabled");
+
+                cqOnlyCheckbox.checked = cqOnlyPref;
+                document.body.classList.toggle("cq-only", cqOnlyPref);
+            }
+
+            dxOnlyCheckbox.checked = dxOnlyPref;
+        }
+
+        function decodePassesBaseFilters(d) {
+            if (!d) return false;
+
+            if (activeBand !== "all") {
+                if (!d.band) return false;
+                if (d.band.toLowerCase() !== activeBand) return false;
+            }
+
+            if (activeMode !== "ALL") {
+                if ((d.mode || "").toUpperCase() !== activeMode) return false;
+            }
+
+            if (dxOnly && d.isDomestic) return false;
+
+            // CQ-only applied later (with uniqueness)
+            return true;
+        }
+
+        function bandOrderCompare(a, b) {
+            const ia = BAND_ORDER.indexOf(a);
+            const ib = BAND_ORDER.indexOf(b);
+            if (ia !== -1 && ib !== -1) return ia - ib;
+            if (ia !== -1) return -1;
+            if (ib !== -1) return 1;
+            return a.localeCompare(b);
+        }
+
+        function ensureBandButtons(bands) {
+            const want = new Set(["all", ...(bands || [])].map(x => (x || "").toLowerCase()).filter(Boolean));
+            bandTabsDiv.innerHTML = "";
+            const list = Array.from(want).sort(bandOrderCompare);
+
+            for (const b of list) {
+                const btn = document.createElement("button");
+                btn.className = "tabbtn";
+                btn.textContent = b.toUpperCase();
+                if (b === activeBand) btn.classList.add("active");
+                btn.addEventListener("click", () => {
+                    activeBand = b;
+                    renderTable();
+                    updateTitle();
+                    Array.from(bandTabsDiv.querySelectorAll(".tabbtn")).forEach(x => x.classList.remove("active"));
+                    btn.classList.add("active");
+                });
+                bandTabsDiv.appendChild(btn);
+            }
+        }
+
+        function ensureModeButtons(modesObserved) {
+            const observed = new Set((modesObserved || []).map(m => (m || "").toUpperCase()).filter(Boolean));
+            MODE_BUTTON_ORDER.forEach(m => observed.add(m));
+            observed.add("ALL");
+
+            const list = Array.from(observed);
+            list.sort((a, b) => {
+                const ia = MODE_BUTTON_ORDER.indexOf(a);
+                const ib = MODE_BUTTON_ORDER.indexOf(b);
+                if (ia !== -1 && ib !== -1) return ia - ib;
+                if (ia !== -1) return -1;
+                if (ib !== -1) return 1;
+                return a.localeCompare(b);
+            });
+
+            modeTabsDiv.innerHTML = "";
+            for (const m of list) {
+                const btn = document.createElement("button");
+                btn.className = "tabbtn modebtn";
+                btn.textContent = m;
+                if (m === activeMode) btn.classList.add("active");
+                btn.addEventListener("click", () => {
+                    activeMode = m;
+                    applyPrefsToEffectiveFlags();
+                    renderTable();
+                    updateTitle();
+                    Array.from(modeTabsDiv.querySelectorAll(".modebtn")).forEach(x => x.classList.remove("active"));
+                    btn.classList.add("active");
+                });
+                modeTabsDiv.appendChild(btn);
+            }
+
+            applyPrefsToEffectiveFlags();
+        }
+
+        function isLikelyJSON(text) {
+            const t = (text || "").trim();
+            return t.startsWith("{") && t.endsWith("}");
+        }
+
+        function guessBandFromFreq(freqMHz) {
+            if (!isFinite(freqMHz)) return null;
+            const hz = freqMHz * 1e6;
+
+            if (hz >= 1800000 && hz < 2000000) return "160m";
+            if (hz >= 3500000 && hz < 4000000) return "80m";
+            if (hz >= 5000000 && hz < 5500000) return "60m";
+            if (hz >= 7000000 && hz < 7300000) return "40m";
+            if (hz >= 10000000 && hz < 10150000) return "30m";
+            if (hz >= 14000000 && hz < 14350000) return "20m";
+            if (hz >= 18000000 && hz < 18200000) return "17m";
+            if (hz >= 21000000 && hz < 21450000) return "15m";
+            if (hz >= 24890000 && hz < 24990000) return "12m";
+            if (hz >= 28000000 && hz < 29700000) return "10m";
+            return null;
+        }
+
+        function parseTextDecodeLine(line) {
+            const raw = (line || "").toString().trim();
+            if (!raw) return null;
+
+            const parts = raw.split(/\s+/);
+            if (parts.length < 6) return null;
+
+            const timestamp = parts[0];
+            const freqMHz = parseFloat(parts[1]);
+            const mode = (parts[2] || "").toUpperCase();
+            if (!mode || mode.length < 2) return null;
+
+            const callsign = (parts[3] || "").toUpperCase();
+            const grid = (parts[4] || "").toUpperCase();
+
+            let distanceMiles = null;
+            const miIdx = parts.findIndex(p => p.toLowerCase() === "mi");
+            if (miIdx > 0) {
+                const num = (parts[miIdx - 1] || "").replace(/,/g, "");
+                const mi = parseFloat(num);
+                if (isFinite(mi)) distanceMiles = mi;
+            } else {
+                distanceMiles = computeDistanceMiles(grid);
+            }
+
+            const band = guessBandFromFreq(freqMHz);
+
+            let msgStart = 5;
+            if (miIdx !== -1) msgStart = miIdx + 1;
+            const message = parts.slice(msgStart).join(" ").trim();
+
+            return {
+                timestamp,
+                frequency_mhz: isFinite(freqMHz) ? freqMHz : null,
+                mode,
+                callsign,
+                grid,
+                message: message || raw,
+                band,
+                distance_miles: distanceMiles,
+                rx: null,
+                id: null,
+            };
+        }
+
+        function extractCqCallsign(message, fallbackCallsign) {
+            const raw = (message || "").toString();
+            const m = raw.match(/\bCQ(?:\s+USA)?\s+([0-9A-Z\/]+)\b/i);
+            if (m && m[1]) return m[1].toUpperCase();
+            return (fallbackCallsign || "").toUpperCase() || null;
+        }
+
+        function normalizeDecode(obj) {
+            if (!obj) return null;
+
+            const tsNow = Date.now();
+
+            const timestamp = (obj.timestamp || obj.time || "").toString();
+            const freqMHz = (obj.frequency_mhz != null) ? Number(obj.frequency_mhz) :
+                (obj.freq_mhz != null) ? Number(obj.freq_mhz) :
+                    (obj.freq != null) ? Number(obj.freq) :
+                        null;
+
+            const mode = (obj.mode || "").toString().toUpperCase();
+            const callsign = (obj.callsign || obj.call || "").toString().toUpperCase();
+            const grid = (obj.grid || obj.gridsq || obj.locator || "").toString().toUpperCase();
+            const message = (obj.message || obj.msg || "").toString();
+
+            let band = (obj.band || "").toString().toLowerCase();
+            if (!band && isFinite(freqMHz)) band = (guessBandFromFreq(freqMHz) || "");
+            if (!band) band = null;
+
+            const isCQ = /\bCQ\b/i.test(message);
+            const cqCallsign = isCQ ? extractCqCallsign(message, callsign) : null;
+
+            let isDomestic = false;
+            if (grid && grid.length >= 2) {
+                const prefix = grid.slice(0, 2).toUpperCase();
+                if (DOMESTIC_GRID_PREFIXES.has(prefix)) isDomestic = true;
+            }
+
+            let distanceMiles = null;
+            if (obj.distance_miles != null && isFinite(Number(obj.distance_miles))) {
+                distanceMiles = Number(obj.distance_miles);
+            } else {
+                distanceMiles = computeDistanceMiles(grid);
+            }
+
+            return {
+                raw: obj,
+                ts: tsNow,
+                timestamp: timestamp || new Date(tsNow).toLocaleTimeString(),
+                freqMHz: isFinite(freqMHz) ? freqMHz : null,
+                mode: mode || "UNKNOWN",
+                callsign: callsign || "",
+                grid: grid || "",
+                band: band,
+                rx: (obj.rx != null) ? Number(obj.rx) : null,
+                id: (obj.id != null) ? Number(obj.id) : null,
+                message: message || "",
+                isCQ,
+                cqCallsign,
+                isDomestic,
+                distanceMiles,
+            };
+        }
+
+        function addDecodeFromIncoming(text) {
+            const trimmed = (text || "").toString().trim();
+            if (!trimmed) return false;
+
+            if (isLikelyJSON(trimmed)) {
+                try {
+                    const obj = JSON.parse(trimmed);
+                    if (obj && (obj.mode || obj.callsign || obj.grid || obj.frequency_mhz || obj.band)) {
+                        const d = normalizeDecode(obj);
+                        if (d && d.mode) {
+                            decodes.push(d);
+                            if (decodes.length > MAX_ROWS) decodes.splice(0, decodes.length - MAX_ROWS);
+                            return true;
+                        }
+                    }
+                } catch { }
+            }
+
+            if (/^\d{1,2}:\d{2}:\d{2}\s+/.test(trimmed)) {
+                const parsed = parseTextDecodeLine(trimmed);
+                if (parsed && parsed.mode) {
+                    const d = normalizeDecode(parsed);
+                    decodes.push(d);
+                    if (decodes.length > MAX_ROWS) decodes.splice(0, decodes.length - MAX_ROWS);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        function handleSettingsInfo(text) {
+            if (!multiBandMode || !text) return;
+
+            const lines = text.split(/\r?\n/);
+            const bands = [];
+
+            for (const raw of lines) {
+                const line = raw.trim();
+                if (!line) continue;
+
+                const m = line.match(/^(RX\d+):\s*([0-9]+m)\s*-\s*(.+)$/i);
+                if (m) {
+                    const band = (m[2] || "").toLowerCase();
+                    bands.push(band);
+                }
+            }
+
+            if (bands.length) {
+                allowedBands = new Set(bands);
+                ensureBandButtons(Array.from(allowedBands));
+            }
+        }
+
+        function tryParseIncomingJSON(text) {
+            const trimmed = (text || "").toString().trim();
+            if (!trimmed) return null;
+            if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) return null;
+            try {
+                return JSON.parse(trimmed);
+            } catch {
+                return null;
+            }
+        }
+
+        function isCommandAckLike(obj) {
+            if (!obj || typeof obj !== "object" || Array.isArray(obj)) return false;
+            if ((obj.type || "").toString().toLowerCase() === "command_ack") return true;
+            if (obj.action && (obj.ok !== undefined || obj.error || obj.status_lines || obj.band_settings || obj.commands)) return true;
+            return false;
+        }
+
+        function scheduleSettingsBundleFlush(delayMs = 250) {
+            if (settingsFlushTimer) clearTimeout(settingsFlushTimer);
+            settingsFlushTimer = setTimeout(() => {
+                settingsFlushTimer = null;
+                if (!settingsBundle) return;
+                appendLog(JSON.stringify(settingsBundle), settingsBundle.error ? "error" : "recv");
+                settingsBundle = null;
+            }, delayMs);
+        }
+
+        function enqueueSettingsAck(obj) {
+            if (!settingsBundle) {
+                settingsBundle = {
+                    band_settings: [],
+                };
+            }
+
+            if (obj.error) settingsBundle.error = obj.error;
+
+            if (Array.isArray(obj.band_settings) && obj.band_settings.length) {
+                settingsBundle.band_settings.push(...obj.band_settings);
+            }
+
+            scheduleSettingsBundleFlush(300);
+        }
+
+        function enqueueSettingsLine(line) {
+            const _ = line;
+        }
+
+        function renderCommandAck(obj) {
+            const action = (obj.action || obj.command || "command").toString();
+            const ok = (obj.ok !== false);
+
+            const actionLower = action.toLowerCase();
+            if (actionLower === "settings") {
+                enqueueSettingsAck(obj);
+                return;
+            }
+
+            if (actionLower === "help") {
+                appendLog(JSON.stringify(obj), ok ? "recv" : "error");
+                return;
+            }
+
+            appendLog(`ACK ${action}: ok=${ok}`, ok ? "recv" : "error");
+
+            if (obj.error) {
+                appendLog(`ERROR ${action}: ${obj.error}`, "error");
+            }
+
+            if (typeof obj.message === "string" && obj.message.trim()) {
+                appendLog(obj.message, ok ? "recv" : "error");
+            }
+
+            if (Array.isArray(obj.status_lines) && obj.status_lines.length) {
+                for (const line of obj.status_lines) {
+                    if (line != null && line !== "") appendLog(String(line), "recv");
+                }
+            }
+
+            if (Array.isArray(obj.commands) && obj.commands.length) {
+                appendLog(`Commands: ${obj.commands.join(", ")}`, "recv");
+            }
+        }
+
+        function computeRateStats(list, useUniqueCQ) {
+            if (!list.length) return { perMin: 0, perHour: 0, spanSec: 0, count: 0 };
+
+            if (!useUniqueCQ) {
+                let firstTs = list[0].ts, lastTs = list[0].ts;
+                for (const d of list) { if (d.ts < firstTs) firstTs = d.ts; if (d.ts > lastTs) lastTs = d.ts; }
+                const spanSec = Math.max((lastTs - firstTs) / 1000, 1);
+                if (spanSec < MIN_RATE_WINDOW_SEC) return { perMin: 0, perHour: 0, spanSec, count: list.length };
+                return {
+                    perMin: list.length / (spanSec / 60),
+                    perHour: list.length / (spanSec / 3600),
+                    spanSec,
+                    count: list.length
+                };
+            }
+
+            const map = new Map(); // cqCallsign -> first ts
+            for (const d of list) {
+                if (!d.isCQ) continue;
+                const cs = d.cqCallsign || null;
+                if (!cs) continue;
+                if (!map.has(cs)) map.set(cs, d.ts);
+            }
+            const count = map.size;
+            if (!count) return { perMin: 0, perHour: 0, spanSec: 0, count: 0 };
+
+            let firstTs = null, lastTs = null;
+            for (const ts of map.values()) {
+                if (firstTs === null || ts < firstTs) firstTs = ts;
+                if (lastTs === null || ts > lastTs) lastTs = ts;
+            }
+            const spanSec = Math.max((lastTs - firstTs) / 1000, 1);
+            if (spanSec < MIN_RATE_WINDOW_SEC) return { perMin: 0, perHour: 0, spanSec, count };
+            return {
+                perMin: count / (spanSec / 60),
+                perHour: count / (spanSec / 3600),
+                spanSec,
+                count
+            };
+        }
+
+        function updateStats(filteredDisplayedRows) {
+            const total = filteredDisplayedRows.length;
+
+            const uniqueCQSet = new Set();
+            for (const d of filteredDisplayedRows) {
+                if (d.isCQ) {
+                    const cs = d.cqCallsign || d.callsign || "";
+                    if (cs) uniqueCQSet.add(cs);
+                }
+            }
+            const uniqueCQ = uniqueCQSet.size;
+
+            const showUnique = (cqOnly && activeMode !== "WSPR");
+            const rate = computeRateStats(filteredDisplayedRows, showUnique);
+
+            if (showUnique) {
+                bandStats.textContent =
+                    `Unique CQ: ${rate.count.toLocaleString()} · #/min: ${rate.perMin.toFixed(1)} · #/hr: ${rate.perHour.toFixed(1)} · Rows: ${total.toLocaleString()}`;
+            } else {
+                bandStats.textContent =
+                    `Decodes: ${total.toLocaleString()}` +
+                    (uniqueCQ ? ` · Unique CQ: ${uniqueCQ.toLocaleString()}` : "") +
+                    ` · Avg/min: ${rate.perMin.toFixed(1)} · Avg/hr: ${rate.perHour.toFixed(1)}`;
+            }
+        }
+
+        function rowClassForMode(mode) {
+            const m = (mode || "").toUpperCase();
+            if (m === "WSPR") return "wsprRow";
+            if (m === "FT8") return "ft8Row";
+            if (m === "FT4") return "ft4Row";
+            return "";
+        }
+
+        function formatFreq(freqMHz) {
+            if (!isFinite(freqMHz)) return "";
+            const s = freqMHz.toFixed(freqMHz < 10 ? 4 : 3);
+            return s.replace(/0+$/, "").replace(/\.$/, "");
+        }
+
+        function formatMiles(mi) {
+            if (!isFinite(mi)) return "";
+            const rounded = Math.round(mi);
+            return rounded.toLocaleString() + " mi";
+        }
+
+        function renderTable() {
+            if (!multiBandMode) return;
+
+            const bandsObserved = new Set();
+            const modesObserved = new Set();
+            for (const d of decodes) {
+                if (d.band) bandsObserved.add(d.band.toLowerCase());
+                if (d.mode) modesObserved.add(d.mode.toUpperCase());
+            }
+
+            if (allowedBands.size) ensureBandButtons(Array.from(allowedBands));
+            else ensureBandButtons(Array.from(bandsObserved));
+
+            ensureModeButtons(Array.from(modesObserved));
+
+            // Apply band/mode/DX filters (CQ handled next)
+            const baseFiltered = decodes.filter(decodePassesBaseFilters);
+
+            // CQ-only: show UNIQUE CQ callsigns only (first seen in the filtered stream)
+            let displayed = baseFiltered;
+            if (cqOnly && activeMode !== "WSPR") {
+                const seen = new Set();
+                displayed = [];
+                for (const d of baseFiltered) {
+                    if (!d.isCQ) continue;
+
+                    const key = (d.cqCallsign || d.callsign || "").toUpperCase();
+                    if (!key) continue;
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+
+                    displayed.push(d);
+                }
+            }
+
+            decodeTbody.innerHTML = "";
+            const frag = document.createDocumentFragment();
+
+            for (const d of displayed) {
+                const tr = document.createElement("tr");
+                const cls = rowClassForMode(d.mode);
+                if (cls) tr.classList.add(cls);
+
+                const bandText = d.band ? d.band.toUpperCase() : "";
+
+                const tdTime = document.createElement("td"); tdTime.textContent = d.timestamp || "";
+                const tdFreq = document.createElement("td"); tdFreq.textContent = formatFreq(d.freqMHz); tdFreq.classList.add("right");
+                const tdMode = document.createElement("td"); tdMode.textContent = d.mode || "";
+                const tdBand = document.createElement("td"); tdBand.textContent = bandText;
+                const tdCall = document.createElement("td"); tdCall.textContent = d.callsign || "";
+                const tdGrid = document.createElement("td"); tdGrid.textContent = d.grid || "";
+                const tdDist = document.createElement("td"); tdDist.textContent = formatMiles(d.distanceMiles); tdDist.classList.add("right");
+                const tdMsg = document.createElement("td"); tdMsg.textContent = d.message || ""; tdMsg.style.whiteSpace = "pre";
+
+                tr.appendChild(tdTime);
+                tr.appendChild(tdFreq);
+                tr.appendChild(tdMode);
+                tr.appendChild(tdBand);
+                tr.appendChild(tdCall);
+                tr.appendChild(tdGrid);
+                tr.appendChild(tdDist);
+                tr.appendChild(tdMsg);
+
+                frag.appendChild(tr);
+            }
+
+            decodeTbody.appendChild(frag);
+
+            updateStats(displayed);
+
+            if (autoScrollBands.checked) {
+                decodeTableWrap.scrollTop = decodeTableWrap.scrollHeight;
+            }
+        }
+
+        function connectWebSocket(ip, port) {
+            if (ws) { try { ws.close(); } catch { } }
+
+            const wsUrl = "ws://" + ip + ":" + port;
+            appendLog("Connecting to " + wsUrl + "...", "info");
+            setConnectedUI(false);
+
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                appendLog("WebSocket connected to " + wsUrl, "info");
+                setCmdEnabled(true);
+                setConnectedUI(true);
+                updateTitle();
+
+                if (multiBandMode && port === CONFIG.settingsAutoPort) {
+                    sendCommand(commandPayload("settings"));
+                }
+            };
+
+            ws.onmessage = (event) => {
+                const text = event.data.toString();
+                const obj = tryParseIncomingJSON(text);
+
+                if (isCommandAckLike(obj)) {
+                    renderCommandAck(obj);
+                    return;
+                }
+
+                if (obj && obj.callsign === "SETTINGS" && typeof obj.message === "string") {
+                    enqueueSettingsLine(obj.message);
+                    return;
+                }
+
+                if (multiBandMode) {
+                    const parsed = addDecodeFromIncoming(text);
+                    if (parsed) {
+                        renderTable();
+                    } else {
+                        appendLog(text, "recv");
+                        handleSettingsInfo(text);
+                    }
+                } else {
+                    appendLog(text, "recv");
+                }
+            };
+
+            ws.onerror = (err) => {
+                appendLog("WebSocket error: " + (err.message || err.type || "unknown"), "error");
+            };
+
+            ws.onclose = () => {
+                appendLog("WebSocket closed", "error");
+                setCmdEnabled(false);
+                setConnectedUI(false);
+            };
+        }
+
+        function setCmdEnabled(enabled) {
+            const showCmd = enabled && multiBandMode;
+            helpBtn.disabled = !showCmd;
+            settingsBtn.disabled = !showCmd;
+            cmdButtons.style.display = showCmd ? "flex" : "none";
+        }
+
+        function sendCommand(cmd) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                clearTopLog();
+                ws.send(cmd);
+                appendLog("Sent command: " + cmd, "send");
+            } else {
+                appendLog("WebSocket is not connected; cannot send '" + cmd + "'.", "error");
+            }
+        }
+
+        const connectButton = document.getElementById("connectButton");
+
+        connectButton.addEventListener("click", () => {
+            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+                ws.close();
+                return;
+            }
+
+            const ip = ipInput.value.trim();
+            const port = portInput.value.trim();
+
+            if (ip && port) {
+                localStorage.setItem("savedIP", ip);
+                localStorage.setItem("savedPort", port);
+                localStorage.setItem("autoConnect", autoConnectCheckbox.checked ? "1" : "0");
+
+                setModeForPort(port);
+
+                clearTopLog();
+                decodeTbody.innerHTML = "";
+                decodes = [];
+                allowedBands = new Set();
+                activeBand = "all";
+                activeMode = "ALL";
+
+                ensureBandButtons([]);
+                ensureModeButtons([]);
+                applyPrefsToEffectiveFlags();
+                updateTitle();
+
+                connectWebSocket(ip, port);
+            } else {
+                appendLog("Please enter a valid IP address and port number.", "error");
+            }
+        });
+
+        document.getElementById("sendButton").addEventListener("click", () => {
+            const msgEl = document.getElementById("messageInput");
+            const msg = msgEl.value;
+            if (msg && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(msg);
+                appendLog("Sent: " + msg, "send");
+                msgEl.value = "";
+            } else if (!msg) {
+                appendLog("Message is empty; nothing sent.", "info");
+            } else {
+                appendLog("WebSocket is not connected; cannot send message.", "error");
+            }
+        });
+
+        document.getElementById("messageInput").addEventListener("keypress", (e) => {
+            if (e.key === "Enter") document.getElementById("sendButton").click();
+        });
+
+        document.getElementById("clearButton").addEventListener("click", () => {
+            if (multiBandMode) {
+                decodes = [];
+                decodeTbody.innerHTML = "";
+                appendLog("Cleared decodes buffer.", "info");
+                renderTable();
+            } else {
+                clearTopLog();
+                appendLog("Cleared log.", "info");
+            }
+        });
+
+        document.getElementById("saveButton").addEventListener("click", () => {
+            let content = "";
+            let filenameBase = "ws_decodes";
+
+            if (multiBandMode) {
+                // Save the currently displayed view (same logic as renderTable)
+                const baseFiltered = decodes.filter(decodePassesBaseFilters);
+                let displayed = baseFiltered;
+
+                if (cqOnly && activeMode !== "WSPR") {
+                    const seen = new Set();
+                    displayed = [];
+                    for (const d of baseFiltered) {
+                        if (!d.isCQ) continue;
+                        const key = (d.cqCallsign || d.callsign || "").toUpperCase();
+                        if (!key) continue;
+                        if (seen.has(key)) continue;
+                        seen.add(key);
+                        displayed.push(d);
+                    }
+                }
+
+                const rows = displayed.map(d => {
+                    const bandText = d.band ? d.band.toUpperCase() : "";
+                    const dist = isFinite(d.distanceMiles) ? (Math.round(d.distanceMiles).toLocaleString() + " mi") : "";
+                    const msg = (d.message || "").replace(/\t/g, " ");
+                    return [
+                        d.timestamp || "",
+                        formatFreq(d.freqMHz),
+                        d.mode || "",
+                        bandText,
+                        d.callsign || "",
+                        d.grid || "",
+                        dist,
+                        msg
+                    ].join("\t");
+                });
+
+                content = [
+                    "Time\tFreq(MHz)\tMode\tBand\tCallsign\tGrid\tDistance\tMessage",
+                    ...rows
+                ].join("\n");
+                filenameBase = `ws_${activeBand}_${activeMode}_decodes`;
+            } else {
+                content = output.innerText;
+                filenameBase = "ws_status_log";
+            }
+
+            if (!content.trim()) {
+                appendLog("No log content to save for the current view.", "info");
+                return;
+            }
+
+            const ts = new Date().toISOString().replace(/[:.]/g, "-");
+            const blob = new Blob([content], { type: "text/plain" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `${filenameBase}_${ts}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        helpBtn.addEventListener("click", () => sendCommand(commandPayload("help")));
+        settingsBtn.addEventListener("click", () => sendCommand(commandPayload("settings")));
+
+        document.querySelectorAll(".quick-port").forEach(btn => {
+            btn.addEventListener("click", () => {
+                portInput.value = btn.getAttribute("data-port");
+            });
+        });
+
+        autoConnectCheckbox.addEventListener("change", () => {
+            localStorage.setItem("autoConnect", autoConnectCheckbox.checked ? "1" : "0");
+        });
+
+        cqOnlyCheckbox.addEventListener("change", () => {
+            cqOnlyPref = cqOnlyCheckbox.checked;
+            localStorage.setItem("cqOnlyPref", cqOnlyPref ? "1" : "0");
+            applyPrefsToEffectiveFlags();
+            renderTable();
+        });
+
+        dxOnlyCheckbox.addEventListener("change", () => {
+            dxOnlyPref = dxOnlyPref = dxOnlyCheckbox.checked;
+            localStorage.setItem("dxOnlyPref", dxOnlyPref ? "1" : "0");
+            applyPrefsToEffectiveFlags();
+            renderTable();
+        });
+
+        autoScrollBands.addEventListener("change", () => {
+            renderTable();
+        });
+
+        myGridInput.addEventListener("change", () => {
+            localStorage.setItem("myGrid", (myGridInput.value || "").trim().toUpperCase());
+            for (const d of decodes) d.distanceMiles = computeDistanceMiles(d.grid);
+            renderTable();
+        });
+
+        window.addEventListener("load", () => {
+            const savedIP = localStorage.getItem("savedIP") || window.location.hostname || "127.0.0.1";
+            const savedPort = localStorage.getItem("savedPort") || CONFIG.defaultPort;
+            const autoConn = localStorage.getItem("autoConnect") === "1";
+
+            const savedMyGrid = localStorage.getItem("myGrid") || "FN31";
+            const savedCqPref = localStorage.getItem("cqOnlyPref");
+            const savedDxPref = localStorage.getItem("dxOnlyPref");
+
+            ipInput.value = savedIP;
+            portInput.value = savedPort;
+            autoConnectCheckbox.checked = autoConn;
+
+            myGridInput.value = (savedMyGrid || "").trim().toUpperCase();
+
+            cqOnlyPref = (savedCqPref === null) ? false : (savedCqPref === "1");
+            dxOnlyPref = (savedDxPref === null) ? false : (savedDxPref === "1");
+
+            setModeForPort(savedPort);
+            setConnectedUI(false);
+
+            ensureBandButtons([]);
+            ensureModeButtons([]);
+
+            activeBand = "all";
+            activeMode = "ALL";
+            applyPrefsToEffectiveFlags();
+            updateTitle();
+
+            if (autoConn) {
+                clearTopLog();
+                connectWebSocket(savedIP, savedPort);
+            }
+        });
+    </script>
+</body>
+
+</html>

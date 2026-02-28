@@ -195,9 +195,7 @@ def make_router(
                     if band not in band_modes_raw:
                         continue
                     val = str(band_modes_raw.get(band) or "FT8").strip().upper()
-                    if val == "WSPR":
-                        val = "FT8"
-                    if val in {"FT8", "FT4", "FT4 / FT8", "SSB"}:
+                    if val in {"FT8", "FT4", "FT4 / FT8", "WSPR", "SSB"}:
                         band_modes_out[band] = val
                     else:
                         band_modes_out[band] = "FT8"
