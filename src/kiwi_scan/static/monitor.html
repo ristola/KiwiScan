@@ -954,7 +954,20 @@
             if (obj.error) settingsBundle.error = obj.error;
 
             if (Array.isArray(obj.band_settings) && obj.band_settings.length) {
-                settingsBundle.band_settings.push(...obj.band_settings);
+                const byBand = new Map();
+                for (const row of settingsBundle.band_settings) {
+                    if (!row || typeof row !== "object") continue;
+                    const key = String(row.band || "").toLowerCase();
+                    if (!key) continue;
+                    byBand.set(key, row);
+                }
+                for (const row of obj.band_settings) {
+                    if (!row || typeof row !== "object") continue;
+                    const key = String(row.band || "").toLowerCase();
+                    if (!key) continue;
+                    byBand.set(key, row);
+                }
+                settingsBundle.band_settings = Array.from(byBand.values());
             }
 
             scheduleSettingsBundleFlush(300);

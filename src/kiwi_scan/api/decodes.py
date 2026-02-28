@@ -377,7 +377,14 @@ def _apply_ws4010_status_command(payload: Dict[str, Any]) -> Dict[str, Any]:
                 break
 
     selected_raw = entry.get("selectedBands") if isinstance(entry, dict) else []
-    selected_set = {b for b in selected_raw if b in _valid_bands} if isinstance(selected_raw, list) else set()
+    has_explicit_selected_bands = isinstance(selected_raw, list)
+    if isinstance(selected_raw, list):
+        if len(selected_raw) == 0:
+            selected_set = set(_valid_bands)
+        else:
+            selected_set = {b for b in selected_raw if b in _valid_bands}
+    else:
+        selected_set = set(_valid_bands)
 
     band_modes_raw = entry.get("bandModes") if isinstance(entry, dict) else {}
     band_modes: Dict[str, str] = {}
@@ -417,6 +424,11 @@ def _apply_ws4010_status_command(payload: Dict[str, Any]) -> Dict[str, Any]:
                     "freq_hz": row.get("freq_hz"),
                 }
             )
+
+    if not has_explicit_selected_bands:
+        assigned_set = {band for band, rows in assignments_by_band.items() if rows}
+        if assigned_set:
+            selected_set = assigned_set
 
     bands: List[Dict[str, Any]] = []
     active_conditions: List[str] = []
@@ -807,11 +819,11 @@ async def _broadcast_decodes(payload: Dict) -> None:
                 _decode_ws_clients.discard(d)
 
 
-async def _broadcast_decodes_4010(payload: Dict) -> None:
+async def _broadcast_decodes_4010(payload: Dict, exclude: WebSocket | None = None) -> None:
     dead: List[WebSocket] = []
     text = json.dumps(payload, default=str)
     with _decode_ws4010_lock:
-        ws_list = list(_decode_ws4010_clients)
+        ws_list = [ws for ws in _decode_ws4010_clients if ws is not exclude]
     for ws in ws_list:
         try:
             await ws.send_text(text)
@@ -1123,11 +1135,11 @@ async def websocket_decodes_4010(websocket: WebSocket) -> None:
                         await websocket.send_text(json.dumps(response, default=str))
                     except Exception:
                         pass
-                    await _broadcast_decodes_4010(response)
+                    await _broadcast_decodes_4010(response, exclude=websocket)
                     if str(response.get("type") or "") == "command_ack":
-                        await _broadcast_decodes_4010(_ws4010_command_compat_frame(response))
+                        await _broadcast_decodes_4010(_ws4010_command_compat_frame(response), exclude=websocket)
                         for settings_frame in _ws4010_settings_decode_frames(response):
-                            await _broadcast_decodes_4010(settings_frame)
+                            await _broadcast_decodes_4010(settings_frame, exclude=websocket)
             except WebSocketDisconnect:
                 break
             except Exception:

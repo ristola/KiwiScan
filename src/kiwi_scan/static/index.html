@@ -7240,9 +7240,27 @@
         let decodeHasData = false;
         let lastAssignmentSyncMs = 0;
 
+        function shouldHideDecodeLine(data) {
+            if (!data || typeof data !== 'object') return false;
+            const band = String(data.band || '').toLowerCase();
+            if (band === 'control') return true;
+
+            const type = String(data.type || '').toLowerCase();
+            if (type === 'command_notice') return true;
+
+            const mode = String(data.mode || '').toUpperCase();
+            if (mode === 'WS4010') return true;
+
+            const callsign = String(data.callsign || '').toUpperCase();
+            if (callsign === 'SETTINGS' || callsign === 'SERVER') return true;
+
+            return false;
+        }
+
         function appendDecodeLine(data) {
             const list = document.getElementById('decode_list');
             if (!list || !data) return;
+            if (shouldHideDecodeLine(data)) return;
             try {
                 const mode = String(data.mode || '').toUpperCase();
                 const msg = String(data.message || '');
