@@ -9052,7 +9052,12 @@
                 launchdSel.addEventListener('change', async () => {
                     try {
                         await persistRuntimePrefs();
-                        setConfigStatus('Runtime preference saved.', 'ok');
+                        const launchdNowOn = String(launchdSel.value || 'off') === 'on';
+                        if (launchdNowOn) {
+                            setConfigStatus('Launchd enabled. Existing running service remains unchanged.', 'ok');
+                        } else {
+                            setConfigStatus('Launchd disabled for future restart/reboot only. Current running service not stopped.', 'ok');
+                        }
                         await refreshHeadlessRuntimeStatus();
                     } catch (e) {
                         setConfigStatus('Runtime preference save failed.', 'error');
