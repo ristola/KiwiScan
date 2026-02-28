@@ -3419,9 +3419,9 @@
                 const running = !!data.thread_running;
                 const envEnabled = !!data.enabled_by_env;
                 const headless = !!data.headless_enabled;
-                const launchdPref = !!data.launchd_preferred;
+                const launchdEnabled = !!data.launchd_enabled;
                 const interval = Number(data.interval_s || 0);
-                statusEl.textContent = `Loop ${running ? 'running' : 'stopped'} · headless ${headless ? 'on' : 'off'} · launchd pref ${launchdPref ? 'on' : 'off'} · env ${envEnabled ? 'on' : 'off'} · ${interval || 0}s`;
+                statusEl.textContent = `Loop ${running ? 'running' : 'stopped'} · headless ${headless ? 'on' : 'off'} · Launchd: ${launchdEnabled ? 'Enabled' : 'Disabled'} · env ${envEnabled ? 'on' : 'off'} · ${interval || 0}s`;
                 return data;
             } catch (e) {
                 statusEl.textContent = 'Unavailable';

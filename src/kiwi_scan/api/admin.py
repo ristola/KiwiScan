@@ -1,11 +1,130 @@
 from __future__ import annotations
 
 import json
+import os
+import plistlib
+import re
+import subprocess
 import urllib.request
+from pathlib import Path
 
 from fastapi import APIRouter
 
 from ..ws4010_server import restart_ws4010
+
+
+def _launchd_candidates() -> list[dict[str, str]]:
+    roots = [
+        Path.home() / "Library" / "LaunchAgents",
+        Path("/Library/LaunchAgents"),
+        Path("/Library/LaunchDaemons"),
+    ]
+    out: dict[str, dict[str, str]] = {}
+    for root in roots:
+        if not root.exists() or not root.is_dir():
+            continue
+        for path in root.glob("*.plist"):
+            try:
+                payload = plistlib.loads(path.read_bytes())
+            except Exception:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            label = str(payload.get("Label") or "").strip()
+            program = str(payload.get("Program") or "").strip()
+            program_args = payload.get("ProgramArguments")
+            arg_text = ""
+            if isinstance(program_args, list):
+                try:
+                    arg_text = " ".join(str(v) for v in program_args)
+                except Exception:
+                    arg_text = ""
+            hay = f"{label} {program} {arg_text} {path}".lower()
+            if ("kiwi_scan" not in hay) and ("run_server.sh" not in hay) and ("shackmate" not in hay):
+                continue
+            if label:
+                out[label] = {
+                    "label": label,
+                    "plist": str(path),
+                }
+    return sorted(out.values(), key=lambda x: x.get("label") or "")
+
+
+def _launchctl_disabled_labels() -> set[str]:
+    disabled: set[str] = set()
+    uid = os.getuid()
+    domains = [f"gui/{uid}", "system"]
+    pat = re.compile(r'"([^"]+)"\s*=>\s*(true|false)', re.IGNORECASE)
+    for domain in domains:
+        try:
+            proc = subprocess.run(
+                ["launchctl", "print-disabled", domain],
+                capture_output=True,
+                text=True,
+                timeout=2.5,
+                check=False,
+            )
+        except Exception:
+            continue
+        if proc.returncode != 0:
+            continue
+        for m in pat.finditer(proc.stdout or ""):
+            label = str(m.group(1) or "").strip()
+            val = str(m.group(2) or "").strip().lower()
+            if label and val == "true":
+                disabled.add(label)
+    return disabled
+
+
+def _launchd_status() -> dict[str, object]:
+    candidates = _launchd_candidates()
+    disabled_labels = _launchctl_disabled_labels()
+    if not candidates:
+        return {
+            "launchd_enabled": False,
+            "launchd_running": False,
+            "launchd_labels": [],
+        }
+
+    enabled = False
+    running = False
+    labels: list[str] = []
+    uid = os.getuid()
+
+    for item in candidates:
+        label = str(item.get("label") or "").strip()
+        if not label:
+            continue
+        labels.append(label)
+        is_disabled = label in disabled_labels
+        if not is_disabled:
+            enabled = True
+
+        is_running = False
+        for target in (f"gui/{uid}/{label}", f"system/{label}"):
+            try:
+                proc = subprocess.run(
+                    ["launchctl", "print", target],
+                    capture_output=True,
+                    text=True,
+                    timeout=2.5,
+                    check=False,
+                )
+            except Exception:
+                continue
+            if proc.returncode == 0:
+                txt = (proc.stdout or "").lower()
+                if ("state = running" in txt) or ("pid =" in txt):
+                    is_running = True
+                    break
+        if is_running:
+            running = True
+
+    return {
+        "launchd_enabled": bool(enabled),
+        "launchd_running": bool(running),
+        "launchd_labels": labels,
+    }
 
 
 def make_router(*, auto_set_loop: object | None = None) -> APIRouter:
@@ -56,6 +175,7 @@ def make_router(*, auto_set_loop: object | None = None) -> APIRouter:
             status = {}
         out = {"ok": True}
         out.update(status)
+        out.update(_launchd_status())
         return out
 
     return router
