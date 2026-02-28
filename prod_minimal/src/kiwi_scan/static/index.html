@@ -6901,6 +6901,24 @@
                         if (a.ok === false) failCount += 1;
                     }
                 }
+                try {
+                    const settingsNow = readAutomationSettings();
+                    const wsprEnabledPref = !!(settingsNow && settingsNow.autoScanWspr);
+                    const wsprAssignment = (data && Array.isArray(data.assignments))
+                        ? data.assignments.find((a) => a && a.ok !== false && a.band && String(a.mode || '').toUpperCase() === 'WSPR')
+                        : null;
+                    if (wsprEnabledPref && wsprAssignment && wsprAssignment.band) {
+                        wsprScanEnabled = true;
+                        wsprScanActiveBand = String(wsprAssignment.band);
+                        const hopSeconds = Number(settingsNow && settingsNow.bandHopSeconds ? settingsNow.bandHopSeconds : DEFAULT_AUTOMATION.bandHopSeconds);
+                        wsprScanHopSeconds = Number.isFinite(hopSeconds) && hopSeconds > 0 ? hopSeconds : DEFAULT_AUTOMATION.bandHopSeconds;
+                        wsprScanNextHopAt = Date.now() + (Math.max(1, wsprScanHopSeconds) * 1000);
+                    } else if (!wsprEnabledPref) {
+                        wsprScanEnabled = false;
+                        wsprScanActiveBand = null;
+                        wsprScanNextHopAt = null;
+                    }
+                } catch (e) { }
                 receiverAssignments = next;
                 receiverAssignmentRequests = nextRequests;
                 if (lastScheduleData) {
