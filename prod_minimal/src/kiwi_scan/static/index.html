@@ -8231,8 +8231,17 @@
                             const data = JSON.parse(String(ev.data || ''));
                             if (data && typeof data === 'object') {
                                 if (String(data.type || '').toLowerCase() === 'command_ack') {
-                                    const mode = currentMode();
-                                    fetchSchedule(mode).then(renderSchedule).catch(() => { });
+                                    (async () => {
+                                        try {
+                                            const serverAutomation = await loadAutomationSettingsFromServer();
+                                            if (serverAutomation && typeof serverAutomation === 'object') {
+                                                const merged = { ...DEFAULT_AUTOMATION, ...serverAutomation };
+                                                saveAutomationSettings(merged);
+                                            }
+                                        } catch (e) { }
+                                        const mode = currentMode();
+                                        fetchSchedule(mode).then(renderSchedule).catch(() => { });
+                                    })();
                                     return;
                                 }
                                 appendDecodeLine(data);
