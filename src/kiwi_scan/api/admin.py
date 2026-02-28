@@ -8,7 +8,7 @@ import subprocess
 import urllib.request
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request
 
 from ..ws4010_server import restart_ws4010
 
@@ -127,6 +127,62 @@ def _launchd_status() -> dict[str, object]:
     }
 
 
+def _set_launchd_enabled(enabled: bool) -> dict[str, object]:
+    uid = os.getuid()
+    candidates = _launchd_candidates()
+    labels = [str(item.get("label") or "").strip() for item in candidates if str(item.get("label") or "").strip()]
+    if not labels:
+        return {
+            "ok": True,
+            "changed": False,
+            "enabled": bool(enabled),
+            "labels": [],
+            "updated": 0,
+            "failed": [],
+        }
+
+    action = "enable" if enabled else "disable"
+    updated = 0
+    failed: list[dict[str, str]] = []
+
+    for label in labels:
+        scopes = [f"gui/{uid}/{label}", f"system/{label}"]
+        target_updated = False
+        target_failed = 0
+        for scoped in scopes:
+            try:
+                proc = subprocess.run(
+                    ["launchctl", action, scoped],
+                    capture_output=True,
+                    text=True,
+                    timeout=3.0,
+                    check=False,
+                )
+            except Exception as e:
+                target_failed += 1
+                failed.append({"label": label, "scope": scoped, "error": str(e)})
+                continue
+
+            if proc.returncode == 0:
+                target_updated = True
+            else:
+                target_failed += 1
+                err = (proc.stderr or proc.stdout or "launchctl failed").strip()
+                failed.append({"label": label, "scope": scoped, "error": err})
+
+        if target_updated:
+            updated += 1
+
+    return {
+        "ok": True,
+        "changed": updated > 0,
+        "enabled": bool(enabled),
+        "labels": labels,
+        "updated": int(updated),
+        "failed": failed,
+    }
+
+
 def make_router(*, auto_set_loop: object | None = None) -> APIRouter:
     """Create router for admin endpoints."""
 
@@ -177,5 +233,16 @@ def make_router(*, auto_set_loop: object | None = None) -> APIRouter:
         out.update(status)
         out.update(_launchd_status())
         return out
+
+    @router.post("/admin/launchd/set")
+    async def launchd_set_endpoint(request: Request) -> dict:
+        try:
+            payload = await request.json()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}")
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Payload must be an object")
+        enabled = bool(payload.get("enabled", False))
+        return _set_launchd_enabled(enabled)
 
     return router

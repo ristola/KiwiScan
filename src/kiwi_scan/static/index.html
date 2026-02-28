@@ -9012,16 +9012,25 @@
                 const headlessSel = document.getElementById('cfg_headless_enabled');
                 const launchdSel = document.getElementById('cfg_use_launchd');
                 const baseAutomation = await loadAutomationSettingsFromServer() || readAutomationSettings();
+                const nextUseLaunchd = (launchdSel ? String(launchdSel.value) : 'off') === 'on';
                 const nextAutomation = {
                     ...DEFAULT_AUTOMATION,
                     ...(baseAutomation || {}),
                     headlessEnabled: (headlessSel ? String(headlessSel.value) : 'on') !== 'off',
-                    useLaunchd: (launchdSel ? String(launchdSel.value) : 'off') === 'on',
+                    useLaunchd: nextUseLaunchd,
                 };
                 saveAutomationSettings(nextAutomation);
                 const result = await saveAutomationSettingsToServer(nextAutomation);
                 if (!result || result.ok !== true) {
                     throw new Error((result && result.error) ? String(result.error) : 'save failed');
+                }
+                const launchdResp = await fetch('/admin/launchd/set', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ enabled: nextUseLaunchd }),
+                });
+                if (!launchdResp.ok) {
+                    throw new Error(`launchd set failed (HTTP ${launchdResp.status})`);
                 }
                 return nextAutomation;
             };
