@@ -85,18 +85,9 @@ def _normalize_band_mode(value: object) -> str:
 
 
 def _blocks_for_mode(mode: str, block: str) -> List[str]:
-    all_blocks = set()
-    seasonal = expected_schedule_by_season(mode=mode)
-    if isinstance(seasonal, dict):
-        for by_block in seasonal.values():
-            if isinstance(by_block, dict):
-                all_blocks.update(str(k) for k in by_block.keys())
-    blocks = sorted(all_blocks)
-    requested = str(block or "all").strip().lower()
-    if requested in {"", "all", "*"}:
-        return blocks
-    target = str(block).strip()
-    return [target] if target in blocks else []
+    _ = str(block or "").strip()
+    now = datetime.now().astimezone()
+    return [block_for_hour(now.hour, mode=mode)]
 
 
 def _trigger_auto_set_apply(settings: Dict[str, Any], mode: str) -> Dict[str, Any]:
