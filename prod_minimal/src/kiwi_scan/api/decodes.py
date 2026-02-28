@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import asyncio
 import json
 import logging
@@ -220,8 +221,14 @@ def _handle_ws4010_command(raw: str) -> Optional[Dict[str, Any]]:
 
     try:
         payload = json.loads(text)
-    except Exception as exc:
-        return {"ok": False, "type": "command_ack", "error": f"invalid_json: {exc}"}
+    except Exception as json_exc:
+        try:
+            normalized = re.sub(r"\btrue\b", "True", text, flags=re.IGNORECASE)
+            normalized = re.sub(r"\bfalse\b", "False", normalized, flags=re.IGNORECASE)
+            normalized = re.sub(r"\bnull\b", "None", normalized, flags=re.IGNORECASE)
+            payload = ast.literal_eval(normalized)
+        except Exception:
+            return {"ok": False, "type": "command_ack", "error": f"invalid_json: {json_exc}"}
 
     if not isinstance(payload, dict):
         return {"ok": False, "type": "command_ack", "error": "command must be a JSON object"}
