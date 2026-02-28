@@ -54,7 +54,7 @@ def _launchctl_disabled_labels() -> set[str]:
     disabled: set[str] = set()
     uid = os.getuid()
     domains = [f"gui/{uid}", "system"]
-    pat = re.compile(r'"([^"]+)"\s*=>\s*(true|false)', re.IGNORECASE)
+    pat = re.compile(r'"([^"]+)"\s*=>\s*(true|false|disabled|enabled)', re.IGNORECASE)
     for domain in domains:
         try:
             proc = subprocess.run(
@@ -71,7 +71,7 @@ def _launchctl_disabled_labels() -> set[str]:
         for m in pat.finditer(proc.stdout or ""):
             label = str(m.group(1) or "").strip()
             val = str(m.group(2) or "").strip().lower()
-            if label and val == "true":
+            if label and val in {"true", "disabled"}:
                 disabled.add(label)
     return disabled
 
