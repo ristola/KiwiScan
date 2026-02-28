@@ -209,9 +209,30 @@ def _apply_ws4010_band_command(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _handle_ws4010_command(raw: str) -> Optional[Dict[str, Any]]:
+    def _help_response() -> Dict[str, Any]:
+        return {
+            "ok": True,
+            "type": "command_help",
+            "message": "WS4010 set_band examples",
+            "examples": [
+                {"command": "set_band", "mode": "ft8", "band": "17m", "enabled": True, "band_mode": "FT8"},
+                {"command": "set_band", "mode": "ft8", "band": "17m", "enabled": False, "band_mode": "FT8"},
+                {"command": "set_band", "mode": "ft8", "band": "20m", "enabled": True, "band_mode": "FT4 / FT8"},
+                {"command": "set_band", "mode": "phone", "band": "40m", "enabled": True, "band_mode": "SSB"},
+            ],
+            "notes": [
+                "Commands apply to the current time block only.",
+                "Accepted band_mode values: FT4, FT4 / FT8, FT8, WSPR, SSB.",
+                "Band may be ALL or one of 10m..160m.",
+            ],
+        }
+
     text = str(raw or "").strip()
     if not text:
         return None
+
+    if text.lower() == "help":
+        return _help_response()
 
     if text.lower() in {"ping", "{\"type\":\"ping\"}"}:
         return {"ok": True, "type": "pong"}
@@ -233,7 +254,10 @@ def _handle_ws4010_command(raw: str) -> Optional[Dict[str, Any]]:
     if not isinstance(payload, dict):
         return {"ok": False, "type": "command_ack", "error": "command must be a JSON object"}
 
-    action = str(payload.get("action") or payload.get("command") or "").strip().lower()
+    action = str(payload.get("action") or payload.get("command") or payload.get("type") or "").strip().lower()
+    if action == "help":
+        return _help_response()
+
     is_band_command = (
         action in {"set_band", "band_set", "setband", "set_band_mode"}
         or ("enabled" in payload and ("band" in payload or "target_band" in payload))
