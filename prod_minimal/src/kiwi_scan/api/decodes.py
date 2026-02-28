@@ -223,20 +223,20 @@ def _handle_ws4010_command(raw: str) -> Optional[Dict[str, Any]]:
             "message": "Copy/paste one command object below as your WS payload.",
             "examples": [
                 {
-                    "label": "Enable 20m and set FT8",
-                    "command": {"command": "set_band", "mode": "ft8", "enabled": True, "band": "20m", "band_mode": "FT8"},
+                    "label": "Enable band only",
+                    "command": {"command": "set_band", "enabled": True, "band": "20m", "mode": "ft8"},
                 },
                 {
-                    "label": "Disable 20m without changing mode",
-                    "command": {"command": "set_band", "mode": "ft8", "enabled": False, "band": "20m"},
+                    "label": "Disable band only",
+                    "command": {"command": "set_band", "enabled": False, "band": "20m", "mode": "ft8"},
                 },
                 {
-                    "label": "Enable 20m with FT4 / FT8",
-                    "command": {"command": "set_band", "mode": "ft8", "enabled": True, "band": "20m", "band_mode": "FT4 / FT8"},
+                    "label": "Enable band and set FT4 / FT8",
+                    "command": {"command": "set_band", "enabled": True, "band": "20m", "mode": "ft8", "band_mode": "FT4 / FT8"},
                 },
                 {
-                    "label": "Enable 40m SSB in phone mode",
-                    "command": {"command": "set_band", "mode": "phone", "enabled": True, "band": "40m", "band_mode": "SSB"},
+                    "label": "Enable 40m SSB",
+                    "command": {"command": "set_band", "enabled": True, "band": "40m", "mode": "phone", "band_mode": "SSB"},
                 },
             ],
             "notes": [
