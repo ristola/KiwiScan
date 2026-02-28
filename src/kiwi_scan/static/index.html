@@ -6958,6 +6958,10 @@
                         continue;
                     }
                     if (selValue) {
+                        if (selValue === 'WSPR' && wsprScanEnabled) {
+                            bandModes[band] = storedMode;
+                            continue;
+                        }
                         const key = wsprOverrideKey(mode, activeBlock, band);
                         const hasManualWspr = !!wsprOverrides[key];
                         if (selValue === 'WSPR' && !hasManualWspr) {
@@ -7100,6 +7104,7 @@
                     if (wsprEnabledPref && wsprAssignment && wsprAssignment.band) {
                         wsprScanEnabled = true;
                         wsprScanActiveBand = String(wsprAssignment.band);
+                        clearAllWsprOverrides();
                         const hopSeconds = Number(settingsNow && settingsNow.bandHopSeconds ? settingsNow.bandHopSeconds : DEFAULT_AUTOMATION.bandHopSeconds);
                         wsprScanHopSeconds = Number.isFinite(hopSeconds) && hopSeconds > 0 ? hopSeconds : DEFAULT_AUTOMATION.bandHopSeconds;
                         wsprScanNextHopAt = Date.now() + (Math.max(1, wsprScanHopSeconds) * 1000);
@@ -7107,6 +7112,7 @@
                         wsprScanEnabled = false;
                         wsprScanActiveBand = null;
                         wsprScanNextHopAt = null;
+                        clearAllWsprOverrides();
                     }
                 } catch (e) { }
                 receiverAssignments = next;
