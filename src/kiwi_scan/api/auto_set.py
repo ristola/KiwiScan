@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 import logging
 import json
+import time
 from urllib.request import urlopen
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -206,6 +207,7 @@ def make_router(
         selected_set = set(selected_bands) if isinstance(selected_bands, list) else None
         band_modes_raw = payload.get("band_modes")
         band_modes = band_modes_raw if isinstance(band_modes_raw, dict) else {}
+        wspr_scan_enabled = bool(payload.get("wspr_scan_enabled", False))
         profile_selected, profile_band_modes = _profile_for(mode, block)
         if selected_set is None and profile_selected is not None:
             selected_set = set(profile_selected)
@@ -221,6 +223,36 @@ def make_router(
             desired_bands = [b for b in band_order if b in selected_set]
         else:
             desired_bands = list(open_bands)
+
+        has_selected_ssb_band = False
+        if desired_bands:
+            for band in desired_bands:
+                mode_label = str(band_modes.get(band) or "FT8").strip().upper()
+                if mode_label in {"SSB", "PHONE"}:
+                    has_selected_ssb_band = True
+                    break
+
+        if wspr_scan_enabled and not has_selected_ssb_band:
+            hop_s_raw = payload.get("band_hop_seconds", settings.get("bandHopSeconds", 105))
+            try:
+                hop_s = max(10.0, float(hop_s_raw))
+            except Exception:
+                hop_s = 105.0
+            start_band = str(payload.get("wspr_start_band") or settings.get("wsprStartBand") or "10m")
+
+            hop_pool = [b for b in band_order if b in desired_bands]
+            if not hop_pool:
+                hop_pool = [b for b in band_order if b in open_bands]
+            if not hop_pool:
+                hop_pool = list(band_order)
+
+            if hop_pool:
+                start_idx = hop_pool.index(start_band) if start_band in hop_pool else 0
+                hop_step = int(time.time() // hop_s)
+                active_idx = (start_idx + hop_step) % len(hop_pool)
+                active_band = hop_pool[active_idx]
+                band_modes = dict(band_modes)
+                band_modes[active_band] = "WSPR"
 
         with mgr.lock:  # type: ignore[attr-defined]
             host = str(mgr.host)

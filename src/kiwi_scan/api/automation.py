@@ -11,7 +11,7 @@ _lock = threading.Lock()
 
 _DEFAULT_SETTINGS: Dict[str, Any] = {
     "autoScanOnBlock": False,
-    "autoScanWspr": True,
+    "autoScanWspr": False,
     "autoScanOnStartup": False,
     "autoRefreshSchedule": True,
     "bandHopSeconds": 105,

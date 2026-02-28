@@ -90,7 +90,9 @@ class AutoSetLoop:
         return {
             "enabled": True,
             "mode": mode,
-            "wspr_scan_enabled": self._safe_bool(settings.get("autoScanWspr"), default=True),
+            "wspr_scan_enabled": self._safe_bool(settings.get("autoScanWspr"), default=False),
+            "band_hop_seconds": self._safe_num(settings.get("bandHopSeconds"), 105.0, 10.0, 600.0),
+            "wspr_start_band": str(settings.get("wsprStartBand") or "10m"),
             "ssb_scan": {
                 "enabled": self._safe_bool(settings.get("ssbEnabled"), default=True),
                 "threshold_db": self._safe_num(settings.get("ssbThresholdDb"), 20.0, 1.0, 60.0),
