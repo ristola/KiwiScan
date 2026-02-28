@@ -215,9 +215,13 @@ def _apply_ws4010_band_command(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _handle_ws4010_command(raw: str) -> Optional[Dict[str, Any] | str]:
-    def _help_response() -> str:
-        return "{\"command\":\"set_band\",\"mode\":\"ft8\",\"block\":\"all\",\"enabled\":false,\"band\":\"20m\",\"band_mode\":\"FT8\"}"
+def _handle_ws4010_command(raw: str) -> Optional[Dict[str, Any]]:
+    def _help_response() -> Dict[str, Any]:
+        return {
+            "ok": True,
+            "type": "command_help",
+            "one_line": "{\"command\":\"set_band\",\"mode\":\"ft8\",\"block\":\"all\",\"enabled\":false,\"band\":\"20m\",\"band_mode\":\"FT8\"}",
+        }
 
     text = str(raw or "").strip()
     if not text:
@@ -593,12 +597,9 @@ async def websocket_decodes_4010(websocket: WebSocket) -> None:
                 raw = await websocket.receive_text()
                 response = _handle_ws4010_command(raw)
                 if response is not None:
-                    if isinstance(response, str):
-                        await websocket.send_text(response)
-                    else:
-                        await websocket.send_text(json.dumps(response))
-                        if str(response.get("type") or "") == "command_ack":
-                            await _broadcast_ws4010_dashboard(response, exclude=websocket)
+                    await websocket.send_text(json.dumps(response))
+                    if str(response.get("type") or "") == "command_ack":
+                        await _broadcast_ws4010_dashboard(response, exclude=websocket)
             except WebSocketDisconnect:
                 break
             except Exception:
