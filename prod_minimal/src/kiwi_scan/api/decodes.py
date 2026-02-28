@@ -143,7 +143,13 @@ def _apply_ws4010_band_command(payload: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("enabled is required")
     enabled = bool(payload.get("enabled"))
 
-    band_mode = _normalize_band_mode(payload.get("band_mode") or payload.get("mode_value") or payload.get("bandMode"))
+    band_mode_raw = payload.get("band_mode")
+    if band_mode_raw is None:
+        band_mode_raw = payload.get("mode_value")
+    if band_mode_raw is None:
+        band_mode_raw = payload.get("bandMode")
+    has_band_mode = band_mode_raw is not None and str(band_mode_raw).strip() != ""
+    band_mode = _normalize_band_mode(band_mode_raw) if has_band_mode else None
     block = str(payload.get("block") or "all").strip()
     target_blocks = _blocks_for_mode(mode, block)
     if not target_blocks:
@@ -181,11 +187,12 @@ def _apply_ws4010_band_command(payload: Dict[str, Any]) -> Dict[str, Any]:
             if not isinstance(band_modes, dict):
                 band_modes = {}
 
-            if band == "ALL":
-                for b in _valid_bands:
-                    band_modes[b] = band_mode
-            else:
-                band_modes[band] = band_mode
+            if has_band_mode:
+                if band == "ALL":
+                    for b in _valid_bands:
+                        band_modes[b] = band_mode
+                else:
+                    band_modes[band] = band_mode
 
             entry["selectedBands"] = selected
             entry["bandModes"] = band_modes
@@ -202,7 +209,7 @@ def _apply_ws4010_band_command(payload: Dict[str, Any]) -> Dict[str, Any]:
         "mode": mode,
         "band": band,
         "enabled": enabled,
-        "band_mode": band_mode,
+        "band_mode": band_mode if has_band_mode else "UNCHANGED",
         "blocks": target_blocks,
         "apply": apply_result,
     }
@@ -214,14 +221,18 @@ def _handle_ws4010_command(raw: str) -> Optional[Dict[str, Any]]:
             "ok": True,
             "type": "command_help",
             "message": "WS4010 set_band examples",
+            "example_one_line": "{\"command\":\"set_band\",\"mode\":\"ft8\",\"block\":\"all\",\"enabled\":false,\"band\":\"20m\",\"band_mode\":\"FT8\"}",
             "examples": [
                 {"command": "set_band", "mode": "ft8", "band": "17m", "enabled": True, "band_mode": "FT8"},
                 {"command": "set_band", "mode": "ft8", "band": "17m", "enabled": False, "band_mode": "FT8"},
+                {"command": "set_band", "mode": "ft8", "band": "17m", "enabled": True},
+                {"command": "set_band", "mode": "ft8", "band": "17m", "enabled": False},
                 {"command": "set_band", "mode": "ft8", "band": "20m", "enabled": True, "band_mode": "FT4 / FT8"},
                 {"command": "set_band", "mode": "phone", "band": "40m", "enabled": True, "band_mode": "SSB"},
             ],
             "notes": [
                 "Commands apply to the current time block only.",
+                "If band_mode is omitted, existing mode settings are preserved.",
                 "Accepted band_mode values: FT4, FT4 / FT8, FT8, WSPR, SSB.",
                 "Band may be ALL or one of 10m..160m.",
             ],
