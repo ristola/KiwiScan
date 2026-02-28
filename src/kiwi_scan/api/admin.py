@@ -145,11 +145,28 @@ def _set_launchd_enabled(enabled: bool) -> dict[str, object]:
     updated = 0
     failed: list[dict[str, str]] = []
 
-    for label in labels:
-        scopes = [f"gui/{uid}/{label}", f"system/{label}"]
+    def _scoped_targets(label: str, plist_path: str | None) -> list[tuple[str, str]]:
+        gui_domain = f"gui/{uid}"
+        system_domain = "system"
+        plist = str(plist_path or "")
+        if plist.startswith(str(Path.home() / "Library" / "LaunchAgents")):
+            return [(gui_domain, f"{gui_domain}/{label}")]
+        if plist.startswith("/Library/LaunchDaemons"):
+            return [(system_domain, f"{system_domain}/{label}")]
+        return [
+            (gui_domain, f"{gui_domain}/{label}"),
+            (system_domain, f"{system_domain}/{label}"),
+        ]
+
+    for item in candidates:
+        label = str(item.get("label") or "").strip()
+        plist = str(item.get("plist") or "").strip()
+        if not label:
+            continue
+        scoped_targets = _scoped_targets(label, plist)
         target_updated = False
         target_failed = 0
-        for scoped in scopes:
+        for _, scoped in scoped_targets:
             try:
                 proc = subprocess.run(
                     ["launchctl", action, scoped],
@@ -173,12 +190,68 @@ def _set_launchd_enabled(enabled: bool) -> dict[str, object]:
         if target_updated:
             updated += 1
 
+    started = 0
+    if enabled:
+        for item in candidates:
+            label = str(item.get("label") or "").strip()
+            plist = str(item.get("plist") or "").strip()
+            if not label:
+                continue
+            scoped_targets = _scoped_targets(label, plist)
+            start_ok = False
+            for domain, scoped in scoped_targets:
+                try:
+                    loaded = subprocess.run(
+                        ["launchctl", "print", scoped],
+                        capture_output=True,
+                        text=True,
+                        timeout=3.0,
+                        check=False,
+                    )
+                except Exception:
+                    loaded = None
+
+                needs_bootstrap = (loaded is None) or (loaded.returncode != 0)
+                if needs_bootstrap and plist:
+                    try:
+                        subprocess.run(
+                            ["launchctl", "bootstrap", domain, plist],
+                            capture_output=True,
+                            text=True,
+                            timeout=4.0,
+                            check=False,
+                        )
+                    except Exception:
+                        pass
+
+                try:
+                    kick = subprocess.run(
+                        ["launchctl", "kickstart", "-k", scoped],
+                        capture_output=True,
+                        text=True,
+                        timeout=4.0,
+                        check=False,
+                    )
+                except Exception as e:
+                    failed.append({"label": label, "scope": scoped, "error": str(e)})
+                    continue
+
+                if kick.returncode == 0:
+                    start_ok = True
+                    break
+                err = (kick.stderr or kick.stdout or "launchctl kickstart failed").strip()
+                failed.append({"label": label, "scope": scoped, "error": err})
+
+            if start_ok:
+                started += 1
+
     return {
         "ok": True,
         "changed": updated > 0,
         "enabled": bool(enabled),
         "labels": labels,
         "updated": int(updated),
+        "started": int(started),
         "failed": failed,
     }
 
