@@ -3421,6 +3421,16 @@
                 const headless = !!data.headless_enabled;
                 const launchdEnabled = !!data.launchd_enabled;
                 const interval = Number(data.interval_s || 0);
+
+                const headlessSel = document.getElementById('cfg_headless_enabled');
+                if (headlessSel) {
+                    headlessSel.value = headless ? 'on' : 'off';
+                }
+                const launchdSel = document.getElementById('cfg_use_launchd');
+                if (launchdSel) {
+                    launchdSel.value = launchdEnabled ? 'on' : 'off';
+                }
+
                 statusEl.textContent = `Loop ${running ? 'running' : 'stopped'} · headless ${headless ? 'on' : 'off'} · Launchd: ${launchdEnabled ? 'Enabled' : 'Disabled'} · env ${envEnabled ? 'on' : 'off'} · ${interval || 0}s`;
                 return data;
             } catch (e) {
