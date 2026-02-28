@@ -40,7 +40,11 @@ def _launchd_candidates() -> list[dict[str, str]]:
                 except Exception:
                     arg_text = ""
             hay = f"{label} {program} {arg_text} {path}".lower()
-            if ("kiwi_scan" not in hay) and ("run_server.sh" not in hay) and ("shackmate" not in hay):
+            if (
+                ("kiwi_scan" not in hay)
+                and ("run_server.sh" not in hay)
+                and ("kiwi-scan-web" not in hay)
+            ):
                 continue
             if label:
                 out[label] = {
