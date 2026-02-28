@@ -379,6 +379,23 @@ async def _broadcast_decodes_4010(payload: Dict) -> None:
                 _decode_ws4010_clients.discard(d)
 
 
+async def _broadcast_ws4010_dashboard(payload: Dict, exclude: WebSocket | None = None) -> None:
+    dead: List[WebSocket] = []
+    text = json.dumps(payload)
+    with _decode_ws4010_lock:
+        ws_list = [ws for ws in _decode_ws4010_dashboard_clients if ws is not exclude]
+    for ws in ws_list:
+        try:
+            await ws.send_text(text)
+        except Exception:
+            dead.append(ws)
+    if dead:
+        with _decode_ws4010_lock:
+            for d in dead:
+                _decode_ws4010_dashboard_clients.discard(d)
+                _decode_ws4010_clients.discard(d)
+
+
 def publish_decode(payload: Dict) -> None:
     """Append payload to the decode buffer and broadcast to WS clients."""
 
@@ -549,6 +566,8 @@ async def websocket_decodes_4010(websocket: WebSocket) -> None:
                 response = _handle_ws4010_command(raw)
                 if response is not None:
                     await websocket.send_text(json.dumps(response))
+                    if str(response.get("type") or "") == "command_ack":
+                        await _broadcast_ws4010_dashboard(response, exclude=websocket)
             except WebSocketDisconnect:
                 break
             except Exception:

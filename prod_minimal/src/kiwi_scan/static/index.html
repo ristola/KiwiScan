@@ -8230,6 +8230,11 @@
                         try {
                             const data = JSON.parse(String(ev.data || ''));
                             if (data && typeof data === 'object') {
+                                if (String(data.type || '').toLowerCase() === 'command_ack') {
+                                    const mode = currentMode();
+                                    fetchSchedule(mode).then(renderSchedule).catch(() => { });
+                                    return;
+                                }
                                 appendDecodeLine(data);
                                 if (typeof data.id === 'number') {
                                     decodeCursor = Math.max(decodeCursor, data.id);
