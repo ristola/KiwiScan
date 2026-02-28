@@ -102,7 +102,7 @@ def _trigger_auto_set_apply(settings: Dict[str, Any], mode: str) -> Dict[str, An
         selected_bands = entry.get("selectedBands") if isinstance(entry, dict) else []
         band_modes = entry.get("bandModes") if isinstance(entry, dict) else {}
         payload = {
-            "enabled": bool(settings.get("autoScanOnBlock", False)),
+            "enabled": True,
             "mode": mode,
             "block": block,
             "selected_bands": selected_bands if isinstance(selected_bands, list) else [],
