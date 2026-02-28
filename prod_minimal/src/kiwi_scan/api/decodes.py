@@ -220,7 +220,29 @@ def _handle_ws4010_command(raw: str) -> Optional[Dict[str, Any]]:
         return {
             "ok": True,
             "type": "command_help",
-            "one_line": "{\"command\":\"set_band\",\"mode\":\"ft8\",\"block\":\"all\",\"enabled\":false,\"band\":\"20m\",\"band_mode\":\"FT8\"}",
+            "message": "Copy/paste one command object below as your WS payload.",
+            "examples": [
+                {
+                    "label": "Enable 20m and set FT8",
+                    "command": {"command": "set_band", "mode": "ft8", "block": "all", "enabled": True, "band": "20m", "band_mode": "FT8"},
+                },
+                {
+                    "label": "Disable 20m without changing mode",
+                    "command": {"command": "set_band", "mode": "ft8", "block": "all", "enabled": False, "band": "20m"},
+                },
+                {
+                    "label": "Enable 20m with FT4 / FT8",
+                    "command": {"command": "set_band", "mode": "ft8", "block": "all", "enabled": True, "band": "20m", "band_mode": "FT4 / FT8"},
+                },
+                {
+                    "label": "Enable 40m SSB in phone mode",
+                    "command": {"command": "set_band", "mode": "phone", "block": "all", "enabled": True, "band": "40m", "band_mode": "SSB"},
+                },
+            ],
+            "notes": [
+                "Commands apply to current time block even if block='all'.",
+                "If band_mode is omitted, existing mode settings are preserved.",
+            ],
         }
 
     text = str(raw or "").strip()
