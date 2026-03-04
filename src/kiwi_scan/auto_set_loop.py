@@ -126,8 +126,9 @@ class AutoSetLoop:
             headless_enabled = self._safe_bool(settings.get("headlessEnabled"), default=True)
             startup_enabled = self._safe_bool(settings.get("autoScanOnStartup"), default=False)
             block_enabled = self._safe_bool(settings.get("autoScanOnBlock"), default=False)
+            wspr_enabled = self._safe_bool(settings.get("autoScanWspr"), default=False)
 
-            should_apply = bool(headless_enabled and block_enabled)
+            should_apply = bool(headless_enabled and (block_enabled or wspr_enabled))
             if startup_enabled and not self._did_startup_apply:
                 should_apply = bool(headless_enabled)
 
@@ -185,6 +186,7 @@ class AutoSetLoop:
             "launchd_preferred": bool(self._safe_bool(settings.get("useLaunchd"), default=False)),
             "auto_scan_on_block": bool(self._safe_bool(settings.get("autoScanOnBlock"), default=False)),
             "auto_scan_on_startup": bool(self._safe_bool(settings.get("autoScanOnStartup"), default=False)),
+            "auto_scan_wspr": bool(self._safe_bool(settings.get("autoScanWspr"), default=False)),
             "last_run_ts": last_run_ts,
             "last_success_ts": last_success_ts,
             "last_error": last_error,
