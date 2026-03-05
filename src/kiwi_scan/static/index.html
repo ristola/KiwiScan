@@ -6815,8 +6815,12 @@
                 const cb = document.getElementById(`use_${currentMode()}_${band}`);
                 const isSelected = cb ? !!cb.checked : selected.has(band);
                 const hasRuntimeAssignment = !!receiverAssignments[band];
+                const runtimeMode = String(runtimeBandModeDisplay[band] || '').trim().toUpperCase();
                 const rxMain = cell.querySelector('.schedule-rx-main') || cell;
-                const rxLabel = (isSelected || hasRuntimeAssignment) ? (receiverAssignments[band] || '') : '';
+                let rxLabel = (isSelected || hasRuntimeAssignment) ? (receiverAssignments[band] || '') : '';
+                if (!rxLabel && runtimeMode === 'WSPR') {
+                    rxLabel = 'WSPR active';
+                }
                 rxMain.textContent = rxLabel || '—';
                 rxMain.classList.remove('is-warn', 'is-error');
                 rxMain.removeAttribute('title');
@@ -7055,7 +7059,11 @@
                 const tdRx = document.createElement('td');
                 tdRx.dataset.rxBand = b;
                 const hasRuntimeAssignment = !!receiverAssignments[b];
+                const runtimeMode = String(runtimeBandModeDisplay[b] || '').trim().toUpperCase();
                 let rxLabel = (selected.has(b) || hasRuntimeAssignment) ? (receiverAssignments[b] || '') : '';
+                if (!rxLabel && runtimeMode === 'WSPR') {
+                    rxLabel = 'WSPR active';
+                }
                 const rxMain = document.createElement('div');
                 rxMain.className = 'schedule-rx-main';
                 rxMain.textContent = rxLabel || '—';
