@@ -201,7 +201,7 @@ def print_decode_details(container: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke-test the KiwiScan Docker container.")
     parser.add_argument("--container", default="kiwiscan")
-    parser.add_argument("--expected-image", default="n4ldr/kiwiscan:0.1.6")
+    parser.add_argument("--expected-image", default="n4ldr/kiwiscan:0.1.7")
     parser.add_argument("--version-url", default="http://127.0.0.1:4020/version")
     parser.add_argument("--http-timeout", type=float, default=10.0)
     parser.add_argument("--expected-max-size", default="10m")

@@ -125,9 +125,14 @@ RESTART_DELAY_S="${RESTART_DELAY_S:-2}"
 ALWAYS_RESTART="${ALWAYS_RESTART:-0}"
 NO_RESTART="${NO_RESTART:-0}"
 AUTO_RELOAD="${AUTO_RELOAD:-0}"
+DOCS_URL="https://github.com/ristola/KiwiScan#docker"
+INSTALL_URL="https://github.com/ristola/KiwiScan/blob/main/INSTALL.md"
 
 echo "Starting uvicorn using: $VENV_PY (app-dir=$APP_DIR, port=$PORT)"
 echo "Tip: see $ROOT_DIR/.env.example for preferred .venv-py3 activation and common run/test commands."
+echo "Docs: $DOCS_URL"
+echo "Install guide: $INSTALL_URL"
+echo "Web UI: http://localhost:$PORT"
 
 while true; do
   if false && lsof -ti tcp:"$PORT" >/dev/null 2>&1; then

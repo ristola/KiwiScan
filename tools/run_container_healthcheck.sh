@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 export PATH="/usr/local/bin:/opt/homebrew/bin:/Applications/Docker.app/Contents/Resources/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
 
 CONTAINER_NAME="${CONTAINER_NAME:-kiwiscan}"
-EXPECTED_IMAGE="${EXPECTED_IMAGE:-n4ldr/kiwiscan:0.1.6}"
+EXPECTED_IMAGE="${EXPECTED_IMAGE:-n4ldr/kiwiscan:0.1.7}"
 VERSION_URL="${VERSION_URL:-http://127.0.0.1:4020/version}"
 EXPECTED_MAX_SIZE="${EXPECTED_MAX_SIZE:-10m}"
 EXPECTED_MAX_FILE="${EXPECTED_MAX_FILE:-5}"

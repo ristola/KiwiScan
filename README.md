@@ -2,6 +2,28 @@
 
 Minimal starter for a KiWi SDR scanning/monitoring utility.
 
+## Docker Quick Start
+
+Start from the published Docker image:
+
+```zsh
+docker run -d --name kiwiscan --pull always --restart unless-stopped --platform linux/amd64 \
+	-p 4010:4010/tcp \
+	-p 4010:4010/udp \
+	-p 4020:4020 \
+	-v kiwiscan-config:/opt/kiwiscan/config \
+	-v kiwiscan-outputs:/opt/kiwiscan/outputs \
+	n4ldr/kiwiscan:0.1.7
+```
+
+Then open:
+
+```text
+http://localhost:4020
+```
+
+Full Docker steps and verification are below in the Docker section. Install guide: https://github.com/ristola/KiwiScan/blob/main/INSTALL.md
+
 ## Install now
 
 - Install guide (share this URL): https://github.com/ristola/KiwiScan/blob/main/INSTALL.md
@@ -52,25 +74,80 @@ Docker Hub image:
 https://hub.docker.com/r/n4ldr/kiwiscan
 ```
 
-Pull and run the published container:
+New user Docker quick start:
 
-```zsh
-docker pull n4ldr/kiwiscan:0.1.6
-docker run --rm --name kiwiscan-test \
+1. Install Docker Desktop or Docker Engine and confirm Docker is running.
+
+	```zsh
+	docker version
+	```
+
+2. Start KiwiScan with the published image.
+
+	```zsh
+	docker run -d --name kiwiscan --pull always --restart unless-stopped --platform linux/amd64 \
 	-p 4010:4010/tcp \
 	-p 4010:4010/udp \
 	-p 4020:4020 \
-	-e PORT=4020 \
-	-e TZ=America/New_York \
-	-e AUTO_SETUP=0 \
-	-e AUTO_RELOAD=0 \
-	-e NO_RESTART=1 \
-	-e KIWI_SCAN_WS4010=1 \
-	-e KIWI_SCAN_UDP4010=1 \
-	n4ldr/kiwiscan:0.1.6
+	-v kiwiscan-config:/opt/kiwiscan/config \
+	-v kiwiscan-outputs:/opt/kiwiscan/outputs \
+	n4ldr/kiwiscan:0.1.7
+	```
+
+3. Open the web UI.
+
+	```text
+	http://localhost:4020
+	```
+
+4. Check startup logs.
+
+	```zsh
+	docker logs --tail 50 kiwiscan
+	```
+
+5. Inspect the saved config after first startup.
+
+	```zsh
+	docker run --rm -v kiwiscan-outputs:/data alpine cat /data/config.json
+	```
+
+If you started the container from an empty folder and nothing appeared there, that is expected: the command above uses Docker named volumes, not files in the current directory.
+
+Use this version instead when you want KiwiScan to save `config` and `outputs` directly in the folder you run it from:
+
+```zsh
+mkdir -p config outputs
+
+docker run -d --name kiwiscan --pull always --restart unless-stopped --platform linux/amd64 \
+	-p 4010:4010/tcp \
+	-p 4010:4010/udp \
+	-p 4020:4020 \
+	-v "$PWD/config:/opt/kiwiscan/config" \
+	-v "$PWD/outputs:/opt/kiwiscan/outputs" \
+	n4ldr/kiwiscan:0.1.7
 ```
 
+With that folder-backed version, your saved config will be written to `./outputs/config.json`.
+
+Ports exposed by that command:
+
+- `4020/tcp`: main web UI and HTTP API
+- `4010/tcp`: legacy WebSocket decode stream
+- `4010/udp`: UDP decode publisher
+
+Docker pulls the image automatically on first run, so a separate `docker pull` is not required.
+
 On first container startup, `docker run` does not read this repo's `docker-compose.yml`. If the persisted Kiwi host is still unset (`0.0.0.0`) or still on the legacy baked-in default (`192.168.1.93`), the container auto-discovers a Kiwi on the LAN, saves it to `outputs/config.json`, and then starts the headless auto-set loop with that discovered host.
+
+Useful container commands:
+
+```zsh
+docker ps
+docker stop kiwiscan
+docker start kiwiscan
+docker rm -f kiwiscan
+```
 
 Build and run the web app container locally:
 

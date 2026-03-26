@@ -1,6 +1,6 @@
 services:
   kiwiscan:
-    image: n4ldr/kiwiscan:0.1.6
+    image: n4ldr/kiwiscan:0.1.7
     pull_policy: always
     container_name: kiwiscan
     platform: linux/amd64
