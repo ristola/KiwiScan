@@ -56,7 +56,7 @@ class DiscoveryManager:
         # Small pause between retunes (seconds). Lower = faster sweeps.
         self.retune_pause_s = 1.0
         # default Kiwi host (override via /config or env var)
-        self.host = "192.168.1.93"
+        self.host = "0.0.0.0"
         self.port = 8073
         # Disable debug logging by default; enable via /config if needed
         self.debug = False

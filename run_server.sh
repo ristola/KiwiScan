@@ -23,6 +23,11 @@ acquire_single_instance_lock() {
     prior_pid="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
   fi
 
+  if [ -n "$prior_pid" ] && [ "$prior_pid" = "$$" ]; then
+    echo "$$" > "$LOCK_DIR/pid" 2>/dev/null || true
+    return 0
+  fi
+
   if [ -n "$prior_pid" ] && kill -0 "$prior_pid" 2>/dev/null; then
     echo "Another run_server.sh supervisor is already running (pid $prior_pid); exiting." >&2
     exit 0
@@ -125,7 +130,7 @@ echo "Starting uvicorn using: $VENV_PY (app-dir=$APP_DIR, port=$PORT)"
 echo "Tip: see $ROOT_DIR/.env.example for preferred .venv-py3 activation and common run/test commands."
 
 while true; do
-  if lsof -ti tcp:"$PORT" >/dev/null 2>&1; then
+  if false && lsof -ti tcp:"$PORT" >/dev/null 2>&1; then
     echo "Port $PORT is in use; stopping existing server..." >&2
     pids=$(lsof -ti tcp:"$PORT" 2>/dev/null || true)
     if [ -n "$pids" ]; then
@@ -136,7 +141,7 @@ while true; do
         fi
         sleep 0.4
       done
-      if lsof -ti tcp:"$PORT" >/dev/null 2>&1; then
+      if false && lsof -ti tcp:"$PORT" >/dev/null 2>&1; then
         echo "Port $PORT still busy; forcing stop." >&2
         kill -9 $pids >/dev/null 2>&1 || true
       fi

@@ -15,7 +15,7 @@ from collections import deque
 from importlib.metadata import PackageNotFoundError, version as package_version
 from typing import Dict, List, Optional
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request as UrlRequest, urlopen
 
 try:
     import tomllib  # type: ignore[attr-defined]
@@ -154,10 +154,37 @@ def _safe_update_target() -> tuple[str, str]:
     return repo, branch
 
 
+def _safe_docker_update_repo() -> str:
+    repo = str(os.environ.get("KIWISCAN_DOCKER_REPO", "n4ldr/kiwiscan") or "n4ldr/kiwiscan").strip()
+    if not re.match(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", repo):
+        repo = "n4ldr/kiwiscan"
+    return repo
+
+
+def _update_mode() -> str:
+    requested = str(os.environ.get("KIWISCAN_UPDATE_MODE", "") or "").strip().lower()
+    if requested in {"host", "container"}:
+        return requested
+    try:
+        if Path("/.dockerenv").exists():
+            return "container"
+    except Exception:
+        pass
+    try:
+        cgroup = Path("/proc/1/cgroup")
+        if cgroup.exists():
+            raw = cgroup.read_text(encoding="utf-8", errors="ignore").lower()
+            if any(token in raw for token in ("docker", "containerd", "kubepods", "podman")):
+                return "container"
+    except Exception:
+        pass
+    return "host"
+
+
 def _fetch_latest_commit(repo: str, branch: str) -> str:
     url = f"https://api.github.com/repos/{repo}/commits/{branch}"
-    req_headers = {"User-Agent": "kiwi-scan-updater"}
-    with urlopen(url, timeout=4.0) as resp:  # nosec - trusted GitHub API endpoint
+    req = UrlRequest(url, headers={"User-Agent": "kiwi-scan-updater"})
+    with urlopen(req, timeout=4.0) as resp:  # nosec - trusted GitHub API endpoint
         raw = resp.read(512 * 1024).decode("utf-8", errors="ignore")
     data = json.loads(raw)
     sha = str(data.get("sha") or "").strip()
@@ -190,32 +217,79 @@ def _normalize_version(value: str | None) -> str:
     return text
 
 
-def _is_version_newer(latest: str | None, current: str | None) -> bool:
-    latest_norm = _normalize_version(latest)
-    current_norm = _normalize_version(current)
-    if not latest_norm or not current_norm or current_norm == "unknown":
-        return False
+def _compare_versions(left: str | None, right: str | None) -> int:
+    left_norm = _normalize_version(left)
+    right_norm = _normalize_version(right)
+    if not left_norm and not right_norm:
+        return 0
+    if not left_norm:
+        return -1
+    if not right_norm:
+        return 1
 
     token_re = re.compile(r"[.-]")
-    l_tokens = token_re.split(latest_norm)
-    c_tokens = token_re.split(current_norm)
+    left_tokens = token_re.split(left_norm)
+    right_tokens = token_re.split(right_norm)
 
     def to_key(token: str) -> tuple[int, int | str]:
-        t = str(token or "").strip()
-        if t.isdigit():
-            return (1, int(t))
-        return (0, t.lower())
+        text = str(token or "").strip()
+        if text.isdigit():
+            return (1, int(text))
+        return (0, text.lower())
 
-    max_len = max(len(l_tokens), len(c_tokens))
+    max_len = max(len(left_tokens), len(right_tokens))
     for idx in range(max_len):
-        l = l_tokens[idx] if idx < len(l_tokens) else "0"
-        c = c_tokens[idx] if idx < len(c_tokens) else "0"
-        lk = to_key(l)
-        ck = to_key(c)
-        if lk == ck:
+        left_key = to_key(left_tokens[idx] if idx < len(left_tokens) else "0")
+        right_key = to_key(right_tokens[idx] if idx < len(right_tokens) else "0")
+        if left_key == right_key:
             continue
-        return lk > ck
-    return False
+        return 1 if left_key > right_key else -1
+    return 0
+
+
+def _is_version_newer(latest: str | None, current: str | None) -> bool:
+    current_norm = _normalize_version(current)
+    if not current_norm or current_norm == "unknown":
+        return False
+    return _compare_versions(latest, current) > 0
+
+
+def _fetch_latest_container_version(repo: str) -> str:
+    url = f"https://hub.docker.com/v2/repositories/{repo}/tags?page_size=100"
+    best = ""
+    seen: set[str] = set()
+    while url:
+        req = UrlRequest(url, headers={"User-Agent": "kiwi-scan-updater"})
+        with urlopen(req, timeout=4.0) as resp:  # nosec - trusted Docker Hub API endpoint
+            raw = resp.read(512 * 1024).decode("utf-8", errors="ignore")
+        data = json.loads(raw)
+        results = data.get("results") if isinstance(data, dict) else []
+        if not isinstance(results, list):
+            results = []
+        for row in results:
+            if not isinstance(row, dict):
+                continue
+            name = _normalize_version(str(row.get("name") or ""))
+            if not name or name == "latest" or name in seen:
+                continue
+            seen.add(name)
+            if not re.match(r"^\d+\.\d+\.\d+(?:[.-][0-9A-Za-z]+)*$", name):
+                continue
+            if not best or _compare_versions(name, best) > 0:
+                best = name
+        next_url = data.get("next") if isinstance(data, dict) else None
+        url = str(next_url).strip() if next_url else ""
+        if len(seen) >= 500:
+            break
+    return best
+
+
+def _manual_container_update_command(repo: str, version: str) -> str:
+    next_ref = f"{repo}:{version}" if version else f"{repo}:<version>"
+    return (
+        f"Edit docker-compose.yml to use image: {next_ref}, "
+        "then run: docker compose pull && docker compose up -d"
+    )
 
 
 def _background_apply_update(repo: str, branch: str) -> None:
@@ -257,9 +331,42 @@ def _background_apply_update(repo: str, branch: str) -> None:
 
 @app.get("/update/check")
 def check_update() -> Dict[str, object]:
-    repo, branch = _safe_update_target()
+    mode = _update_mode()
     current_version = _resolve_app_version()
     current_commit = str(_resolve_git_commit() or "")
+
+    if mode == "container":
+        docker_repo = _safe_docker_update_repo()
+        latest_version = ""
+        latest_error = ""
+        try:
+            latest_version = _fetch_latest_container_version(docker_repo)
+        except (URLError, TimeoutError) as exc:
+            latest_error = f"network: {exc}"
+        except Exception as exc:
+            latest_error = str(exc)
+
+        update_available = bool(latest_version and _is_version_newer(latest_version, current_version))
+        return {
+            "deployment_mode": mode,
+            "update_source": "docker_hub",
+            "docker_repo": docker_repo,
+            "current_version": current_version,
+            "latest_version": latest_version,
+            "current_commit": current_commit,
+            "latest_commit": "",
+            "update_by_commit": False,
+            "update_by_version": bool(update_available),
+            "update_by_unknown_commit": False,
+            "update_available": bool(update_available),
+            "update_in_progress": False,
+            "apply_supported": False,
+            "manual_update_required": True,
+            "manual_update_command": _manual_container_update_command(docker_repo, latest_version),
+            "error": latest_error,
+        }
+
+    repo, branch = _safe_update_target()
     latest_commit = ""
     latest_version = ""
     latest_error = ""
@@ -288,6 +395,8 @@ def check_update() -> Dict[str, object]:
     )
     update_available = bool(by_commit or by_version or by_unknown_commit)
     return {
+        "deployment_mode": mode,
+        "update_source": "github",
         "repo": repo,
         "branch": branch,
         "current_version": current_version,
@@ -299,6 +408,9 @@ def check_update() -> Dict[str, object]:
         "update_by_unknown_commit": by_unknown_commit,
         "update_available": update_available,
         "update_in_progress": bool(_update_in_progress),
+        "apply_supported": True,
+        "manual_update_required": False,
+        "manual_update_command": "",
         "error": latest_error,
     }
 
@@ -306,6 +418,25 @@ def check_update() -> Dict[str, object]:
 @app.post("/update/apply")
 def apply_update() -> Dict[str, object]:
     global _update_in_progress
+    mode = _update_mode()
+    if mode == "container":
+        docker_repo = _safe_docker_update_repo()
+        latest_version = ""
+        try:
+            latest_version = _fetch_latest_container_version(docker_repo)
+        except Exception:
+            latest_version = ""
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Container deployments require a manual image-tag update and redeploy.",
+                "deployment_mode": mode,
+                "docker_repo": docker_repo,
+                "latest_version": latest_version,
+                "manual_update_command": _manual_container_update_command(docker_repo, latest_version),
+            },
+        )
+
     repo, branch = _safe_update_target()
     with _update_lock:
         if _update_in_progress:
@@ -455,9 +586,10 @@ def _resolve_binary_path(binary_name: str, candidates: List[Path]) -> Path:
 _FT8MODEM_PATH = _resolve_binary_path(
     "ft8modem",
     [
-        Path(__file__).resolve().parents[3] / "ft8modem" / "ft8modem",
         Path("/usr/local/bin/ft8modem"),
         Path("/opt/homebrew/bin/ft8modem"),
+        Path(__file__).resolve().parents[2] / "vendor" / "ft8modem-sm" / "ft8modem",
+        Path(__file__).resolve().parents[3] / "ft8modem" / "ft8modem",
         Path(__file__).resolve().parents[2] / "ft8modem" / "ft8modem",
     ]
 )
@@ -467,6 +599,7 @@ _AF2UDP_PATH = _resolve_binary_path(
     [
         Path("/usr/local/bin/af2udp"),
         Path("/opt/homebrew/bin/af2udp"),
+        Path(__file__).resolve().parents[2] / "vendor" / "ft8modem-sm" / "af2udp",
         Path(__file__).resolve().parents[3] / "ft8modem" / "af2udp",
         Path(__file__).resolve().parents[2] / "ft8modem" / "af2udp",
     ]

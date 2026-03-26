@@ -18,6 +18,7 @@ from fastapi import APIRouter, WebSocket
 from fastapi.websockets import WebSocketDisconnect
 
 from ..scheduler import block_for_hour, expected_schedule_by_season, season_for_date
+from ..udp4010_server import publish_udp4010
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,50 @@ def _blocks_for_mode(mode: str, block: str) -> List[str]:
     return dedup
 
 
+def _block_sort_key(block_key: object) -> tuple[int, int] | None:
+    raw = str(block_key or "").strip()
+    m = re.match(r"^(\d{2})-(\d{2})$", raw)
+    if not m:
+        return None
+    try:
+        start = int(m.group(1))
+        end = int(m.group(2))
+    except Exception:
+        return None
+    if not (0 <= start <= 24 and 0 <= end <= 24):
+        return None
+    return start, end
+
+
+def _fallback_profile_entry(by_mode: dict, block_key: str) -> tuple[str, dict] | tuple[None, None]:
+    exact = by_mode.get(str(block_key))
+    if isinstance(exact, dict):
+        return str(block_key), exact
+
+    target_key = _block_sort_key(block_key)
+    if target_key is None:
+        return None, None
+
+    ordered: list[tuple[int, str, dict]] = []
+    for candidate_key, candidate_entry in by_mode.items():
+        if not isinstance(candidate_entry, dict):
+            continue
+        sort_key = _block_sort_key(candidate_key)
+        if sort_key is None:
+            continue
+        ordered.append((sort_key[0], str(candidate_key), candidate_entry))
+    if not ordered:
+        return None, None
+
+    ordered.sort(key=lambda item: item[0])
+    target_start = target_key[0]
+    prior = [(candidate_key, entry) for start, candidate_key, entry in ordered if start <= target_start]
+    if prior:
+        return prior[-1]
+    _, candidate_key, entry = ordered[-1]
+    return candidate_key, entry
+
+
 def _trigger_auto_set_apply(settings: Dict[str, Any], mode: str) -> Dict[str, Any]:
     try:
         now = datetime.now().astimezone()
@@ -133,6 +178,11 @@ def _trigger_auto_set_apply(settings: Dict[str, Any], mode: str) -> Dict[str, An
                     selected_block = candidate
                     entry = candidate_entry
                     break
+            if not entry:
+                fallback_block, fallback_entry = _fallback_profile_entry(by_mode, block)
+                if isinstance(fallback_entry, dict) and fallback_block:
+                    selected_block = str(fallback_block)
+                    entry = fallback_entry
 
         selected_bands = entry.get("selectedBands") if isinstance(entry, dict) else []
         band_modes = entry.get("bandModes") if isinstance(entry, dict) else {}
@@ -949,6 +999,11 @@ def publish_decode(payload: Dict) -> None:
             asyncio.run_coroutine_threadsafe(_broadcast_decodes_4010(payload), loop_4010)
         except Exception:
             logger.debug("decode WS4010 broadcast failed", exc_info=True)
+
+    try:
+        publish_udp4010(payload)
+    except Exception:
+        logger.debug("decode UDP4010 broadcast failed", exc_info=True)
 
 
 def decode_callback(event: Dict) -> None:

@@ -1,0 +1,15 @@
+.git
+.github
+.pytest_cache
+.ruff_cache
+.mypy_cache
+__pycache__/
+*.pyc
+.venv/
+.venv-py3/
+logs/
+outputs/
+prod_minimal/
+tests/
+tools/
+nohup.out

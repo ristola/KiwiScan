@@ -22,6 +22,11 @@ acquire_single_instance_lock() {
     prior_pid="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
   fi
 
+  if [ -n "$prior_pid" ] && [ "$prior_pid" = "$$" ]; then
+    echo "$$" > "$LOCK_DIR/pid" 2>/dev/null || true
+    return 0
+  fi
+
   if [ -n "$prior_pid" ] && kill -0 "$prior_pid" 2>/dev/null; then
     echo "Another run_server.sh supervisor is already running (pid $prior_pid); exiting." >&2
     exit 0

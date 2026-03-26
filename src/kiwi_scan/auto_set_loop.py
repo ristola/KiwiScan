@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import json
 import logging
 import os
@@ -10,6 +11,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict
 
+from .scheduler import block_for_hour
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,6 +21,8 @@ class AutoSetLoop:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._did_startup_apply = False
+        self._last_schedule_key: tuple[str, str] | None = None
+        self._last_apply_signature: str | None = None
         self._state_lock = threading.Lock()
         self._last_run_ts: float | None = None
         self._last_success_ts: float | None = None
@@ -107,6 +112,49 @@ class AutoSetLoop:
             },
         }
 
+    @staticmethod
+    def _current_schedule_key(settings: Dict[str, Any]) -> tuple[str, str]:
+        mode = str(settings.get("autoScanMode") or "ft8").strip().lower()
+        if mode not in {"ft8", "phone"}:
+            mode = "ft8"
+        local_dt = datetime.now().astimezone()
+        return mode, block_for_hour(local_dt.hour, mode=mode)
+
+    @staticmethod
+    def _apply_signature(settings: Dict[str, Any], schedule_key: tuple[str, str]) -> str:
+        relevant = {
+            "schedule_key": [str(schedule_key[0]), str(schedule_key[1])],
+            "autoScanMode": settings.get("autoScanMode"),
+            "autoScanWspr": settings.get("autoScanWspr"),
+            "bandHopSeconds": settings.get("bandHopSeconds"),
+            "wsprStartBand": settings.get("wsprStartBand"),
+            "ssbEnabled": settings.get("ssbEnabled"),
+            "ssbThresholdDb": settings.get("ssbThresholdDb"),
+            "ssbAdaptiveThreshold": settings.get("ssbAdaptiveThreshold"),
+            "ssbUseKiwiSnr": settings.get("ssbUseKiwiSnr"),
+            "ssbWaitS": settings.get("ssbWaitS"),
+            "ssbDwellS": settings.get("ssbDwellS"),
+            "ssbTailS": settings.get("ssbTailS"),
+            "ssbStepStrategy": settings.get("ssbStepStrategy"),
+            "ssbStepKHz": settings.get("ssbStepKHz"),
+            "ssbSideband": settings.get("ssbSideband"),
+            "scheduleProfiles": settings.get("scheduleProfiles"),
+        }
+        return json.dumps(relevant, sort_keys=True, separators=(",", ":"))
+
+    @staticmethod
+    def _wspr_hop_due(settings: Dict[str, Any]) -> bool:
+        if not AutoSetLoop._safe_bool(settings.get("autoScanWspr"), default=False):
+            return False
+        state = settings.get("wsprHopState")
+        if not isinstance(state, dict):
+            return False
+        try:
+            next_hop_unix = float(state.get("next_hop_unix") or 0.0)
+        except Exception:
+            return False
+        return next_hop_unix > 0.0 and time.time() >= next_hop_unix
+
     def _post_auto_set(self, payload: Dict[str, Any]) -> None:
         body = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
@@ -124,23 +172,34 @@ class AutoSetLoop:
         while not self._stop.is_set():
             settings = self._load_settings()
             headless_enabled = self._safe_bool(settings.get("headlessEnabled"), default=True)
-            startup_enabled = self._safe_bool(settings.get("autoScanOnStartup"), default=False)
-            block_enabled = self._safe_bool(settings.get("autoScanOnBlock"), default=False)
-            wspr_enabled = self._safe_bool(settings.get("autoScanWspr"), default=False)
+            schedule_key = self._current_schedule_key(settings)
+            apply_signature = self._apply_signature(settings, schedule_key)
 
-            should_apply = bool(headless_enabled and (block_enabled or wspr_enabled))
-            if startup_enabled and not self._did_startup_apply:
-                should_apply = bool(headless_enabled)
+            if not headless_enabled:
+                self._did_startup_apply = False
+                self._last_schedule_key = None
+                self._last_apply_signature = None
+                self._stop.wait(interval_s)
+                continue
+
+            should_apply = bool(
+                (not self._did_startup_apply)
+                or self._last_schedule_key != schedule_key
+                or self._last_apply_signature != apply_signature
+                or self._wspr_hop_due(settings)
+            )
 
             if should_apply:
                 with self._state_lock:
                     self._last_run_ts = time.time()
                 try:
                     self._post_auto_set(self._build_payload(settings))
+                    self._last_schedule_key = schedule_key
+                    self._last_apply_signature = apply_signature
                     with self._state_lock:
                         self._last_success_ts = time.time()
                         self._last_error = None
-                    if startup_enabled and not self._did_startup_apply:
+                    if not self._did_startup_apply:
                         self._did_startup_apply = True
                 except urllib.error.HTTPError as e:
                     with self._state_lock:

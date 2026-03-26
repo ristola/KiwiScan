@@ -92,7 +92,10 @@ def make_router() -> APIRouter:
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail="Settings must be a JSON object")
         with _lock:
-            _save_settings(_with_defaults(payload))
+            current = _load_settings()
+            merged = _with_defaults(current)
+            merged.update(payload)
+            _save_settings(_with_defaults(merged))
         return {"status": "ok"}
 
     return router

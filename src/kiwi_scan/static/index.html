@@ -720,6 +720,8 @@
 
         .schedule-rx-main {
             display: inline-block;
+            white-space: pre-line;
+            line-height: 1.28;
         }
 
         .schedule-rx-main.is-warn {
@@ -1036,7 +1038,7 @@
             right: 2px;
             left: auto;
             transform: none;
-            width: 24px;
+            width: auto;
             height: 24px;
             border-radius: 999px;
             border: 1px solid #9ca3af;
@@ -1045,7 +1047,11 @@
             font-size: 0.82em;
             font-weight: 700;
             line-height: 1;
-            padding: 0;
+            padding: 0 10px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            white-space: nowrap;
             z-index: 3;
         }
 
@@ -2081,7 +2087,7 @@
                 <div id="decode_panel" class="decode-panel">
                     <div class="decode-header">
                         <button id="decode_panel_toggle" class="decode-slide-toggle" type="button" aria-expanded="true"
-                            title="Hide decoder window">▶</button>
+                            title="Hide decoder window">HIDE</button>
                         Decodes
                         <span id="decode_stream_status" class="stream-status"></span>
                     </div>
@@ -2119,7 +2125,7 @@
                     <div class="config-title">Station</div>
                     <div class="config-row">
                         <label>KiwiSDR IP</label>
-                        <input id="cfg_host" type="text" placeholder="192.168.1.93" />
+                        <input id="cfg_host" type="text" placeholder="0.0.0.0" />
                     </div>
                     <div class="config-row">
                         <label>KiwiSDR Port</label>
@@ -2539,8 +2545,10 @@
         let currentBlock = null;
         let lastCurrentBlock = null;
         let viewedBlock = null;
+        let followCurrentScheduleBlock = true;
         let autoSetInProgress = false;
         let autoSetRequestId = 0;
+        let lastAppliedAutoSetSignature = '';
         let receiverAssignments = {};
         let lastScheduleData = null;
         let lastScheduleByMode = {};
@@ -3201,10 +3209,66 @@
             wsprCountdownTimer = setInterval(updateWsprCountdown, 1000);
         }
 
+        let localTimeWallClockBaseMs = null;
+        let localTimeWallClockSyncMs = null;
+
+        function parseIsoWallClockMs(value) {
+            const raw = String(value || '').trim();
+            const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?/);
+            if (!m) return null;
+            const millis = m[7] ? Number(String(m[7]).padEnd(3, '0')) : 0;
+            return Date.UTC(
+                Number(m[1]),
+                Number(m[2]) - 1,
+                Number(m[3]),
+                Number(m[4]),
+                Number(m[5]),
+                Number(m[6]),
+                millis,
+            );
+        }
+
+        function formatWallClockMs(ms) {
+            const d = new Date(ms);
+            const month = d.getUTCMonth() + 1;
+            const day = d.getUTCDate();
+            const year = d.getUTCFullYear();
+            let hour = d.getUTCHours();
+            const minute = String(d.getUTCMinutes()).padStart(2, '0');
+            const second = String(d.getUTCSeconds()).padStart(2, '0');
+            const ampm = hour >= 12 ? 'PM' : 'AM';
+            hour = hour % 12;
+            if (hour === 0) hour = 12;
+            return `${month}/${day}/${year}, ${hour}:${minute}:${second} ${ampm}`;
+        }
+
+        function syncLocalTimeFromServer(value) {
+            const wallClockMs = parseIsoWallClockMs(value);
+            if (!Number.isFinite(wallClockMs)) {
+                localTimeWallClockBaseMs = null;
+                localTimeWallClockSyncMs = null;
+                return;
+            }
+            localTimeWallClockBaseMs = wallClockMs;
+            localTimeWallClockSyncMs = Date.now();
+        }
+
+        function getSynchronizedLocalDate() {
+            if (Number.isFinite(localTimeWallClockBaseMs) && Number.isFinite(localTimeWallClockSyncMs)) {
+                const elapsedMs = Date.now() - localTimeWallClockSyncMs;
+                return new Date(localTimeWallClockBaseMs + elapsedMs);
+            }
+            return new Date();
+        }
+
         function updateLocalTimeNow() {
             const lt = document.getElementById('local_time');
             const chip = document.getElementById('local_time_chip');
-            const text = `Local: ${new Date().toLocaleString()}`;
+            const now = getSynchronizedLocalDate();
+            const displayValue = (Number.isFinite(localTimeWallClockBaseMs) && Number.isFinite(localTimeWallClockSyncMs))
+                ? formatWallClockMs(now.getTime())
+                : now.toLocaleString();
+            const text = `Local: ${displayValue}`;
             if (lt) lt.textContent = text;
             if (chip) chip.textContent = text;
             maybeSwitchScheduleForCurrentTime();
@@ -3213,7 +3277,7 @@
         function setReceiverRuntimeSyncLabel(when, source = '') {
             const el = document.getElementById('receiver_runtime_sync');
             if (!el) return;
-            const ts = (when instanceof Date && !Number.isNaN(when.getTime())) ? when : new Date();
+            const ts = (when instanceof Date && !Number.isNaN(when.getTime())) ? when : getSynchronizedLocalDate();
             const src = String(source || '').trim();
             if (src) {
                 el.textContent = `live: ${ts.toLocaleTimeString()} (${src})`;
@@ -3283,6 +3347,7 @@
 
         function handleModeChange() {
             viewedBlock = null;
+            followCurrentScheduleBlock = true;
             clearAllWsprOverrides();
             const mode = currentMode();
             if (lastScheduleByMode[mode]) {
@@ -3302,12 +3367,15 @@
             const idx = Math.max(0, blocks.indexOf(viewedBlock || currentBlock));
             if (direction === 'now') {
                 viewedBlock = currentBlock;
+                followCurrentScheduleBlock = true;
                 // WSPR is a temporary override, not a stored per-block mode.
                 // Clicking "Now" should restore the previously stored mode.
                 clearAllWsprOverrides();
             } else if (direction === 'prev') {
+                followCurrentScheduleBlock = false;
                 viewedBlock = blocks[(idx - 1 + blocks.length) % blocks.length];
             } else if (direction === 'next') {
+                followCurrentScheduleBlock = false;
                 viewedBlock = blocks[(idx + 1) % blocks.length];
             }
             const blockLabel = document.getElementById('block_label');
@@ -3361,8 +3429,9 @@
         let lastAutoScheduleMode = null;
         let lastAutoScheduleBlock = null;
 
-        function currentScheduleBlockForNow(mode, now = new Date()) {
-            const hour = Number(now.getHours());
+        function currentScheduleBlockForNow(mode, now = null) {
+            const activeNow = (now instanceof Date && !Number.isNaN(now.getTime())) ? now : getSynchronizedLocalDate();
+            const hour = Number(activeNow.getHours());
             if (!Number.isFinite(hour)) return null;
             const blocks = blocksForMode(mode);
             for (const block of blocks) {
@@ -3387,7 +3456,11 @@
 
             lastAutoScheduleMode = mode;
             lastAutoScheduleBlock = nowBlock;
-            viewedBlock = nowBlock;
+
+            if (followCurrentScheduleBlock || viewedBlock === null || viewedBlock === lastCurrentBlock) {
+                viewedBlock = nowBlock;
+                followCurrentScheduleBlock = true;
+            }
 
             fetchSchedule(mode)
                 .then((s) => renderSchedule(s, true))
@@ -5787,7 +5860,7 @@
             }
         }
 
-        async function saveAutomationSettingsToServer(settings) {
+        async function saveAutomationSettingsToServer(settings, options = {}) {
             try {
                 const resp = await fetch('/automation/settings', {
                     method: 'POST',
@@ -5796,6 +5869,10 @@
                 });
                 if (!resp.ok) {
                     return { ok: false, error: `HTTP ${resp.status}` };
+                }
+                const applyHeadlessNow = !!(options && options.applyHeadlessNow);
+                if (applyHeadlessNow && settings && settings.headlessEnabled !== false) {
+                    await applyAutoSet();
                 }
                 return { ok: true };
             } catch (e) {
@@ -5839,7 +5916,7 @@
                 uiDensity: readUiDensity(),
             };
             saveAutomationSettings(nextAutomation);
-            const result = await saveAutomationSettingsToServer(nextAutomation);
+            const result = await saveAutomationSettingsToServer(nextAutomation, { applyHeadlessNow: false });
             if (!result || result.ok !== true) {
                 throw new Error((result && result.error) ? String(result.error) : 'save failed');
             }
@@ -5989,7 +6066,7 @@
                         : {},
                 };
                 saveAutomationSettings(settings);
-                const result = await saveAutomationSettingsToServer(settings);
+                const result = await saveAutomationSettingsToServer(settings, { applyHeadlessNow: true });
                 if (status) {
                     if (result.ok) {
                         status.textContent = `Saved on server at ${new Date().toLocaleTimeString()}.`;
@@ -6072,7 +6149,7 @@
                         : {},
                 };
                 saveAutomationSettings(merged);
-                saveAutomationSettingsToServer(merged).catch(() => { });
+                saveAutomationSettingsToServer(merged, { applyHeadlessNow: true }).catch(() => { });
                 if (status) {
                     status.textContent = 'Defaults restored.';
                 }
@@ -6234,6 +6311,16 @@
         }
 
         function stopWsprBandScan() {
+            const hadActiveState = !!(
+                wsprScanEnabled
+                || wsprScanTimer
+                || wsprCountdownTimer
+                || wsprScanActiveBand
+                || wsprScanBands
+                || wsprScanStartBand
+                || wsprScanHopSeconds !== null
+                || wsprScanNextHopAt !== null
+            );
             wsprScanEnabled = false;
             if (wsprScanTimer) {
                 clearTimeout(wsprScanTimer);
@@ -6249,7 +6336,9 @@
             wsprScanStartBand = null;
             wsprScanHopSeconds = null;
             wsprScanNextHopAt = null;
-            applyAutoSet();
+            if (hadActiveState) {
+                applyAutoSet();
+            }
         }
 
         function startWsprBandScan(settings) {
@@ -6415,7 +6504,7 @@
                 const merged = { ...DEFAULT_AUTOMATION, ...(readAutomationSettings() || {}) };
                 saveAutomationSettings(merged);
                 try {
-                    await saveAutomationSettingsToServer(merged);
+                    await saveAutomationSettingsToServer(merged, { applyHeadlessNow: true });
                 } catch (e) { }
             }, 220);
         }
@@ -6697,6 +6786,15 @@
             return m ? parseInt(m[1], 10) : null;
         }
 
+        function formatRxDisplayLabel(label) {
+            if (!label) return '';
+            return String(label)
+                .split('|')
+                .map((part) => part.trim())
+                .filter(Boolean)
+                .join('\n');
+        }
+
         function parseRxListFromLabel(label) {
             if (!label) return [];
             const parts = String(label)
@@ -6821,7 +6919,7 @@
                 if (!rxLabel && runtimeMode === 'WSPR') {
                     rxLabel = 'WSPR active';
                 }
-                rxMain.textContent = rxLabel || '—';
+                rxMain.textContent = rxLabel ? formatRxDisplayLabel(rxLabel) : '—';
                 rxMain.classList.remove('is-warn', 'is-error');
                 rxMain.removeAttribute('title');
                 if ((isSelected || hasRuntimeAssignment) && rxLabel) {
@@ -6858,7 +6956,10 @@
             const nextLabel = updated.join(' | ');
             receiverAssignments[band] = nextLabel;
             const cell = document.querySelector(`td[data-rx-band="${band}"]`);
-            if (cell) cell.textContent = nextLabel || '—';
+            if (cell) {
+                const rxMain = cell.querySelector('.schedule-rx-main') || cell;
+                rxMain.textContent = nextLabel ? formatRxDisplayLabel(nextLabel) : '—';
+            }
         }
 
         function formatBlockTime(blockKey) {
@@ -6882,20 +6983,16 @@
             }
             const mode = (document.getElementById('mode_phone') && document.getElementById('mode_phone').checked) ? 'phone' : 'ft8';
             currentBlock = s.block || null;
-            if (viewedBlock === null) {
+            if (viewedBlock === null || followCurrentScheduleBlock) {
                 viewedBlock = currentBlock;
             } else if (lastCurrentBlock && viewedBlock === lastCurrentBlock) {
                 viewedBlock = currentBlock;
+                followCurrentScheduleBlock = true;
             }
             lastCurrentBlock = currentBlock;
             try {
-                const lt = document.getElementById('local_time');
-                const ltc = document.getElementById('local_time_chip');
-                const localText = s.local_time ? `Local: ${new Date(s.local_time).toLocaleString()}` : `Local: ${new Date().toLocaleString()}`;
-                if (lt) {
-                    lt.textContent = localText;
-                }
-                if (ltc) ltc.textContent = localText;
+                syncLocalTimeFromServer(s.local_time);
+                updateLocalTimeNow();
             } catch (e) { }
             try {
                 // schedule title removed
@@ -7012,7 +7109,7 @@
                     if (cb.checked) next.add(b);
                     else next.delete(b);
                     saveSelectedBands(mode, activeBlock, next);
-                    fetchSchedule(mode).then(renderSchedule);
+                    fetchSchedule(mode).then((s) => renderSchedule(s, true));
                     applyAutoSet();
                     updateModeLogVisibility();
                 });
@@ -7066,7 +7163,7 @@
                 }
                 const rxMain = document.createElement('div');
                 rxMain.className = 'schedule-rx-main';
-                rxMain.textContent = rxLabel || '—';
+                rxMain.textContent = rxLabel ? formatRxDisplayLabel(rxLabel) : '—';
                 tdRx.appendChild(rxMain);
                 if ((selected.has(b) || hasRuntimeAssignment) && rxLabel) {
                     const summary = summarizeSchedulerRxStates(b, rxLabel);
@@ -7187,6 +7284,13 @@
                 if (droppedSsbBands.length) {
                     const label = droppedSsbBands.join(', ');
                     setScheduleAutoSetStatus(`Auto-Set: SSB limited to 2 bands; changed ${label} to FT8`, 'warn');
+                }
+
+                const autoSetSignature = buildAutoSetSignature(mode, activeBlock, selected, effectiveBandModes, settings);
+                if (autoSetSignature === lastAppliedAutoSetSignature) {
+                    setScheduleAutoSetStatus('Auto-Set: Current', 'ok');
+                    autoSetInProgress = false;
+                    return;
                 }
 
                 if (lastScheduleData) {
@@ -7336,6 +7440,8 @@
                     setScheduleAutoSetStatus(`Auto-Set: Applied (${assignmentCount} slots, ${assignedBands} bands)`, 'ok');
                 }
 
+                lastAppliedAutoSetSignature = autoSetSignature;
+
                 if (typeof window.tryAutoStartSsbScan === 'function') {
                     await window.tryAutoStartSsbScan(selected, effectiveBandModes);
                 }
@@ -7387,6 +7493,39 @@
         let lastSelectedKey = '';
         let decodeHasData = false;
         let lastAssignmentSyncMs = 0;
+
+        function buildAutoSetSignature(mode, activeBlock, selected, effectiveBandModes, settings) {
+            const normalizedModes = {};
+            for (const band of BAND_OPTIONS) {
+                normalizedModes[band] = String(effectiveBandModes[band] || '');
+            }
+            return JSON.stringify({
+                mode: String(mode || ''),
+                block: String(activeBlock || ''),
+                selected: Array.isArray(selected) ? selected.slice().sort() : [],
+                wsprScanEnabled: !!wsprScanEnabled,
+                wsprScanActiveBand: String(wsprScanActiveBand || ''),
+                bandModes: normalizedModes,
+                ssbScan: {
+                    enabled: (settings && settings.ssbEnabled !== undefined)
+                        ? !!settings.ssbEnabled
+                        : !!DEFAULT_AUTOMATION.ssbEnabled,
+                    thresholdDb: Number(settings && settings.ssbThresholdDb || DEFAULT_AUTOMATION.ssbThresholdDb),
+                    adaptiveThreshold: (settings && settings.ssbAdaptiveThreshold !== undefined)
+                        ? !!settings.ssbAdaptiveThreshold
+                        : !!DEFAULT_AUTOMATION.ssbAdaptiveThreshold,
+                    useKiwiSnr: (settings && settings.ssbUseKiwiSnr !== undefined)
+                        ? !!settings.ssbUseKiwiSnr
+                        : !!DEFAULT_AUTOMATION.ssbUseKiwiSnr,
+                    waitS: Number(settings && settings.ssbWaitS || DEFAULT_AUTOMATION.ssbWaitS),
+                    dwellS: Number(settings && settings.ssbDwellS || DEFAULT_AUTOMATION.ssbDwellS),
+                    tailS: Number(settings && settings.ssbTailS || DEFAULT_AUTOMATION.ssbTailS),
+                    stepStrategy: String(settings && settings.ssbStepStrategy || DEFAULT_AUTOMATION.ssbStepStrategy),
+                    stepKHz: Number(settings && settings.ssbStepKHz || DEFAULT_AUTOMATION.ssbStepKHz),
+                    sideband: String(settings && settings.ssbSideband || DEFAULT_AUTOMATION.ssbSideband),
+                },
+            });
+        }
 
         function shouldHideDecodeLine(data) {
             if (!data || typeof data !== 'object') return false;
@@ -7763,7 +7902,7 @@
             if (!layout || !panel || !toggle) return;
             const isCollapsed = !!collapsed;
             layout.classList.toggle('decode-collapsed', isCollapsed);
-            toggle.textContent = isCollapsed ? 'DECODED' : '▶';
+            toggle.textContent = isCollapsed ? 'DECODED' : 'HIDE';
             toggle.title = isCollapsed ? 'Show decoder window' : 'Hide decoder window (slide right)';
             toggle.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
             panel.setAttribute('aria-hidden', isCollapsed ? 'true' : 'false');
@@ -8283,7 +8422,9 @@
             const current = `v${currentVersion}${currentCommit ? ` (${currentCommit})` : ''}`;
             const latest = `v${latestVersion}${latestCommit ? ` (${latestCommit})` : ''}`;
             if (data.update_available) {
-                if (sameVersion) {
+                if (!data.apply_supported) {
+                    setUpdateStatusText(`Update available: ${current} → ${latest} (container redeploy required)`, 'warn');
+                } else if (sameVersion) {
                     setUpdateStatusText(`Latest version: ${latest}`, 'ok');
                 } else {
                     setUpdateStatusText(`Update available: ${current} → ${latest}`, 'warn');
@@ -8291,6 +8432,26 @@
             } else {
                 setUpdateStatusText(`Up to date: ${current}`, 'ok');
             }
+        }
+
+        function buildManualUpdateMessage(checkData) {
+            const dockerRepo = String((checkData && checkData.docker_repo) || '').trim();
+            const latestVersion = String((checkData && checkData.latest_version) || '').trim();
+            const currentVersion = String((checkData && checkData.current_version) || '').trim();
+            const command = String((checkData && checkData.manual_update_command) || '').trim();
+            const targetImage = dockerRepo && latestVersion ? `${dockerRepo}:${latestVersion}` : '';
+            const lines = [
+                'A newer KiwiScan container image is available.',
+                `Current: v${currentVersion || 'unknown'}`,
+                `Latest: v${latestVersion || 'unknown'}`,
+            ];
+            if (targetImage) {
+                lines.push(`Image: ${targetImage}`);
+            }
+            if (command) {
+                lines.push('', 'Manual update steps:', command);
+            }
+            return lines.join('\n');
         }
 
         function normalizeVersionToken(value) {
@@ -8327,16 +8488,33 @@
         }
 
         async function applyLatestUpdate(checkData) {
+            if (checkData && checkData.apply_supported === false) {
+                window.alert(buildManualUpdateMessage(checkData));
+                return;
+            }
             const beforeCommit = String((checkData && checkData.current_commit) || '').trim();
             const targetCommit = String((checkData && checkData.latest_commit) || '').trim();
             const beforeVersion = String((checkData && checkData.current_version) || '').trim();
             const targetVersion = String((checkData && checkData.latest_version) || '').trim();
             try {
                 const resp = await fetch('/update/apply', { method: 'POST' });
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                if (!resp.ok) {
+                    let detail = '';
+                    try {
+                        const payload = await resp.json();
+                        const body = payload && payload.detail ? payload.detail : payload;
+                        detail = String((body && body.manual_update_command) || (body && body.message) || '').trim();
+                    } catch (e) { }
+                    throw new Error(detail || `HTTP ${resp.status}`);
+                }
                 showToast('Updating to latest version and restarting server…', 'warn', 3000);
             } catch (e) {
-                showToast('Update failed to start.', 'error', 2500);
+                const detail = (e && e.message) ? String(e.message).trim() : '';
+                if (detail) {
+                    window.alert(detail);
+                } else {
+                    showToast('Update failed to start.', 'error', 2500);
+                }
                 return;
             }
 
@@ -8404,6 +8582,13 @@
 
                     const skipped = readSkippedUpdateCommit();
                     if (!force && skipKey && skipped && skipped === skipKey) return;
+
+                    if (data.apply_supported === false) {
+                        if (!force) return;
+                        clearSkippedUpdateCommit();
+                        window.alert(buildManualUpdateMessage(data));
+                        return;
+                    }
 
                     const msg = `A newer KiwiScan build is available.\nCurrent: v${currentVersion || 'unknown'}${currentCommit ? ` (${currentCommit})` : ''}\nLatest: v${latestVersion || 'unknown'}${latestCommit ? ` (${latestCommit})` : ''}\n\nUpgrade now?\nThis will pull latest, restart server, and auto-refresh this page.`;
                     if (window.confirm(msg)) {
@@ -8760,7 +8945,7 @@
                                         } catch (e) { }
                                         const mode = currentMode();
                                         if (!isScheduleRerenderSuppressed()) {
-                                            fetchSchedule(mode).then(renderSchedule).catch(() => { });
+                                            fetchSchedule(mode).then((s) => renderSchedule(s, true)).catch(() => { });
                                         }
                                     })();
                                     return;
@@ -9357,7 +9542,7 @@
                     useLaunchd: nextUseLaunchd,
                 };
                 saveAutomationSettings(nextAutomation);
-                const result = await saveAutomationSettingsToServer(nextAutomation);
+                const result = await saveAutomationSettingsToServer(nextAutomation, { applyHeadlessNow: true });
                 if (!result || result.ok !== true) {
                     throw new Error((result && result.error) ? String(result.error) : 'save failed');
                 }
@@ -9512,7 +9697,7 @@
                     lastAutoScheduleBlock = initialBlock;
                     viewedBlock = initialBlock;
                 }
-                fetchSchedule(mode).then((s) => renderSchedule(s));
+                fetchSchedule(mode).then((s) => renderSchedule(s, true));
             } catch (e) { }
 
             startDecodeStream();

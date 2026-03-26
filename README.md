@@ -44,6 +44,110 @@ Operator shell/env reference:
 ./run_server.sh
 ```
 
+## Docker
+
+Docker Hub image:
+
+```text
+https://hub.docker.com/r/n4ldr/kiwiscan
+```
+
+Pull and run the published container:
+
+```zsh
+docker pull n4ldr/kiwiscan:0.1.6
+docker run --rm --name kiwiscan-test \
+	-p 4010:4010/tcp \
+	-p 4010:4010/udp \
+	-p 4020:4020 \
+	-e PORT=4020 \
+	-e TZ=America/New_York \
+	-e AUTO_SETUP=0 \
+	-e AUTO_RELOAD=0 \
+	-e NO_RESTART=1 \
+	-e KIWI_SCAN_WS4010=1 \
+	-e KIWI_SCAN_UDP4010=1 \
+	n4ldr/kiwiscan:0.1.6
+```
+
+On first container startup, `docker run` does not read this repo's `docker-compose.yml`. If the persisted Kiwi host is still unset (`0.0.0.0`) or still on the legacy baked-in default (`192.168.1.93`), the container auto-discovers a Kiwi on the LAN, saves it to `outputs/config.json`, and then starts the headless auto-set loop with that discovered host.
+
+Build and run the web app container locally:
+
+```zsh
+docker build -t kiwiscan-kiwiscan:latest .
+docker run --rm -p 4020:4020 kiwiscan-kiwiscan:latest
+```
+
+Or with Compose:
+
+```zsh
+docker compose up -d
+```
+
+Publish the local image to Docker Hub using the version in `pyproject.toml`:
+
+```zsh
+./tools/publish_docker.sh
+```
+
+Build first, then publish:
+
+```zsh
+./tools/publish_docker.sh --build
+```
+
+If you build manually instead of using Compose, keep the default local release tag:
+
+```zsh
+docker build -t kiwiscan-kiwiscan:latest .
+```
+
+Container smoke test:
+
+```zsh
+python3 tools/container_healthcheck.py --show-decode-details
+```
+
+Shell wrapper with defaults suitable for cron/launchd:
+
+```zsh
+./tools/run_container_healthcheck.sh
+```
+
+Require at least 3 fresh decode slots in the last 10 minutes and enforce specific slots when needed:
+
+```zsh
+python3 tools/container_healthcheck.py \
+	--fresh-within-s 600 \
+	--min-fresh-decodes 3 \
+	--require-slots udp-3100,udp-3102 \
+	--show-decode-details
+```
+
+Install a user LaunchAgent that runs the wrapper every 5 minutes:
+
+```zsh
+chmod +x tools/run_container_healthcheck.sh tools/install_healthcheck_launch_agent.sh
+./tools/install_healthcheck_launch_agent.sh
+```
+
+Common LaunchAgent overrides:
+
+```zsh
+INTERVAL=600 REQUIRE_SLOTS=udp-3105,udp-3106 ./tools/install_healthcheck_launch_agent.sh
+```
+
+Notes:
+- The container is now self-contained for the FastAPI web app on port `4020`; it does not create a virtualenv or install Python packages at container startup.
+- `kiwirecorder.py` is bundled from `vendor/kiwiclient-jks` and available inside the image.
+- `ft8modem` and `af2udp` are built inside the image from the vendored source at `vendor/ft8modem-sm` and installed into `/usr/local/bin`.
+- `jt9` is installed from Debian's `wsjtx` package so `ft8modem` can perform FT8/FT4 decoding inside the container.
+- The container publishes the main web app on port `4020` and legacy decoded-data export on port `4010`.
+- The main decode websocket is available from the main app on `ws://<host>:4020/ws/decodes`.
+- Legacy TCP `4010` continues to export the WebSocket decode feed for older clients.
+- Legacy UDP `4010` continues to export each decode as one JSON datagram to registered clients.
+
 Check runtime dependencies used by receiver automation (kiwirecorder/ft8modem/af2udp/sox):
 
 ```zsh

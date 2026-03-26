@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import copy
 from datetime import datetime
 import logging
 import json
+import re
 import time
 from urllib.request import urlopen
 from pathlib import Path
@@ -16,6 +18,145 @@ from .decodes import prune_decode_buffer
 
 
 logger = logging.getLogger(__name__)
+
+_STATUS_WEIGHT = {
+    "OPEN": 3.0,
+    "MARGINAL": 1.0,
+    "CLOSED": 0.0,
+}
+
+
+def _block_sort_key(block_key: object) -> tuple[int, int] | None:
+    raw = str(block_key or "").strip()
+    m = re.match(r"^(\d{2})-(\d{2})$", raw)
+    if not m:
+        return None
+    try:
+        start = int(m.group(1))
+        end = int(m.group(2))
+    except Exception:
+        return None
+    if not (0 <= start <= 24 and 0 <= end <= 24):
+        return None
+    return start, end
+
+
+def _fallback_profile_entry(by_mode: dict, block_key: str) -> dict | None:
+    exact = by_mode.get(str(block_key))
+    if isinstance(exact, dict):
+        return exact
+
+    target_key = _block_sort_key(block_key)
+    if target_key is None:
+        return None
+
+    ordered: list[tuple[int, str, dict]] = []
+    for candidate_key, candidate_entry in by_mode.items():
+        if not isinstance(candidate_entry, dict):
+            continue
+        sort_key = _block_sort_key(candidate_key)
+        if sort_key is None:
+            continue
+        ordered.append((sort_key[0], str(candidate_key), candidate_entry))
+    if not ordered:
+        return None
+
+    ordered.sort(key=lambda item: item[0])
+    target_start = target_key[0]
+    prior = [entry for start, _, entry in ordered if start <= target_start]
+    if prior:
+        return prior[-1]
+    return ordered[-1][2]
+
+
+def _block_bounds(block_key: object) -> tuple[int, int] | None:
+    sort_key = _block_sort_key(block_key)
+    if sort_key is None:
+        return None
+    start, end = sort_key
+    if end == 0 and start == 24:
+        return 0, 24
+    if end <= start:
+        end += 24
+    return start, end
+
+
+def _ordered_blocks(blocks: Dict[str, Dict[str, str]]) -> List[str]:
+    ordered: list[tuple[int, str]] = []
+    for block_key in blocks.keys():
+        bounds = _block_bounds(block_key)
+        if bounds is None:
+            continue
+        ordered.append((bounds[0], str(block_key)))
+    ordered.sort(key=lambda item: item[0])
+    return [key for _, key in ordered]
+
+
+def _adjacent_blocks(blocks: Dict[str, Dict[str, str]], block_key: str) -> tuple[str | None, str | None]:
+    ordered = _ordered_blocks(blocks)
+    if not ordered:
+        return None, None
+    try:
+        idx = ordered.index(str(block_key))
+    except ValueError:
+        return None, None
+    prev_key = ordered[idx - 1] if ordered else None
+    next_key = ordered[(idx + 1) % len(ordered)] if ordered else None
+    return prev_key, next_key
+
+
+def _block_progress(local_dt: datetime, block_key: str) -> float:
+    bounds = _block_bounds(block_key)
+    if bounds is None:
+        return 0.5
+    start_hour, end_hour = bounds
+    duration_hours = max(1.0, float(end_hour - start_hour))
+    current_hour = float(local_dt.hour) + (float(local_dt.minute) / 60.0) + (float(local_dt.second) / 3600.0)
+    if current_hour < start_hour:
+        current_hour += 24.0
+    progress = (current_hour - float(start_hour)) / duration_hours
+    return max(0.0, min(1.0, progress))
+
+
+def _status_weight(status: object) -> float:
+    return _STATUS_WEIGHT.get(str(status or "").strip().upper(), 0.0)
+
+
+def _band_activity_score(
+    *,
+    blocks: Dict[str, Dict[str, str]],
+    block_key: str,
+    band: str,
+    local_dt: datetime,
+) -> float:
+    current_status = _status_weight(blocks.get(block_key, {}).get(band))
+    prev_key, next_key = _adjacent_blocks(blocks, block_key)
+    prev_status = _status_weight(blocks.get(prev_key or "", {}).get(band))
+    next_status = _status_weight(blocks.get(next_key or "", {}).get(band))
+    progress = _block_progress(local_dt, block_key)
+    carry_score = ((1.0 - progress) * prev_status) + (progress * next_status)
+    return (current_status * 100.0) + (carry_score * 10.0)
+
+
+def _sort_other_tasks_by_activity(
+    *,
+    tasks: List[Dict[str, str]],
+    band_order: List[str],
+    blocks: Dict[str, Dict[str, str]],
+    block_key: str,
+    local_dt: datetime,
+) -> List[Dict[str, str]]:
+    band_positions = {band: idx for idx, band in enumerate(band_order)}
+
+    def _task_key(task: Dict[str, str]) -> tuple[float, int]:
+        band = str(task.get("band") or "")
+        mode = str(task.get("mode") or "").strip().upper()
+        score = _band_activity_score(blocks=blocks, block_key=block_key, band=band, local_dt=local_dt)
+        if mode == "WSPR":
+            score += 1000.0
+        return (-score, band_positions.get(band, len(band_order)))
+
+    return sorted(tasks, key=_task_key)
 
 
 def make_router(
@@ -35,6 +176,9 @@ def make_router(
 
     router = APIRouter()
     _settings_path = Path(__file__).resolve().parents[3] / "outputs" / "automation_settings.json"
+    _last_apply_signature: str | None = None
+    _last_apply_response: dict | None = None
+    _last_apply_ts: float = 0.0
 
     band_ranges_khz = {
         "160m": (1800.0, 2000.0),
@@ -121,6 +265,7 @@ def make_router(
 
     @router.post("/auto_set_receivers")
     async def auto_set_receivers(request: Request):
+        nonlocal _last_apply_signature, _last_apply_response, _last_apply_ts
         payload = await request.json()
         enabled = bool(payload.get("enabled", False))
         mode = str(payload.get("mode", "ft8")).strip().lower()
@@ -173,7 +318,7 @@ def make_router(
             by_mode = raw_profiles.get(str(mode_key).lower())
             if not isinstance(by_mode, dict):
                 return None, {}
-            entry = by_mode.get(str(block_key))
+            entry = _fallback_profile_entry(by_mode, str(block_key))
             if not isinstance(entry, dict):
                 return None, {}
 
@@ -252,6 +397,29 @@ def make_router(
                 band_modes = dict(band_modes)
                 band_modes[active_band] = "WSPR"
 
+        apply_signature = json.dumps(
+            {
+                "enabled": bool(enabled),
+                "mode": str(mode),
+                "block": str(block),
+                "desired_bands": [str(b) for b in desired_bands],
+                "band_modes": {str(k): str(v) for k, v in sorted(dict(band_modes).items())},
+                "wspr_scan_enabled": bool(wspr_scan_enabled),
+                "ssb_scan_cfg": ssb_scan_cfg,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+        if (
+            _last_apply_signature == apply_signature
+            and _last_apply_response is not None
+            and (time.time() - _last_apply_ts) < 15.0
+        ):
+            cached = copy.deepcopy(_last_apply_response)
+            cached["deduped"] = True
+            return cached
+
         with mgr.lock:  # type: ignore[attr-defined]
             host = str(mgr.host)
             port = int(mgr.port)
@@ -275,7 +443,7 @@ def make_router(
             # Stop RX0-RX7 processes.
             receiver_mgr.apply_assignments(host, port, {})  # type: ignore[attr-defined]
             prune_decode_buffer(set())
-            return {
+            response = {
                 "enabled": False,
                 "mode": mode,
                 "season": season,
@@ -293,6 +461,10 @@ def make_router(
                 "skipped_other_tasks": 0,
                 "skipped_tasks": 0,
             }
+            _last_apply_signature = apply_signature
+            _last_apply_response = copy.deepcopy(response)
+            _last_apply_ts = time.time()
+            return response
 
         def _normalize_mode(value: object) -> str:
             raw = str(value or "").strip().lower()
@@ -335,6 +507,13 @@ def make_router(
 
         ssb_tasks = [t for t in tasks if str(t.get("mode") or "").strip().upper() == "SSB"]
         other_tasks = [t for t in tasks if str(t.get("mode") or "").strip().upper() != "SSB"]
+        other_tasks = _sort_other_tasks_by_activity(
+            tasks=other_tasks,
+            band_order=band_order,
+            blocks=table.blocks,
+            block_key=block,
+            local_dt=local_dt,
+        )
 
         ssb_capacity = min(2, len(ssb_tasks))
         ssb_rx_request_list = [0, 1][:ssb_capacity]
@@ -486,7 +665,7 @@ def make_router(
             except Exception:
                 pass
         prune_decode_buffer(allowed_bands)
-        return {
+        response = {
             "enabled": True,
             "mode": mode,
             "season": season,
@@ -504,5 +683,9 @@ def make_router(
             "skipped_other_tasks": skipped_other_tasks,
             "skipped_tasks": skipped_tasks,
         }
+        _last_apply_signature = apply_signature
+        _last_apply_response = copy.deepcopy(response)
+        _last_apply_ts = time.time()
+        return response
 
     return router

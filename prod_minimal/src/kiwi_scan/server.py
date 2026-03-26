@@ -177,9 +177,9 @@ def _resolve_binary_path(binary_name: str, candidates: List[Path]) -> Path:
 _FT8MODEM_PATH = _resolve_binary_path(
     "ft8modem",
     [
-        Path(__file__).resolve().parents[3] / "ft8modem" / "ft8modem",
         Path("/usr/local/bin/ft8modem"),
         Path("/opt/homebrew/bin/ft8modem"),
+        Path(__file__).resolve().parents[3] / "ft8modem" / "ft8modem",
         Path(__file__).resolve().parents[2] / "ft8modem" / "ft8modem",
     ],
 )

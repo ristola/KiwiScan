@@ -1,16 +1,11 @@
 from __future__ import annotations
 
-import concurrent.futures
-import ipaddress
 import logging
-import re
-import socket
-import time
-from urllib.error import URLError
-from urllib.request import urlopen
 from typing import Dict
 
 from fastapi import APIRouter, HTTPException, Request
+
+from ..kiwi_discovery import discover_kiwis, extract_gps_lat_lon, read_kiwi_status
 
 
 logger = logging.getLogger(__name__)
@@ -24,116 +19,6 @@ def make_router(*, mgr: object, waterholes: Dict[str, float], receiver_mgr: obje
 
     router = APIRouter()
 
-    def _parse_kiwi_status(text: str) -> dict[str, str]:
-        out: dict[str, str] = {}
-        for line in (text or "").splitlines():
-            if "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            out[k.strip()] = v.strip()
-        return out
-
-    def _extract_gps_lat_lon(status: dict[str, str]) -> tuple[float | None, float | None]:
-        gps = status.get("gps")
-        if not gps:
-            return None, None
-        # gps=(38.594989, -78.431794)
-        m = re.search(r"\(\s*([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)\s*\)", gps)
-        if not m:
-            return None, None
-        try:
-            return float(m.group(1)), float(m.group(2))
-        except Exception:
-            return None, None
-
-    def _looks_like_kiwi_http(ip: str, port: int, *, timeout_s: float) -> bool:
-        try:
-            with urlopen(f"http://{ip}:{port}/", timeout=max(timeout_s, 0.5)) as resp:
-                data = resp.read(8192)
-            txt = data.decode("utf-8", errors="ignore").lower()
-            return "kiwisdr" in txt or "kiwi sdr" in txt
-        except Exception:
-            return False
-
-    def _read_kiwi_status(ip: str, port: int, *, timeout_s: float) -> dict[str, str] | None:
-        try:
-            with urlopen(f"http://{ip}:{port}/status", timeout=max(timeout_s, 0.5)) as resp:
-                data = resp.read(65536)
-            txt = data.decode("utf-8", errors="ignore")
-            if "status=" not in txt:
-                return None
-            return _parse_kiwi_status(txt)
-        except Exception:
-            return None
-
-    def _parse_my_kiwisdr_for_lan_hosts(html: str) -> list[tuple[str, int]]:
-        # Extract private IPv4 host:port strings shown in page content.
-        pat = re.compile(r"\b((?:\d{1,3}\.){3}\d{1,3}):(\d{1,5})\b")
-        out: list[tuple[str, int]] = []
-        seen: set[tuple[str, int]] = set()
-        for m in pat.finditer(html or ""):
-            host = str(m.group(1) or "").strip()
-            port_s = str(m.group(2) or "").strip()
-            try:
-                ip_obj = ipaddress.IPv4Address(host)
-                port = int(port_s)
-            except Exception:
-                continue
-            if not ip_obj.is_private:
-                continue
-            if port < 1 or port > 65535:
-                continue
-            t = (host, port)
-            if t in seen:
-                continue
-            seen.add(t)
-            out.append(t)
-        return out
-
-    def _private_prefixes_for_lan_scan(client_ip: str) -> list[str]:
-        prefixes: list[str] = []
-
-        def _add_prefix(ip_text: str) -> None:
-            try:
-                ip_obj = ipaddress.IPv4Address(str(ip_text or "").strip())
-            except Exception:
-                return
-            if not ip_obj.is_private:
-                return
-            octets = str(ip_obj).split(".")
-            if len(octets) != 4:
-                return
-            prefix = f"{octets[0]}.{octets[1]}.{octets[2]}"
-            if prefix not in prefixes:
-                prefixes.append(prefix)
-
-        _add_prefix(client_ip)
-
-        try:
-            # Infer primary outbound interface IP.
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.connect(("8.8.8.8", 80))
-                _add_prefix(s.getsockname()[0])
-        except Exception:
-            pass
-
-        try:
-            # Include local interface addresses resolved for this host.
-            host = socket.gethostname()
-            infos = socket.getaddrinfo(host, None, socket.AF_INET, socket.SOCK_STREAM)
-            for info in infos:
-                if not isinstance(info, tuple) or len(info) < 5:
-                    continue
-                sockaddr = info[4]
-                if isinstance(sockaddr, tuple) and sockaddr:
-                    _add_prefix(str(sockaddr[0]))
-        except Exception:
-            pass
-
-        if not prefixes:
-            prefixes = ["192.168.1", "192.168.0", "10.0.0", "10.0.1", "172.16.0", "172.20.0", "172.31.0"]
-        return prefixes[:8]
-
     @router.get("/config/discover")
     def discover_kiwi(request: Request, port: int = 8073, timeout_s: float = 0.20, max_hosts: int = 32):
         """Best-effort LAN discovery for KiwiSDR.
@@ -146,85 +31,11 @@ def make_router(*, mgr: object, waterholes: Dict[str, float], receiver_mgr: obje
         can't hang the server.
         """
 
-        if port < 1 or port > 65535:
-            raise HTTPException(status_code=400, detail="port must be 1..65535")
-        if timeout_s <= 0 or timeout_s > 2:
-            raise HTTPException(status_code=400, detail="timeout_s must be > 0 and <= 2")
-        if max_hosts < 1 or max_hosts > 256:
-            raise HTTPException(status_code=400, detail="max_hosts must be 1..256")
-
-        started = time.time()
-
-        # Preferred: use my.kiwisdr.com to obtain the LAN address/port shown for this Kiwi.
-        candidates: list[tuple[str, int]] = []
-        source = ""
         try:
-            with urlopen("http://my.kiwisdr.com/", timeout=2.0) as resp:
-                html = resp.read(1024 * 1024).decode("utf-8", errors="ignore")
-            candidates = _parse_my_kiwisdr_for_lan_hosts(html)
-            if candidates:
-                source = "my.kiwisdr.com"
-        except Exception:
-            candidates = []
-
-        # Fallback: scan likely private /24 prefixes based on caller + local interfaces.
-        if not candidates:
             client_ip = (request.client.host if request.client else "") or ""
-            prefixes = _private_prefixes_for_lan_scan(client_ip)
-            source = "lan_scan"
-
-            def has_port_open(ip: str) -> bool:
-                try:
-                    with socket.create_connection((ip, port), timeout=timeout_s):
-                        return True
-                except OSError:
-                    return False
-
-            for prefix in prefixes:
-                ips = [f"{prefix}.{i}" for i in range(1, 255)]
-                with concurrent.futures.ThreadPoolExecutor(max_workers=64) as ex:
-                    for ip, ok in zip(ips, ex.map(has_port_open, ips)):
-                        if ok:
-                            candidates.append((ip, port))
-                            if len(candidates) >= max_hosts:
-                                break
-                if len(candidates) >= max_hosts:
-                    break
-
-        found: list[dict[str, object]] = []
-        for host, hp_port in candidates:
-            if len(found) >= max_hosts:
-                break
-            if not _looks_like_kiwi_http(host, hp_port, timeout_s=timeout_s):
-                continue
-            st = _read_kiwi_status(host, hp_port, timeout_s=timeout_s)
-            lat, lon = (None, None)
-            name = None
-            grid = None
-            gps_good = None
-            if st:
-                lat, lon = _extract_gps_lat_lon(st)
-                name = st.get("name")
-                grid = st.get("grid")
-                gps_good = st.get("gps_good")
-            found.append(
-                {
-                    "host": host,
-                    "port": hp_port,
-                    "latitude": lat,
-                    "longitude": lon,
-                    "grid": grid,
-                    "gps_good": gps_good,
-                    "name": name,
-                }
-            )
-
-        return {
-            "ok": True,
-            "source": source,
-            "found": found,
-            "elapsed_s": round(time.time() - started, 3),
-        }
+            return discover_kiwis(client_ip=client_ip, port=port, timeout_s=timeout_s, max_hosts=max_hosts)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @router.get("/config")
     def get_config():
@@ -236,9 +47,9 @@ def make_router(*, mgr: object, waterholes: Dict[str, float], receiver_mgr: obje
             with mgr.lock:  # type: ignore[attr-defined]
                 host = str(mgr.host)
                 port = int(mgr.port)
-            st = _read_kiwi_status(host, port, timeout_s=0.75)
+            st = read_kiwi_status(host, port, timeout_s=0.75)
             if st:
-                kiwi_lat, kiwi_lon = _extract_gps_lat_lon(st)
+                kiwi_lat, kiwi_lon = extract_gps_lat_lon(st)
                 kiwi_grid = st.get("grid")
                 kiwi_gps_good = st.get("gps_good")
         except Exception:

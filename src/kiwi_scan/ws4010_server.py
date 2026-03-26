@@ -25,8 +25,8 @@ def _is_enabled() -> bool:
 def ensure_ws4010_started() -> None:
     """Start a dedicated WebSocket server on port 4010 in a background thread.
 
-    This keeps the main FastAPI/HTTP server on its existing port (default 4020)
-    while providing compatibility with legacy clients that connect to WS:4010.
+    This keeps the main FastAPI/HTTP server on port 4020 while continuing to
+    export legacy WebSocket decode data on port 4010.
     """
 
     if not _is_enabled():

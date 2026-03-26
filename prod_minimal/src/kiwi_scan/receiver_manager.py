@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 import os
+import shlex
 import shutil
 import signal
 import subprocess
@@ -78,6 +79,38 @@ class _ReceiverWorker(threading.Thread):
             self._rx_chan_adjust = int(str(os.environ.get("KIWISCAN_RX_CHAN_OFFSET", "0")).strip())
         except Exception:
             self._rx_chan_adjust = 0
+
+    @staticmethod
+    def _env_float(name: str, default: float, *, min_v: float, max_v: float) -> float:
+        raw = str(os.environ.get(name, "")).strip()
+        if not raw:
+            return float(default)
+        try:
+            value = float(raw)
+        except Exception:
+            return float(default)
+        return max(float(min_v), min(float(max_v), value))
+
+    def _watchdog_base_backoff_s(self) -> float:
+        return self._env_float("KIWISCAN_WATCHDOG_BASE_BACKOFF_S", 0.5, min_v=0.1, max_v=5.0)
+
+    def _watchdog_max_backoff_s(self) -> float:
+        return self._env_float("KIWISCAN_WATCHDOG_MAX_BACKOFF_S", 2.0, min_v=0.2, max_v=10.0)
+
+    def _watchdog_channel_check_s(self) -> float:
+        return self._env_float("KIWISCAN_WATCHDOG_CHANNEL_CHECK_S", 0.75, min_v=0.2, max_v=5.0)
+
+    def _watchdog_loop_sleep_s(self) -> float:
+        return self._env_float("KIWISCAN_WATCHDOG_LOOP_SLEEP_S", 0.2, min_v=0.05, max_v=2.0)
+
+    def _watchdog_retry_backoff_s(self, consecutive_failures: int) -> float:
+        base = self._watchdog_base_backoff_s()
+        max_backoff = self._watchdog_max_backoff_s()
+        failures = max(1, int(consecutive_failures))
+        return min(max_backoff, float(base * (2 ** min(failures - 1, 3))))
+
+    def _watchdog_spawn_retry_s(self) -> float:
+        return min(self._watchdog_max_backoff_s(), max(self._watchdog_base_backoff_s(), 0.5))
 
     def stop(self) -> None:
         self._stop.set()
@@ -200,8 +233,15 @@ class _ReceiverWorker(threading.Thread):
                 if bool(strict):
                     valid = (found_rx == expected)
                 else:
-                    valid = (found_rx in {0, 1}) if expected in {0, 1} else (found_rx >= 2)
+                    valid = found_rx >= 0
                 if valid:
+                    if not bool(strict) and found_rx != expected:
+                        logger.info(
+                            "Kiwi remapped digital worker user=%s expected_rx=%s actual_rx=%s; keeping worker",
+                            wanted,
+                            expected,
+                            found_rx,
+                        )
                     return True
                 logger.warning(
                     "Kiwi remapped worker user=%s expected_rx=%s actual_rx=%s strict=%s; forcing retry",
@@ -210,8 +250,6 @@ class _ReceiverWorker(threading.Thread):
                     found_rx,
                     bool(strict),
                 )
-                if expected not in {0, 1}:
-                    self._adapt_rx_chan_adjust(expected_rx=expected, actual_rx=found_rx, user_label=wanted)
                 return False
             except Exception:
                 return True
@@ -283,6 +321,32 @@ class _ReceiverWorker(threading.Thread):
                 continue
         return None
 
+    def _use_python_udp_sender(self) -> bool:
+        raw = str(os.environ.get("KIWISCAN_USE_PY_UDP_AUDIO", "")).strip().lower()
+        if raw:
+            return raw not in {"0", "false", "no", "off"}
+        return False
+
+    def _resolve_python_udp_sender(self) -> Optional[Path]:
+        candidates = [
+            Path(__file__).resolve().parents[2] / "vendor" / "ft8modem-sm" / "udpaf.py",
+            Path(__file__).resolve().parents[3] / "vendor" / "ft8modem-sm" / "udpaf.py",
+        ]
+        for candidate in candidates:
+            try:
+                if candidate.exists() and candidate.is_file():
+                    return candidate
+            except Exception:
+                continue
+        return None
+
+    def _udp_audio_sender_cmd(self, *, udp_port: int, af2udp_path: Path) -> str:
+        if self._use_python_udp_sender():
+            udpaf_path = self._resolve_python_udp_sender()
+            if udpaf_path is not None:
+                return f"{shlex.quote(self._python_cmd)} -u {shlex.quote(str(udpaf_path))} {int(udp_port)}"
+        return f"{shlex.quote(str(af2udp_path))} {int(udp_port)} 256 48000"
+
     def _is_digital_mode(self) -> bool:
         norm = self._mode_label.strip().upper()
         return norm in {"FT4", "FT8", "FT4 / FT8", "FT4/FT8", "FT8 / FT4", "FT8/FT4", "WSPR"}
@@ -298,6 +362,11 @@ class _ReceiverWorker(threading.Thread):
         if norm == "FT4":
             return "FT4"
         return "FT8"
+
+    @staticmethod
+    def _decoder_keep_wavs_enabled() -> bool:
+        raw = str(os.environ.get("KIWISCAN_FT8MODEM_KEEP", "0") or "0").strip().lower()
+        return raw not in {"", "0", "false", "no", "off"}
 
     def _decoder_env(self, mode: str) -> Optional[dict]:
         """Return an environment override for decoder processes.
@@ -428,14 +497,14 @@ class _ReceiverWorker(threading.Thread):
             step_khz = step_sequence[min(step_index, len(step_sequence) - 1)]
             freqs = self._ssb_scan_freqs_khz(step_khz)
             if not freqs:
-                time.sleep(5.0)
+                time.sleep(self._watchdog_spawn_retry_s())
                 continue
 
             yaml_path = Path("/tmp") / f"kiwi_scan_ssb_rx{self._rx}_{self._band}_{step_khz:.1f}.yaml"
             try:
                 self._write_ssb_scan_yaml(freqs_khz=freqs, path=yaml_path)
             except Exception:
-                time.sleep(2.0)
+                time.sleep(self._watchdog_spawn_retry_s())
                 continue
 
             cmd = [
@@ -469,7 +538,7 @@ class _ReceiverWorker(threading.Thread):
                     start_new_session=True,
                 )
             except Exception:
-                time.sleep(2.0)
+                time.sleep(self._watchdog_spawn_retry_s())
                 continue
 
             if not self._verify_kiwi_rx_channel(
@@ -481,7 +550,7 @@ class _ReceiverWorker(threading.Thread):
             ):
                 self._terminate_external_proc(proc)
                 mismatch_failures += 1
-                backoff_s = min(45.0, float(5 * (2 ** min(mismatch_failures - 1, 3))))
+                backoff_s = self._watchdog_retry_backoff_s(mismatch_failures)
                 if self._on_restart is not None:
                     try:
                         self._on_restart(self._rx, self._band, "ssb_rx_mismatch", backoff_s, mismatch_failures)
@@ -595,7 +664,7 @@ class _ReceiverWorker(threading.Thread):
             end_time = time.time() + sweep_s
             proc_started_at = time.time()
             rapid_exit = False
-            next_channel_check = time.time() + 1.5
+            next_channel_check = time.time() + self._watchdog_channel_check_s()
             while not self._stop.is_set() and time.time() < end_time:
                 if self._reconfigure.is_set():
                     rapid_exit = True
@@ -605,7 +674,7 @@ class _ReceiverWorker(threading.Thread):
                     rapid_exit = (time.time() - proc_started_at) < 3.0
                     break
                 if time.time() >= next_channel_check:
-                    next_channel_check = time.time() + 2.0
+                    next_channel_check = time.time() + self._watchdog_channel_check_s()
                     if not self._verify_kiwi_rx_channel(
                         user_label=f"AUTO_{self._band}_SSBSCAN",
                         expected_rx=self._rx,
@@ -615,7 +684,7 @@ class _ReceiverWorker(threading.Thread):
                     ):
                         self._last_spawn_error_reason = "ssb_rx_mismatch"
                         mismatch_failures += 1
-                        backoff_s = min(45.0, float(5 * (2 ** min(max(mismatch_failures, 1) - 1, 3))))
+                        backoff_s = self._watchdog_retry_backoff_s(mismatch_failures)
                         if self._on_restart is not None:
                             try:
                                 self._on_restart(self._rx, self._band, "ssb_rx_mismatch", backoff_s, mismatch_failures)
@@ -623,7 +692,7 @@ class _ReceiverWorker(threading.Thread):
                                 pass
                         rapid_exit = True
                         break
-                time.sleep(0.2)
+                time.sleep(self._watchdog_loop_sleep_s())
 
             self._terminate_proc()
 
@@ -631,15 +700,15 @@ class _ReceiverWorker(threading.Thread):
                 break
 
             if self._reconfigure.is_set():
-                time.sleep(0.2)
+                time.sleep(self._watchdog_loop_sleep_s())
                 continue
 
             if rapid_exit:
                 if str(self._last_spawn_error_reason or "") == "ssb_rx_mismatch":
-                    backoff_s = min(45.0, float(5 * (2 ** min(max(mismatch_failures, 1) - 1, 3))))
+                    backoff_s = self._watchdog_retry_backoff_s(mismatch_failures)
                     time.sleep(backoff_s)
                 else:
-                    time.sleep(4.0)
+                    time.sleep(self._watchdog_spawn_retry_s())
                 continue
 
             mismatch_failures = 0
@@ -692,11 +761,15 @@ class _ReceiverWorker(threading.Thread):
             str(ft8modem_path),
             "-t",
             str(temp_root),
+        ]
+        if self._decoder_keep_wavs_enabled():
+            cmd.append("-k")
+        cmd.extend([
             "-r",
             "48000",
             mode,
             f"udp:{udp_port}",
-        ]
+        ])
         log_fp = None
         try:
             log_fp = open(log_path, "a", encoding="utf-8")
@@ -802,9 +875,6 @@ class _ReceiverWorker(threading.Thread):
             if af2udp_path is None:
                 logger.warning("af2udp not executable on PATH or fallback at %s", self._af2udp_path)
                 return None
-            if not self._sox_path:
-                logger.warning("sox not found in PATH")
-                return None
             if self._is_dual_mode():
                 udp_port_ft8 = 3100 + self._rx
                 udp_port_ft4 = 3200 + self._rx
@@ -816,23 +886,26 @@ class _ReceiverWorker(threading.Thread):
                     f"-s {self._host} -p {self._port} -f {freq_khz} -m usb "
                     f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                     f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
-                    f"-t raw -r 48000 -e signed -b 16 -c 1 - gain 3 | "
+                        f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
                     f"{sys.executable or 'python3'} -u {fanout_path} 127.0.0.1 {udp_port_ft8} {udp_port_ft4}"
                 )
             else:
                 udp_port = 3100 + self._rx
                 self._start_decoder(udp_port, self._decoder_mode())
+                udp_sender_cmd = self._udp_audio_sender_cmd(udp_port=udp_port, af2udp_path=af2udp_path)
                 pipeline_cmd = (
                     f"{sys.executable or 'python3'} {self._kiwirecorder_path} "
                     f"-s {self._host} -p {self._port} -f {freq_khz} -m usb "
                     f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                     f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
-                    f"-t raw -r 48000 -e signed -b 16 -c 1 - gain 3 | "
-                    f"{af2udp_path} {udp_port}"
+                        f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
+                    f"{udp_sender_cmd}"
                 )
             try:
                 log_path = Path("/tmp") / f"kiwi_rx{self._rx}_pipeline.log"
                 log_fp = open(log_path, "a", encoding="utf-8")
+                log_fp.write(f"START {time.strftime('%Y-%m-%d %H:%M:%S')} CMD: {pipeline_cmd}\n")
+                log_fp.flush()
                 proc = subprocess.Popen(
                     pipeline_cmd,
                     shell=True,
@@ -847,7 +920,7 @@ class _ReceiverWorker(threading.Thread):
                         expected_rx=self._rx,
                         timeout_s=6.0,
                         strict=False,
-                        require_visible=True,
+                        require_visible=False,
                     ):
                         self._terminate_external_proc(proc)
                         self._last_spawn_error_reason = "nonssb_rx_mismatch"
@@ -908,16 +981,13 @@ class _ReceiverWorker(threading.Thread):
             self._run_ssb_scan_loop()
             return
         consecutive_failures = 0
-        max_backoff_s = 30.0
         unstable_window_s = 20.0
         while not self._stop.is_set():
             start_monotonic = time.monotonic()
             self._proc = self._spawn()
             if self._proc is None:
                 consecutive_failures += 1
-                backoff_s = min(max_backoff_s, float(2 ** min(consecutive_failures, 5)))
-                if str(self._last_spawn_error_reason or "").startswith("ssb_rx_mismatch") and consecutive_failures >= 3:
-                    backoff_s = max(backoff_s, 45.0)
+                backoff_s = self._watchdog_retry_backoff_s(consecutive_failures)
                 if self._on_restart is not None:
                     try:
                         self._on_restart(self._rx, self._band, str(self._last_spawn_error_reason or "spawn_failed"), backoff_s, consecutive_failures)
@@ -926,13 +996,13 @@ class _ReceiverWorker(threading.Thread):
                 time.sleep(backoff_s)
                 continue
             proc_exited = False
-            next_channel_check = time.time() + 1.5
+            next_channel_check = time.time() + self._watchdog_channel_check_s()
             while not self._stop.is_set():
                 if self._proc.poll() is not None:
                     proc_exited = True
                     break
                 if time.time() >= next_channel_check:
-                    next_channel_check = time.time() + 2.0
+                    next_channel_check = time.time() + self._watchdog_channel_check_s()
                     mode_norm = self._mode_label.strip().upper()
                     is_ssb = ("SSB" in mode_norm) or ("PHONE" in mode_norm)
                     strict = bool(is_ssb)
@@ -946,7 +1016,7 @@ class _ReceiverWorker(threading.Thread):
                         self._last_spawn_error_reason = "ssb_rx_mismatch" if is_ssb else "nonssb_rx_mismatch"
                         proc_exited = True
                         break
-                time.sleep(0.5)
+                time.sleep(self._watchdog_loop_sleep_s())
             self._terminate_proc()
             if not self._stop.is_set():
                 run_time_s = max(0.0, time.monotonic() - start_monotonic)
@@ -955,10 +1025,8 @@ class _ReceiverWorker(threading.Thread):
                 else:
                     consecutive_failures = 0
 
-                backoff_s = min(max_backoff_s, float(2 ** min(consecutive_failures, 5)))
+                backoff_s = self._watchdog_retry_backoff_s(consecutive_failures)
                 reason = str(self._last_spawn_error_reason or "process_exited")
-                if reason.startswith("ssb_rx_mismatch") and consecutive_failures >= 3:
-                    backoff_s = max(backoff_s, 45.0)
                 if proc_exited and self._on_restart is not None:
                     try:
                         self._on_restart(self._rx, self._band, reason, backoff_s, consecutive_failures)

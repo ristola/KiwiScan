@@ -1,0 +1,26 @@
+services:
+  kiwiscan:
+    image: n4ldr/kiwiscan:0.1.6
+    pull_policy: always
+    container_name: kiwiscan
+    platform: linux/amd64
+    ports:
+      - "4010:4010/tcp"
+      - "4010:4010/udp"
+      - "4020:4020"
+    environment:
+      PORT: "4020"
+      TZ: "America/New_York"
+      AUTO_SETUP: "0"
+      AUTO_RELOAD: "0"
+      NO_RESTART: "1"
+      KIWI_SCAN_WS4010: "1"
+      KIWI_SCAN_UDP4010: "1"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    volumes:
+      - ./config:/opt/kiwiscan/config
+      - ./outputs:/opt/kiwiscan/outputs
