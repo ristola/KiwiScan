@@ -152,8 +152,8 @@ docker rm -f kiwiscan
 Build and run the web app container locally:
 
 ```zsh
-docker build -t kiwiscan-kiwiscan:latest .
-docker run --rm -p 4020:4020 kiwiscan-kiwiscan:latest
+docker build -t kiwiscan-local:latest .
+docker run --rm -p 4020:4020 kiwiscan-local:latest
 ```
 
 Or with Compose:
@@ -177,8 +177,12 @@ Build first, then publish:
 If you build manually instead of using Compose, keep the default local release tag:
 
 ```zsh
-docker build -t kiwiscan-kiwiscan:latest .
+docker build -t kiwiscan-local:latest .
 ```
+
+Docker tag note:
+- Use `n4ldr/kiwiscan:<version>` when you want an immutable released image.
+- Use `n4ldr/kiwiscan:latest` when you want the newest published main-branch image; it may move past the most recent numbered release.
 
 Container smoke test:
 
@@ -218,7 +222,7 @@ INTERVAL=600 REQUIRE_SLOTS=udp-3105,udp-3106 ./tools/install_healthcheck_launch_
 Notes:
 - The container is now self-contained for the FastAPI web app on port `4020`; it does not create a virtualenv or install Python packages at container startup.
 - `kiwirecorder.py` is bundled from `vendor/kiwiclient-jks` and available inside the image.
-- `ft8modem` and `af2udp` are built inside the image from the vendored source at `vendor/ft8modem-sm` and installed into `/usr/local/bin`.
+- `ft8modem` and `af2udp` are built inside the image from the tracked vendored source at `vendor/ft8modem-sm` and installed into `/usr/local/bin`.
 - `jt9` is installed from Debian's `wsjtx` package so `ft8modem` can perform FT8/FT4 decoding inside the container.
 - The container publishes the main web app on port `4020` and legacy decoded-data export on port `4010`.
 - The main decode websocket is available from the main app on `ws://<host>:4020/ws/decodes`.

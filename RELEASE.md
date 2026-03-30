@@ -55,6 +55,10 @@ What this does:
 - pushes the versioned tag
 - pushes `n4ldr/kiwiscan:latest` unless `--no-latest` is used
 
+Tag policy:
+- `n4ldr/kiwiscan:<version>` should remain the immutable release snapshot for that version.
+- `n4ldr/kiwiscan:latest` may move ahead of the newest numbered release when main-branch follow-up fixes are published.
+
 Recommended release sequence:
 1. Bump and commit the app version with `./tools/release_commit.sh`
 2. Build and publish the Docker image with `./tools/publish_docker.sh --build`

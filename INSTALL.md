@@ -85,6 +85,7 @@ Notes:
 - Docker downloads the image automatically on first run, so a separate `docker pull` step is not required.
 - This direct `docker run` flow does not use the repo's `docker-compose.yml`.
 - The named Docker volumes preserve config and outputs across container restarts.
+- `n4ldr/kiwiscan:0.1.9` is the immutable release image for this version; `n4ldr/kiwiscan:latest` is a rolling tag and may contain newer main-branch fixes.
 
 Useful commands:
 
