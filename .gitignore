@@ -12,6 +12,15 @@ detections*.jsonl
 *.log
 *.wav
 server.pid
+nohup.out
+timer.out
+decoded.txt
+jt9_wisdom.dat
+
+# Local generated binaries / tool shims
+/af2udp
+/sox
+/bin/
 
 # Local backups
 _backups/
