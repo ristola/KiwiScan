@@ -25,6 +25,12 @@ Options:
 - explicit version: `./tools/release_commit.sh --version 0.1.2`
 - commit only (no push): `./tools/release_commit.sh --no-push`
 
+What this does:
+- bumps `pyproject.toml`
+- commits staged + tracked changes as `Release v<version>`
+- creates annotated tag `v<version>`
+- pushes `main` and the new tag unless `--no-push` is used
+
 ## Docker image release
 
 The published container lives on Docker Hub:
@@ -45,15 +51,16 @@ cd /opt/ShackMate/kiwi_scan
 ```
 
 What this does:
-- tags `kiwiscan-kiwiscan:latest` as `n4ldr/kiwiscan:<version>`
+- tags `kiwiscan-local:latest` as `n4ldr/kiwiscan:<version>`
 - pushes the versioned tag
 - pushes `n4ldr/kiwiscan:latest` unless `--no-latest` is used
 
 Recommended release sequence:
 1. Bump and commit the app version with `./tools/release_commit.sh`
 2. Build and publish the Docker image with `./tools/publish_docker.sh --build`
-3. Verify the published image with `docker pull n4ldr/kiwiscan:<version>`
-4. Update or redeploy Compose consumers pinned to that tag
+3. Verify the git tag with `git rev-list -n 1 v<version>`
+4. Verify the published image with `docker pull n4ldr/kiwiscan:<version>`
+5. Update or redeploy Compose consumers pinned to that tag
 
 ## 2) Build signed/notarized package (recommended)
 

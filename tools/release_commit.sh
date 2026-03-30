@@ -10,7 +10,8 @@ usage() {
   cat <<'EOF'
 Usage: tools/release_commit.sh [--version X.Y.Z] [--no-push]
 
-Bumps kiwi-scan version in pyproject.toml, commits all changes, and pushes.
+Bumps kiwi-scan version in pyproject.toml, commits all changes, creates an
+annotated git tag, and pushes the commit and tag.
 
 Options:
   --version X.Y.Z  Set explicit version instead of auto patch bump
@@ -120,13 +121,22 @@ if git diff --cached --quiet; then
 fi
 
 COMMIT_MSG="Release v$TARGET_VERSION"
+TAG_NAME="v$TARGET_VERSION"
 git commit -m "$COMMIT_MSG"
 
+if git rev-parse -q --verify "refs/tags/$TAG_NAME" >/dev/null 2>&1; then
+  echo "Error: git tag already exists: $TAG_NAME" >&2
+  exit 2
+fi
+
+git tag -a "$TAG_NAME" -m "$COMMIT_MSG"
+
 if [[ "$NO_PUSH" == "1" ]]; then
-  echo "Committed $COMMIT_MSG (push skipped)."
+  echo "Committed $COMMIT_MSG and created $TAG_NAME (push skipped)."
   exit 0
 fi
 
 git push origin main
+git push origin "$TAG_NAME"
 
-echo "Released $TARGET_VERSION and pushed to origin/main."
+echo "Released $TARGET_VERSION, pushed to origin/main, and published tag $TAG_NAME."
