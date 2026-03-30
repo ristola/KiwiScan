@@ -10,6 +10,9 @@ from urllib.request import urlopen
 
 DEFAULT_KIWI_HOST = "0.0.0.0"
 LEGACY_DEFAULT_KIWI_HOST = "192.168.1.93"
+PLACEHOLDER_KIWI_HOSTS = frozenset({
+    "1.2.3.4",
+})
 
 
 def is_unconfigured_kiwi_host(host: object) -> bool:
@@ -19,8 +22,15 @@ def is_unconfigured_kiwi_host(host: object) -> bool:
         DEFAULT_KIWI_HOST,
         "127.0.0.1",
         "localhost",
-        LEGACY_DEFAULT_KIWI_HOST,
+        *PLACEHOLDER_KIWI_HOSTS,
     }
+
+
+def normalize_kiwi_host(host: object) -> str:
+    value = str(host or "").strip()
+    if is_unconfigured_kiwi_host(value):
+        return DEFAULT_KIWI_HOST
+    return value
 
 
 def parse_kiwi_status(text: str) -> dict[str, str]:

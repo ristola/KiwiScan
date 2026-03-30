@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Awaitable, Callable, Dict, Optional
 
 from .discovery import DiscoveryWorker, FT8_WATERHOLES
-from .kiwi_discovery import DEFAULT_KIWI_HOST
+from .kiwi_discovery import DEFAULT_KIWI_HOST, normalize_kiwi_host
 from .kiwi_waterfall import KiwiClientUnavailable
 
 logger = logging.getLogger(__name__)
@@ -195,7 +195,7 @@ class DiscoveryManager:
             self.retune_pause_s = val
         val = _read_str("host")
         if val:
-            self.host = val
+            self.host = normalize_kiwi_host(val)
         val = _read_int("port")
         if val is not None and 1 <= val <= 65535:
             self.port = val
@@ -223,7 +223,7 @@ class DiscoveryManager:
                 "fast_scan_min_frames": int(self.fast_scan_min_frames),
                 "fast_scan_min_duration_s": float(self.fast_scan_min_duration_s),
                 "retune_pause_s": float(self.retune_pause_s),
-                "host": str(self.host),
+                "host": normalize_kiwi_host(self.host),
                 "port": int(self.port),
                 "debug": bool(self.debug),
                 "runtime_dependencies": dict(self.runtime_dependencies),

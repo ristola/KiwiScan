@@ -171,12 +171,6 @@
             background: rgba(45, 212, 191, 0.12);
         }
 
-        body.theme-dark .assign-legend-value {
-            background: rgba(45, 212, 191, 0.16);
-            border-color: var(--line);
-            color: #d5efff;
-        }
-
         body.theme-dark .assign-color-dot {
             border-color: rgba(255, 255, 255, 0.2);
             box-shadow: 0 0 0 2px rgba(8, 19, 31, 0.65);
@@ -185,6 +179,24 @@
         body.theme-dark .topbar-menu-card {
             background: #173047;
             border-color: var(--line);
+        }
+
+        body.theme-dark .topbar-menu-btn.is-busy {
+            background: rgba(14, 165, 160, 0.18);
+            border-color: rgba(94, 234, 212, 0.44);
+            box-shadow: 0 0 0 1px rgba(94, 234, 212, 0.26);
+        }
+
+        body.theme-dark .topbar-menu-btn.is-success {
+            background: rgba(34, 197, 94, 0.18);
+            border-color: rgba(74, 222, 128, 0.46);
+            box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.26);
+        }
+
+        body.theme-dark .topbar-menu-btn.is-error {
+            background: rgba(248, 113, 113, 0.18);
+            border-color: rgba(248, 113, 113, 0.44);
+            box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.24);
         }
 
         body.theme-dark .topbar-menu-sub,
@@ -603,6 +615,30 @@
         .topbar-menu-btn {
             flex: 1 1 0;
             min-width: 0;
+            transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+        }
+
+        .topbar-menu-btn.is-busy {
+            background: color-mix(in srgb, var(--accent-2), white 86%);
+            border-color: color-mix(in srgb, var(--accent-2), white 42%);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-2), white 56%);
+        }
+
+        .topbar-menu-btn.is-success {
+            background: color-mix(in srgb, var(--ok), white 90%);
+            border-color: color-mix(in srgb, var(--ok), white 46%);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--ok), white 58%);
+        }
+
+        .topbar-menu-btn.is-error {
+            background: color-mix(in srgb, var(--fault), white 92%);
+            border-color: color-mix(in srgb, var(--fault), white 52%);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--fault), white 64%);
+        }
+
+        .topbar-menu-btn:disabled {
+            cursor: progress;
+            opacity: 1;
         }
 
         .topbar-menu-toggle-list {
@@ -687,9 +723,25 @@
 
         .status-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            grid-template-columns: 1fr;
             gap: 10px;
             margin-bottom: 14px;
+        }
+
+        .status-overview-card {
+            padding: 14px;
+        }
+
+        .status-overview-items {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .status-overview-items .status-chip {
+            min-height: 0;
+            box-shadow: none;
+            background: color-mix(in srgb, var(--panel), white 6%);
         }
 
         .summary-strip {
@@ -805,6 +857,12 @@
             grid-template-columns: 2fr 1fr;
             gap: 14px;
             align-items: start;
+            width: 100%;
+            min-width: 0;
+        }
+
+        .layout>* {
+            min-width: 0;
         }
 
         .layout.layout-single {
@@ -815,10 +873,19 @@
 
         .layout.layout-overview {
             grid-template-columns: 1fr;
+            justify-items: stretch;
         }
 
         .layout.layout-overview .right-col {
+            width: 100%;
+            min-width: 0;
             grid-template-columns: repeat(2, minmax(0, 1fr));
+            justify-self: stretch;
+            justify-items: stretch;
+        }
+
+        .layout.layout-overview .right-col>.panel-full {
+            width: 100%;
         }
 
         .view-hidden {
@@ -945,6 +1012,90 @@
             margin-top: 10px;
         }
 
+        .settings-card {
+            margin-top: 12px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: color-mix(in srgb, var(--panel), white 12%);
+            padding: 12px;
+            display: grid;
+            gap: 10px;
+        }
+
+        .settings-card-title {
+            color: color-mix(in srgb, var(--accent), white 34%);
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .settings-card .refresh-controls {
+            margin-top: 0;
+            padding-top: 0;
+            border-top: 0;
+        }
+
+        .settings-subcard-grid {
+            display: grid;
+            gap: 10px;
+        }
+
+        .settings-subcard {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: color-mix(in srgb, var(--panel), white 18%);
+            padding: 10px;
+            display: grid;
+            gap: 10px;
+        }
+
+        .settings-subcard-title {
+            color: color-mix(in srgb, var(--accent), white 34%);
+            font-size: 0.76rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+        }
+
+        .kiwi-notice {
+            position: fixed;
+            inset: 18px 18px auto 18px;
+            display: none;
+            justify-content: center;
+            pointer-events: none;
+            z-index: 1200;
+        }
+
+        .kiwi-notice.is-visible {
+            display: flex;
+        }
+
+        .kiwi-notice-box {
+            min-width: min(420px, calc(100vw - 36px));
+            max-width: 520px;
+            border: 1px solid color-mix(in srgb, var(--fault), white 46%);
+            border-radius: 16px;
+            background: color-mix(in srgb, var(--fault), white 92%);
+            box-shadow: 0 18px 44px rgba(15, 23, 42, 0.16);
+            padding: 16px 18px;
+            display: grid;
+            gap: 6px;
+        }
+
+        .kiwi-notice-title {
+            color: #8a1c1c;
+            font-size: 0.96rem;
+            font-weight: 800;
+            letter-spacing: 0.01em;
+        }
+
+        .kiwi-notice-text {
+            color: #7f1d1d;
+            font-size: 0.85rem;
+            line-height: 1.4;
+        }
+
         .action-btn {
             display: inline-flex;
             align-items: center;
@@ -960,11 +1111,35 @@
             font-weight: 600;
             padding: 7px 10px;
             cursor: pointer;
+            transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
         }
 
         .action-btn:hover {
             border-color: color-mix(in srgb, var(--accent-2), black 10%);
             box-shadow: 0 3px 8px rgba(2, 12, 27, 0.09);
+        }
+
+        .action-btn.is-busy {
+            background: color-mix(in srgb, var(--accent-2), white 86%);
+            border-color: color-mix(in srgb, var(--accent-2), white 42%);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-2), white 56%);
+        }
+
+        .action-btn.is-success {
+            background: color-mix(in srgb, var(--ok), white 90%);
+            border-color: color-mix(in srgb, var(--ok), white 46%);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--ok), white 58%);
+        }
+
+        .action-btn.is-error {
+            background: color-mix(in srgb, var(--fault), white 92%);
+            border-color: color-mix(in srgb, var(--fault), white 52%);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--fault), white 64%);
+        }
+
+        .action-btn:disabled {
+            opacity: 1;
+            cursor: progress;
         }
 
         .action-btn-sm {
@@ -1591,54 +1766,17 @@
             flex-wrap: wrap;
         }
 
-        .assign-band-legend {
+        .assign-band-chart-header-actions {
             display: inline-flex;
-            flex-wrap: wrap;
+            align-items: center;
             gap: 8px;
-            align-items: center;
-        }
-
-        .assign-legend-item {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            font-size: 0.74rem;
-            letter-spacing: 0.01em;
-            text-transform: none;
-            color: var(--ink);
-        }
-
-        .assign-legend-value {
-            color: var(--muted);
-            border: 1px solid var(--line);
-            border-radius: 999px;
-            padding: 1px 6px;
-            font-size: 0.68rem;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
-            font-weight: 700;
-            background: color-mix(in srgb, var(--accent-2), white 94%);
-        }
-
-        .assign-legend-swatch {
-            width: 10px;
-            height: 10px;
-            border-radius: 999px;
-            display: inline-block;
-            border: 1px solid rgba(0, 0, 0, 0.15);
-        }
-
-        .assign-legend-empty {
-            color: var(--muted);
-            font-size: 0.74rem;
-            text-transform: none;
-            letter-spacing: 0.01em;
         }
 
         #assign-band-chart {
             width: 100%;
             height: 170px;
             display: block;
+            cursor: pointer;
         }
 
         .assign-band-axis {
@@ -1713,9 +1851,15 @@
         .assign-chart-tooltip .tt-row {
             display: flex;
             justify-content: space-between;
+            align-items: flex-start;
             gap: 8px;
             white-space: nowrap;
             font-family: "IBM Plex Mono", monospace;
+        }
+
+        .assign-chart-tooltip .tt-body {
+            display: grid;
+            gap: 4px;
         }
 
         .assign-chart-tooltip .tt-empty {
@@ -1759,6 +1903,37 @@
             flex-wrap: wrap;
             gap: 8px;
             margin: 0 0 8px;
+        }
+
+        .decode-filter-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            min-height: 34px;
+            border: 1px solid rgba(148, 163, 184, 0.5);
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.04);
+            color: #486581;
+            font-size: 0.74rem;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+            padding: 6px 11px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .decode-filter-toggle input[type="checkbox"] {
+            width: 15px;
+            height: 15px;
+            margin: 0;
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+
+        body.theme-dark .decode-filter-toggle {
+            background: rgba(15, 23, 42, 0.35);
+            color: #cbd5e1;
+            border-color: rgba(148, 163, 184, 0.45);
         }
 
         .decode-mode-btn {
@@ -1873,6 +2048,74 @@
             font-size: 0.68rem;
             text-transform: uppercase;
             letter-spacing: 0.06em;
+        }
+
+        .decode-feed-head>* {
+            min-width: 0;
+        }
+
+        .decode-feed-sort {
+            border: none;
+            background: transparent;
+            color: inherit;
+            -webkit-text-fill-color: currentColor;
+            font: inherit;
+            text-transform: inherit;
+            letter-spacing: inherit;
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 6px;
+            padding: 0;
+            margin: 0;
+            cursor: pointer;
+            min-width: 0;
+        }
+
+        .decode-feed-sort:hover {
+            color: #f8fafc;
+        }
+
+        .decode-feed-sort-label {
+            min-width: 0;
+        }
+
+        .decode-feed-sort-icon {
+            display: inline-flex;
+            flex-direction: column;
+            gap: 2px;
+            color: #64748b;
+        }
+
+        .decode-feed-sort-chevron {
+            width: 0;
+            height: 0;
+            border-left: 4px solid transparent;
+            border-right: 4px solid transparent;
+            opacity: 0.45;
+            transition: opacity 160ms ease, transform 160ms ease, color 160ms ease;
+        }
+
+        .decode-feed-sort-chevron-up {
+            border-bottom: 5px solid currentColor;
+        }
+
+        .decode-feed-sort-chevron-down {
+            border-top: 5px solid currentColor;
+        }
+
+        .decode-feed-sort.is-active {
+            color: #f8fafc;
+        }
+
+        .decode-feed-sort.is-active .decode-feed-sort-icon {
+            color: #93c5fd;
+        }
+
+        .decode-feed-sort[data-sort-direction="asc"] .decode-feed-sort-chevron-up,
+        .decode-feed-sort[data-sort-direction="desc"] .decode-feed-sort-chevron-down {
+            opacity: 1;
+            transform: scale(1.06);
         }
 
         .decode-feed-head span:last-child {
@@ -2057,6 +2300,38 @@
         body.theme-dark .action-btn-sm {
             color: #486581;
             -webkit-text-fill-color: #486581;
+        }
+
+        body.theme-dark .action-btn.is-busy {
+            background: rgba(14, 165, 160, 0.18);
+            border-color: rgba(94, 234, 212, 0.44);
+            box-shadow: 0 0 0 1px rgba(94, 234, 212, 0.26);
+        }
+
+        body.theme-dark .action-btn.is-success {
+            background: rgba(34, 197, 94, 0.18);
+            border-color: rgba(74, 222, 128, 0.46);
+            box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.26);
+        }
+
+        body.theme-dark .action-btn.is-error {
+            background: rgba(248, 113, 113, 0.18);
+            border-color: rgba(248, 113, 113, 0.44);
+            box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.24);
+        }
+
+        body.theme-dark .kiwi-notice-box {
+            border-color: rgba(248, 113, 113, 0.34);
+            background: rgba(127, 29, 29, 0.92);
+            box-shadow: 0 20px 50px rgba(2, 6, 23, 0.42);
+        }
+
+        body.theme-dark .kiwi-notice-title {
+            color: #fecaca;
+        }
+
+        body.theme-dark .kiwi-notice-text {
+            color: #fee2e2;
         }
 
         body.theme-dark .refresh-row select option,
@@ -2310,6 +2585,10 @@
                 grid-template-columns: 1fr;
             }
 
+            .status-overview-items {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
             .summary-strip {
                 grid-template-columns: 1fr;
             }
@@ -2320,6 +2599,8 @@
         }
 
         @media (max-width: 620px) {
+
+            .status-overview-items,
 
             .status-grid,
             .rx-grid {
@@ -2362,13 +2643,19 @@
 </head>
 
 <body>
+    <div class="kiwi-notice" id="kiwi-notice" aria-live="polite" aria-atomic="true" aria-hidden="true">
+        <div class="kiwi-notice-box" role="status">
+            <div class="kiwi-notice-title">KiwiSdr Not Found</div>
+            <div class="kiwi-notice-text" id="kiwi-notice-text">Running auto Discover.</div>
+        </div>
+    </div>
+
     <div class="shell">
         <aside class="side">
             <h2 class="side-title">KiwiScan Pro</h2>
             <p class="side-subtitle">Operations Console</p>
             <ul class="side-nav" id="side-nav">
                 <li><a href="#overview" data-nav="overview" data-icon="dashboard">Overview</a></li>
-                <li><a href="#summary" data-nav="summary" data-icon="pulse">Summary</a></li>
                 <li><a href="#receivers" data-nav="receivers" data-icon="radio">Receiver Matrix</a></li>
                 <li><a href="#assignments" data-nav="assignments" data-icon="sliders">Receiver Statistics</a></li>
                 <li><a href="#faults" data-nav="faults" data-icon="alert">Fault Summary</a></li>
@@ -2451,30 +2738,27 @@
                 </div>
             </div>
 
-            <section class="summary-strip" id="summary">
-                <article class="summary-card" data-icon="signal">
-                    <div class="summary-k">Busiest Band</div>
-                    <div class="summary-v" id="summary-busiest-band">--</div>
-                </article>
-            </section>
-
             <section class="status-grid" id="status-strip">
-                <article class="status-chip" data-icon="server">
-                    <div class="chip-label">Server</div>
-                    <div class="chip-value" id="chip-server">Connecting...</div>
-                    <div class="chip-sub mono" id="chip-server-endpoint">--</div>
-                </article>
-                <article class="status-chip" data-icon="shield">
-                    <div class="chip-label">RX Health</div>
-                    <div class="chip-value" id="chip-rx-health">...</div>
-                </article>
-                <article class="status-chip" data-icon="stream">
-                    <div class="chip-label">WebSocket Stream</div>
-                    <div class="chip-value" id="chip-stream">Connecting...</div>
-                </article>
-                <article class="status-chip" data-icon="signal">
-                    <div class="chip-label">Busiest Band</div>
-                    <div class="chip-value" id="chip-busiest-band">...</div>
+                <article class="panel status-overview-card">
+                    <div class="status-overview-items">
+                        <article class="status-chip" data-icon="server">
+                            <div class="chip-label">Server</div>
+                            <div class="chip-value" id="chip-server">Connecting...</div>
+                            <div class="chip-sub mono" id="chip-server-endpoint">--</div>
+                        </article>
+                        <article class="status-chip" data-icon="shield">
+                            <div class="chip-label">RX Health</div>
+                            <div class="chip-value" id="chip-rx-health">...</div>
+                        </article>
+                        <article class="status-chip" data-icon="stream">
+                            <div class="chip-label">WebSocket Stream</div>
+                            <div class="chip-value" id="chip-stream">Connecting...</div>
+                        </article>
+                        <article class="status-chip" data-icon="signal">
+                            <div class="chip-label">Busiest Band</div>
+                            <div class="chip-value" id="chip-busiest-band">...</div>
+                        </article>
+                    </div>
                 </article>
             </section>
 
@@ -2542,6 +2826,10 @@
                             <div class="assign-band-chart-wrap">
                                 <div class="assign-band-chart-header">
                                     <span>Decodes by Band</span>
+                                    <div class="assign-band-chart-header-actions">
+                                        <button class="action-btn-sm" id="assign-band-chart-toggle" type="button"
+                                            data-icon="pause" aria-pressed="false">Pause Graph</button>
+                                    </div>
                                 </div>
                                 <canvas id="assign-band-chart" width="560" height="170"></canvas>
                                 <div id="assign-band-chart-axis" class="assign-band-axis" aria-hidden="true"></div>
@@ -2584,223 +2872,283 @@
                                     aria-pressed="true">FT8</button>
                                 <button type="button" class="decode-mode-btn" data-mode="SSB"
                                     aria-pressed="true">SSB</button>
+                                <label class="decode-filter-toggle"><input id="decode-cq-only" type="checkbox">CQ's
+                                    Only</label>
+                                <label class="decode-filter-toggle"><input id="decode-dx-only" type="checkbox">DX
+                                    Only</label>
+                                <label class="decode-filter-toggle"><input id="decode-unique-calls"
+                                        type="checkbox">Unique Callsigns</label>
                             </div>
-                            <div class="decode-feed-head mono">
-                                <span>Time</span>
-                                <span>Freq</span>
-                                <span>Mode</span>
-                                <span>Band</span>
-                                <span>Call</span>
-                                <span>Grid</span>
+                            <div class="decode-feed-head mono" id="decode-feed-head">
+                                <button type="button" class="decode-feed-sort" data-sort-key="time"
+                                    data-sort-direction="desc" aria-label="Sort by Time descending">
+                                    <span class="decode-feed-sort-label">Time</span>
+                                    <span class="decode-feed-sort-icon" aria-hidden="true">
+                                        <span class="decode-feed-sort-chevron decode-feed-sort-chevron-up"></span>
+                                        <span class="decode-feed-sort-chevron decode-feed-sort-chevron-down"></span>
+                                    </span>
+                                </button>
+                                <button type="button" class="decode-feed-sort" data-sort-key="freq"
+                                    data-sort-direction="none" aria-label="Sort by Freq ascending">
+                                    <span class="decode-feed-sort-label">Freq</span>
+                                    <span class="decode-feed-sort-icon" aria-hidden="true">
+                                        <span class="decode-feed-sort-chevron decode-feed-sort-chevron-up"></span>
+                                        <span class="decode-feed-sort-chevron decode-feed-sort-chevron-down"></span>
+                                    </span>
+                                </button>
+                                <button type="button" class="decode-feed-sort" data-sort-key="mode"
+                                    data-sort-direction="none" aria-label="Sort by Mode ascending">
+                                    <span class="decode-feed-sort-label">Mode</span>
+                                    <span class="decode-feed-sort-icon" aria-hidden="true">
+                                        <span class="decode-feed-sort-chevron decode-feed-sort-chevron-up"></span>
+                                        <span class="decode-feed-sort-chevron decode-feed-sort-chevron-down"></span>
+                                    </span>
+                                </button>
+                                <button type="button" class="decode-feed-sort" data-sort-key="band"
+                                    data-sort-direction="none" aria-label="Sort by Band ascending">
+                                    <span class="decode-feed-sort-label">Band</span>
+                                    <span class="decode-feed-sort-icon" aria-hidden="true">
+                                        <span class="decode-feed-sort-chevron decode-feed-sort-chevron-up"></span>
+                                        <span class="decode-feed-sort-chevron decode-feed-sort-chevron-down"></span>
+                                    </span>
+                                </button>
+                                <button type="button" class="decode-feed-sort" data-sort-key="call"
+                                    data-sort-direction="none" aria-label="Sort by Call ascending">
+                                    <span class="decode-feed-sort-label">Call</span>
+                                    <span class="decode-feed-sort-icon" aria-hidden="true">
+                                        <span class="decode-feed-sort-chevron decode-feed-sort-chevron-up"></span>
+                                        <span class="decode-feed-sort-chevron decode-feed-sort-chevron-down"></span>
+                                    </span>
+                                </button>
+                                <button type="button" class="decode-feed-sort" data-sort-key="grid"
+                                    data-sort-direction="none" aria-label="Sort by Grid ascending">
+                                    <span class="decode-feed-sort-label">Grid</span>
+                                    <span class="decode-feed-sort-icon" aria-hidden="true">
+                                        <span class="decode-feed-sort-chevron decode-feed-sort-chevron-up"></span>
+                                        <span class="decode-feed-sort-chevron decode-feed-sort-chevron-down"></span>
+                                    </span>
+                                </button>
                                 <span>Message</span>
                             </div>
                             <div id="decode-message-list" class="decode-feed-list"></div>
                         </div>
                     </article>
-                    <article class="panel" id="map">
+                    <article class="panel panel-collapsible panel-full" id="map" data-panel-card="map">
                         <div class="panel-hdr">
                             <h2 data-icon="globe">Map</h2>
-                            <div class="map-panel-meta" id="map-panel-meta">0 spots</div>
-                        </div>
-                        <div class="map-toolbar">
-                            <div id="map-band-filters" class="map-band-filters"></div>
-                            <select id="map-age-filter" class="map-age-filter" aria-label="Map point age filter">
-                                <option value="ALL">All ages</option>
-                                <option value="900000">15 min</option>
-                                <option value="3600000">1 hour</option>
-                                <option value="21600000">6 hours</option>
-                                <option value="86400000">24 hours</option>
-                            </select>
-                            <button id="map-view-toggle" class="map-fit-btn" type="button" data-icon="compass"
-                                aria-pressed="false">3D Globe</button>
-                            <button id="map-fit-btn" class="map-fit-btn" type="button"
-                                data-icon="crosshair">Auto-fit</button>
-                        </div>
-                        <div id="map-filter-summary" class="map-filter-summary">Bands: All | Modes: All | Age: All</div>
-                        <div class="pro-map-wrap">
-                            <div id="propagation-map" class="pro-map-canvas"></div>
-                            <div id="propagation-globe" class="pro-map-canvas pro-map-globe view-hidden"
-                                aria-hidden="true"></div>
-                            <div class="pro-map-legend" id="pro-map-legend" aria-label="Map mode filters">
-                                <button type="button" class="pro-map-legend-btn" data-mode="WSPR" data-icon="pulse"
-                                    aria-pressed="true">
-                                    <span class="pro-map-legend-dot pro-map-legend-dot-wspr"></span>
-                                    WSPR
-                                </button>
-                                <button type="button" class="pro-map-legend-btn" data-mode="FT8" data-icon="signal"
-                                    aria-pressed="true">
-                                    <span class="pro-map-legend-dot pro-map-legend-dot-ft8"></span>
-                                    FT8
-                                </button>
-                                <button type="button" class="pro-map-legend-btn" data-mode="FT4" data-icon="bolt"
-                                    aria-pressed="true">
-                                    <span class="pro-map-legend-dot pro-map-legend-dot-ft4"></span>
-                                    FT4
-                                </button>
-                                <button type="button" class="pro-map-legend-btn" data-mode="SSB" data-icon="mic"
-                                    aria-pressed="true">
-                                    <span class="pro-map-legend-dot pro-map-legend-dot-ssb"></span>
-                                    SSB
+                            <div class="panel-hdr-actions">
+                                <div class="map-panel-meta" id="map-panel-meta">0 spots</div>
+                                <button class="panel-toggle" type="button" aria-expanded="true"
+                                    aria-label="Collapse Map">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                                        <path d="m6 9 6 6 6-6"></path>
+                                    </svg>
                                 </button>
                             </div>
                         </div>
-                        <div class="pro-map-footer">
-                            <span id="map-count">0 spots</span>
-                            <span id="map-updated">Updated: --</span>
+                        <div class="panel-body">
+                            <div class="map-toolbar">
+                                <div id="map-band-filters" class="map-band-filters"></div>
+                                <select id="map-age-filter" class="map-age-filter" aria-label="Map point age filter">
+                                    <option value="ALL">All ages</option>
+                                    <option value="900000">15 min</option>
+                                    <option value="3600000">1 hour</option>
+                                    <option value="21600000">6 hours</option>
+                                    <option value="86400000">24 hours</option>
+                                </select>
+                                <button id="map-view-toggle" class="map-fit-btn" type="button" data-icon="compass"
+                                    aria-pressed="false">3D Globe</button>
+                                <button id="map-fit-btn" class="map-fit-btn" type="button"
+                                    data-icon="crosshair">Auto-fit</button>
+                            </div>
+                            <div id="map-filter-summary" class="map-filter-summary">Bands: All | Modes: All | Age: All
+                            </div>
+                            <div class="pro-map-wrap">
+                                <div id="propagation-map" class="pro-map-canvas"></div>
+                                <div id="propagation-globe" class="pro-map-canvas pro-map-globe view-hidden"
+                                    aria-hidden="true"></div>
+                                <div class="pro-map-legend" id="pro-map-legend" aria-label="Map mode filters">
+                                    <button type="button" class="pro-map-legend-btn" data-mode="WSPR" data-icon="pulse"
+                                        aria-pressed="true">
+                                        <span class="pro-map-legend-dot pro-map-legend-dot-wspr"></span>
+                                        WSPR
+                                    </button>
+                                    <button type="button" class="pro-map-legend-btn" data-mode="FT8" data-icon="signal"
+                                        aria-pressed="true">
+                                        <span class="pro-map-legend-dot pro-map-legend-dot-ft8"></span>
+                                        FT8
+                                    </button>
+                                    <button type="button" class="pro-map-legend-btn" data-mode="FT4" data-icon="bolt"
+                                        aria-pressed="true">
+                                        <span class="pro-map-legend-dot pro-map-legend-dot-ft4"></span>
+                                        FT4
+                                    </button>
+                                    <button type="button" class="pro-map-legend-btn" data-mode="SSB" data-icon="mic"
+                                        aria-pressed="true">
+                                        <span class="pro-map-legend-dot pro-map-legend-dot-ssb"></span>
+                                        SSB
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="pro-map-footer">
+                                <span id="map-count">0 spots</span>
+                                <span id="map-updated">Updated: --</span>
+                            </div>
                         </div>
                     </article>
                     <article class="panel" id="settings">
                         <div class="panel-hdr">
                             <h2 data-icon="settings">Settings</h2>
                         </div>
-                        <div class="refresh-controls">
-                            <div class="summary-k" data-icon="activity">Refresh Control</div>
-                            <div class="refresh-row">
-                                <label for="refresh-interval">Interval</label>
-                                <select id="refresh-interval">
-                                    <option value="1000">1s</option>
-                                    <option value="2000">2s</option>
-                                    <option value="3000" selected>3s</option>
-                                    <option value="5000">5s</option>
-                                    <option value="10000">10s</option>
-                                </select>
-                            </div>
-                            <button class="link-btn" id="refresh-toggle" type="button" data-icon="pause">Pause
-                                Refresh</button>
-                            <button class="link-btn" id="refresh-now" type="button" data-icon="refresh">Refresh
-                                Now</button>
-                            <div class="refresh-status" id="refresh-status">Status: starting...</div>
-                        </div>
-                        <div class="control-grid">
-                            <label class="control-field">Kiwi Host
-                                <input id="cfg-host" type="text" placeholder="192.168.1.93">
-                            </label>
-                            <label class="control-field">Kiwi Port
-                                <input id="cfg-port" type="number" min="1" max="65535" step="1" placeholder="8073">
-                            </label>
-                            <label class="control-field">Latitude
-                                <input id="cfg-latitude" type="number" min="-90" max="90" step="0.0001"
-                                    placeholder="38.6">
-                            </label>
-                            <label class="control-field">Longitude
-                                <input id="cfg-longitude" type="number" min="-180" max="180" step="0.0001"
-                                    placeholder="-78.4">
-                            </label>
-                            <label class="control-field">Dwell Seconds
-                                <input id="cfg-dwell-s" type="number" min="0.1" max="600" step="0.1" placeholder="18">
-                            </label>
-                            <label class="control-field">Span Hz
-                                <input id="cfg-span-hz" type="number" min="100" max="30000" step="10"
-                                    placeholder="3000">
-                            </label>
-                            <label class="control-field">Threshold dB
-                                <input id="cfg-threshold-db" type="number" min="0" max="60" step="0.1" placeholder="12">
-                            </label>
-                            <label class="control-field">FPS
-                                <input id="cfg-fps" type="number" min="0.1" max="10" step="0.1" placeholder="2">
-                            </label>
-                            <label class="control-field">Retune Pause (s)
-                                <input id="cfg-retune-pause-s" type="number" min="0" max="10" step="0.1"
-                                    placeholder="0.5">
-                            </label>
-                            <label class="control-field">Fast Scan
-                                <select id="cfg-fast-scan-enabled">
-                                    <option value="true">Enabled</option>
-                                    <option value="false">Disabled</option>
-                                </select>
-                            </label>
-                        </div>
-                        <div class="control-actions">
-                            <button class="action-btn" id="cfg-reload" type="button" data-icon="refresh">Reload
-                                Settings</button>
-                            <button class="action-btn" id="cfg-discover" type="button" data-icon="search">Discover
-                                Kiwi</button>
-                            <button class="action-btn" id="cfg-deps-refresh" type="button" data-icon="bolt">Refresh
-                                Runtime Deps</button>
-                            <button class="action-btn" id="cfg-deps-test" type="button" data-icon="flask">Test Path
-                                Failures</button>
-                        </div>
-                        <div class="control-grid">
-                            <label class="control-field">UI Theme
-                                <select id="cfg-ui-theme-mode">
-                                    <option value="auto">Auto</option>
-                                    <option value="dark">Dark</option>
-                                    <option value="light">Light</option>
-                                </select>
-                            </label>
-                            <label class="control-field">Night Starts (hour)
-                                <input id="cfg-ui-theme-night-hour" type="number" min="0" max="23" step="1"
-                                    placeholder="21">
-                            </label>
-                            <label class="control-field">Theme Hour Offset
-                                <input id="cfg-ui-theme-hour-offset" type="number" min="-12" max="12" step="1"
-                                    placeholder="0">
-                            </label>
-                            <label class="control-field">UI Density
-                                <select id="cfg-ui-density">
-                                    <option value="compact">Compact</option>
-                                    <option value="normal">Normal</option>
-                                    <option value="comfortable">Comfortable</option>
-                                </select>
-                            </label>
-                            <div class="control-field">Update Status
-                                <div class="control-status" id="cfg-update-status">Update status: unknown</div>
-                            </div>
-                        </div>
-                        <div class="control-actions">
-                            <button class="action-btn" id="cfg-check-updates" type="button" data-icon="download">Check
-                                for Updates</button>
-                            <button class="action-btn" id="cfg-reset-ui" type="button" data-icon="rotate">Reset
-                                UI</button>
-                        </div>
+                        <section class="settings-card" aria-labelledby="settings-appearance-title">
+                            <div class="settings-card-title" id="settings-appearance-title">Appearance</div>
+                            <div class="settings-subcard-grid">
+                                <section class="settings-subcard" aria-labelledby="settings-theme-card-title">
+                                    <div class="settings-subcard-title" id="settings-theme-card-title">UI Theme</div>
+                                    <div class="control-grid" style="margin-top: 0;">
+                                        <label class="control-field">UI Theme
+                                            <select id="cfg-ui-theme-mode">
+                                                <option value="auto">Auto</option>
+                                                <option value="dark">Dark</option>
+                                                <option value="light">Light</option>
+                                            </select>
+                                        </label>
+                                        <label class="control-field">Night Starts (hour)
+                                            <input id="cfg-ui-theme-night-hour" type="number" min="0" max="23" step="1"
+                                                placeholder="21">
+                                        </label>
+                                        <label class="control-field">Theme Hour Offset
+                                            <input id="cfg-ui-theme-hour-offset" type="number" min="-12" max="12"
+                                                step="1" placeholder="0">
+                                        </label>
+                                        <label class="control-field">UI Density
+                                            <select id="cfg-ui-density">
+                                                <option value="compact">Compact</option>
+                                                <option value="normal">Normal</option>
+                                                <option value="comfortable">Comfortable</option>
+                                            </select>
+                                        </label>
+                                    </div>
+                                </section>
 
-                        <div class="control-grid">
-                            <div class="control-field" style="grid-column: 1 / -1;">
-                                Overview Topics
-                                <div class="toggle-grid" id="cfg-overview-topics">
-                                    <label class="toggle-row">Summary <input id="cfg-overview-summary" type="checkbox"
-                                            checked></label>
-                                    <label class="toggle-row">Status Strip <input id="cfg-overview-status"
-                                            type="checkbox" checked></label>
-                                    <label class="toggle-row">Receiver Matrix <input id="cfg-overview-receivers"
-                                            type="checkbox" checked></label>
-                                    <label class="toggle-row">Receiver Statistics <input id="cfg-overview-assignments"
-                                            type="checkbox" checked></label>
-                                    <label class="toggle-row">Fault Summary <input id="cfg-overview-faults"
-                                            type="checkbox" checked></label>
-                                    <label class="toggle-row">Assignment Balance <input id="cfg-overview-balance"
-                                            type="checkbox" checked></label>
-                                    <label class="toggle-row">Decoded Messages <input id="cfg-overview-messages"
-                                            type="checkbox" checked></label>
-                                    <label class="toggle-row">Map <input id="cfg-overview-map" type="checkbox"
-                                            checked></label>
+                                <section class="settings-subcard" aria-labelledby="settings-refresh-card-title">
+                                    <div class="settings-subcard-title" id="settings-refresh-card-title">Refresh</div>
+                                    <div class="refresh-controls">
+                                        <div class="refresh-row">
+                                            <label for="refresh-interval">Interval</label>
+                                            <select id="refresh-interval">
+                                                <option value="1000">1s</option>
+                                                <option value="2000">2s</option>
+                                                <option value="3000" selected>3s</option>
+                                                <option value="5000">5s</option>
+                                                <option value="10000">10s</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </section>
+                            </div>
+                            <div class="control-grid" style="margin-top: 0;">
+                                <div class="control-field">Update Status
+                                    <div class="control-status" id="cfg-update-status">Update status: unknown</div>
                                 </div>
                             </div>
-                        </div>
-
-                        <div class="control-grid">
-                            <label class="control-field">Headless Loop
-                                <select id="cfg-headless-enabled">
-                                    <option value="true">On</option>
-                                    <option value="false">Off</option>
-                                </select>
-                            </label>
-                            <label class="control-field">Use launchd
-                                <select id="cfg-use-launchd">
-                                    <option value="true">On</option>
-                                    <option value="false">Off</option>
-                                </select>
-                            </label>
-                            <div class="control-field">Runtime Status
-                                <div class="control-status" id="cfg-runtime-status">Runtime status: unknown</div>
+                            <div class="control-actions" style="margin-top: 0;">
+                                <button class="action-btn" id="cfg-check-updates" type="button"
+                                    data-icon="download">Check
+                                    for Updates</button>
+                                <button class="action-btn" id="cfg-reset-ui" type="button" data-icon="rotate">Reset
+                                    UI</button>
                             </div>
-                        </div>
-                        <div class="control-actions">
-                            <span class="autosave-badge">Autosave On</span>
-                            <button class="action-btn" id="cfg-runtime-refresh" type="button"
-                                data-icon="activity">Refresh Runtime
-                                Status</button>
-                        </div>
+                        </section>
+
+                        <section class="settings-card" aria-labelledby="settings-kiwisdr-title">
+                            <div class="settings-card-title" id="settings-kiwisdr-title">KiwiSdr Settings</div>
+                            <div class="control-grid" style="margin-top: 0;">
+                                <label class="control-field">Kiwi Host
+                                    <input id="cfg-host" type="text" placeholder="0.0.0.0">
+                                </label>
+                                <label class="control-field">Kiwi Port
+                                    <input id="cfg-port" type="number" min="1" max="65535" step="1" placeholder="8073">
+                                </label>
+                                <label class="control-field">Latitude
+                                    <input id="cfg-latitude" type="number" min="-90" max="90" step="0.0001"
+                                        placeholder="0">
+                                </label>
+                                <label class="control-field">Longitude
+                                    <input id="cfg-longitude" type="number" min="-180" max="180" step="0.0001"
+                                        placeholder="0">
+                                </label>
+                            </div>
+                            <div class="control-actions" style="margin-top: 0;">
+                                <button class="action-btn" id="cfg-discover" type="button" data-icon="search">Discover
+                                    Kiwi</button>
+                            </div>
+                        </section>
+
+                        <section class="settings-card" aria-labelledby="settings-layout-title">
+                            <div class="settings-card-title" id="settings-layout-title">Layout</div>
+                            <div class="control-grid" style="margin-top: 0;">
+                                <div class="control-field" style="grid-column: 1 / -1;">
+                                    Overview Topics
+                                    <div class="toggle-grid" id="cfg-overview-topics">
+                                        <label class="toggle-row">Status Strip <input id="cfg-overview-status"
+                                                type="checkbox" checked></label>
+                                        <label class="toggle-row">Receiver Matrix <input id="cfg-overview-receivers"
+                                                type="checkbox" checked></label>
+                                        <label class="toggle-row">Receiver Statistics <input
+                                                id="cfg-overview-assignments" type="checkbox" checked></label>
+                                        <label class="toggle-row">Fault Summary <input id="cfg-overview-faults"
+                                                type="checkbox" checked></label>
+                                        <label class="toggle-row">Assignment Balance <input id="cfg-overview-balance"
+                                                type="checkbox" checked></label>
+                                        <label class="toggle-row">Decoded Messages <input id="cfg-overview-messages"
+                                                type="checkbox" checked></label>
+                                        <label class="toggle-row">Map <input id="cfg-overview-map" type="checkbox"
+                                                checked></label>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="settings-card" aria-labelledby="settings-runtime-title">
+                            <div class="settings-card-title" id="settings-runtime-title">Runtime</div>
+                            <div class="control-grid" style="margin-top: 0;">
+                                <label class="control-field">Dwell Seconds
+                                    <input id="cfg-dwell-s" type="number" min="0.1" max="600" step="0.1"
+                                        placeholder="18">
+                                </label>
+                                <label class="control-field">Span Hz
+                                    <input id="cfg-span-hz" type="number" min="100" max="30000" step="10"
+                                        placeholder="3000">
+                                </label>
+                                <label class="control-field">Threshold dB
+                                    <input id="cfg-threshold-db" type="number" min="0" max="60" step="0.1"
+                                        placeholder="12">
+                                </label>
+                                <label class="control-field">FPS
+                                    <input id="cfg-fps" type="number" min="0.1" max="10" step="0.1" placeholder="2">
+                                </label>
+                                <label class="control-field">Retune Pause (s)
+                                    <input id="cfg-retune-pause-s" type="number" min="0" max="10" step="0.1"
+                                        placeholder="0.5">
+                                </label>
+                                <label class="control-field">Fast Scan
+                                    <select id="cfg-fast-scan-enabled">
+                                        <option value="true">Enabled</option>
+                                        <option value="false">Disabled</option>
+                                    </select>
+                                </label>
+                            </div>
+                            <div class="control-actions" style="margin-top: 0;">
+                                <button class="action-btn" id="cfg-reload" type="button" data-icon="refresh">Reload
+                                    Settings</button>
+                                <button class="action-btn" id="cfg-deps-refresh" type="button" data-icon="bolt">Refresh
+                                    Runtime Deps</button>
+                                <button class="action-btn" id="cfg-deps-test" type="button" data-icon="flask">Test Path
+                                    Failures</button>
+                            </div>
+                        </section>
+
                         <div class="control-status" id="cfg-status">Settings: idle</div>
                     </article>
                     <article class="panel" id="system">
@@ -2990,6 +3338,7 @@
         let bandBreakdownHistory = {};
         let receiverActivityHistory = {};
         let receiverDecodeTotals = {};
+        let receiverDecodeSnrHistory = {};
         let lastKnownSnrByRx = {};
         let currentBandAssignments = {};
         let decodeWsClientCount = null;
@@ -3001,6 +3350,10 @@
         let bandChartHoverIndex = -1;
         let _bandChartLastBands = [];
         let _bandChartLastColorMap = {};
+        let _bandChartLiveBands = [];
+        let _bandChartLiveColorMap = {};
+        let assignmentsBandChartPaused = false;
+        let pausedBandChartSnapshot = null;
         let decodeRateWarmupCycles = 2;
         let latestChannelsMap = {};
         let lastRateTickMs = Date.now();
@@ -3014,6 +3367,13 @@
         let currentUiThemeHourOffset = 0;
         let authoritativeUiThemeHourOffset = 0;
         let currentUiDensity = "normal";
+        let kiwiAutoDiscoverAttempted = false;
+        let kiwiConnectivityCheckInFlight = false;
+        let serviceToggleState = {
+            headlessEnabled: true,
+            useLaunchd: false,
+        };
+        let runtimeStatusText = "Runtime status: unknown";
         let currentSectionNavId = "overview";
         let configAutosaveTimer = null;
         let automationAutosaveTimer = null;
@@ -3025,7 +3385,6 @@
         let lastReceiverAgeRefreshMs = 0;
         let lastBandActivitySampleMs = Date.now();
         let overviewTopicPrefs = {
-            summary: true,
             status: true,
             receivers: true,
             assignments: true,
@@ -3046,10 +3405,17 @@
         const UI_THEME_DEFAULT_HOUR_OFFSET = 0;
         const UI_THEME_AUTO_DAY_HOUR = 7;
         const UI_DENSITY_DEFAULT_MODE = "normal";
+        const KIWI_SETTINGS_DEFAULTS = Object.freeze({
+            host: "0.0.0.0",
+            port: 8073,
+            latitude: 0,
+            longitude: 0,
+        });
         const DEFAULT_SUBTITLE_TEXT = "Realtime operations dashboard for receiver health and propagation";
         const OVERVIEW_TOPICS_STORAGE_KEY = "kiwiscan.pro.overviewTopics";
         const RECEIVER_SORT_STORAGE_KEY = "kiwiscan.pro.receiverSortMode.v2";
-        const OVERVIEW_TOPIC_KEYS = ["summary", "status", "receivers", "assignments", "faults", "balance", "messages", "map"];
+        const DECODE_EXTRA_FILTERS_STORAGE_KEY = "kiwiscan.pro.decodeExtraFilters.v1";
+        const OVERVIEW_TOPIC_KEYS = ["status", "receivers", "assignments", "faults", "balance", "messages", "map"];
         const GRAPH_WINDOW_MIN_MS = 5 * 60 * 1000;
         const GRAPH_HISTORY_MAX_SAMPLES = 360;
         const RECEIVER_MATRIX_AGE_REFRESH_MS = 15000;
@@ -3074,8 +3440,13 @@
         const MAP_GLOBE_DAY_IMAGE_URL = "https://unpkg.com/three-globe/example/img/earth-day.jpg";
         const MAP_GLOBE_NIGHT_IMAGE_URL = "https://unpkg.com/three-globe/example/img/earth-night.jpg";
         const MAP_GLOBE_DEFAULT_ALTITUDE = 2.35;
+        const DECODE_SORT_DEFAULT = { key: "time", direction: "desc" };
         let recentDecodeItems = [];
         let decodeSelectedModes = new Set(MAP_MODE_FILTERS);
+        let decodeCqOnly = false;
+        let decodeDxOnly = false;
+        let decodeUniqueCallsigns = false;
+        let decodeSortState = { ...DECODE_SORT_DEFAULT };
         let mapPoints = new Map();
         let mapInstance = null;
         let mapMarkerLayer = null;
@@ -3093,6 +3464,58 @@
 
         function byId(id) {
             return document.getElementById(id);
+        }
+
+        function cloneJsonCompatible(value, fallback) {
+            try {
+                return JSON.parse(JSON.stringify(value));
+            } catch (_) {
+                return fallback;
+            }
+        }
+
+        function captureAssignmentsBandChartSnapshot() {
+            pausedBandChartSnapshot = {
+                assignedBands: Array.isArray(_bandChartLiveBands) ? [..._bandChartLiveBands] : [],
+                bandColorMap: { ..._bandChartLiveColorMap },
+                bandActivityHistory: cloneJsonCompatible(bandActivityHistory, {}),
+                bandBreakdownHistory: cloneJsonCompatible(bandBreakdownHistory, {}),
+                currentBandAssignments: cloneJsonCompatible(currentBandAssignments, {}),
+                lastBandActivitySampleMs: Number(lastBandActivitySampleMs || Date.now()),
+            };
+        }
+
+        function updateAssignmentsBandChartToggle() {
+            const btn = byId("assign-band-chart-toggle");
+            if (!btn) return;
+            btn.textContent = assignmentsBandChartPaused ? "Resume Graph" : "Pause Graph";
+            btn.dataset.icon = assignmentsBandChartPaused ? "play" : "pause";
+            btn.setAttribute("aria-pressed", assignmentsBandChartPaused ? "true" : "false");
+            btn.setAttribute("aria-label", assignmentsBandChartPaused ? "Resume Receiver Graph" : "Pause Receiver Graph");
+            decorateUiIcons();
+        }
+
+        function setAssignmentsBandChartPaused(paused) {
+            assignmentsBandChartPaused = !!paused;
+            if (assignmentsBandChartPaused) {
+                captureAssignmentsBandChartSnapshot();
+            } else {
+                pausedBandChartSnapshot = null;
+            }
+            bandChartHoverIndex = -1;
+            renderAssignmentsBandChart(_bandChartLiveBands, _bandChartLiveColorMap);
+            updateAssignmentsBandChartToggle();
+        }
+
+        function initAssignmentsBandChartControls() {
+            const btn = byId("assign-band-chart-toggle");
+            if (btn && btn.dataset.bound !== "1") {
+                btn.addEventListener("click", () => {
+                    setAssignmentsBandChartPaused(!assignmentsBandChartPaused);
+                });
+                btn.dataset.bound = "1";
+            }
+            updateAssignmentsBandChartToggle();
         }
 
         function normalizeMapViewMode(value, fallback = "map") {
@@ -3118,9 +3541,65 @@
             }
         }
 
+        function normalizeDecodeExtraFilterPrefs(raw) {
+            const source = raw && typeof raw === "object" ? raw : {};
+            return {
+                cqOnly: !!source.cqOnly,
+                dxOnly: !!source.dxOnly,
+                uniqueCallsigns: !!source.uniqueCallsigns,
+            };
+        }
+
+        function readStoredDecodeExtraFilterPrefs() {
+            try {
+                const raw = localStorage.getItem(DECODE_EXTRA_FILTERS_STORAGE_KEY);
+                if (!raw) return normalizeDecodeExtraFilterPrefs(null);
+                return normalizeDecodeExtraFilterPrefs(JSON.parse(raw));
+            } catch (_) {
+                return normalizeDecodeExtraFilterPrefs(null);
+            }
+        }
+
+        function writeStoredDecodeExtraFilterPrefs() {
+            try {
+                localStorage.setItem(DECODE_EXTRA_FILTERS_STORAGE_KEY, JSON.stringify({
+                    cqOnly: !!decodeCqOnly,
+                    dxOnly: !!decodeDxOnly,
+                    uniqueCallsigns: !!decodeUniqueCallsigns,
+                }));
+            } catch (_) {
+                // Ignore storage errors and keep the UI interactive.
+            }
+        }
+
         function safeText(v, fallback = "--") {
             const text = String(v === undefined || v === null ? "" : v).trim();
             return text || fallback;
+        }
+
+        function parseDecodeReceiverLabel(item) {
+            if (!item || typeof item !== "object") return null;
+            const candidates = [item.rx, item.receiver, item.rx_id, item.receiver_id, item.channel, item.slot];
+            for (const raw of candidates) {
+                if (raw === null || raw === undefined || raw === "") continue;
+                if (typeof raw === "number" && Number.isFinite(raw)) return `RX${Math.trunc(raw)}`;
+                const txt = String(raw).trim();
+                if (!txt) continue;
+                const match = txt.match(/^(?:RX)?\s*(\d+)$/i);
+                if (match) return `RX${Number(match[1])}`;
+            }
+            return null;
+        }
+
+        function recordDecodeSnr(item) {
+            const rxLabel = parseDecodeReceiverLabel(item);
+            const snr = Number(item && item.snr);
+            if (!rxLabel || !Number.isFinite(snr)) return;
+            const now = Date.now();
+            const cutoff = now - RECEIVER_ACTIVITY_WINDOW_MS;
+            const samples = Array.isArray(receiverDecodeSnrHistory[rxLabel]) ? receiverDecodeSnrHistory[rxLabel] : [];
+            samples.push({ t: now, snr });
+            receiverDecodeSnrHistory[rxLabel] = samples.filter((sample) => sample && Number(sample.t || 0) >= cutoff);
         }
 
         function escapeHtml(text) {
@@ -3557,6 +4036,14 @@
                 dashboardPanelPrefs = { ...dashboardPanelPrefs, [key]: isCollapsed };
                 writeStoredDashboardPanelPrefs(dashboardPanelPrefs);
             }
+            if (panel.id === "map" && !isCollapsed) {
+                requestAnimationFrame(() => {
+                    if (mapInstance) mapInstance.invalidateSize();
+                    if (currentSectionNavId === "overview" ? !!overviewTopicPrefs.map : currentSectionNavId === "map") {
+                        renderPropagationMap();
+                    }
+                });
+            }
         }
 
         function initDashboardPanelToggles() {
@@ -3622,6 +4109,7 @@
             globe: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3a15 15 0 0 1 0 18"></path><path d="M12 3a15 15 0 0 0 0 18"></path></svg>`,
             messages: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14v9H9l-4 3V6Z"></path><path d="M8 10h8"></path><path d="M8 13h5"></path></svg>`,
             pause: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14"></path><path d="M15 5v14"></path></svg>`,
+            play: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7V5Z"></path></svg>`,
             pulse: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2-4 4 8 2-4h6"></path></svg>`,
             radio: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14v12H5z"></path><path d="M9 10h6"></path><circle cx="16" cy="14" r="1.5"></circle><path d="m8 6 8-3"></path></svg>`,
             refresh: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.8-3"></path><path d="M4 4v5h5"></path><path d="M4 13a8 8 0 0 0 14.8 3"></path><path d="M20 20v-5h-5"></path></svg>`,
@@ -3718,6 +4206,47 @@
             return String(el.value || "").trim();
         }
 
+        function normalizeKiwiSettingsSnapshot(raw = {}) {
+            const hostText = String(raw && raw.host != null ? raw.host : "").trim();
+            const portValue = Number(raw && raw.port);
+            const latitudeValue = Number(raw && raw.latitude);
+            const longitudeValue = Number(raw && raw.longitude);
+            return {
+                host: hostText || KIWI_SETTINGS_DEFAULTS.host,
+                port: Number.isFinite(portValue) ? portValue : KIWI_SETTINGS_DEFAULTS.port,
+                latitude: Number.isFinite(latitudeValue) ? latitudeValue : KIWI_SETTINGS_DEFAULTS.latitude,
+                longitude: Number.isFinite(longitudeValue) ? longitudeValue : KIWI_SETTINGS_DEFAULTS.longitude,
+            };
+        }
+
+        function isDefaultKiwiSettings(raw = {}) {
+            const next = normalizeKiwiSettingsSnapshot(raw);
+            return next.host === KIWI_SETTINGS_DEFAULTS.host
+                && next.port === KIWI_SETTINGS_DEFAULTS.port
+                && next.latitude === KIWI_SETTINGS_DEFAULTS.latitude
+                && next.longitude === KIWI_SETTINGS_DEFAULTS.longitude;
+        }
+
+        function setServiceToggleState(next = {}) {
+            if (Object.prototype.hasOwnProperty.call(next, "headlessEnabled")) {
+                serviceToggleState.headlessEnabled = !!next.headlessEnabled;
+                setSelectBool("cfg-headless-enabled", serviceToggleState.headlessEnabled);
+            }
+            if (Object.prototype.hasOwnProperty.call(next, "useLaunchd")) {
+                serviceToggleState.useLaunchd = !!next.useLaunchd;
+                setSelectBool("cfg-use-launchd", serviceToggleState.useLaunchd);
+            }
+        }
+
+        function readServiceToggle(key, fallback = false) {
+            const id = key === "headlessEnabled"
+                ? "cfg-headless-enabled"
+                : (key === "useLaunchd" ? "cfg-use-launchd" : "");
+            if (id && byId(id)) return readSelectBool(id, fallback);
+            if (Object.prototype.hasOwnProperty.call(serviceToggleState, key)) return !!serviceToggleState[key];
+            return fallback;
+        }
+
         function syncTopbarMenuState() {
             const host = readTextInput("cfg-host", "");
             const port = readTextInput("cfg-port", "");
@@ -3729,12 +4258,12 @@
             const launchdBtn = byId("topbar-menu-launchd-toggle");
             const cfgStatus = byId("cfg-status");
             const runtimeStatus = byId("cfg-runtime-status");
-            const headlessEnabled = readSelectBool("cfg-headless-enabled", false);
-            const launchdEnabled = readSelectBool("cfg-use-launchd", false);
+            const headlessEnabled = readServiceToggle("headlessEnabled", false);
+            const launchdEnabled = readServiceToggle("useLaunchd", false);
 
             if (hostEl) hostEl.textContent = hostText;
             if (hostStatusEl) hostStatusEl.textContent = cfgStatus ? cfgStatus.textContent : "Settings: idle";
-            if (runtimeStatusEl) runtimeStatusEl.textContent = runtimeStatus ? runtimeStatus.textContent : "Runtime status: unknown";
+            if (runtimeStatusEl) runtimeStatusEl.textContent = runtimeStatus ? runtimeStatus.textContent : runtimeStatusText;
 
             const applyToggleState = (button, enabled) => {
                 if (!button) return;
@@ -3777,7 +4306,6 @@
 
         function defaultOverviewTopicPrefs() {
             return {
-                summary: true,
                 status: true,
                 receivers: true,
                 assignments: true,
@@ -3838,6 +4366,11 @@
         function isCqDecodeMessage(message) {
             const text = String(message || "").toUpperCase();
             return /\bCQ\b/.test(text) || /\bCQDX\b/.test(text);
+        }
+
+        function isDxDecodeMessage(message) {
+            const text = String(message || "").toUpperCase();
+            return /\bDX\b/.test(text) || /\bCQDX\b/.test(text);
         }
 
         function shouldKeepDecodeItem(data) {
@@ -3905,22 +4438,177 @@
             updateDecodeModeToolbar();
         }
 
+        function updateDecodeExtraFiltersUi() {
+            const cqOnly = byId("decode-cq-only");
+            const dxOnly = byId("decode-dx-only");
+            const uniqueCalls = byId("decode-unique-calls");
+            if (cqOnly) cqOnly.checked = !!decodeCqOnly;
+            if (dxOnly) dxOnly.checked = !!decodeDxOnly;
+            if (uniqueCalls) uniqueCalls.checked = !!decodeUniqueCallsigns;
+        }
+
+        function initDecodeExtraFilters() {
+            const storedPrefs = readStoredDecodeExtraFilterPrefs();
+            decodeCqOnly = !!storedPrefs.cqOnly;
+            decodeDxOnly = !!storedPrefs.dxOnly;
+            decodeUniqueCallsigns = !!storedPrefs.uniqueCallsigns;
+            const cqOnly = byId("decode-cq-only");
+            const dxOnly = byId("decode-dx-only");
+            const uniqueCalls = byId("decode-unique-calls");
+            if (cqOnly && cqOnly.dataset.bound !== "1") {
+                cqOnly.addEventListener("change", () => {
+                    decodeCqOnly = !!cqOnly.checked;
+                    writeStoredDecodeExtraFilterPrefs();
+                    renderRecentDecodePanel();
+                });
+                cqOnly.dataset.bound = "1";
+            }
+            if (dxOnly && dxOnly.dataset.bound !== "1") {
+                dxOnly.addEventListener("change", () => {
+                    decodeDxOnly = !!dxOnly.checked;
+                    writeStoredDecodeExtraFilterPrefs();
+                    renderRecentDecodePanel();
+                });
+                dxOnly.dataset.bound = "1";
+            }
+            if (uniqueCalls && uniqueCalls.dataset.bound !== "1") {
+                uniqueCalls.addEventListener("change", () => {
+                    decodeUniqueCallsigns = !!uniqueCalls.checked;
+                    writeStoredDecodeExtraFilterPrefs();
+                    renderRecentDecodePanel();
+                });
+                uniqueCalls.dataset.bound = "1";
+            }
+            updateDecodeExtraFiltersUi();
+        }
+
+        function applyDecodeListFilters(items) {
+            const filtered = (Array.isArray(items) ? items : []).filter((item) => {
+                if (!decodeSelectedModes.has(String(item && item.mode || "").toUpperCase())) return false;
+                if (decodeCqOnly && !isCqDecodeMessage(item && item.message)) return false;
+                if (decodeDxOnly && !isDxDecodeMessage(item && item.message)) return false;
+                return true;
+            });
+            const sorted = sortRecentDecodeItems(filtered);
+            if (!decodeUniqueCallsigns) return sorted;
+
+            const seen = new Set();
+            const uniqueRows = [];
+            for (const item of sorted) {
+                const callsign = sanitizeCallsign(item && item.callsign, item && item.grid);
+                if (!callsign) {
+                    uniqueRows.push(item);
+                    continue;
+                }
+                if (seen.has(callsign)) continue;
+                seen.add(callsign);
+                uniqueRows.push(item);
+            }
+            return uniqueRows;
+        }
+
+        function updateDecodeSortHeaderUi() {
+            const container = byId("decode-feed-head");
+            if (!container) return;
+            container.querySelectorAll(".decode-feed-sort[data-sort-key]").forEach((btn) => {
+                const key = String(btn.dataset.sortKey || "");
+                const active = key === decodeSortState.key;
+                const direction = active ? decodeSortState.direction : "none";
+                const nextDirection = active
+                    ? (decodeSortState.direction === "asc" ? "descending" : "ascending")
+                    : (key === "time" ? "descending" : "ascending");
+                const label = btn.querySelector(".decode-feed-sort-label")?.textContent?.trim() || key;
+                btn.classList.toggle("is-active", active);
+                btn.dataset.sortDirection = direction;
+                btn.setAttribute("aria-label", `Sort by ${label} ${nextDirection}`);
+                btn.title = `Sort by ${label} ${nextDirection}`;
+            });
+        }
+
+        function initDecodeSortControls() {
+            const container = byId("decode-feed-head");
+            if (!container || container.dataset.bound === "1") {
+                updateDecodeSortHeaderUi();
+                return;
+            }
+            container.dataset.bound = "1";
+            container.querySelectorAll(".decode-feed-sort[data-sort-key]").forEach((btn) => {
+                btn.addEventListener("click", () => {
+                    const key = String(btn.dataset.sortKey || "");
+                    if (!key) return;
+                    if (decodeSortState.key === key) {
+                        decodeSortState = {
+                            key,
+                            direction: decodeSortState.direction === "asc" ? "desc" : "asc",
+                        };
+                    } else {
+                        decodeSortState = {
+                            key,
+                            direction: key === "time" ? "desc" : "asc",
+                        };
+                    }
+                    updateDecodeSortHeaderUi();
+                    renderRecentDecodePanel();
+                });
+            });
+            updateDecodeSortHeaderUi();
+        }
+
+        function decodeItemTimestampMs(item) {
+            const raw = String(item && item.timestamp || "").trim();
+            const parsed = Date.parse(raw);
+            if (Number.isFinite(parsed)) return parsed;
+            const receivedAt = Number(item && item.receivedAt || 0);
+            return Number.isFinite(receivedAt) ? receivedAt : 0;
+        }
+
+        function compareDecodeField(a, b, key) {
+            if (key === "time") return decodeItemTimestampMs(a) - decodeItemTimestampMs(b);
+            if (key === "freq") return (Number(a && a.frequency_mhz) || 0) - (Number(b && b.frequency_mhz) || 0);
+            if (key === "band") return compareBandLabels(String(a && a.band || ""), String(b && b.band || ""));
+            if (key === "mode") return String(a && a.mode || "").localeCompare(String(b && b.mode || ""));
+            if (key === "call") return sanitizeCallsign(a && a.callsign, a && a.grid).localeCompare(sanitizeCallsign(b && b.callsign, b && b.grid));
+            if (key === "grid") return normalizeGridSquare(a && a.grid).localeCompare(normalizeGridSquare(b && b.grid));
+            return 0;
+        }
+
+        function sortRecentDecodeItems(items) {
+            const directionMultiplier = decodeSortState.direction === "asc" ? 1 : -1;
+            return (Array.isArray(items) ? items : [])
+                .map((item, index) => ({ item, index }))
+                .sort((left, right) => {
+                    const primary = compareDecodeField(left.item, right.item, decodeSortState.key) * directionMultiplier;
+                    if (primary) return primary;
+                    return right.index - left.index;
+                })
+                .map((entry) => entry.item);
+        }
+
         function renderRecentDecodePanel() {
             const list = byId("decode-message-list");
             const meta = byId("decode-panel-meta");
             if (!list) return;
-            const rows = recentDecodeItems
-                .filter((item) => decodeSelectedModes.has(String(item && item.mode || "").toUpperCase()))
-                .slice(-RECENT_DECODE_RENDER_LIMIT)
-                .reverse();
+            const filtered = recentDecodeItems.filter((item) => {
+                if (!decodeSelectedModes.has(String(item && item.mode || "").toUpperCase())) return false;
+                if (decodeCqOnly && !isCqDecodeMessage(item && item.message)) return false;
+                if (decodeDxOnly && !isDxDecodeMessage(item && item.message)) return false;
+                return true;
+            });
+            const latestItem = filtered.reduce((latest, item) => {
+                if (!latest) return item;
+                return decodeItemTimestampMs(item) > decodeItemTimestampMs(latest) ? item : latest;
+            }, null);
+            const rows = applyDecodeListFilters(recentDecodeItems).slice(0, RECENT_DECODE_RENDER_LIMIT);
             if (meta) {
-                const latest = rows.length ? formatDecodeClockText(rows[0]) : "--";
+                const latest = latestItem ? formatDecodeClockText(latestItem) : "--";
                 const activeModes = MAP_MODE_FILTERS.filter((mode) => decodeSelectedModes.has(mode));
                 const modeText = activeModes.length === MAP_MODE_FILTERS.length ? "All modes" : activeModes.join(", ");
-                meta.textContent = rows.length ? `${rows.length} recent decodes · ${modeText} · latest ${latest}` : `No recent decodes for ${modeText}`;
+                const extraFilters = [decodeCqOnly ? "CQ only" : "", decodeDxOnly ? "DX only" : "", decodeUniqueCallsigns ? "unique calls" : ""].filter(Boolean);
+                const filterText = extraFilters.length ? ` · ${extraFilters.join(" · ")}` : "";
+                meta.textContent = rows.length ? `${rows.length} recent decodes · ${modeText}${filterText} · latest ${latest}` : `No recent decodes for ${modeText}${filterText}`;
             }
             if (!rows.length) {
-                list.innerHTML = '<div class="decode-feed-empty">No decodes match the selected modes.</div>';
+                list.innerHTML = '<div class="decode-feed-empty">No decodes match the selected filters.</div>';
                 return;
             }
             list.innerHTML = rows.map((item) => {
@@ -4416,8 +5104,10 @@
                 mode: String(item.mode || "").trim().toUpperCase(),
                 grid: normalizeGridSquare(item.grid),
                 callsign: sanitizeCallsign(item.callsign, item.grid),
+                snr: Number.isFinite(Number(item.snr)) ? Number(item.snr) : null,
                 receivedAt: Date.now(),
             };
+            recordDecodeSnr(normalized);
             recentDecodeItems.push(normalized);
             if (recentDecodeItems.length > RECENT_DECODE_LIMIT) recentDecodeItems = recentDecodeItems.slice(-RECENT_DECODE_LIMIT);
             renderRecentDecodePanel();
@@ -4475,6 +5165,8 @@
             updateMapFilterSummary();
             updateMapViewToggleUi();
             initDecodeModeToolbar();
+            initDecodeExtraFilters();
+            initDecodeSortControls();
             renderRecentDecodePanel();
         }
 
@@ -4706,6 +5398,56 @@
             if (el) el.textContent = `Automation: ${text}`;
         }
 
+        function setKiwiNoticeVisible(visible, detailText = "Running auto Discover.") {
+            const notice = byId("kiwi-notice");
+            const text = byId("kiwi-notice-text");
+            if (text) text.textContent = detailText;
+            if (!notice) return;
+            notice.classList.toggle("is-visible", !!visible);
+            notice.setAttribute("aria-hidden", visible ? "false" : "true");
+        }
+
+        async function verifyConfiguredKiwi(settings) {
+            const host = safeText(settings && settings.host, KIWI_SETTINGS_DEFAULTS.host);
+            const port = Number.isFinite(Number(settings && settings.port))
+                ? Number(settings.port)
+                : KIWI_SETTINGS_DEFAULTS.port;
+            const verification = await getJson(`/config/verify?host=${encodeURIComponent(host)}&port=${encodeURIComponent(String(port))}&timeout_s=1.2`);
+            return {
+                host,
+                port,
+                verification,
+                reachable: !!(verification && verification.ok && verification.reachable),
+            };
+        }
+
+        async function ensureKiwiAvailableOnLoad(settings) {
+            if (kiwiConnectivityCheckInFlight) return false;
+            kiwiConnectivityCheckInFlight = true;
+            try {
+                const result = await verifyConfiguredKiwi(settings);
+                if (result.reachable) {
+                    setKiwiNoticeVisible(false);
+                    if (Number.isFinite(Number(result.verification.latitude))) {
+                        byId("cfg-latitude").value = String(Number(result.verification.latitude));
+                    }
+                    if (Number.isFinite(Number(result.verification.longitude))) {
+                        byId("cfg-longitude").value = String(Number(result.verification.longitude));
+                    }
+                    return true;
+                }
+                setKiwiNoticeVisible(true, "Running auto Discover.");
+                kiwiAutoDiscoverAttempted = true;
+                return await discoverConfigHost({ saveOnSuccess: true, autoTriggered: true });
+            } catch (_) {
+                setKiwiNoticeVisible(true, "Running auto Discover.");
+                kiwiAutoDiscoverAttempted = true;
+                return await discoverConfigHost({ saveOnSuccess: true, autoTriggered: true });
+            } finally {
+                kiwiConnectivityCheckInFlight = false;
+            }
+        }
+
         async function loadConfigSection() {
             setConfigStatus("loading...");
             try {
@@ -4724,10 +5466,17 @@
                 authoritativeUiThemeHourOffset = nextHourOffset;
                 const nextDensity = normalizeUiDensityMode(auto.uiDensity, UI_DENSITY_DEFAULT_MODE);
                 const nextOverviewTopics = normalizeOverviewTopicPrefs(auto.overviewTopics, readStoredOverviewTopicPrefs());
-                byId("cfg-host").value = safeText(cfg.host, "");
-                byId("cfg-port").value = Number.isFinite(Number(cfg.port)) ? String(Number(cfg.port)) : "";
-                byId("cfg-latitude").value = Number.isFinite(Number(cfg.latitude)) ? String(Number(cfg.latitude)) : "";
-                byId("cfg-longitude").value = Number.isFinite(Number(cfg.longitude)) ? String(Number(cfg.longitude)) : "";
+                const nextKiwiSettings = normalizeKiwiSettingsSnapshot({
+                    host: cfg.host,
+                    port: cfg.port,
+                    latitude: cfg.latitude,
+                    longitude: cfg.longitude,
+                });
+                const shouldAutoDiscoverKiwi = !kiwiAutoDiscoverAttempted && isDefaultKiwiSettings(nextKiwiSettings);
+                byId("cfg-host").value = nextKiwiSettings.host;
+                byId("cfg-port").value = String(nextKiwiSettings.port);
+                byId("cfg-latitude").value = String(nextKiwiSettings.latitude);
+                byId("cfg-longitude").value = String(nextKiwiSettings.longitude);
                 byId("cfg-dwell-s").value = Number.isFinite(Number(cfg.dwell_s)) ? String(Number(cfg.dwell_s)) : "";
                 byId("cfg-span-hz").value = Number.isFinite(Number(cfg.span_hz)) ? String(Number(cfg.span_hz)) : "";
                 byId("cfg-threshold-db").value = Number.isFinite(Number(cfg.threshold_db)) ? String(Number(cfg.threshold_db)) : "";
@@ -4738,8 +5487,10 @@
                 byId("cfg-ui-theme-night-hour").value = String(nextNightHour);
                 byId("cfg-ui-theme-hour-offset").value = String(nextHourOffset);
                 byId("cfg-ui-density").value = nextDensity;
-                setSelectBool("cfg-headless-enabled", !!auto.headlessEnabled);
-                setSelectBool("cfg-use-launchd", !!auto.useLaunchd);
+                setServiceToggleState({
+                    headlessEnabled: !!auto.headlessEnabled,
+                    useLaunchd: !!auto.useLaunchd,
+                });
                 applyAndPersistUiPreferences(nextThemeMode, nextDensity, nextNightHour, nextHourOffset);
                 applyOverviewTopicPrefs(nextOverviewTopics);
                 const kiwiLat = Number(cfg.kiwi_latitude);
@@ -4749,15 +5500,25 @@
                 } else {
                     setConfigStatus("loaded");
                 }
+                const kiwiReachable = await ensureKiwiAvailableOnLoad(nextKiwiSettings);
                 refreshRuntimeStatus();
                 checkForUpdates();
+                if (!kiwiReachable) {
+                    return;
+                }
+                if (shouldAutoDiscoverKiwi && !kiwiAutoDiscoverAttempted) {
+                    kiwiAutoDiscoverAttempted = true;
+                    await discoverConfigHost({ saveOnSuccess: true, autoTriggered: true });
+                }
             } catch (err) {
                 setConfigStatus(`load failed: ${String((err && err.message) || err)}`);
             }
         }
 
-        async function discoverConfigHost() {
-            setConfigStatus("discovering...");
+        async function discoverConfigHost(options = {}) {
+            const saveOnSuccess = options.saveOnSuccess !== false;
+            const autoTriggered = !!options.autoTriggered;
+            setConfigStatus(autoTriggered ? "discovering default Kiwi settings..." : "discovering...");
             try {
                 const res = await getJson("/config/discover?port=8073&timeout_s=0.2&max_hosts=32");
                 const candidates = Array.isArray(res.candidates)
@@ -4767,15 +5528,74 @@
                     const first = candidates[0] || {};
                     byId("cfg-host").value = safeText(first.host, "");
                     byId("cfg-port").value = Number.isFinite(Number(first.port)) ? String(Number(first.port)) : byId("cfg-port").value;
+                    if (Number.isFinite(Number(first.latitude))) {
+                        byId("cfg-latitude").value = String(Number(first.latitude));
+                    }
+                    if (Number.isFinite(Number(first.longitude))) {
+                        byId("cfg-longitude").value = String(Number(first.longitude));
+                    }
                     const total = Number.isFinite(Number(res.total_candidates))
                         ? Number(res.total_candidates)
                         : candidates.length;
-                    setConfigStatus(`discover found ${total} candidate(s), selected ${safeText(first.host, "-")}`);
+                    const selectedHost = safeText(first.host, "-");
+                    const selectedPort = Number.isFinite(Number(first.port)) ? Number(first.port) : readNumberInput("cfg-port", KIWI_SETTINGS_DEFAULTS.port);
+                    const verification = await getJson(`/config/verify?host=${encodeURIComponent(selectedHost)}&port=${encodeURIComponent(String(selectedPort))}&timeout_s=1.2`);
+                    if (!verification || !verification.ok || !verification.reachable) {
+                        setConfigStatus(`${autoTriggered ? "auto-discover verification failed" : "discover verification failed"} for ${selectedHost}:${selectedPort}`);
+                        if (autoTriggered) setKiwiNoticeVisible(true, "Running auto Discover.");
+                        return false;
+                    }
+                    if (Number.isFinite(Number(verification.latitude))) {
+                        byId("cfg-latitude").value = String(Number(verification.latitude));
+                    }
+                    if (Number.isFinite(Number(verification.longitude))) {
+                        byId("cfg-longitude").value = String(Number(verification.longitude));
+                    }
+                    let saved = true;
+                    if (saveOnSuccess) {
+                        saved = await saveDiscoveredKiwiConfig({ autosave: true });
+                    }
+                    if (saved) {
+                        setKiwiNoticeVisible(false);
+                        setConfigStatus(`${autoTriggered ? "auto-discover verified" : "discover verified"} ${selectedHost}:${selectedPort} from ${total} candidate(s)${saveOnSuccess ? " and saved" : ""}`);
+                        if (saveOnSuccess) {
+                            window.setTimeout(() => {
+                                window.location.reload();
+                            }, autoTriggered ? 150 : 250);
+                        }
+                        return true;
+                    }
+                    setConfigStatus(`${autoTriggered ? "auto-discover verified" : "discover verified"} ${selectedHost}:${selectedPort}, but save failed`);
+                    return false;
                 } else {
-                    setConfigStatus("discover found no candidates");
+                    setConfigStatus(autoTriggered ? "auto-discover found no candidates" : "discover found no candidates");
+                    if (autoTriggered) setKiwiNoticeVisible(true, "Running auto Discover.");
+                    return false;
                 }
             } catch (err) {
-                setConfigStatus(`discover failed: ${String((err && err.message) || err)}`);
+                setConfigStatus(`${autoTriggered ? "auto-discover failed" : "discover failed"}: ${String((err && err.message) || err)}`);
+                if (autoTriggered) setKiwiNoticeVisible(true, "Running auto Discover.");
+                return false;
+            }
+        }
+
+        async function saveDiscoveredKiwiConfig(options = {}) {
+            const autosave = !!options.autosave;
+            const payload = {
+                host: readTextInput("cfg-host", KIWI_SETTINGS_DEFAULTS.host),
+                port: readNumberInput("cfg-port", KIWI_SETTINGS_DEFAULTS.port),
+                latitude: readNumberInput("cfg-latitude", KIWI_SETTINGS_DEFAULTS.latitude),
+                longitude: readNumberInput("cfg-longitude", KIWI_SETTINGS_DEFAULTS.longitude),
+            };
+            setConfigStatus(autosave ? "autosaving Kiwi settings..." : "saving Kiwi settings...");
+            try {
+                await postJson("/config", payload);
+                const stamp = new Date().toLocaleTimeString();
+                setConfigStatus(autosave ? `autosaved Kiwi settings (${stamp})` : "saved Kiwi settings");
+                return true;
+            } catch (err) {
+                setConfigStatus(`save failed: ${String((err && err.message) || err)}`);
+                return false;
             }
         }
 
@@ -4784,10 +5604,10 @@
             const reloadAfterSave = options.reloadAfterSave !== false;
             setConfigStatus(autosave ? "autosaving..." : "saving...");
             const payload = {
-                host: readTextInput("cfg-host", ""),
-                port: readNumberInput("cfg-port", 8073),
-                latitude: readNumberInput("cfg-latitude", 0),
-                longitude: readNumberInput("cfg-longitude", 0),
+                host: readTextInput("cfg-host", KIWI_SETTINGS_DEFAULTS.host),
+                port: readNumberInput("cfg-port", KIWI_SETTINGS_DEFAULTS.port),
+                latitude: readNumberInput("cfg-latitude", KIWI_SETTINGS_DEFAULTS.latitude),
+                longitude: readNumberInput("cfg-longitude", KIWI_SETTINGS_DEFAULTS.longitude),
                 dwell_s: readNumberInput("cfg-dwell-s", 18),
                 span_hz: readNumberInput("cfg-span-hz", 3000),
                 threshold_db: readNumberInput("cfg-threshold-db", 12),
@@ -4800,8 +5620,8 @@
                 uiThemeNightHour: readNumberInput("cfg-ui-theme-night-hour", 21),
                 uiThemeHourOffset: readNumberInput("cfg-ui-theme-hour-offset", 0),
                 uiDensity: readTextInput("cfg-ui-density", "normal"),
-                headlessEnabled: readSelectBool("cfg-headless-enabled", true),
-                useLaunchd: readSelectBool("cfg-use-launchd", false),
+                headlessEnabled: readServiceToggle("headlessEnabled", true),
+                useLaunchd: readServiceToggle("useLaunchd", false),
                 overviewTopics: collectOverviewTopicPrefsFromConfig(),
             };
             authoritativeUiThemeNightHour = clampUiThemeHour(automationPayload.uiThemeNightHour);
@@ -4827,8 +5647,10 @@
                 const stamp = new Date().toLocaleTimeString();
                 setConfigStatus(autosave ? `autosaved (${stamp})` : "saved");
                 if (reloadAfterSave) await loadConfigSection();
+                return true;
             } catch (err) {
                 setConfigStatus(`save failed: ${String((err && err.message) || err)}`);
+                return false;
             }
         }
 
@@ -4869,7 +5691,8 @@
 
         async function refreshRuntimeStatus() {
             const el = byId("cfg-runtime-status");
-            if (el) el.textContent = "Runtime status: checking...";
+            runtimeStatusText = "Runtime status: checking...";
+            if (el) el.textContent = runtimeStatusText;
             try {
                 const r = await getJson("/admin/headless/status");
                 const loopRunning = !!r.running;
@@ -4879,11 +5702,16 @@
                 const intervalS = Number.isFinite(Number(r.interval_seconds)) ? Number(r.interval_seconds) : null;
                 const intervalTxt = intervalS == null ? "-" : `${Math.round(intervalS)}s`;
                 const txt = `Loop ${loopRunning ? "running" : "stopped"} · headless ${headless ? "on" : "off"} · launchd ${launchd ? "on" : "off"} · env ${envEnabled ? "on" : "off"} · ${intervalTxt}`;
+                runtimeStatusText = txt;
+                setServiceToggleState({ headlessEnabled: headless, useLaunchd: launchd });
                 if (el) el.textContent = txt;
                 syncTopbarMenuState();
+                return true;
             } catch (err) {
-                if (el) el.textContent = `Runtime status: failed (${String((err && err.message) || err)})`;
+                runtimeStatusText = `Runtime status: failed (${String((err && err.message) || err)})`;
+                if (el) el.textContent = runtimeStatusText;
                 syncTopbarMenuState();
+                return false;
             }
         }
 
@@ -4893,8 +5721,8 @@
                 const current = await getJson("/automation/settings");
                 const payload = {
                     ...(current && typeof current === "object" ? current : {}),
-                    headlessEnabled: readSelectBool("cfg-headless-enabled", true),
-                    useLaunchd: readSelectBool("cfg-use-launchd", false),
+                    headlessEnabled: readServiceToggle("headlessEnabled", true),
+                    useLaunchd: readServiceToggle("useLaunchd", false),
                     uiThemeMode: normalizeUiThemeMode(current && current.uiThemeMode, currentUiThemeMode),
                     uiThemeNightHour: Number.isFinite(Number(current && current.uiThemeNightHour))
                         ? clampUiThemeHour(current.uiThemeNightHour)
@@ -5155,6 +5983,7 @@
             const autoApplyNow = byId("auto-apply-now");
             const autoUiThemeMode = byId("auto-ui-theme-mode");
             const autoUiDensity = byId("auto-ui-density");
+            let discoverFeedbackTimer = null;
             const configAutosaveIds = [
                 "cfg-host",
                 "cfg-port",
@@ -5170,8 +5999,6 @@
                 "cfg-ui-theme-night-hour",
                 "cfg-ui-theme-hour-offset",
                 "cfg-ui-density",
-                "cfg-headless-enabled",
-                "cfg-use-launchd",
             ];
             const automationAutosaveIds = [
                 "auto-scan-on-block",
@@ -5190,8 +6017,36 @@
                 "auto-ui-density",
             ];
 
+            const setConfigActionState = (button, state = "idle") => {
+                if (!button) return;
+                button.classList.toggle("is-busy", state === "busy");
+                button.classList.toggle("is-success", state === "success");
+                button.classList.toggle("is-error", state === "error");
+                button.disabled = state === "busy";
+                button.setAttribute("aria-busy", state === "busy" ? "true" : "false");
+            };
+
+            const flashConfigActionState = (button, state) => {
+                if (!button) return;
+                if (discoverFeedbackTimer) {
+                    window.clearTimeout(discoverFeedbackTimer);
+                    discoverFeedbackTimer = null;
+                }
+                setConfigActionState(button, state);
+                discoverFeedbackTimer = window.setTimeout(() => {
+                    setConfigActionState(button, "idle");
+                    discoverFeedbackTimer = null;
+                }, 1100);
+            };
+
             if (cfgReload) cfgReload.addEventListener("click", () => { loadConfigSection(); });
-            if (cfgDiscover) cfgDiscover.addEventListener("click", () => { discoverConfigHost(); });
+            if (cfgDiscover) {
+                cfgDiscover.addEventListener("click", async () => {
+                    setConfigActionState(cfgDiscover, "busy");
+                    const ok = await discoverConfigHost({ saveOnSuccess: true });
+                    flashConfigActionState(cfgDiscover, ok ? "success" : "error");
+                });
+            }
             if (cfgSave) cfgSave.addEventListener("click", () => { saveConfigSection(); });
             if (cfgDepsRefresh) cfgDepsRefresh.addEventListener("click", () => { refreshRuntimeDeps(); });
             if (cfgDepsTest) cfgDepsTest.addEventListener("click", () => { testRuntimeDepPathFailures(); });
@@ -5281,20 +6136,6 @@
                 const bandBreakdown = {};
                 const receiverCounts = {};
 
-                const parseReceiver = (item) => {
-                    if (!item || typeof item !== "object") return null;
-                    const candidates = [item.rx, item.receiver, item.rx_id, item.receiver_id, item.channel, item.slot];
-                    for (const raw of candidates) {
-                        if (raw === null || raw === undefined || raw === "") continue;
-                        if (typeof raw === "number" && Number.isFinite(raw)) return `RX${Math.trunc(raw)}`;
-                        const txt = String(raw).trim();
-                        if (!txt) continue;
-                        const match = txt.match(/^(?:RX)?\s*(\d+)$/i);
-                        if (match) return `RX${Number(match[1])}`;
-                    }
-                    return null;
-                };
-
                 for (const item of items) {
                     if (!item || typeof item !== "object") continue;
                     ingestDecodeItem(item);
@@ -5302,7 +6143,7 @@
                     if (!band || band.toLowerCase() === "control") continue;
                     bandCounts[band] = Number(bandCounts[band] || 0) + 1;
 
-                    const rxLabel = parseReceiver(item);
+                    const rxLabel = parseDecodeReceiverLabel(item);
                     const modeLabel = String(item.mode || "?").trim().toUpperCase() || "?";
                     if (rxLabel) {
                         receiverCounts[rxLabel] = Number(receiverCounts[rxLabel] || 0) + 1;
@@ -5348,8 +6189,9 @@
             }
         }
 
-        function getBandTrendSamples(band, windowSize = 14) {
-            const raw = Array.isArray(bandActivityHistory[band]) ? bandActivityHistory[band] : [];
+        function getBandTrendSamples(band, windowSize = 14, historySource = null) {
+            const source = historySource && typeof historySource === "object" ? historySource : bandActivityHistory;
+            const raw = Array.isArray(source[band]) ? source[band] : [];
             const clipped = raw.slice(-windowSize).map((n) => Math.max(0, Math.round(Number(n) || 0)));
             if (clipped.length >= windowSize) return clipped;
             const pad = new Array(windowSize - clipped.length).fill(0);
@@ -5361,22 +6203,23 @@
             return Math.max(2, Math.ceil(minWindowMs / intervalMs) + 1);
         }
 
-        function getBandBreakdownSamples(band, windowSize = 14) {
-            const raw = Array.isArray(bandBreakdownHistory[band]) ? bandBreakdownHistory[band] : [];
+        function getBandBreakdownSamples(band, windowSize = 14, historySource = null) {
+            const source = historySource && typeof historySource === "object" ? historySource : bandBreakdownHistory;
+            const raw = Array.isArray(source[band]) ? source[band] : [];
             const clipped = raw.slice(-windowSize).map((row) => (row && typeof row === "object") ? row : {});
             if (clipped.length >= windowSize) return clipped;
             const pad = new Array(windowSize - clipped.length).fill(null).map(() => ({}));
             return pad.concat(clipped);
         }
 
-        function getChartTimeLabels(sampleCount, tickCount = 5) {
+        function getChartTimeLabels(sampleCount, tickCount = 5, latestSampleTs = null) {
             const count = Math.max(0, Number(sampleCount) || 0);
             const ticks = Math.max(2, Number(tickCount) || 5);
             if (!count) return new Array(ticks).fill("");
 
             const intervalMs = Math.max(1000, Number(refreshIntervalMs) || 1000);
-            const latestSampleTs = Math.max(0, Number(lastBandActivitySampleMs) || Date.now());
-            const oldestSampleTs = latestSampleTs - Math.max(0, (count - 1) * intervalMs);
+            const effectiveLatestSampleTs = Math.max(0, Number(latestSampleTs ?? lastBandActivitySampleMs) || Date.now());
+            const oldestSampleTs = effectiveLatestSampleTs - Math.max(0, (count - 1) * intervalMs);
             const labels = [];
             for (let i = 0; i < ticks; i++) {
                 const idx = count > 1
@@ -5389,7 +6232,19 @@
             return labels;
         }
 
-        function renderAssignmentsBandAxis(sampleCount) {
+        function getChartSampleClockText(sampleIdx, sampleCount, latestSampleTs = null) {
+            const count = Math.max(0, Number(sampleCount) || 0);
+            if (!count) return "--:--:--";
+            const idx = Math.max(0, Math.min(count - 1, Number(sampleIdx) || 0));
+            const intervalMs = Math.max(1000, Number(refreshIntervalMs) || 1000);
+            const effectiveLatestSampleTs = Math.max(0, Number(latestSampleTs ?? lastBandActivitySampleMs) || Date.now());
+            const oldestSampleTs = effectiveLatestSampleTs - Math.max(0, (count - 1) * intervalMs);
+            const sampleTs = oldestSampleTs + (idx * intervalMs);
+            const d = new Date(sampleTs);
+            return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
+        }
+
+        function renderAssignmentsBandAxis(sampleCount, latestSampleTs = null) {
             const axis = byId("assign-band-chart-axis");
             if (!axis) return;
             const count = Math.max(0, Number(sampleCount) || 0);
@@ -5397,7 +6252,7 @@
                 axis.innerHTML = "<span></span><span></span><span></span><span></span><span></span>";
                 return;
             }
-            const labels = getChartTimeLabels(count, 5);
+            const labels = getChartTimeLabels(count, 5, latestSampleTs);
             axis.innerHTML = labels.map((label) => `<span>${escapeHtml(label)}</span>`).join("");
         }
 
@@ -5439,24 +6294,24 @@
         function snrAvgTextForRx(rxLabel) {
             const key = Number(String(rxLabel || "").replace(/^RX/i, ""));
             const normalized = Number.isFinite(key) ? `RX${Math.trunc(key)}` : String(rxLabel || "").toUpperCase();
-            const channel = Number.isFinite(key) ? latestChannelsMap[String(key)] : null;
-            const snr = Number(channel && channel.snr_avg_db);
-            if (Number.isFinite(snr)) {
-                lastKnownSnrByRx[normalized] = snr;
-                return `${snr.toFixed(1)} dB`;
+            const cutoff = Date.now() - RECEIVER_ACTIVITY_WINDOW_MS;
+            const samples = Array.isArray(receiverDecodeSnrHistory[normalized])
+                ? receiverDecodeSnrHistory[normalized].filter((sample) => sample && Number(sample.t || 0) >= cutoff && Number.isFinite(Number(sample.snr)))
+                : [];
+            if (samples.length) {
+                receiverDecodeSnrHistory[normalized] = samples;
+                const avg = samples.reduce((sum, sample) => sum + Number(sample.snr || 0), 0) / samples.length;
+                if (Number.isFinite(avg)) {
+                    lastKnownSnrByRx[normalized] = avg;
+                    return `${avg.toFixed(1)} dB`;
+                }
             }
             const cached = Number(lastKnownSnrByRx[normalized]);
             return Number.isFinite(cached) ? `${cached.toFixed(1)} dB` : "--";
         }
 
         function updateLastKnownSnrCache(channels) {
-            const map = channels && typeof channels === "object" ? channels : {};
-            for (const [rx, ch] of Object.entries(map)) {
-                const snr = Number(ch && ch.snr_avg_db);
-                if (Number.isFinite(snr)) {
-                    lastKnownSnrByRx[`RX${String(rx).trim()}`] = snr;
-                }
-            }
+            void channels;
         }
 
         function getTrendDecodeRows(sampleIdx, windowSize) {
@@ -5504,10 +6359,24 @@
             const ctx = canvas && canvas.getContext("2d");
             if (!ctx) return;
 
-            _bandChartLastBands = Array.isArray(assignedBands) ? [...assignedBands] : [];
-            _bandChartLastColorMap = { ...bandColorMap };
+            const pausedSnapshot = assignmentsBandChartPaused ? pausedBandChartSnapshot : null;
+            const bandHistorySource = pausedSnapshot && pausedSnapshot.bandActivityHistory ? pausedSnapshot.bandActivityHistory : bandActivityHistory;
+            const bandBreakdownSource = pausedSnapshot && pausedSnapshot.bandBreakdownHistory ? pausedSnapshot.bandBreakdownHistory : bandBreakdownHistory;
+            const assignmentSource = pausedSnapshot && pausedSnapshot.currentBandAssignments ? pausedSnapshot.currentBandAssignments : currentBandAssignments;
+            const latestSampleTs = pausedSnapshot && Number.isFinite(Number(pausedSnapshot.lastBandActivitySampleMs))
+                ? Number(pausedSnapshot.lastBandActivitySampleMs)
+                : Number(lastBandActivitySampleMs || Date.now());
+            const renderBands = pausedSnapshot && Array.isArray(pausedSnapshot.assignedBands)
+                ? pausedSnapshot.assignedBands
+                : assignedBands;
+            const renderBandColorMap = pausedSnapshot && pausedSnapshot.bandColorMap
+                ? pausedSnapshot.bandColorMap
+                : bandColorMap;
 
-            const bands = Array.from(new Set((Array.isArray(assignedBands) ? assignedBands : [])
+            _bandChartLastBands = Array.isArray(renderBands) ? [...renderBands] : [];
+            _bandChartLastColorMap = { ...renderBandColorMap };
+
+            const bands = Array.from(new Set((Array.isArray(renderBands) ? renderBands : [])
                 .map((band) => String(band || "").replace(/^(\d+)\s*[mM]$/, "$1m"))
                 .filter(Boolean)))
                 .sort(compareBandLabels);
@@ -5526,34 +6395,35 @@
                 ctx.fillStyle = "#8da2b5";
                 ctx.font = "12px Space Grotesk";
                 ctx.fillText("No assigned bands", 10, 20);
-                renderAssignmentsBandAxis(0);
+                renderAssignmentsBandAxis(0, latestSampleTs);
                 return;
             }
 
             const windowSamples = getChartWindowSamples();
             const series = bands.map((band, idx) => ({
                 band,
-                color: bandColorMap[band] || BAND_CHART_PALETTE[idx % BAND_CHART_PALETTE.length],
-                samples: getBandTrendSamples(band, windowSamples),
-                breakdowns: getBandBreakdownSamples(band, windowSamples),
+                color: renderBandColorMap[band] || BAND_CHART_PALETTE[idx % BAND_CHART_PALETTE.length],
+                samples: getBandTrendSamples(band, windowSamples, bandHistorySource),
+                breakdowns: getBandBreakdownSamples(band, windowSamples, bandBreakdownSource),
             }));
-            const rawMax = Math.max(1, ...series.flatMap((s) => s.samples.map((n) => Number(n || 0))));
-            const niceAxisCeil = (v) => {
-                const n = Math.max(1, Number(v) || 1);
-                if (n <= 10) return Math.ceil(n);
-                const mag = Math.pow(10, Math.floor(Math.log10(n)));
-                const scaled = n / mag;
-                if (scaled <= 1) return 1 * mag;
-                if (scaled <= 2) return 2 * mag;
-                if (scaled <= 5) return 5 * mag;
-                return 10 * mag;
+            const sampleCount = series[0] && Array.isArray(series[0].samples) ? series[0].samples.length : 0;
+            const stackedSampleTotals = Array.from(
+                { length: sampleCount },
+                (_, idx) => series.reduce((sum, entry) => sum + Math.max(0, Number(entry.samples[idx] || 0)), 0),
+            );
+            const rawMax = Math.max(1, ...stackedSampleTotals);
+            const computeBandChartAxisMax = (value) => {
+                const n = Math.max(1, Math.ceil(Number(value) || 0));
+                if (n <= 3) return 4;
+                return Math.ceil((n + 1) / 3) * 3;
             };
-            const maxVal = niceAxisCeil(rawMax);
+            const maxVal = computeBandChartAxisMax(rawMax);
+            const yTickCount = 4;
 
             ctx.strokeStyle = "#dbe7f0";
             ctx.lineWidth = 1;
-            for (let i = 0; i < 4; i++) {
-                const y = topPad + (graphH * i) / 3;
+            for (let i = 0; i < yTickCount; i++) {
+                const y = topPad + (graphH * i) / Math.max(1, yTickCount - 1);
                 ctx.beginPath();
                 ctx.moveTo(leftPad, y);
                 ctx.lineTo(w - rightPad, y);
@@ -5570,9 +6440,9 @@
             ctx.font = "11px IBM Plex Mono";
             ctx.textAlign = "right";
             ctx.textBaseline = "middle";
-            for (let i = 0; i < 4; i++) {
-                const y = topPad + (graphH * i) / 3;
-                const v = Math.round(maxVal * (1 - i / 3));
+            for (let i = 0; i < yTickCount; i++) {
+                const y = topPad + (graphH * i) / Math.max(1, yTickCount - 1);
+                const v = Math.round(maxVal * (1 - (i / Math.max(1, yTickCount - 1))));
                 ctx.fillText(String(v), leftPad - 6, y);
             }
 
@@ -5586,8 +6456,6 @@
                 ctx.stroke();
             }
 
-            const sampleCount = series[0] && Array.isArray(series[0].samples) ? series[0].samples.length : 0;
-
             const trace = (samples) => samples.map((v, i) => {
                 const x = leftPad + (graphW * i) / Math.max(1, samples.length - 1);
                 const y = topPad + graphH - (Math.max(0, Number(v || 0)) / maxVal) * graphH;
@@ -5595,36 +6463,51 @@
             });
 
             const plottedSeries = [];
+            const stackHeights = new Array(sampleCount).fill(0);
 
             series.forEach((s) => {
                 const pts = trace(s.samples);
                 if (!pts.length) return;
-                plottedSeries.push({ ...s, pts });
 
-                // Subtle area fill to mimic thermal-style trace layering.
-                const area = `${s.color}24`;
+                const stackedPts = pts.map((p, idx) => {
+                    const value = Math.max(0, Number(s.samples[idx] || 0));
+                    const baseValue = stackHeights[idx];
+                    const topValue = baseValue + value;
+                    const topY = topPad + graphH - (topValue / maxVal) * graphH;
+                    const bottomY = topPad + graphH - (baseValue / maxVal) * graphH;
+                    stackHeights[idx] = topValue;
+                    return {
+                        x: p.x,
+                        y: topY,
+                        baseY: bottomY,
+                        hoverY: value > 0 ? (topY + bottomY) / 2 : bottomY,
+                        value,
+                    };
+                });
+
+                plottedSeries.push({ ...s, pts: stackedPts });
+
+                const area = `${s.color}cc`;
                 ctx.fillStyle = area;
                 ctx.beginPath();
-                ctx.moveTo(pts[0].x, topPad + graphH);
-                pts.forEach((p) => ctx.lineTo(p.x, p.y));
-                ctx.lineTo(pts[pts.length - 1].x, topPad + graphH);
+                stackedPts.forEach((p, idx) => {
+                    if (idx === 0) ctx.moveTo(p.x, p.y);
+                    else ctx.lineTo(p.x, p.y);
+                });
+                for (let idx = stackedPts.length - 1; idx >= 0; idx -= 1) {
+                    const p = stackedPts[idx];
+                    ctx.lineTo(p.x, p.baseY);
+                }
                 ctx.closePath();
                 ctx.fill();
 
-                ctx.strokeStyle = s.color;
-                ctx.lineWidth = 2.2;
-                ctx.beginPath();
-                pts.forEach((p, i) => {
-                    if (i === 0) ctx.moveTo(p.x, p.y);
-                    else ctx.lineTo(p.x, p.y);
-                });
-                ctx.stroke();
-
-                const tail = pts[pts.length - 1];
-                ctx.fillStyle = s.color;
-                ctx.beginPath();
-                ctx.arc(tail.x, tail.y, 2.2, 0, Math.PI * 2);
-                ctx.fill();
+                const tail = stackedPts[stackedPts.length - 1];
+                if (tail && tail.value > 0) {
+                    ctx.fillStyle = s.color;
+                    ctx.beginPath();
+                    ctx.arc(tail.x, tail.y, 2.2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
             });
 
             // Crosshair for hovered column
@@ -5641,7 +6524,7 @@
                     ctx.setLineDash([]);
                     for (const s of plottedSeries) {
                         const pt = s.pts[bandChartHoverIndex];
-                        if (pt) {
+                        if (pt && pt.value > 0) {
                             ctx.fillStyle = s.color;
                             ctx.beginPath();
                             ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2);
@@ -5651,7 +6534,7 @@
                 }
             }
 
-            renderAssignmentsBandAxis(sampleCount);
+            renderAssignmentsBandAxis(sampleCount, latestSampleTs);
 
             const tooltip = byId("assign-band-chart-tooltip");
             if (!tooltip) return;
@@ -5661,9 +6544,9 @@
                 tooltip.setAttribute("aria-hidden", "true");
             };
 
-            const showTooltip = (title, sub, rows, clientX, clientY) => {
+            const showTooltip = (title, sub, rows, anchorX, anchorY) => {
                 const body = rows.length
-                    ? rows.map((row) => `<div class="tt-row"><span>${escapeHtml(row.left)}</span><strong>${escapeHtml(row.right)}</strong></div>`).join("")
+                    ? `<div class="tt-body">${rows.map((row) => `<div class="tt-row"><span>${escapeHtml(row.left)}</span><strong>${escapeHtml(row.right)}</strong></div>`).join("")}</div>`
                     : `<div class="tt-empty">No decode details in this sample.</div>`;
                 tooltip.innerHTML = `<div class="tt-title">${escapeHtml(title)}</div>${sub ? `<div class="tt-sub">${escapeHtml(sub)}</div>` : ""}${body}`;
                 tooltip.classList.add("show");
@@ -5673,20 +6556,21 @@
                 const wrapRect = wrap.getBoundingClientRect();
                 const tipW = tooltip.offsetWidth || 220;
                 const tipH = tooltip.offsetHeight || 80;
-                const relX = clientX - wrapRect.left;
-                const relY = clientY - wrapRect.top;
                 const margin = 8;
-                let left = relX + 14;
-                let top = relY - tipH - 10;
-                if (left + tipW + margin > wrapRect.width) left = relX - tipW - 14;
+                const horizontalGap = 16;
+                let left = anchorX - tipW - horizontalGap;
+                let top = anchorY - tipH - 14;
+                if (left < margin) left = anchorX + horizontalGap;
+                if (left + tipW + margin > wrapRect.width) left = wrapRect.width - tipW - margin;
                 if (left < margin) left = margin;
-                if (top < margin) top = relY + 14;
+                if (top < margin) top = anchorY + 14;
                 if (top + tipH + margin > wrapRect.height) top = Math.max(margin, wrapRect.height - tipH - margin);
                 tooltip.style.left = `${Math.round(left)}px`;
                 tooltip.style.top = `${Math.round(top)}px`;
             };
 
             canvas.onmouseleave = () => {
+                canvas.style.cursor = "default";
                 hideTooltip();
                 if (bandChartHoverIndex !== -1) {
                     bandChartHoverIndex = -1;
@@ -5695,16 +6579,21 @@
             };
             canvas.onmousemove = (ev) => {
                 const rect = canvas.getBoundingClientRect();
-                const x = ev.clientX - rect.left;
-                const y = ev.clientY - rect.top;
+                const scaleX = rect.width > 0 ? (w / rect.width) : 1;
+                const scaleY = rect.height > 0 ? (h / rect.height) : 1;
+                const x = (ev.clientX - rect.left) * scaleX;
+                const y = (ev.clientY - rect.top) * scaleY;
                 if (x < leftPad - 3 || x > (w - rightPad + 3) || y < topPad - 3 || y > (topPad + graphH + 3)) {
+                    canvas.style.cursor = "default";
                     hideTooltip();
                     return;
                 }
                 if (!plottedSeries.length) {
+                    canvas.style.cursor = "default";
                     hideTooltip();
                     return;
                 }
+                canvas.style.cursor = "pointer";
 
                 // Snap to nearest sample column by x position (works anywhere along a line).
                 const nPts = plottedSeries[0].pts.length;
@@ -5720,50 +6609,80 @@
                 let closestSeries = null;
                 let closestDist = Infinity;
                 for (const s of plottedSeries) {
-                    if (s.pts[idx] !== undefined) {
-                        const dist = Math.abs(y - s.pts[idx].y);
+                    if (s.pts[idx] !== undefined && Number(s.pts[idx].value || 0) > 0) {
+                        const dist = Math.abs(y - Number(s.pts[idx].hoverY || s.pts[idx].y));
                         if (dist < closestDist) {
                             closestDist = dist;
                             closestSeries = s;
                         }
                     }
                 }
-                if (!closestSeries) { hideTooltip(); return; }
+                if (!closestSeries) {
+                    canvas.style.cursor = "default";
+                    hideTooltip();
+                    return;
+                }
 
-                // Build tooltip rows only for the hovered series.
                 const count = Math.max(0, Number(closestSeries.samples[idx] || 0));
                 const rows = [];
-                const breakdown = (closestSeries.breakdowns[idx] && typeof closestSeries.breakdowns[idx] === "object") ? closestSeries.breakdowns[idx] : {};
-                const rxEntries = Object.entries(breakdown);
-                if (rxEntries.length) {
-                    for (const [k, v] of rxEntries) {
-                        const parts = String(k).split("|");
-                        const rx = parts[0] || "RX?";
-                        const mode = parts[1] || "?";
-                        const snrText = snrAvgTextForRx(rx);
-                        rows.push({ left: `${rx} | ${closestSeries.band} | ${mode} | ${snrText}`, right: `${Math.max(0, Number(v) || 0)} dec` });
+                let bandCount = 0;
+                let totalCount = 0;
+                for (const seriesEntry of plottedSeries) {
+                    const seriesCount = Math.max(0, Number(seriesEntry.samples[idx] || 0));
+                    totalCount += seriesCount;
+                    if (seriesCount > 0) bandCount += 1;
+                    const breakdown = (seriesEntry.breakdowns[idx] && typeof seriesEntry.breakdowns[idx] === "object") ? seriesEntry.breakdowns[idx] : {};
+                    const rxEntries = Object.entries(breakdown);
+                    if (rxEntries.length) {
+                        for (const [k, v] of rxEntries) {
+                            const parts = String(k).split("|");
+                            const rx = parts[0] || "RX?";
+                            const mode = parts[1] || "?";
+                            const decodeCount = Math.max(0, Number(v) || 0);
+                            const snrText = snrAvgTextForRx(rx);
+                            rows.push({
+                                left: `${rx} | ${seriesEntry.band} | ${mode} | ${snrText}`,
+                                right: `${decodeCount} dec`,
+                                count: decodeCount,
+                            });
+                        }
                     }
-                } else {
-                    const assigned = Array.isArray(currentBandAssignments[closestSeries.band]) ? currentBandAssignments[closestSeries.band] : [];
+                }
+
+                if (!rows.length) {
+                    const assigned = Array.isArray(assignmentSource[closestSeries.band]) ? assignmentSource[closestSeries.band] : [];
                     if (assigned.length) {
                         for (const item of assigned) {
                             rows.push({
                                 left: `${safeText(item.rxLabel, "RX?")} | ${closestSeries.band} | ${String(safeText(item.mode, "?")).toUpperCase()} | ${safeText(item.snrText, "--")}`,
                                 right: `${count} dec`,
+                                count,
                             });
                         }
                     } else {
-                        rows.push({ left: closestSeries.band, right: `${count} dec` });
+                        rows.push({ left: closestSeries.band, right: `${count} dec`, count });
                     }
                 }
-                rows.sort((a, b) => Number(String(b.right).replace(/\D+/g, "") || 0) - Number(String(a.right).replace(/\D+/g, "") || 0));
+                rows.sort((a, b) => {
+                    const countDiff = Number(b.count || 0) - Number(a.count || 0);
+                    if (countDiff) return countDiff;
+                    return String(a.left || "").localeCompare(String(b.left || ""));
+                });
+
+                const hoverPoint = closestSeries.pts[idx];
+                const anchorCanvasX = hoverPoint && Number.isFinite(hoverPoint.x) ? hoverPoint.x : x;
+                const anchorCanvasY = hoverPoint && Number.isFinite(hoverPoint.y) ? hoverPoint.y : y;
+                const anchorX = canvas.offsetLeft + (anchorCanvasX / Math.max(1, w)) * rect.width;
+                const anchorY = canvas.offsetTop + (anchorCanvasY / Math.max(1, h)) * rect.height;
+                const sampleLabel = getChartSampleClockText(idx, nPts, latestSampleTs);
+                const subtitle = `${bandCount || 1} band${bandCount === 1 ? "" : "s"} · ${rows.length} receiver${rows.length === 1 ? "" : "s"}`;
 
                 showTooltip(
-                    `${closestSeries.band} · ${count} decodes`,
-                    "",
-                    rows.slice(0, 8),
-                    ev.clientX,
-                    ev.clientY,
+                    `${sampleLabel} · ${totalCount} decodes`,
+                    subtitle,
+                    rows,
+                    anchorX,
+                    anchorY,
                 );
             };
         }
@@ -5959,7 +6878,6 @@
             const links = Array.from(document.querySelectorAll("#side-nav a[data-nav]"));
             if (!links.length) return;
 
-            const summary = byId("summary");
             const statusStrip = byId("status-strip");
             const layout = byId("main-layout");
             const receivers = byId("receivers");
@@ -5967,7 +6885,7 @@
             const rightPanels = ["assignments", "faults", "messages", "map", "settings", "system", "automation"]
                 .map((id) => byId(id))
                 .filter(Boolean);
-            const validIds = new Set(["overview", "summary", "receivers", "assignments", "faults", "messages", "map", "settings", "system", "automation"]);
+            const validIds = new Set(["overview", "receivers", "assignments", "faults", "messages", "map", "settings", "system", "automation"]);
 
             const activate = (id) => {
                 links.forEach((link) => {
@@ -5986,10 +6904,9 @@
                 currentSectionNavId = navId;
                 activate(navId);
 
-                show(summary, navId === "summary");
                 show(statusStrip, navId === "overview" && !!overviewTopicPrefs.status);
 
-                const panelOnly = navId !== "overview" && navId !== "summary";
+                const panelOnly = navId !== "overview";
                 show(layout, panelOnly || navId === "overview");
 
                 if (layout) {
@@ -6063,6 +6980,29 @@
             const refreshRuntimeBtn = byId("topbar-menu-refresh-runtime");
             const headlessToggleBtn = byId("topbar-menu-headless-toggle");
             const launchdToggleBtn = byId("topbar-menu-launchd-toggle");
+            let refreshRuntimeFeedbackTimer = null;
+
+            const setMenuActionState = (button, state = "idle") => {
+                if (!button) return;
+                button.classList.toggle("is-busy", state === "busy");
+                button.classList.toggle("is-success", state === "success");
+                button.classList.toggle("is-error", state === "error");
+                button.disabled = state === "busy";
+                button.setAttribute("aria-busy", state === "busy" ? "true" : "false");
+            };
+
+            const flashMenuActionState = (button, state) => {
+                if (!button) return;
+                if (refreshRuntimeFeedbackTimer) {
+                    window.clearTimeout(refreshRuntimeFeedbackTimer);
+                    refreshRuntimeFeedbackTimer = null;
+                }
+                setMenuActionState(button, state);
+                refreshRuntimeFeedbackTimer = window.setTimeout(() => {
+                    setMenuActionState(button, "idle");
+                    refreshRuntimeFeedbackTimer = null;
+                }, 1100);
+            };
 
             const setMenuOpen = (open) => {
                 if (!menuBtn || !menuPopout) return;
@@ -6121,14 +7061,18 @@
 
             if (refreshRuntimeBtn) {
                 refreshRuntimeBtn.addEventListener("click", async () => {
-                    await refreshRuntimeStatus();
+                    setMenuActionState(refreshRuntimeBtn, "busy");
+                    const ok = await refreshRuntimeStatus();
+                    flashMenuActionState(refreshRuntimeBtn, ok ? "success" : "error");
                     setMenuOpen(true);
                 });
             }
 
             if (headlessToggleBtn) {
                 headlessToggleBtn.addEventListener("click", async () => {
-                    setSelectBool("cfg-headless-enabled", !readSelectBool("cfg-headless-enabled", false));
+                    setServiceToggleState({
+                        headlessEnabled: !readServiceToggle("headlessEnabled", false),
+                    });
                     syncTopbarMenuState();
                     await saveTopbarServiceToggles();
                     setMenuOpen(true);
@@ -6137,7 +7081,9 @@
 
             if (launchdToggleBtn) {
                 launchdToggleBtn.addEventListener("click", async () => {
-                    setSelectBool("cfg-use-launchd", !readSelectBool("cfg-use-launchd", false));
+                    setServiceToggleState({
+                        useLaunchd: !readServiceToggle("useLaunchd", false),
+                    });
                     syncTopbarMenuState();
                     await saveTopbarServiceToggles();
                     setMenuOpen(true);
@@ -6335,6 +7281,8 @@
                 });
 
             const bandColorMap = makeBandColorMap(list.map((r) => r.band));
+            _bandChartLiveBands = list.map((r) => r.band);
+            _bandChartLiveColorMap = { ...bandColorMap };
             const nextBandAssignments = {};
             for (const row of list) {
                 const band = String(row.band || "");
@@ -6346,7 +7294,9 @@
 
             if (!list.length) {
                 el.innerHTML = "<div class=\"assign-empty\">No runtime assignments</div>";
-                renderAssignmentsBandChart([]);
+                _bandChartLiveBands = [];
+                _bandChartLiveColorMap = {};
+                if (!assignmentsBandChartPaused) renderAssignmentsBandChart([]);
                 return;
             }
 
@@ -6359,7 +7309,7 @@
                 })
                 .join("");
             el.innerHTML = `<table class="assign-table"><thead><tr><th>Color</th><th>Receiver</th><th>SNR(avg)</th><th>Band</th><th>Mode</th><th>Propagation</th><th># / Hr</th><th>Total</th></tr></thead><tbody>${bodyRows}</tbody></table>`;
-            renderAssignmentsBandChart(list.map((r) => r.band), bandColorMap);
+            if (!assignmentsBandChartPaused) renderAssignmentsBandChart(_bandChartLiveBands, _bandChartLiveColorMap);
         }
 
         function renderReasons(reasonCounts) {
@@ -6780,11 +7730,11 @@
         }
 
         function applyExecutiveSummary(status, health, ratePerMin) {
-            const assignments = status && typeof status === "object" ? (status.assignments || {}) : {};
             const counts = {};
-            for (const item of Object.values(assignments)) {
+            for (const item of recentDecodeItems) {
                 if (!item || typeof item !== "object") continue;
-                const band = safeText(item.band, "unknown");
+                const band = String(item.band || "").trim();
+                if (!band || band.toLowerCase() === "control") continue;
                 counts[band] = Number(counts[band] || 0) + 1;
             }
 
@@ -6806,7 +7756,6 @@
             const severity = faultSeverity(faultLoad);
             const busiestText = busiestSlots > 0 ? `${busiestBand} (${busiestSlots})` : "None";
 
-            byId("summary-busiest-band").textContent = busiestText;
             byId("chip-busiest-band").textContent = busiestText;
             const faultEl = byId("summary-fault-load");
             faultEl.textContent = `fault:${unstable} warn:${warns} reasons:${totalFaultReasons}`;
@@ -6883,6 +7832,7 @@
         applyUiPreferences(UI_THEME_DEFAULT_MODE, UI_DENSITY_DEFAULT_MODE, UI_THEME_DEFAULT_NIGHT_HOUR);
         applyOverviewTopicPrefs(readStoredOverviewTopicPrefs());
         initRefreshControls();
+        initAssignmentsBandChartControls();
         initReceiverFilters();
         initConfigAutomationControls();
         initMapPanel();

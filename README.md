@@ -13,7 +13,7 @@ docker run -d --name kiwiscan --pull always --restart unless-stopped --platform 
 	-p 4020:4020 \
 	-v kiwiscan-config:/opt/kiwiscan/config \
 	-v kiwiscan-outputs:/opt/kiwiscan/outputs \
-	n4ldr/kiwiscan:0.1.9
+	n4ldr/kiwiscan:0.1.10
 ```
 
 Then open:
@@ -91,7 +91,7 @@ New user Docker quick start:
 	-p 4020:4020 \
 	-v kiwiscan-config:/opt/kiwiscan/config \
 	-v kiwiscan-outputs:/opt/kiwiscan/outputs \
-	n4ldr/kiwiscan:0.1.9
+	n4ldr/kiwiscan:0.1.10
 	```
 
 3. Open the web UI.
@@ -125,7 +125,7 @@ docker run -d --name kiwiscan --pull always --restart unless-stopped --platform 
 	-p 4020:4020 \
 	-v "$PWD/config:/opt/kiwiscan/config" \
 	-v "$PWD/outputs:/opt/kiwiscan/outputs" \
-	n4ldr/kiwiscan:0.1.9
+	n4ldr/kiwiscan:0.1.10
 ```
 
 With that folder-backed version, your saved config will be written to `./outputs/config.json`.

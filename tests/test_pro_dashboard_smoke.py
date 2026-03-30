@@ -46,6 +46,9 @@ def test_pro_dashboard_serves_fault_summary_and_receiver_health_hooks() -> None:
         '<a href="#trend" data-nav="trend" data-icon="trend">Decode Trend</a>',
         '<article class="panel" id="trend">',
         'id="cfg-overview-trend"',
+        'id="cfg-overview-summary"',
+        'data-nav="summary"',
+        'id="summary-busiest-band"',
     ]
 
     for snippet in forbidden_snippets:
@@ -77,6 +80,9 @@ def test_prod_minimal_pro_template_keeps_fault_summary_and_receiver_health_hooks
         '<a href="#trend" data-nav="trend" data-icon="trend">Decode Trend</a>',
         '<article class="panel" id="trend">',
         'id="cfg-overview-trend"',
+        'id="cfg-overview-summary"',
+        'data-nav="summary"',
+        'id="summary-busiest-band"',
     ]
 
     for snippet in forbidden_snippets:

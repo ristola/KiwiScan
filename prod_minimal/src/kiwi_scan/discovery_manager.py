@@ -14,6 +14,24 @@ from .kiwi_waterfall import KiwiClientUnavailable
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_KIWI_HOST = "0.0.0.0"
+LEGACY_DEFAULT_KIWI_HOST = "192.168.1.93"
+PLACEHOLDER_KIWI_HOSTS = frozenset({"1.2.3.4"})
+
+
+def _normalize_kiwi_host(host: object) -> str:
+    value = str(host or "").strip()
+    if value.lower() in {
+        "",
+        DEFAULT_KIWI_HOST,
+        "127.0.0.1",
+        "localhost",
+        *PLACEHOLDER_KIWI_HOSTS,
+    }:
+        return DEFAULT_KIWI_HOST
+    return value
+
+
 class DiscoveryManager:
     def __init__(
         self,
@@ -56,7 +74,7 @@ class DiscoveryManager:
         # Small pause between retunes (seconds). Lower = faster sweeps.
         self.retune_pause_s = 1.0
         # default Kiwi host (override via /config or env var)
-        self.host = "0.0.0.0"
+        self.host = DEFAULT_KIWI_HOST
         self.port = 8073
         # Disable debug logging by default; enable via /config if needed
         self.debug = False
@@ -193,7 +211,7 @@ class DiscoveryManager:
             self.retune_pause_s = val
         val = _read_str("host")
         if val:
-            self.host = val
+            self.host = _normalize_kiwi_host(val)
         val = _read_int("port")
         if val is not None and 1 <= val <= 65535:
             self.port = val
@@ -218,7 +236,7 @@ class DiscoveryManager:
                 "fast_scan_min_frames": int(self.fast_scan_min_frames),
                 "fast_scan_min_duration_s": float(self.fast_scan_min_duration_s),
                 "retune_pause_s": float(self.retune_pause_s),
-                "host": str(self.host),
+                "host": _normalize_kiwi_host(self.host),
                 "port": int(self.port),
                 "debug": bool(self.debug),
                 "saved_unix": time.time(),

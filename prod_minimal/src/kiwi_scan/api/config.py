@@ -11,6 +11,24 @@ from typing import Dict
 from fastapi import APIRouter, HTTPException, Request
 
 
+DEFAULT_KIWI_HOST = "0.0.0.0"
+LEGACY_DEFAULT_KIWI_HOST = "192.168.1.93"
+PLACEHOLDER_KIWI_HOSTS = frozenset({"1.2.3.4"})
+
+
+def _normalize_kiwi_host(host: object) -> str:
+    value = str(host or "").strip()
+    if value.lower() in {
+        "",
+        DEFAULT_KIWI_HOST,
+        "127.0.0.1",
+        "localhost",
+        *PLACEHOLDER_KIWI_HOSTS,
+    }:
+        return DEFAULT_KIWI_HOST
+    return value
+
+
 def make_router(*, mgr: object, waterholes: Dict[str, float]) -> APIRouter:
     """Create router for GET/POST /config.
 
@@ -182,6 +200,40 @@ def make_router(*, mgr: object, waterholes: Dict[str, float]) -> APIRouter:
             "elapsed_s": round(time.time() - started, 3),
         }
 
+    @router.get("/config/verify")
+    def verify_kiwi(host: str, port: int = 8073, timeout_s: float = 1.2):
+        host_text = str(host or "").strip()
+        if not host_text:
+            raise HTTPException(status_code=400, detail="host is required")
+        if port < 1 or port > 65535:
+            raise HTTPException(status_code=400, detail="port must be 1..65535")
+        if timeout_s <= 0 or timeout_s > 5:
+            raise HTTPException(status_code=400, detail="timeout_s must be > 0 and <= 5")
+
+        status = _read_kiwi_status(host_text, port, timeout_s=timeout_s)
+        latitude = None
+        longitude = None
+        grid = None
+        gps_good = None
+        name = None
+        if status:
+            latitude, longitude = _extract_gps_lat_lon(status)
+            grid = status.get("grid")
+            gps_good = status.get("gps_good")
+            name = status.get("name")
+
+        return {
+            "ok": True,
+            "reachable": bool(status),
+            "host": host_text,
+            "port": port,
+            "latitude": latitude,
+            "longitude": longitude,
+            "grid": grid,
+            "gps_good": gps_good,
+            "name": name,
+        }
+
     @router.get("/config")
     def get_config():
         kiwi_lat = None
@@ -296,7 +348,7 @@ def make_router(*, mgr: object, waterholes: Dict[str, float]) -> APIRouter:
                             raise ValueError("port must be between 1 and 65535")
                         mgr.port = val
                     elif k == "host":
-                        mgr.host = str(v)
+                        mgr.host = _normalize_kiwi_host(v)
                     elif k == "debug":
                         mgr.debug = bool(v)
                     elif k == "s_meter_offset_db":
