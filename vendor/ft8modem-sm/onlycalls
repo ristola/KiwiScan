@@ -1,0 +1,40 @@
+#!/usr/bin/env -S python3 -B
+#
+#   onlycalls - extract callsigns from raw data
+#
+#   Copyright (C) 2023-2024 by Matt Roberts.
+#   License: GNU GPL3 (www.gnu.org)
+#
+#
+
+import parsing
+import sys
+
+#
+#  main()
+#
+def main():
+	unique = False
+	calls = { }
+	if '-u' in sys.argv:
+		unique = True
+		
+	for raw in sys.stdin:
+		parts = raw.split()
+		for token in parts:
+			if parsing.iscall(token):
+				if unique:
+					found = True
+					if not token in calls:
+						calls[token] = 0
+						found = False
+					calls[token] += 1
+					if found: continue
+				sys.stdout.write(token)
+				sys.stdout.write('\n')
+
+# entry point
+if __name__ == '__main__':
+	main()
+
+# EOF: onlycalls

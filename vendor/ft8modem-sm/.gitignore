@@ -1,0 +1,21 @@
+# Local build outputs
+/build/
+/rtaudio/build/
+/rtaudio/_git_metadata_local/
+*.o
+*.pyc
+
+# Compiled helper binaries rebuilt by the Docker image / local make
+/af2udp
+/ft4code
+/ft8code
+/ft8collect
+/ft8modem
+/ft8qso
+/ft8sdr
+/ft8swl
+/jt65code
+/jt9
+/jt9code
+/msk144code
+/q65code

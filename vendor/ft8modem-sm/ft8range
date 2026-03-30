@@ -1,0 +1,155 @@
+#!/usr/bin/env -S python3 -B
+#
+#   ft8range.py
+#
+#   Generate basic report about calls and distances.
+#
+#   Copyright (C) 2025 by Matt Roberts.
+#   License: GNU GPL3 (www.gnu.org)
+#
+#
+
+
+import sys
+import os
+import os.path
+import io
+import time
+
+import numpy as np
+
+import parsing
+import gridsquares as gs
+
+
+# global state
+senders = { } # list of calls seen, with freqs and grids
+freqs = [ ]   # list of bands seen
+
+
+#
+#  process(f) - read one file
+#
+def process(f):
+	global senders, freqs
+
+	for line in f:
+		# break the line into components
+		parts = line.split()
+
+		# read the frequency
+		freq = parts[1]
+
+		# update the main frequency list
+		if freq not in freqs:
+			freqs.append(freq)
+
+		# cut off the 'what' tokens, then extract calls and grid
+		what = parts[7:]
+		cparts = list(filter(lambda x: parsing.iscall(x), what))
+		gparts = list(filter(lambda x: parsing.isgrid(x), what))
+
+		# pick out the sender call, if available
+		if not cparts:
+			continue
+		sender = cparts[-1]
+		if not sender:
+			continue
+
+		# update the sender table
+		if sender not in senders.keys():
+			senders[sender] = { 'count' : 0, 'freqs': [ ], 'grids': [ ] }
+
+		# update count
+		senders[sender]['count'] += 1
+
+		# update frequencies
+		if freq not in senders[sender]['freqs']:
+			senders[sender]['freqs'].append(freq)
+
+		# update grid squares
+		if gparts and len(gparts) == 1:
+			sender_grid = gparts[0]
+			if sender_grid not in senders[sender]['grids']:
+				senders[sender]['grids'].append(sender_grid)
+
+				# DEBUG:
+				#sys.stderr.write("DEBUG: add grid: %s\n" % sender_grid)
+
+
+#
+#  main()
+#
+def main():
+	global senders, freqs
+
+	# local grid ; TODO: make this an option
+	mygrid = 'em16lc'
+
+	# min grid count; grid must appear this many times on a band to count
+	#    TODO: make this an option
+	min_count = 3
+
+	# expand paths
+	files = sys.argv[1:]
+	files = list(filter(lambda x: x != '-r', files))
+	for i in range(len(files)):
+		files[i] = os.path.expanduser(files[i])
+
+	# verify files exist
+	for fn in files:
+		if not os.path.isfile(fn):
+			sys.stderr.write("Could not find file: %s\n" % fn)
+			sys.exit(1)
+	
+	if not files:
+		process(sys.stdin)
+	else: 
+		for fn in files:
+			with io.open(fn, 'r') as f:
+				process(f)
+
+	# sanity check
+	if not senders:
+		sys.stderr.write("Processed no records.\n")
+		sys.exit(0)
+
+	# the header (TODO: make this an option)
+	sys.stdout.write("%7s %6s %8s %8s\n" % ('Freq', 'Calls', 'DistMean', 'DistMax'))
+
+	# distance stats
+	for freq in sorted(freqs, key=lambda x: float(x)):
+		# get the list of unique transmitters for this band
+		xmitters = list(filter(lambda x: (freq in senders[x]['freqs']) and senders[x]['grids'], senders))
+		grids = { }
+		for x in xmitters:
+			for g in senders[x]['grids']:
+				if g not in grids.keys():
+					grids[g] = 0
+				grids[g] += 1
+
+		# get the list of unique station distances for this band
+		distances = [ ]
+		for grid2 in filter(lambda g: grids[g] >= min_count, grids):
+			to, fr, dist = gs.grids_to_distance_and_bearing(mygrid, grid2)
+			distances.append(dist)
+
+		# sanity check
+		if not distances:
+			sys.stderr.write("Found band %s with %d calls, but could not calculate any distances.\n" % (freq, len(xmitters)))
+			continue
+
+		# calculate distance mean and max
+		dist_mean = np.mean(distances)
+		dist_high = np.max(distances)
+
+		# report
+		sys.stdout.write("%7s %6d %8.1f %8.1f\n" % (freq, len(xmitters), dist_mean, dist_high))
+
+
+# entry point
+if __name__ == '__main__':
+	try: main()
+	except KeyboardInterrupt: pass
+
+# EOF: ft8range

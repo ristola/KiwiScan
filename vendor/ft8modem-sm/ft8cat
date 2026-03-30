@@ -1,0 +1,1084 @@
+#!/usr/bin/env -S python3 -B
+#
+#   ft8cat - cat wrapper around ft8modem
+#
+#   CAT wrapper around 'ft8modem':
+#     * connects to rigctld(1) for radio control.
+#     * reads and updates radio RF VFOA, VFOB, Split.
+#     * restarts ft8modem when mode change is requested.
+#     * [optional] performs PTT funcions on behalf of the modem.
+#     * [optional] manages radio split mode, and VFOB.
+#     * [optional] updates an ALL.TXT file, emulating WSJT-X.
+#     * [optional] sends UDP updates to ft8collect and/or ft8report.
+#
+#   This application adds or "stacks" the following commands onto
+#   the 'ft8modem' commands:
+#       + BAND b ... where 'b' is band in meters, or UP or DOWN
+#       + MODE m ... where 'm' is one of { FT8, FT4, JT9, JT65, WSPR }
+#
+#   Calling either command without an argument should return the
+#   current band or mode.
+#
+#   Copyright (C) 2023-2024 by Matt Roberts.
+#   License: GNU GPL3 (www.gnu.org)
+#
+#
+
+# system modules
+import subprocess
+import getopt
+import socket
+import select
+import time
+import sys
+import os
+
+# local modules
+from fdutils import *
+from messages import *
+from alltxt import *
+from bands import *
+from computefb import *
+from version import *
+
+
+#
+#  globals - default values
+#
+
+# the amount of time between each scan
+TimeoutCAT = 2.0 # sec
+
+# the factor multiplied by TimeoutCAT when a command succeeds,
+#   to speed up the scanning when things are working properly
+SpeedupCAT = 0.50 # remove 50% of time delay to next command
+
+# transmitted AF for split operation; VFOB is moved to put this at
+#   the audio frequency requested by the user; change with -f option
+RealAF = 2000 # Hz
+
+# the TCP port for the local rigctld; change with -p option
+CatPort = 4532
+
+# flag indicating whether to use PTT commands
+#   otherwise, VOX is assumed
+#   change with -t option
+UsePTT = True
+
+# range of valid AF values that can be requested
+#   (ft8modem does this, too, but this is for validation during split operation)
+AudioMin = 1
+AudioMax = 3100
+
+# the VFO resolution, measured in Hz; change with -r option
+Resolution = 1 # Hz
+
+# the PTT type to send to rigctld(1) when transmitting:
+#   must be one of ‘1’ (TX), ‘2’ (TX mic), or ‘3’ (TX data)
+CodePTT = '1'
+
+
+#
+#  usage()
+#
+def usage():
+	global RealAF, CatPort
+	global AudioMin, AudioMax
+
+	# where to write usage text
+	where = sys.stdout
+
+	where.write("\n")
+	where.write("Usage: %s [options] <ft8modem command line>\n" % sys.argv[0])
+	where.write("\n")
+	where.write("    This application connects to rigctld, which should be connected\n")
+	where.write("    to your radio, and available locally (127.0.0.1) via TCP.  It\n")
+	where.write("    also runs 'ft8modem' with the command line provided, and passes\n")
+	where.write("    messages and commands to/from the modem.\n")
+	where.write("\n")
+	where.write("    There are also options for generating ALL.TXT, to support other.\n")
+	where.write("    programs that monitor traffic.  This data can be sent either to.\n")
+	where.write("    a file or to a local UDP socket.\n")
+	where.write("\n")
+	where.write("   -a <path>\n")
+	where.write("        Append TX and RX lines to <fn>, in roughly the same format as ALL.TXT\n")
+	where.write("        in WSJT-X.  This can be used to drive automation tools that rely on\n")
+	where.write("        ALL.TXT to read messages sent and received by the modem.\n")
+	where.write("\n")
+	where.write("   -A <udp_port>\n")
+	where.write("        Similar to -a, but sends decodes to local UDP socket instead.  The\n")
+	where.write("        target can be a port number or a host:port combination, where the\n")
+	where.write("        host can be either a name or IP address.  If the host is not\n")
+	where.write("        provided, the default is 127.0.0.1.\n")
+	where.write("\n")
+	where.write("   -f <freq>\n")
+	where.write("        Set audio frequency for split operation (default: %d Hz)\n" % RealAF)
+	where.write("        The -f option is only valid when also using split (-s) mode.\n")
+	where.write("\n")
+	where.write("   -F <freq>\n")
+	where.write("        Set fixed radio frequency; this disables all other CAT features.\n")
+	where.write("\n")
+	where.write("   -k <code>\n")
+	where.write("        Set the PTT code for transmitting (default: %s).  See the\n" % CodePTT)
+	where.write("        manpage for rigctld(1) for details.\n")
+	where.write("\n")
+	where.write("   -m <freq>\n")
+	where.write("        Set maximum AF when sending in split (-s) mode (default: %d Hz).\n" % AudioMax)
+	where.write("\n")
+	where.write("   -n <freq>\n")
+	where.write("        Set minimum AF when sending in split (-s) mode (default: %d Hz).\n" % AudioMin)
+	where.write("\n")
+	where.write("   -p <port>\n")
+	where.write("        Set TCP port for local rigctld (default: %d)\n" % CatPort)
+	where.write("\n")
+	where.write("   -r <hz>\n")
+	where.write("        Set radio VFO-B resolution in Hz, one of 1, 10, 100, 500, 1000; (default: 1)\n")
+	where.write("        The -r option is only valid when also using split (-s) mode.\n")
+	where.write("\n")
+	where.write("   -s   Use split mode; there must be support for this in your radio\n")
+	where.write("        and within rigctld's support for your radio.\n")
+	where.write("\n")
+	where.write("        When transmitting, the radio VFO-B will be moved so that the audio\n")
+	where.write("        is generated at %d Hz (or close to %d Hz when using -r), which\n" % (RealAF, RealAF))
+	where.write("        allows harmonics and distortion to be filtered by your radio's\n")
+	where.write("        transmit circuits.\n")
+	where.write("\n")
+	where.write("   -u   When used with -a or -A, date/time values in the output file will be an\n")
+	where.write("        integer value as returned by time(2).  This is generally easier for analysis\n")
+	where.write("        tools to read, parse, and compare.  Omit this option to use ALL.TXT with\n")
+	where.write("        a program that expects time values in WSJT-X style.\n")
+	where.write("\n")
+	where.write("   -t   Disable the use of PTT commands; some other PTT method will need to\n")
+	where.write("        be provided, such as VOX in the radio.\n")
+	where.write("\n")
+	where.write("   -w   Set the TX watchdog, in seconds, or 'auto'\n")
+	where.write("\n")
+	sys.exit(1)
+
+
+#
+#  start_modem(cmdline) - convenience function to start 'ft8modem' as a child process
+#
+def start_modem(cmdline):
+	try:
+		send_trace("Start modem, args = %s" % str(cmdline))
+		result = subprocess.Popen(cmdline, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+		if not result:
+			send_error("Could not start ft8modem")
+			sys.exit(1)
+		os.set_blocking(result.stdout.fileno(), False)
+		return result
+	except PermissionError as ex:
+		send_error("Insufficient permission to run modem executable.")
+		sys.exit(1)
+	except FileNotFoundError as ex:
+		send_error("Could not find modem executable.")
+		sys.exit(1)
+
+
+#
+#  get_dial_target(mode, band)
+#
+#  given a band and mode, (try to) return the standard calling frequency
+#  for that mode on that band
+#
+def get_dial_target(m, b):
+	result = get_freq(m, b)
+	if not result:
+		return None
+	return result
+
+
+#
+#  main()
+#
+def main():
+	global TimeoutCAT, SpeedupCAT, AudioMin, AudioMax
+	global RealAF, CatPort, Resolution, UsePTT, CodePTT
+
+	# split option
+	UseSplit = False
+
+	# all txt file option
+	AllTextPath = None
+
+	# all txt socket host
+	AllTextHost = None
+
+	# all txt socket port
+	AllTextPort = None
+
+	# the fixed-RF option
+	FixedRF = None
+
+	# use PURGE command on band/mode changes
+	UsePurge = False
+
+	# assume WSJT-X date/time values in ALL.TXT unless -u given below
+	AllTextUnix = False
+
+	# the TX watchdog timeout (seconds)
+	WatchdogPTT = -1 # default is 'auto'
+
+	# dead band after large FA change before spots are reported
+	MinTimeQSY = 3  # seconds
+
+	# if watchdog set to 'auto' these are the values to use, per mode
+	wd_autos = {
+		'FT4'  : 18, # seconds
+		'FT8'  : 25,
+		'JT9'  : 75,
+		'JT65' : 75,
+		'WSPR' : 130
+	}
+
+	# read the command line
+	cmdline = None
+	try:
+		optlist, cmdline = getopt.getopt(sys.argv[1:], 'a:A:f:F:hk:m:n:p:Pr:stuvw:')
+		for opt in optlist:
+			if opt[0] == '-a':
+				AllTextPath = opt[1]
+			elif opt[0] == '-A':
+				if ':' in opt[1]:
+					AllTextHost, AllTextPort = opt[1].split(':', 1)
+				else:
+					AllTextPort = opt[1]
+				if not AllTextPort.isdigit():
+					raise Exception("Port number must be numeric")
+				AllTextPort = int(AllTextPort)
+			elif opt[0] == '-u':
+				AllTextUnix = True
+			elif opt[0] == '-F':
+				FixedRF = float(opt[1])
+			elif opt[0] == '-f':
+				RealAF = int(opt[1])
+				if RealAF < 1:
+					raise Exception("Real AF must positive frequency")
+			elif opt[0] == '-h':
+				usage()
+			elif opt[0] == '-k':
+				CodePTT = opt[1]
+				if CodePTT not in [ '1', '2', '3' ]:
+					raise Exception("PTT code must be 1, 2, or 3")
+			elif opt[0] == '-m':
+				AudioMax = int(opt[1])
+				if AudioMax < 1:
+					raise Exception("Maximum AF must be positive frequency")
+			elif opt[0] == '-n':
+				AudioMin = int(opt[1])
+				if AudioMin < 1:
+					raise Exception("Minimum AF must be positive frequency")
+			elif opt[0] == '-p':
+				CatPort = int(opt[1])
+				if CatPort < 1 or CatPort > 65535:
+					raise Exception("TCP port must be in the range of (1, 65535)")
+			elif opt[0] == '-r':
+				Resolution = int(opt[1])
+				valid_res = [ 1, 10, 100, 500, 1000 ]
+				if Resolution not in valid_res:
+					raise Exception("Resolution must be one of: %s" % valid_res)
+			elif opt[0] == '-P':
+				UsePurge = True
+			elif opt[0] == '-s':
+				UseSplit = True
+			elif opt[0] == '-t':
+				UsePTT = False
+			elif opt[0] == '-w':
+				if not opt[1]:
+					raise Exception("Watchdog value must be >= 0, or 'auto'")
+				if opt[1].lower() == 'auto':
+					WatchdogPTT = -1
+				else:
+					WatchdogPTT = int(opt[1])
+					if WatchdogPTT < 0:
+						raise Exception("Watchdog value must be >= 0, or 'auto'")
+			elif opt[0] == '-v':
+				sys.stdout.write("ft8cat version %s\n" % GetModemVersion())
+				return 0
+	except Exception as ex:
+		sys.stderr.write("Error: %s\n" % str(ex))
+		return 1
+	except getopt.GetoptError as ex:
+		sys.stderr.write("Error: %s\n" % str(ex))
+		return 1
+
+	# and validate the ft8modem command line
+	if not cmdline:
+		usage()
+	
+	# validate that resolution not given without split
+	if Resolution > 1 and not UseSplit:
+		sys.stderr.write("Error: option -r requires option -s\n")
+		return 1
+
+	# sanity check the -A option
+	if not AllTextHost:
+		AllTextHost = '127.0.0.1'
+	if AllTextHost:
+		try:
+			ip = socket.gethostbyname(AllTextHost)
+			if AllTextHost:
+				AllTextHost = ip
+		except:
+			AllTextHost = None
+
+	# if mismatched arguments, 
+	if AllTextPort and not AllTextHost:
+		send_warning("Could not resolve hostname; remote logging disabled; consider using an IP address, instead.")
+		AllTextHost = None
+		AllTextPort = None
+	
+	# DEBUG:
+	if AllTextPort:
+		send_trace("Logging spots to remote UDP/%s:%d." % (AllTextHost, AllTextPort))
+
+	# snag the (initial) mode from the command line
+	mode = None
+	for m in modes():
+		if m in map(lambda x: x.lower(), cmdline):
+			mode = m.upper()
+	if mode:
+		send_trace("ft8cat detected mode = '%s'" % mode)
+	else:
+		send_error("ft8cat could not detect mode from command line")
+		sys.exit(1)
+
+	# configure watchdog if 'auto' selected
+	if WatchdogPTT < 0:
+		WatchdogPTT = wd_autos[mode]
+		send_debug("Watchdog timer set to %d seconds" % WatchdogPTT)
+
+	# report if using fixed RF
+	if FixedRF:
+		send_warning("ft8cat using fixed RF frequency of %f Hz" % FixedRF)
+		UseSplit = False
+		UsePTT = False
+
+	# send trace message when PTT is disabled
+	if not UsePTT:
+		send_trace("ft8cat PTT support is disabled")
+
+	# start the ft8modem
+	ft8modem = start_modem(cmdline)
+
+	# disable read() blocking on standard I/O
+	os.set_blocking(sys.stdin.fileno(), False)
+	#os.set_blocking(sys.stdout.fileno(), False) # don't do this; breaks on slower machines
+
+	# how far is FB allowed to stray from FA before it is reset
+	max_drift = 5000 # Hz
+
+	# minimum dial frequency allowed
+	min_dial = 10000 # Hz
+
+	# how long should select(...) sleep at most
+	select_delay = 0.5 # sec
+
+	# commands to scan periodically
+	catscan = [ 's', 'f', 'i', 't' ]  # (READ: FA, FB, split, PTT)
+
+	# bytes per read() or recv() call
+	block_size = 128
+	
+	# I/O buffers
+	catbuf = b''        # ingress buffer for CAT socket (bytes object for raw I/O)
+	egbuf = b''         # pipeline egress buffer (bytes object for raw I/O from fd)
+	igbuf = ''          # pipeline ingress buffer
+
+	# one-shot init flag; if False, when the first FA report comes in, use that
+	#   to set the proper dial target for the current band and mode
+	init_1s = False
+
+	# frequency and other state tracking and management
+	fa = 0              # VFO-A freq in Hz, as read from rigctld(1)
+	fb = 0              # VFO-B freq in Hz, as read from rigctld(1)
+	fa_last = 0         # most recent large FA change
+	split_target = None # used to enable split mode
+	dial_target = None  # used to change bands or modes
+	ptt_target = None   # used to change PTT state
+	fb_target = None    # used to change the VFOB frequency for split operation
+	fb_expect = None    # used to cross-check FB changes in split mode
+	fb_scan = True      # when True, OK to scan FB
+	split = None        # most recent split state
+	ptt_off = 0         # last time PTT set to OFF (used to scan FB)
+	ptt_on = 0          # last time PTT set to ON  (used for watchdog)
+	ptt = '0'           # most recent PTT state as string
+	af = 0              # most recent transmit AF
+
+	# command tracking and management
+	msg = None          # last message text sent
+	cmd = None          # last command sent to radio
+	last_op = None      # human-readable version of 'cmd'
+	init_cmds = None    # commands to send on new socket connection
+	real_af = 0         # cache the real TX AF to use for encoder spots
+
+	# CAT socket and scan state
+	catsock = None      # CAT socket to rigctld
+	catidx = -1         # index of last cat command in rotation
+	cattime = 0         # time last command sent
+	catcon = 0          # last time connect attempted
+
+	#
+	#  main program loop
+	#
+	while True:
+		# if using fixed RF frequency, set those now
+		if FixedRF:
+			fa = fb = FixedRF
+
+		now = time.time()
+		try:
+			#
+			#  SOCKET: keep CAT connection going if it stops
+			#
+			if not catsock and (now - catcon >= 1.0) and not FixedRF:
+				catcon = now
+				try:
+					catsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+					catsock.connect(('localhost', CatPort))
+					os.set_blocking(catsock.fileno(), False)
+				except:
+					send_warning("CAT connect failed")
+					catsock = None
+
+				# queue initial commands to initialize the connection properly
+				if catsock:
+					init_cmds = [ 'V VFOA' ]
+
+			# if watchdog expired...
+			if (WatchdogPTT > 0) and ptt_on and ptt_off and (ptt_on > ptt_off) and ((now - ptt_on) >= WatchdogPTT):
+				send_warning("TX watchdog expired; sending PTT OFF command")
+				ptt_target = '0' # ...send PTT=OFF command
+
+			#
+			#  select(...) - watch the pipes and sockets
+			#
+			r = [ ft8modem.stdout, sys.stdin ]
+			if catsock:
+				r.append(catsock)
+			w = [ ] # TODO: include CAT socket??
+			e = [ ]
+			r, w, e = select.select(r, w, e, select_delay)
+
+
+			#
+			#  DATA: modem -> user
+			#
+			if ft8modem.stdout in r:
+				# read all the waiting data
+				newdata = read_all_bytes(ft8modem.stdout, block_size)
+				if not newdata:
+					break
+				egbuf += newdata
+
+				# loop through the available lines
+				while b'\n' in egbuf:
+					line, egbuf = egbuf.split(b'\n', 1)
+					line = line.decode('utf-8')
+
+					# TX request from modem
+					if line.startswith("TX: "):
+						# send PTT update
+						ptt = '0' if line[4] == '0' else CodePTT
+						ptt_target = ptt
+
+					# decode report
+					elif line.startswith("D: "):
+						raw = line[3:]  # remove the leading 'D: '
+
+						# filter messages based on last large FA change
+						when = 0
+						if raw:
+							parts = raw.split(' ', 1)
+							if parts[0].isdigit():
+								when = int(parts[0])
+						if fa_last:
+							# dead band is three seconds for FT4, six seconds otherwise
+							t_offset = 4 if mode == 'FT4' else 10
+
+							# only send data to logger if a few seconds since last FA change
+							if when >= (fa_last - t_offset):
+								# logging (decode)
+								append_text(             AllTextPath, fa, raw, uts=AllTextUnix)  # log to file
+								socket_text(AllTextHost, AllTextPort, fa, raw, uts=AllTextUnix)  # log to socket
+							else:
+								line = None  # mute the line to the user
+
+					# encode report
+					elif line.startswith("E: "):
+						if UseSplit: # rewrite the AF to match the most recent request
+							modecode = mode2code(mode)
+							orig = " %d %s " % (real_af, modecode)  # the substring as it appears from the modem
+							fnew = " %d %s " % (af, modecode)       # the replacement substring
+							line = line.replace(orig, fnew, 1)      # update 'line' in-place
+						# extract the main bits for ALL.TXT
+						raw = line[3:]
+
+						# logging (encode)
+						append_text(             AllTextPath, fa, raw, tx=True, uts=AllTextUnix) # log to file
+						socket_text(AllTextHost, AllTextPort, fa, raw, tx=True, uts=AllTextUnix) # log to socket
+
+					# mode change report from modem
+					elif line.startswith("MODE: "):
+						# change frequencies, if possible/needed
+						new_mode = line[6:].upper();
+						if mode != new_mode:
+							mode = new_mode
+							dial_target = get_dial_target(new_mode, get_band(fa))
+
+					# pass the line towards the user
+					if line:
+						send_message(line)
+
+
+			#
+			#  DATA: user -> modem
+			#
+			if sys.stdin in r:
+				# read all the waiting data
+				newdata = read_all_str(sys.stdin, block_size)
+				if not newdata:
+					break
+				igbuf += newdata
+
+				# loop through the available lines
+				while '\n' in igbuf:
+					# extract the first line from the ingress buffer
+					line, igbuf = igbuf.split('\n', 1)
+					if line:
+						line = line.strip()
+
+					# parse certain commands
+					if line.upper() == 'STOP':
+						# stop the modulator
+						ft8modem.stdin.write((line + '\n').encode('ascii'))
+						ft8modem.stdin.flush()
+						time.sleep(0.1)
+
+						# send CAT command for PTT STOP
+						ptt_target = '0'
+						continue
+
+					# try to pick off the TX AF requested,
+					#   so we can modify it in split mode
+					parts = line.split(' ', 1)
+
+					#
+					#  BAND change request from user
+					#
+					if parts[0].upper() == 'BAND':
+						if FixedRF:
+							send_error("Cannot use BAND command with fixed RF.\n")
+							continue
+							
+						if len(parts) == 1:
+							# return current band
+							sys.stdout.write("BAND: %s\n" % get_band(fa))
+							continue
+
+						# parse the band into a frequency target
+						band = 0
+						if parts[1].upper() == 'UP':
+							band = band_above(get_band(fa))
+						elif parts[1].upper() == 'DOWN':
+							band = band_below(get_band(fa))
+						else:
+							arg = parts[1]
+							if arg[-1].lower() == 'm':
+								arg = arg[:-1]
+							band = int(arg)
+						if not band in bands():
+							if not band:
+								band = 0;
+							send_error("Invalid band specified: %d" % band)
+							continue
+
+						# set the dial target to match the new band
+						dial_target = get_dial_target(mode, band)
+						if dial_target:
+							fb_expect = None
+						else:
+							send_warning("Could not calculate dial frequency for new band")
+
+						# done with band change
+						continue
+
+					#
+					#  MODE change request from user
+					#
+					elif parts[0].upper() == 'MODE':
+						if FixedRF:
+							send_error("Cannot use MODE command with fixed RF.\n")
+							continue
+
+						if len(parts) == 1:
+							#  return current mode
+							sys.stdout.write("MODE: %s\n" % mode.upper())
+							continue
+
+						# parse the new mode
+						new_mode = parts[1].upper()
+						if new_mode.lower() not in modes():
+							send_error("Invalid mode specified: %s" % new_mode)
+							continue
+
+						# do nothing if mode is the same
+						if new_mode == mode:
+							send_warning("Requested same mode, nothing done")
+							continue
+
+						# DEBUG:
+						send_trace("Old mode is %s, new mode is %s" % (mode, new_mode))
+
+						# switch modes
+						for i in [ -2, -1 ]:
+							if cmdline[i].upper() == mode:
+								# switch to the new mode
+								cmdline[i] = new_mode
+
+								# shut down the existing modem
+								try:
+									ft8modem.stdin.close()
+								except:
+									pass
+								time.sleep(2.0)
+								mode = new_mode
+								ft8modem = start_modem(cmdline)
+								break
+
+						# set the dial target to match the new mode
+						dial_target = get_dial_target(mode, get_band(fa))
+						if not dial_target:
+							send_warning("Could not calculate dial frequency for new band")
+
+						# done with mode switch
+						continue
+
+					# OTHER: pass-thru other single-word commands
+					if len(parts) != 2 or not parts[0] or not parts[0][0].isdigit():
+						# just pass the message to the modem directly
+						ft8modem.stdin.write((line + '\n').encode('ascii'))
+						ft8modem.stdin.flush()
+						continue
+
+					# get the two strings
+					afstr, txmsg = parts
+					if txmsg:
+						txmsg = txmsg.upper()
+
+					# try to read the first token as a frequency
+					even = None
+					if afstr[-1] in 'EeOo':  # but without even/odd markup
+						even = afstr[-1] in 'Ee'
+						afstr = afstr[:-1]
+					if afstr.isdigit():
+						af = int(afstr)
+					else:
+						# just pass the message to the modem directly (mostly for commands)
+						ft8modem.stdin.write((line + '\n').encode('ascii'))
+						ft8modem.stdin.flush()
+						continue # skip everything else
+
+					# then try to extract even/odd markings if they were provided
+					eo = ''
+					if not even is None:
+						eo = 'E' if even else 'O'
+
+					run_cmd = None
+					log_cmd = None
+
+					# make sure the integer conversion did something meaningful
+					if not af:
+						send_error("Transmit AF = 0; request was '%s'" % line)
+						continue
+
+					if UseSplit:
+						# validate that the AF is in-range
+						if af < AudioMin or af > AudioMax:
+							send_error("Transmit AF outside valid range of [ %d, %d ]" % (AudioMin, AudioMax))
+							continue
+						
+						# compute the FB for transmission
+						fb_target, real_af = compute_fb(fa, RealAF, af, Resolution)
+
+						# DEBUG: back-calculate the split offset, to make sure it did as expected
+						ok = (fa + af) == (fb_target + real_af)
+						message = "FA = %d, AF = %d -> FB = %d; SF = %d; AFeff = %d [%s]" % (
+							fa, af, fb_target, real_af, fb_target + real_af - fa, "OK" if ok else "FAIL")
+						if ok:
+							send_trace(message)
+						else:
+							send_error(message)
+
+						# if zero FB, fail
+						if not fb_target:
+							send_error("Calculated FB for split transmission was zero")
+							continue
+
+						# if | FA - FB | too large, fail
+						if abs(fa - fb_target) > 25000: # split greater than 25kHz
+							send_error("Calculated FB for split transmission was too far from FA")
+							continue
+
+						# if the CAT socket is down, fail
+						if not catsock:
+							send_error("CAT not connected; cannot set TX frequency")
+							continue
+
+						# set the TX frequency
+						if fb == fb_target:
+							send_debug("FB already on-frequency; not changed")
+							fb_target = None
+						else:
+							# DEBUG:
+							send_trace("Set TX VFO to %d Hz" % fb_target)
+
+						# build the new message
+						run_cmd = "%d%s %s" % (real_af, eo.upper(), txmsg)
+						log_cmd = "%d %s" % (af, txmsg)
+							
+					else:
+						# pass thru the command as-is, since split is disabled
+						run_cmd = "%d%s %s" % (af, eo.upper(), txmsg)
+						log_cmd = "%d %s" % (af, txmsg)
+
+					# if there's a TX command, send it
+					if run_cmd:
+						# save the message to be sent (to use later)
+						msg = run_cmd
+
+						# send the command
+						send_trace("Send to modem: %s\n" % run_cmd)
+						ft8modem.stdin.write((run_cmd + '\n').encode('ascii'))
+						ft8modem.stdin.flush()
+
+			#
+			#  DATA: CAT responses (radio -> ft8cat)
+			#
+			if catsock in r:
+				# read a block of raw bytes from the socket and update the buffer
+				buf = catsock.recv(block_size)
+				if not buf:
+					try:
+						catsock.close()
+					except:
+						pass
+					catsock = None
+				else:
+					catbuf += buf
+
+				# for each complete line in the buffer...
+				while b'\n' in catbuf:
+					# get one line, update buffer
+					line, catbuf = catbuf.split(b'\n', 1)
+					line = line.decode('ascii')
+
+					# skip empty lines
+					if not line:
+						continue
+					line = line.strip()
+					if not line:
+						continue
+
+					#
+					#  handle specific messages
+					#
+					#  NOTE: Most of these cases check to see which command was sent
+					#        most recently, since many CAT responses don't echo the
+					#        command, just the data requested.
+					#
+
+					# RPRT - command response
+					if line.startswith("RPRT "):
+						arg = line[5:]
+						arg = int(arg)
+						if arg < 0:
+							send_warning("CAT response to '%s' was (%d)" % (str(last_op), arg))
+						cattime -= TimeoutCAT * SpeedupCAT # send the next command a little sooner
+						last_op = None
+						cmd = None
+
+					# VFO* - part of the response to SPLIT = 1
+					elif line.startswith("VFOA") or line.startswith("VFOB"):
+						pass # part of the 'split' response
+
+					# 'f' - the VFO-A query response
+					elif cmd == 'f':
+						newfa = int(line)               # read the new value as integer
+						ok = (newfa >= min_dial)        # (sanity check)
+						if not ok:
+							send_warning("CAT response for command '%s' was %d" % (str(last_op), newfa))
+						if ok and newfa != fa:          # if the FA has changed...
+							# purge current decodes to prevent mis-reporting frequency
+							if fa and abs(fa - newfa) > max_drift and UsePurge:
+								send_trace("Large FA change - purging modem decodes")
+								ft8modem.stdin.write(('PURGE\n').encode('ascii'))
+								ft8modem.stdin.flush()
+								
+							# store and report the new FA
+							fa = newfa
+							fa_last = now
+							send_message("FA: %d" % fa) # ...update the USER
+
+							# if startup one-shot hasn't happened yet...
+							if not init_1s:
+								# ...update the dial target for the mode/band combination
+								dial_target = get_dial_target(mode, get_band(fa))
+								init_1s = True
+
+						# if | FA - FB | too big, re-read FB, which *might* move FB closer
+						if split and (abs(fa - fb) > max_drift):
+							send_trace("FA too far from FB, rescan FB")
+							fb_scan = True
+
+						cattime -= TimeoutCAT * SpeedupCAT # send the next command a little sooner
+						cmd = None
+
+					# 'i' - the VFO-B query response
+					elif cmd == 'i':
+						newfb = int(line)               # read the new value as integer
+						ok = (newfb > min_dial)         # (sanity check)
+						if not ok:
+							send_warning("CAT response for command '%s' was %d" % (str(last_op), newfb))
+						if ok and newfb != fb:          # if the FB has changed...
+							fb = newfb
+							send_message("FB: %d" % fb) # ...update the USER
+
+							# if FB wasn't as expected, complain
+							if fb_expect:
+								if fb == fb_expect:
+									send_trace("CAT reports FB = %d [OK]" % fb)
+								else:
+									send_warning("CAT reports FB = %d, but expected %d (df = %d)" % (fb, fb_expect, fb - fb_expect))
+								fb_expected = None
+
+						# if FB has drifted, pull it back to FA
+						if fa and fb and (abs(fb - fa) > max_drift):
+							send_info("Setting VFOB = VFOA")
+							fb_target = fa
+
+						cattime -= TimeoutCAT * SpeedupCAT # send the next command a little sooner
+						cmd = None
+
+					# 's' - the SPLIT query response
+					elif cmd == 's':
+						ok = line[0] in [ '0', '1' ]
+						if not ok:
+							send_warning("CAT response for command '%s' was %d" % (str(last_op), line[0]))
+						if ok:
+							cattime -= TimeoutCAT * SpeedupCAT # ... send the next command a little sooner
+						cmd = None
+						if ok:
+							newsplit = (line[0] == '1') # parse the new split state -> bool
+							if newsplit != split:       # if the SPLIT has changed...
+								split = newsplit
+								send_message("SPLIT: %d" % split) # ...update the USER
+								fb_scan = True
+							if UseSplit and not split:  # if radio not in split, and we require it...
+								split_target = "1 VFOB" if UseSplit else "0 VFOA"
+								last_op = "Enable Split Mode" if UseSplit else "Disable Split Mode"
+
+					# 't' - the PTT query response
+					elif cmd == 't':
+						ok = line[0] in [ '0', '1', '2', '3' ] # ...according to rigctld(1)
+						if not ok:
+							send_warning("CAT response for command '%s' was %d" % (str(last_op), line[0]))
+						if ok:
+							cattime -= TimeoutCAT * SpeedupCAT # ... send the next command a little sooner
+						cmd = None
+
+						# for now, just validate that the PTT response was RX
+						ok = line[0] == '0'
+						if ok:
+							ptt_on = 0
+						else:
+							# start the watchdog if it wasn't already running
+							if not ptt_on:
+								ptt_on = now
+
+							# if watchdog expired...
+							if (WatchdogPTT > 0) and ((now - ptt_on) >= WatchdogPTT):
+								send_warning("TX watchdog expired; sending PTT OFF command")
+								ptt_target = '0' # ...send PTT=OFF command
+							else: # otherwise, just complain
+								send_warning("CAT response for command '%s' was TX" % str(last_op))
+
+			#
+			#  CAT: generate commands as needed to keep the connection going
+			#
+			if FixedRF:
+				continue
+
+			# read the current time
+			now = time.time()
+
+			# allow re-scanning of FB soon after a transmission
+			if ptt_off:
+				ptt_ago = now - ptt_off
+				if (ptt_ago >= 1) and (ptt_ago <= 3):
+					fb_scan = True
+					ptt_off = 0
+
+			# if no connection, give up now
+			if not catsock:
+				if dial_target:
+					send_warning("Canceling dial change because CAT not connected")
+					dial_target = None
+				if fb_target:
+					send_warning("Canceling VFO-B change because CAT not connected")
+					fb_target = None
+				if ptt_target:
+					send_warning("Canceling PTT command because CAT not connected")
+					ptt_target = None
+				if split_target:
+					send_warning("Canceling Split command because CAT not connected")
+					split_target = None
+				continue # back to select(...)
+
+			# initial commands
+			if init_cmds and not cmd:
+				cmd = init_cmds[0]  # peek the first command
+				last_op = cmd
+				try:
+					send_trace("Sending init command '%s'\n" % cmd)
+					socket_send_all(catsock, (cmd + '\r\n').encode('ascii'))
+					cattime = time.time()
+					init_cmds = init_cmds[1:] # dequeue the command just sent
+				except Exception as ex:
+					send_error("CAT command '%s' failed: %s" % (cmd, str(ex)))
+
+			# update split mode
+			elif split_target and not cmd:
+				try:
+					socket_send_all(catsock, ('S %s\n' % split_target).encode('ascii'))
+					last_op = "Set Split"
+					cattime = now
+					split_target = None
+				except Exception as ex:
+					send_error("CAT command '%s' failed: %s" % (cmd, str(ex)))
+
+			# update FB
+			elif fb_target and not cmd:
+				try:
+					# send the FB command
+					send_trace("CAT set FB = '%d'\n" % fb_target)
+					socket_send_all(catsock, ("I %d\n" % fb_target).encode('ascii'))
+					last_op = "Set VFO-B"
+					cattime = now
+					fb_expect = fb_target
+					fb_target = None
+					fb_scan = True
+				except Exception as ex:
+					send_error("Could not send split frequency: %s" % str(ex))
+					continue
+
+			# update PTT
+			elif ptt_target and not cmd:
+				if UsePTT: # if PTT support is enabled
+					try:
+						# send CAT command for PTT
+						socket_send_all(catsock, ("T %s\n" % ptt_target).encode('ascii'))
+						last_op = "Set PTT = %s" % ('RX' if ptt_target == '0' else 'TX')
+						cattime = now
+						if ptt_target == '0':
+							cattime -= TimeoutCAT * SpeedupCAT # send the next command a little sooner
+							ptt_off = now
+						else:
+							ptt_on = now
+
+						# DEBUG:
+						send_trace("Set PTT -> %s" % ('TX' if ptt == '1' else 'RX'))
+					except:
+						send_error("Could not set PTT")
+
+				# reset the PTT flag
+				ptt_target = None
+
+			# band update
+			elif dial_target and not cmd:
+				try:
+					# set the TX frequency to change bands
+					if fa and dial_target != fa:
+						send_info("Setting FA to %d" % dial_target)
+						socket_send_all(catsock, ("F %d\n" % dial_target).encode('ascii')) # set FA
+					last_op = "Dial Change"
+					cattime = now
+					dial_target = None
+					fb_expect = None
+				except Exception as ex:
+					send_error("Could not send dial frequency: %s" % str(ex))
+
+			# SCAN: run periodic CAT commands to update state
+			elif ptt == '0' and (now - cattime) >= TimeoutCAT:
+				cmd = None
+				while not cmd:
+					catidx = (catidx + 1) % len(catscan)
+					cmd = catscan[catidx]
+
+					# skip certain commands under specific circumstances
+					if cmd == 'i':
+						if not split or not fb_scan:
+							cmd = None
+					elif cmd == 't' and not UsePTT:
+						cmd = None
+				if cmd == 'f':
+					last_op = "Get VFO-A"
+				elif cmd == 'i':
+					last_op = "Get VFO-B"
+					fb_scan = False
+				elif cmd == 's':
+					last_op = "Get Split"
+				elif cmd == 't':
+					last_op = "Get PTT"
+				else:
+					last_op = "Code '%s'" % cmd
+				try:
+					#send_trace("CAT scan: %s" % last_op) # this is very verbose; use for debugging only
+					socket_send_all(catsock, (cmd + '\r\n').encode('ascii'))
+					cattime = now
+				except Exception as ex:
+					send_error("CAT command '%s' failed: %s" % (cmd, str(ex)))
+		except KeyboardInterrupt as ex:
+			try:
+				ft8modem.stdin.close()
+			except:
+				pass
+			sys.exit(0)
+		except Exception as ex:
+			# extract location information and display exception as an error
+			exc_type, exc_obj, exc_tb = sys.exc_info()
+			fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+			send_error("Caught unexpected: %s (%s) in %s at line %d" % (exc_type, str(ex), fname, exc_tb.tb_lineno))
+	
+	# send PTT OFF and close the CAT socket
+	if catsock:
+		try:
+			# send CAT command for PTT = RX
+			socket_send_all(catsock, ("T 0\n").encode('ascii'))
+			sleep(0.1)
+
+			# send CAT command for SPLIT = OFF
+			socket_send_all(catsock, ("S 0\n").encode('ascii'))
+			sleep(0.1)
+
+			# send CAT command for QUIT
+			socket_send_all(catsock, ("Q\n").encode('ascii'))
+			sleep(0.25)
+
+			# close the connection
+			catsock.close()
+		except:
+			pass # nop, we're shutting down anyway
+
+	# all done
+	sys.exit(0)
+
+
+#
+#  entry point
+#
+if __name__ == '__main__':
+	main()
+
+# EOF
