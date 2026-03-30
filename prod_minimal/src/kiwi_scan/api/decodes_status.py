@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -24,9 +25,11 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
     def get_decode_status():
         nonlocal _last_live_assignments, _last_live_ok_unix
         rx_status: Dict[int, Dict[str, object]] = {}
+        workers: Dict[int, object] = {}
         # receiver_mgr is a ReceiverManager instance; access its assignments under lock.
         with receiver_mgr._lock:  # type: ignore[attr-defined]
             assignments = dict(receiver_mgr._assignments)  # type: ignore[attr-defined]
+            workers = dict(getattr(receiver_mgr, "_workers", {}))  # type: ignore[attr-defined]
         for rx, a in assignments.items():
             rx_status[int(rx)] = {
                 "band": a.band,
@@ -34,23 +37,95 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
                 "freq_hz": a.freq_hz,
             }
 
-        def _live_users_assignments() -> tuple[bool, Dict[int, Dict[str, object]]]:
-            host = str(getattr(receiver_mgr, "_active_host", "") or "").strip()
-            port = int(getattr(receiver_mgr, "_active_port", 0) or 0)
-            if (not host or port <= 0):
-                host = str(getattr(receiver_mgr, "_host", "") or "").strip()
-                port = int(getattr(receiver_mgr, "_port", 0) or 0)
-            if (not host or port <= 0):
-                try:
-                    cfg_path = Path(__file__).resolve().parents[3] / "outputs" / "config.json"
-                    cfg = json.loads(cfg_path.read_text(encoding="utf-8", errors="ignore"))
-                    if isinstance(cfg, dict):
-                        host = str(cfg.get("host") or "").strip() or host
-                        port = int(cfg.get("port") or 0) or port
-                except Exception:
-                    pass
+        def _normalize_mode_label(value: object) -> str:
+            raw = str(value or "").strip().upper().replace("_", " ").replace("-", " ")
+            if not raw:
+                return ""
+            if "WSPR" in raw:
+                return "WSPR"
+            has_ft4 = "FT4" in raw
+            has_ft8 = "FT8" in raw
+            if has_ft4 and has_ft8:
+                return "FT4 / FT8"
+            if has_ft4:
+                return "FT4"
+            if has_ft8:
+                return "FT8"
+            if raw in {"SSB", "PHONE", "USB", "LSB", "AM"} or "SSB" in raw:
+                return "SSB"
+            return raw
+
+        def _fetch_live_users_assignments(host: str, port: int) -> tuple[bool, Dict[int, Dict[str, object]]]:
+            return _fetch_live_users_assignments_with_details(host, port)[0:2]  # pragma: no cover
+
+        def _parse_elapsed_seconds(value: object) -> int:
+            raw = str(value or "").strip()
+            if not raw:
+                return 0
+            parts = raw.split(":")
+            try:
+                numbers = [int(part) for part in parts]
+            except Exception:
+                return 0
+            if len(numbers) == 3:
+                hours, minutes, seconds = numbers
+                return max(0, (hours * 3600) + (minutes * 60) + seconds)
+            if len(numbers) == 2:
+                minutes, seconds = numbers
+                return max(0, (minutes * 60) + seconds)
+            return 0
+
+        def _assignment_from_auto_label(label: object, *, fallback_freq_hz: object = None) -> Dict[str, object] | None:
+            name = str(label or "").strip().strip('"\'')
+            if not name:
+                return None
+            match = re.search(r"AUTO_([^_]+)_(.+)", name, flags=re.IGNORECASE)
+            if not match:
+                return None
+            freq_hz = None
+            try:
+                if fallback_freq_hz is not None:
+                    freq_hz = float(fallback_freq_hz)
+            except Exception:
+                freq_hz = None
+            return {
+                "band": str(match.group(1)).strip().lower(),
+                "mode": _normalize_mode_label(match.group(2)),
+                "freq_hz": freq_hz,
+            }
+
+        def _assignment_matches(left: Dict[str, object], right: Dict[str, object]) -> bool:
+            left_band = str(left.get("band") or "").strip().lower()
+            right_band = str(right.get("band") or "").strip().lower()
+            left_mode = _normalize_mode_label(left.get("mode"))
+            right_mode = _normalize_mode_label(right.get("mode"))
+            if not left_band or not right_band or left_band != right_band:
+                return False
+            if not left_mode or not right_mode or left_mode != right_mode:
+                return False
+            try:
+                left_freq_hz = float(left.get("freq_hz"))
+                right_freq_hz = float(right.get("freq_hz"))
+            except Exception:
+                return True
+            return abs(left_freq_hz - right_freq_hz) <= 500.0
+
+        worker_status: Dict[int, Dict[str, object]] = {}
+        for rx, worker in workers.items():
+            fallback = assignments.get(int(rx))
+            worker_entry = _assignment_from_auto_label(
+                getattr(worker, "_active_user_label", ""),
+                fallback_freq_hz=getattr(fallback, "freq_hz", None),
+            )
+            if worker_entry is not None:
+                worker_status[int(rx)] = worker_entry
+
+        reference_status: Dict[int, Dict[str, object]] = dict(rx_status)
+        reference_status.update(worker_status)
+
+        def _fetch_live_users_assignments_with_details(host: str, port: int) -> tuple[bool, Dict[int, Dict[str, object]], Dict[int, Dict[str, object]]]:
             if not host or port <= 0:
-                return (False, {})
+                return (False, {}, {})
             payload = None
             for path in ("/users?json=1", "/users?admin=1", "/users"):
                 try:
@@ -69,9 +144,10 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
                     continue
 
             if not isinstance(payload, list):
-                return (False, {})
+                return (False, {}, {})
 
             out: Dict[int, Dict[str, object]] = {}
+            details: Dict[int, Dict[str, object]] = {}
             for row in payload:
                 if not isinstance(row, dict):
                     continue
@@ -80,42 +156,158 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
                 except Exception:
                     continue
 
-                name = urllib.parse.unquote(str(row.get("n") or "")).strip()
+                name = urllib.parse.unquote(str(row.get("n") or "")).strip().strip('"\'')
                 if not name:
                     continue
-                m = re.match(r"^AUTO_([^_]+)_(.+)$", name, flags=re.IGNORECASE)
-                if not m:
+                parsed = _assignment_from_auto_label(name, fallback_freq_hz=row.get("f"))
+                if parsed is None:
                     continue
-                band = str(m.group(1)).strip().lower()
-                mode = str(m.group(2)).strip().upper().replace("_", " ")
-                try:
-                    freq_hz = float(row.get("f"))
-                except Exception:
-                    freq_hz = None
-
-                out[int(rx)] = {
-                    "band": band,
-                    "mode": mode,
-                    "freq_hz": freq_hz,
+                out[int(rx)] = parsed
+                details[int(rx)] = {
+                    "user_label": name,
+                    "age_seconds": _parse_elapsed_seconds(row.get("t")),
                 }
-            return (True, out)
+            return (True, out, details)
 
-        users_available, live_status = _live_users_assignments()
-        now = __import__("time").time()
-        if users_available:
+        def _live_users_assignments() -> tuple[bool, Dict[int, Dict[str, object]], Dict[int, Dict[str, object]], str, int]:
+            candidates: list[tuple[str, int]] = []
+
+            def _add_candidate(host_value: object, port_value: object) -> None:
+                host = str(host_value or "").strip()
+                try:
+                    port = int(port_value or 0)
+                except Exception:
+                    port = 0
+                if not host or port <= 0:
+                    return
+                candidate = (host, port)
+                if candidate not in candidates:
+                    candidates.append(candidate)
+
+            _add_candidate(getattr(receiver_mgr, "_active_host", ""), getattr(receiver_mgr, "_active_port", 0))
+            _add_candidate(getattr(receiver_mgr, "_host", ""), getattr(receiver_mgr, "_port", 0))
+
+            try:
+                cfg_path = Path(__file__).resolve().parents[3] / "outputs" / "config.json"
+                cfg = json.loads(cfg_path.read_text(encoding="utf-8", errors="ignore"))
+                if isinstance(cfg, dict):
+                    _add_candidate(cfg.get("host"), cfg.get("port"))
+            except Exception:
+                pass
+
+            if not candidates:
+                return (False, {}, {}, "", 0)
+
+            best_assignments: Dict[int, Dict[str, object]] = {}
+            best_details: Dict[int, Dict[str, object]] = {}
+            best_host = ""
+            best_port = 0
+            best_score = -1
+            best_count = -1
+
+            for host, port in candidates:
+                ok, rows, details = _fetch_live_users_assignments_with_details(host, port)
+                if not ok:
+                    continue
+                score = 0
+                for rx, row in rows.items():
+                    expected = reference_status.get(int(rx)) if isinstance(reference_status, dict) else None
+                    if not isinstance(expected, dict):
+                        continue
+                    if _assignment_matches(expected, row):
+                        score += 3
+                count = len(rows)
+                if score > best_score or (score == best_score and count > best_count):
+                    best_score = score
+                    best_count = count
+                    best_assignments = rows
+                    best_details = details
+                    best_host = host
+                    best_port = port
+
+            if best_count < 0:
+                return (False, {}, {}, "", 0)
+            return (True, best_assignments, best_details, best_host, best_port)
+
+        def _should_prefer_receiver_manager(
+            expected_assignments: Dict[int, Dict[str, object]],
+            live_assignments: Dict[int, Dict[str, object]],
+            live_details: Dict[int, Dict[str, object]],
+        ) -> tuple[bool, list[int]]:
+            compared = 0
+            mismatch_rxs: list[int] = []
+            for rx, expected in expected_assignments.items():
+                live_row = live_assignments.get(int(rx))
+                if not isinstance(live_row, dict):
+                    continue
+                compared += 1
+                if _assignment_matches(expected, live_row):
+                    continue
+                mismatch_rxs.append(int(rx))
+            mismatch_count = len(mismatch_rxs)
+            if compared < 2 or mismatch_count == 0:
+                return (False, [])
+            return (True, mismatch_rxs)
+
+        def _health_summary_prefers_receiver_manager(
+            expected_assignments: Dict[int, Dict[str, object]],
+        ) -> tuple[bool, list[int]]:
+            try:
+                summary = receiver_mgr.health_summary()  # type: ignore[attr-defined]
+            except Exception:
+                return (False, [])
+            if not isinstance(summary, dict):
+                return (False, [])
+            channels = summary.get("channels")
+            if not isinstance(channels, dict):
+                return (False, [])
+
+            mismatch_rxs: list[int] = []
+            for rx_key, channel in channels.items():
+                if not isinstance(channel, dict):
+                    continue
+                try:
+                    rx = int(rx_key)
+                except Exception:
+                    continue
+                if rx not in expected_assignments:
+                    continue
+                reason = str(channel.get("last_reason") or "").strip().lower()
+                state = str(channel.get("health_state") or "").strip().lower()
+                if reason == "kiwi_assignment_mismatch" or state == "stalled":
+                    mismatch_rxs.append(rx)
+
+            mismatch_rxs = sorted(set(mismatch_rxs))
+            if len(mismatch_rxs) < max(2, max(1, len(expected_assignments) // 2)):
+                return (False, [])
+            return (True, mismatch_rxs)
+
+        users_available, live_status, live_details, live_host, live_port = _live_users_assignments()
+        now = time.time()
+        prefer_receiver_manager, mismatch_rxs = _should_prefer_receiver_manager(reference_status, live_status, live_details)
+        if not prefer_receiver_manager:
+            prefer_receiver_manager, mismatch_rxs = _health_summary_prefers_receiver_manager(reference_status)
+        if users_available and not prefer_receiver_manager:
             _last_live_assignments = dict(live_status)
             _last_live_ok_unix = float(now)
 
         cache_fresh = (_last_live_ok_unix > 0.0) and ((now - _last_live_ok_unix) <= 30.0)
-        if users_available:
+        if users_available and not prefer_receiver_manager:
             assignments_out = live_status
             source = "kiwi_users"
+        elif prefer_receiver_manager:
+            assignments_out = reference_status
+            source = "receiver_manager_drift"
         elif cache_fresh:
             assignments_out = dict(_last_live_assignments)
             source = "kiwi_users_cached"
+            live_host = ""
+            live_port = 0
         else:
             assignments_out = rx_status
             source = "receiver_manager"
+            live_host = ""
+            live_port = 0
 
         def _tail_lines(path: Path, max_lines: int = 10) -> list[str]:
             if not path.exists():
@@ -158,6 +350,9 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
         return {
             "assignments": assignments_out,
             "assignments_source": source,
+            "assignments_host": live_host,
+            "assignments_port": live_port,
+            "assignments_mismatch_rxs": mismatch_rxs,
             "logs": logs,
             "af2udp": str(af2udp_path),
             "ft8modem": str(ft8modem_path),

@@ -4,11 +4,12 @@ import copy
 from datetime import datetime
 import logging
 import json
+import os
 import re
 import time
 from urllib.request import urlopen
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -67,6 +68,15 @@ def _fallback_profile_entry(by_mode: dict, block_key: str) -> dict | None:
     if prior:
         return prior[-1]
     return ordered[-1][2]
+
+
+def _wspr_state_next_hop_unix(state: object) -> float:
+    if not isinstance(state, dict):
+        return 0.0
+    try:
+        return float(state.get("next_hop_unix") or 0.0)
+    except Exception:
+        return 0.0
 
 
 def _block_bounds(block_key: object) -> tuple[int, int] | None:
@@ -159,6 +169,118 @@ def _sort_other_tasks_by_activity(
     return sorted(tasks, key=_task_key)
 
 
+def _normalize_other_tasks(
+    *,
+    tasks: List[Dict[str, str]],
+    band_modes: Dict[str, str],
+    is_dual_mode: Callable[[object], bool],
+    freq_for_band_mode: Callable[[str, object], Optional[float]],
+) -> List[Dict[str, str]]:
+    """Deduplicate (band, mode) tasks and preserve FT4/FT8 diversity for dual bands."""
+
+    normalized: List[Dict[str, str]] = []
+    seen_pairs: set[tuple[str, str]] = set()
+
+    for task in tasks:
+        band = str(task.get("band") or "")
+        mode = str(task.get("mode") or "FT8").strip().upper()
+        pair = (band, mode)
+        if pair not in seen_pairs:
+            normalized.append({"band": band, "mode": mode})
+            seen_pairs.add(pair)
+            continue
+
+        # If we see a duplicate mode for a dual-mode band, replace it with
+        # the missing FT4/FT8 counterpart when the frequency is available.
+        if not is_dual_mode(band_modes.get(band)):
+            continue
+        if mode not in {"FT4", "FT8"}:
+            continue
+
+        alternate = "FT4" if mode == "FT8" else "FT8"
+        alt_pair = (band, alternate)
+        if alt_pair in seen_pairs:
+            continue
+        if freq_for_band_mode(band, alternate) is None:
+            continue
+
+        normalized.append({"band": band, "mode": alternate})
+        seen_pairs.add(alt_pair)
+
+    return normalized
+
+
+def _select_other_tasks_with_band_coverage(
+    *,
+    tasks: List[Dict[str, str]],
+    capacity: int,
+    preferred_band_order: Optional[List[str]] = None,
+) -> List[Dict[str, str]]:
+    """Select tasks with a first pass that covers as many unique bands as possible.
+
+    This keeps one receiver on each selected band before allocating extra
+    slots to duplicate modes on the same band.
+    """
+
+    limit = max(0, int(capacity))
+    if limit <= 0 or not tasks:
+        return []
+
+    selected: List[Dict[str, str]] = []
+    selected_pairs: set[tuple[str, str]] = set()
+    seen_bands: set[str] = set()
+
+    ordered_bands: List[str] = []
+    if isinstance(preferred_band_order, list):
+        seen_pref: set[str] = set()
+        for band in preferred_band_order:
+            band_text = str(band or "")
+            if not band_text or band_text in seen_pref:
+                continue
+            ordered_bands.append(band_text)
+            seen_pref.add(band_text)
+
+    if ordered_bands:
+        for band in ordered_bands:
+            for task in tasks:
+                task_band = str(task.get("band") or "")
+                mode = str(task.get("mode") or "").strip().upper()
+                pair = (task_band, mode)
+                if task_band != band or not mode or task_band in seen_bands:
+                    continue
+                selected.append(task)
+                selected_pairs.add(pair)
+                seen_bands.add(task_band)
+                break
+            if len(selected) >= limit:
+                return selected
+    else:
+        for task in tasks:
+            band = str(task.get("band") or "")
+            mode = str(task.get("mode") or "").strip().upper()
+            pair = (band, mode)
+            if not band or not mode or band in seen_bands:
+                continue
+            selected.append(task)
+            selected_pairs.add(pair)
+            seen_bands.add(band)
+            if len(selected) >= limit:
+                return selected
+
+    for task in tasks:
+        if len(selected) >= limit:
+            break
+        band = str(task.get("band") or "")
+        mode = str(task.get("mode") or "").strip().upper()
+        pair = (band, mode)
+        if not band or not mode or pair in selected_pairs:
+            continue
+        selected.append(task)
+        selected_pairs.add(pair)
+
+    return selected
+
+
 def make_router(
     *,
     mgr: object,
@@ -192,6 +314,14 @@ def make_router(
         "12m": (24890.0, 24990.0),
         "10m": (28000.0, 29700.0),
     }
+
+    def _max_auto_receivers() -> int:
+        raw = str(os.environ.get("KIWISCAN_AUTOSET_MAX_RX", "8") or "8").strip()
+        try:
+            value = int(raw)
+        except Exception:
+            value = 8
+        return max(2, min(8, value))
 
     def _snr_to_threshold(value: object) -> float | None:
         try:
@@ -246,6 +376,41 @@ def make_router(
             if threshold is not None:
                 out[band] = float(threshold)
         return out
+
+    def _verify_wspr_active_band(host: str, port: int, expected_band: str, timeout_s: float = 1.6) -> bool:
+        expected = str(expected_band or "").strip().lower()
+        if not host or int(port) <= 0 or not expected:
+            return False
+        deadline = time.time() + max(0.8, float(timeout_s))
+        paths = ("/users?json=1", "/users?admin=1", "/users")
+        while time.time() < deadline:
+            for path in paths:
+                try:
+                    with urlopen(f"http://{host}:{int(port)}{path}", timeout=0.8) as resp:
+                        payload = json.loads(resp.read().decode("utf-8", errors="ignore"))
+                except Exception:
+                    continue
+                if not isinstance(payload, list):
+                    continue
+
+                wspr_bands: List[str] = []
+                for row in payload:
+                    if not isinstance(row, dict):
+                        continue
+                    name = str(row.get("n") or "").strip()
+                    m = re.search(r"AUTO_([^_]+)_(.+)", name, flags=re.IGNORECASE)
+                    if not m:
+                        continue
+                    band = str(m.group(1) or "").strip().lower()
+                    mode = str(m.group(2) or "").strip().upper().replace("_", " ")
+                    if "WSPR" in mode and band:
+                        wspr_bands.append(band)
+
+                if expected in wspr_bands:
+                    return True
+
+            time.sleep(0.35)
+        return False
 
     def _load_automation_settings() -> Dict[str, object]:
         try:
@@ -375,6 +540,9 @@ def make_router(
                     has_selected_ssb_band = True
                     break
 
+        wspr_hop_state_to_persist: Dict[str, object] | None = None
+        wspr_active_band: str | None = None
+
         if wspr_scan_enabled and not has_selected_ssb_band:
             hop_s_raw = payload.get("band_hop_seconds", settings.get("bandHopSeconds", 105))
             try:
@@ -383,19 +551,47 @@ def make_router(
                 hop_s = 105.0
             start_band = str(payload.get("wspr_start_band") or settings.get("wsprStartBand") or "10m")
 
-            hop_pool = [b for b in band_order if b in desired_bands]
+            hop_pool = [b for b in band_order if b in band_wspr_freqs_hz]
             if not hop_pool:
                 hop_pool = [b for b in band_order if b in open_bands]
             if not hop_pool:
                 hop_pool = list(band_order)
 
             if hop_pool:
-                start_idx = hop_pool.index(start_band) if start_band in hop_pool else 0
-                hop_step = int(time.time() // hop_s)
-                active_idx = (start_idx + hop_step) % len(hop_pool)
-                active_band = hop_pool[active_idx]
+                now_unix = time.time()
+                state_raw = settings.get("wsprHopState") if isinstance(settings, dict) else None
+                state = state_raw if isinstance(state_raw, dict) else {}
+                prev_active = str(state.get("active_band") or "")
+                prev_pool = state.get("pool") if isinstance(state.get("pool"), list) else []
+                prev_next_hop_raw = state.get("next_hop_unix")
+                try:
+                    prev_next_hop = float(prev_next_hop_raw)
+                except Exception:
+                    prev_next_hop = 0.0
+
+                pool_changed = [str(b) for b in prev_pool] != [str(b) for b in hop_pool]
+                if prev_active in hop_pool and not pool_changed:
+                    active_band = prev_active
+                    next_hop_unix = prev_next_hop if prev_next_hop > 0 else (now_unix + hop_s)
+                    if now_unix >= next_hop_unix:
+                        cur_idx = hop_pool.index(active_band)
+                        active_band = hop_pool[(cur_idx + 1) % len(hop_pool)]
+                        next_hop_unix = now_unix + hop_s
+                else:
+                    active_band = start_band if start_band in hop_pool else hop_pool[0]
+                    next_hop_unix = now_unix + hop_s
+
                 band_modes = dict(band_modes)
                 band_modes[active_band] = "WSPR"
+                wspr_active_band = str(active_band)
+                wspr_hop_state_to_persist = {
+                    "mode": str(mode),
+                    "block": str(block),
+                    "pool": [str(b) for b in hop_pool],
+                    "active_band": str(active_band),
+                    "next_hop_unix": float(next_hop_unix),
+                    "hop_seconds": float(hop_s),
+                }
 
         apply_signature = json.dumps(
             {
@@ -405,14 +601,17 @@ def make_router(
                 "desired_bands": [str(b) for b in desired_bands],
                 "band_modes": {str(k): str(v) for k, v in sorted(dict(band_modes).items())},
                 "wspr_scan_enabled": bool(wspr_scan_enabled),
+                "wspr_active_band": str(wspr_active_band or ""),
                 "ssb_scan_cfg": ssb_scan_cfg,
             },
             sort_keys=True,
             separators=(",", ":"),
         )
 
+        force = bool(payload.get("force", False))
         if (
-            _last_apply_signature == apply_signature
+            not force
+            and _last_apply_signature == apply_signature
             and _last_apply_response is not None
             and (time.time() - _last_apply_ts) < 15.0
         ):
@@ -450,8 +649,8 @@ def make_router(
                 "block": block,
                 "open_bands": open_bands,
                 "assignments": [],
-                "ssb_max_receivers": 2,
-                "other_max_receivers": 6,
+                "ssb_max_receivers": min(2, _max_auto_receivers()),
+                "other_max_receivers": max(0, _max_auto_receivers() - min(2, _max_auto_receivers())),
                 "requested_ssb_tasks": 0,
                 "requested_other_tasks": 0,
                 "assigned_ssb_tasks": 0,
@@ -492,7 +691,19 @@ def make_router(
                 return band_ft4_freqs_hz.get(band) or band_freqs_hz.get(band)
             return band_freqs_hz.get(band)
 
+        if wspr_scan_enabled and wspr_active_band:
+            normalized_band_modes = dict(band_modes)
+            for band in band_order:
+                if str(band) == str(wspr_active_band):
+                    continue
+                if _normalize_mode(normalized_band_modes.get(band)) == "wspr":
+                    normalized_band_modes[band] = "FT8"
+            normalized_band_modes[str(wspr_active_band)] = "WSPR"
+            band_modes = normalized_band_modes
+
         ordered_bands = [b for b in band_order if b in desired_bands]
+        if wspr_active_band and wspr_active_band not in ordered_bands:
+            ordered_bands = [wspr_active_band] + ordered_bands
         tasks: List[Dict[str, str]] = []
         ssb_enabled = bool(ssb_scan_cfg.get("enabled", True))
         skipped_ssb_due_to_wspr = 0
@@ -514,16 +725,25 @@ def make_router(
             block_key=block,
             local_dt=local_dt,
         )
+        other_tasks = _normalize_other_tasks(
+            tasks=other_tasks,
+            band_modes=band_modes,
+            is_dual_mode=_is_dual_mode,
+            freq_for_band_mode=_freq_for_band_mode,
+        )
 
-        ssb_capacity = min(2, len(ssb_tasks))
-        ssb_rx_request_list = [0, 1][:ssb_capacity]
+        max_total_rx = _max_auto_receivers()
+        all_rx_slots = list(range(max_total_rx))
+        ssb_capacity = min(2, len(ssb_tasks), len(all_rx_slots))
+        ssb_rx_request_list = all_rx_slots[:ssb_capacity]
         desired_ssb_tasks = ssb_tasks[: len(ssb_rx_request_list)]
-        if len(desired_ssb_tasks) > 0:
-            other_rx_request_list = [2, 3, 4, 5, 6, 7]
-        else:
-            other_rx_request_list = [0, 1, 2, 3, 4, 5, 6, 7]
+        other_rx_request_list = all_rx_slots[len(ssb_rx_request_list):]
 
-        desired_other_tasks = other_tasks[: len(other_rx_request_list)]
+        desired_other_tasks = _select_other_tasks_with_band_coverage(
+            tasks=other_tasks,
+            capacity=len(other_rx_request_list),
+            preferred_band_order=ordered_bands,
+        )
         requested_ssb_tasks = len(ssb_tasks)
         requested_other_tasks = len(other_tasks)
         assigned_ssb_tasks = len(desired_ssb_tasks)
@@ -651,19 +871,51 @@ def make_router(
             except Exception:
                 continue
 
+        try:
+            if hasattr(receiver_mgr, "dependency_report") and hasattr(mgr, "set_runtime_dependencies"):
+                report = receiver_mgr.dependency_report()  # type: ignore[attr-defined]
+                mgr.set_runtime_dependencies(report, save=True)  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
         receiver_mgr.apply_assignments(host, port, assignments)  # type: ignore[attr-defined]
-        if adaptive_enabled:
-            try:
-                latest_settings = _load_automation_settings()
-                if not isinstance(latest_settings, dict):
-                    latest_settings = {}
+
+        if wspr_hop_state_to_persist is not None:
+            _ = _verify_wspr_active_band(
+                host,
+                port,
+                str(wspr_hop_state_to_persist.get("active_band") or ""),
+                timeout_s=1.8,
+            )
+
+        try:
+            latest_settings = _load_automation_settings()
+            if not isinstance(latest_settings, dict):
+                latest_settings = {}
+            changed = False
+            if adaptive_enabled:
                 latest_settings["ssbAdaptiveThresholdByBand"] = {
                     str(k): round(float(v), 2)
                     for k, v in adaptive_state.items()
                 }
+                changed = True
+            if wspr_hop_state_to_persist is not None:
+                existing_wspr_state = latest_settings.get("wsprHopState")
+                merged_wspr_state = wspr_hop_state_to_persist
+                existing_next_hop = _wspr_state_next_hop_unix(existing_wspr_state)
+                candidate_next_hop = _wspr_state_next_hop_unix(wspr_hop_state_to_persist)
+                if existing_next_hop > candidate_next_hop:
+                    merged_wspr_state = existing_wspr_state
+                if latest_settings.get("wsprHopState") != merged_wspr_state:
+                    latest_settings["wsprHopState"] = merged_wspr_state
+                    changed = True
+            elif not wspr_scan_enabled and "wsprHopState" in latest_settings:
+                del latest_settings["wsprHopState"]
+                changed = True
+            if changed:
                 _save_automation_settings(latest_settings)
-            except Exception:
-                pass
+        except Exception:
+            pass
         prune_decode_buffer(allowed_bands)
         response = {
             "enabled": True,

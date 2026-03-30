@@ -35,7 +35,7 @@ Use this when you want to run KiwiScan directly from the published Docker image.
     -p 4020:4020 \
     -v kiwiscan-config:/opt/kiwiscan/config \
     -v kiwiscan-outputs:/opt/kiwiscan/outputs \
-    n4ldr/kiwiscan:0.1.7
+    n4ldr/kiwiscan:0.1.9
   ```
 
 3. Open KiwiScan in your browser.
@@ -69,7 +69,7 @@ docker run -d --name kiwiscan --pull always --restart unless-stopped --platform 
   -p 4020:4020 \
   -v "$PWD/config:/opt/kiwiscan/config" \
   -v "$PWD/outputs:/opt/kiwiscan/outputs" \
-  n4ldr/kiwiscan:0.1.7
+  n4ldr/kiwiscan:0.1.9
 ```
 
 With that folder-backed version, the saved config will appear at `./outputs/config.json`.

@@ -69,10 +69,16 @@ def make_router(*, receiver_mgr: object, get_api_metrics: Callable[[], Dict[str,
         overall = str(health.get("overall", "unknown") or "unknown").lower() if isinstance(health, dict) else "unknown"
         active_receivers = int(health.get("active_receivers", 0) or 0) if isinstance(health, dict) else 0
         unstable_receivers = int(health.get("unstable_receivers", 0) or 0) if isinstance(health, dict) else 0
+        stalled_receivers = int(health.get("stalled_receivers", 0) or 0) if isinstance(health, dict) else 0
+        silent_receivers = int(health.get("silent_receivers", 0) or 0) if isinstance(health, dict) else 0
         lines.append(f"# TYPE {_prom_name('health_active_receivers')} gauge")
         lines.append(f"{_prom_name('health_active_receivers')} {active_receivers}")
         lines.append(f"# TYPE {_prom_name('health_unstable_receivers')} gauge")
         lines.append(f"{_prom_name('health_unstable_receivers')} {unstable_receivers}")
+        lines.append(f"# TYPE {_prom_name('health_stalled_receivers')} gauge")
+        lines.append(f"{_prom_name('health_stalled_receivers')} {stalled_receivers}")
+        lines.append(f"# TYPE {_prom_name('health_silent_receivers')} gauge")
+        lines.append(f"{_prom_name('health_silent_receivers')} {silent_receivers}")
         stale_seconds = 0.0
         if isinstance(health, dict):
             raw_stale = health.get("health_stale_seconds")
@@ -85,9 +91,10 @@ def make_router(*, receiver_mgr: object, get_api_metrics: Callable[[], Dict[str,
         lines.append(f"{_prom_name('health_stale_seconds')} {stale_seconds:.3f}")
         lines.append(f"# TYPE {_prom_name('health_overall')} gauge")
         lines.append(f"{_prom_name('health_overall')}{{state=\"healthy\"}} {1 if overall == 'healthy' else 0}")
+        lines.append(f"{_prom_name('health_overall')}{{state=\"quiet\"}} {1 if overall == 'quiet' else 0}")
         lines.append(f"{_prom_name('health_overall')}{{state=\"degraded\"}} {1 if overall == 'degraded' else 0}")
         lines.append(f"{_prom_name('health_overall')}{{state=\"idle\"}} {1 if overall == 'idle' else 0}")
-        lines.append(f"{_prom_name('health_overall')}{{state=\"unknown\"}} {1 if overall not in {'healthy', 'degraded', 'idle'} else 0}")
+        lines.append(f"{_prom_name('health_overall')}{{state=\"unknown\"}} {1 if overall not in {'healthy', 'quiet', 'degraded', 'idle'} else 0}")
 
         body = "\n".join(lines) + "\n"
         return Response(content=body, media_type="text/plain; version=0.0.4; charset=utf-8")

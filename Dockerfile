@@ -1,5 +1,7 @@
 FROM python:3.13-slim
 
+ARG GIT_COMMIT=unknown
+
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -12,7 +14,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
     NO_RESTART=1 \
     KIWI_SCAN_WS4010=1 \
     KIWI_SCAN_UDP4010=1 \
-    PORT=4020
+    PORT=4020 \
+    KIWISCAN_BUILD_COMMIT=$GIT_COMMIT
+
+LABEL org.opencontainers.image.revision=$GIT_COMMIT
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -42,10 +47,11 @@ RUN python -m venv "$VIRTUAL_ENV" \
 COPY src ./src
 COPY vendor ./vendor
 COPY config ./config
+COPY tools ./tools
 COPY run_server.sh ./run_server.sh
 
 RUN mkdir -p logs outputs \
- && chmod +x run_server.sh vendor/kiwiclient-jks/kiwirecorder.py \
+ && chmod +x run_server.sh vendor/kiwiclient-jks/kiwirecorder.py tools/kiwi_admin_kick.py \
  && make -C /opt/kiwiscan/vendor/ft8modem-sm clean \
  && make -C /opt/kiwiscan/vendor/ft8modem-sm ft8modem af2udp \
  && install -m 0755 /opt/kiwiscan/vendor/ft8modem-sm/ft8modem /usr/local/bin/ft8modem \

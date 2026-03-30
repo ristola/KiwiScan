@@ -11,5 +11,4 @@ logs/
 outputs/
 prod_minimal/
 tests/
-tools/
 nohup.out

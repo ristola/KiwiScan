@@ -52,6 +52,7 @@ class _ReceiverWorker(threading.Thread):
         sideband: Optional[str] = None,
         decode_callback: Optional[Callable[[dict], None]] = None,
         on_restart: Optional[Callable[[int, str, str, float, int], None]] = None,
+        on_activity: Optional[Callable[[int, str, str, str, Optional[float]], None]] = None,
     ) -> None:
         super().__init__(daemon=True)
         self._kiwirecorder_path = kiwirecorder_path
@@ -68,8 +69,9 @@ class _ReceiverWorker(threading.Thread):
         self._sideband = str(sideband).strip().upper() if sideband else None
         self._decode_callback = decode_callback
         self._on_restart = on_restart
+        self._on_activity = on_activity
         self._python_cmd = self._resolve_python_cmd()
-        self._stop = threading.Event()
+        self._stop_event = threading.Event()
         self._proc: Optional[subprocess.Popen] = None
         self._decoder_procs: list[subprocess.Popen] = []
         self._decoder_threads: list[threading.Thread] = []
@@ -114,6 +116,13 @@ class _ReceiverWorker(threading.Thread):
 
     def _watchdog_spawn_retry_s(self) -> float:
         return min(self._watchdog_max_backoff_s(), max(self._watchdog_base_backoff_s(), 0.5))
+
+    def _digital_remap_grace_s(self) -> float:
+        return self._env_float("KIWISCAN_DIGITAL_REMAP_GRACE_S", 20.0, min_v=5.0, max_v=300.0)
+
+    def _strict_digital_slot_enforcement(self) -> bool:
+        raw = str(os.environ.get("KIWISCAN_STRICT_DIGITAL_SLOT_ENFORCEMENT", "1")).strip().lower()
+        return raw not in {"0", "false", "no", "off"}
 
     def _pipeline_log_path(self) -> Path:
         return Path("/tmp") / f"kiwi_rx{self._rx}_pipeline.log"
@@ -226,9 +235,15 @@ class _ReceiverWorker(threading.Thread):
                 return f"{shlex.quote(self._python_cmd)} -u {shlex.quote(str(udpaf_path))} {int(udp_port)}"
         return f"{shlex.quote(str(af2udp_path))} {int(udp_port)} 256 48000"
 
-    def stop(self) -> None:
-        self._stop.set()
+    def stop(self, join_timeout_s: float = 3.0) -> None:
+        self._stop_event.set()
         self._terminate_proc()
+        if threading.current_thread() is self:
+            return
+        try:
+            self.join(timeout=max(0.0, float(join_timeout_s)))
+        except Exception:
+            pass
 
     def _terminate_proc(self) -> None:
         for proc in list(self._decoder_procs):
@@ -320,13 +335,14 @@ class _ReceiverWorker(threading.Thread):
         if not wanted:
             return True
         status_url = f"http://{self._host}:{self._port}/users"
-        while time.time() < deadline and not self._stop.is_set():
+        while time.time() < deadline and not self._stop_event.is_set():
             try:
                 with urllib.request.urlopen(status_url, timeout=1.2) as resp:
                     payload = json.loads(resp.read().decode("utf-8", errors="ignore"))
                 if not isinstance(payload, list):
                     return True
                 found_rx = None
+                found_age_s = None
                 for row in payload:
                     if not isinstance(row, dict):
                         continue
@@ -340,6 +356,15 @@ class _ReceiverWorker(threading.Thread):
                         found_rx = int(row.get("i"))
                     except Exception:
                         found_rx = None
+                    try:
+                        age_text = str(row.get("t") or "").strip()
+                        parts = [int(part) for part in age_text.split(":") if str(part).strip()]
+                        if len(parts) == 3:
+                            found_age_s = max(0, (parts[0] * 3600) + (parts[1] * 60) + parts[2])
+                        elif len(parts) == 2:
+                            found_age_s = max(0, (parts[0] * 60) + parts[1])
+                    except Exception:
+                        found_age_s = None
                     break
                 if found_rx is None:
                     time.sleep(0.15)
@@ -350,13 +375,28 @@ class _ReceiverWorker(threading.Thread):
                     valid = found_rx >= 0
                 if valid:
                     if not bool(strict) and found_rx != expected:
+                        grace_s = self._digital_remap_grace_s()
+                        if found_age_s is not None and found_age_s >= grace_s:
+                            self._adapt_rx_chan_adjust(expected_rx=expected, actual_rx=found_rx, user_label=wanted)
+                            logger.warning(
+                                "Kiwi remapped digital worker user=%s expected_rx=%s actual_rx=%s age_s=%s exceeds grace %.1fs; keeping worker with adapted offset",
+                                wanted,
+                                expected,
+                                found_rx,
+                                found_age_s,
+                                grace_s,
+                            )
+                            return True
                         logger.info(
-                            "Kiwi remapped digital worker user=%s expected_rx=%s actual_rx=%s; keeping worker",
+                            "Kiwi remapped digital worker user=%s expected_rx=%s actual_rx=%s age_s=%s; keeping worker during grace",
                             wanted,
                             expected,
                             found_rx,
+                            found_age_s,
                         )
                     return True
+                if expected >= 2 and found_rx >= 0:
+                    self._adapt_rx_chan_adjust(expected_rx=expected, actual_rx=found_rx, user_label=wanted)
                 logger.warning(
                     "Kiwi remapped worker user=%s expected_rx=%s actual_rx=%s strict=%s; forcing retry",
                     wanted,
@@ -538,7 +578,7 @@ class _ReceiverWorker(threading.Thread):
         step_index = 0
         mismatch_failures = 0
 
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             self._reconfigure.clear()
             step_khz = step_sequence[min(step_index, len(step_sequence) - 1)]
             freqs = self._ssb_scan_freqs_khz(step_khz)
@@ -695,7 +735,7 @@ class _ReceiverWorker(threading.Thread):
                             sideband=self._ssb_scan_sideband(),
                             threshold_db=(self._ssb_scan or {}).get("threshold_db"),
                         )
-                    if self._stop.is_set():
+                    if self._stop_event.is_set():
                         break
                 if log_fp:
                     try:
@@ -711,7 +751,7 @@ class _ReceiverWorker(threading.Thread):
             proc_started_at = time.time()
             rapid_exit = False
             next_channel_check = time.time() + self._watchdog_channel_check_s()
-            while not self._stop.is_set() and time.time() < end_time:
+            while not self._stop_event.is_set() and time.time() < end_time:
                 if self._reconfigure.is_set():
                     rapid_exit = True
                     self._last_spawn_error_reason = "ssb_reconfigure"
@@ -742,7 +782,7 @@ class _ReceiverWorker(threading.Thread):
 
             self._terminate_proc()
 
-            if self._stop.is_set():
+            if self._stop_event.is_set():
                 break
 
             if self._reconfigure.is_set():
@@ -843,11 +883,26 @@ class _ReceiverWorker(threading.Thread):
                     pass
             return
 
+        def _decode_line_snr(msg: str) -> Optional[float]:
+            text = str(msg or "").strip()
+            if not text.startswith("D:"):
+                return None
+            parts = text.split()
+            if len(parts) < 4:
+                return None
+            mode_name = str(parts[1] or "").strip().upper()
+            if mode_name not in {"FT8", "FT4", "JT9", "JT65"}:
+                return None
+            try:
+                return float(parts[3])
+            except Exception:
+                return None
+
         def _reader() -> None:
             if proc.stdout is None:
                 return
             for line in proc.stdout:
-                if self._stop.is_set():
+                if self._stop_event.is_set():
                     break
                 msg = line.strip()
                 if not msg:
@@ -858,8 +913,19 @@ class _ReceiverWorker(threading.Thread):
                         log_fp.flush()
                     except Exception:
                         pass
+                if self._on_activity is not None:
+                    try:
+                        self._on_activity(self._rx, self._band, self._mode_label, "decoder_output")
+                    except Exception:
+                        pass
                 if not msg.startswith("D:"):
                     continue
+                snr_db = _decode_line_snr(msg)
+                if self._on_activity is not None:
+                    try:
+                        self._on_activity(self._rx, self._band, self._mode_label, "decode", snr_db)
+                    except Exception:
+                        pass
                 if self._decode_callback is not None:
                     try:
                         self._decode_callback({
@@ -917,6 +983,9 @@ class _ReceiverWorker(threading.Thread):
         mode_tag = self._mode_label.strip().upper().replace(" ", "").replace("/", "")
         user_label = f"AUTO_{self._band}_{mode_tag}"
         self._active_user_label = user_label
+        if self._stop_event.is_set():
+            self._last_spawn_error_reason = "stop_requested"
+            return None
         if self._is_digital_mode():
             af2udp_path = self._resolve_tool_path("af2udp", self._af2udp_path)
             if af2udp_path is None:
@@ -963,13 +1032,18 @@ class _ReceiverWorker(threading.Thread):
                     stdin=subprocess.DEVNULL,
                     start_new_session=True,
                 )
+                if self._stop_event.is_set():
+                    self._terminate_external_proc(proc)
+                    self._last_spawn_error_reason = "stop_requested"
+                    return None
                 if int(self._rx) >= 2:
+                    strict_digital = self._strict_digital_slot_enforcement()
                     if not self._verify_kiwi_rx_channel(
                         user_label=user_label,
                         expected_rx=self._rx,
                         timeout_s=6.0,
-                        strict=False,
-                        require_visible=False,
+                        strict=bool(strict_digital),
+                        require_visible=bool(strict_digital),
                     ):
                         self._terminate_external_proc(proc)
                         self._last_spawn_error_reason = "nonssb_rx_mismatch"
@@ -1018,6 +1092,10 @@ class _ReceiverWorker(threading.Thread):
                 stdin=subprocess.DEVNULL,
                 start_new_session=True,
             )
+            if self._stop_event.is_set():
+                self._terminate_external_proc(proc)
+                self._last_spawn_error_reason = "stop_requested"
+                return None
             if ("SSB" in self._mode_label.strip().upper()) or ("PHONE" in self._mode_label.strip().upper()):
                 if not self._verify_kiwi_rx_channel(user_label=user_label, expected_rx=self._rx, timeout_s=6.0, strict=True, require_visible=True):
                     self._terminate_external_proc(proc)
@@ -1035,10 +1113,12 @@ class _ReceiverWorker(threading.Thread):
             return
         consecutive_failures = 0
         unstable_window_s = 20.0
-        while not self._stop.is_set():
+        while not self._stop_event.is_set():
             start_monotonic = time.monotonic()
             self._proc = self._spawn()
             if self._proc is None:
+                if self._stop_event.is_set():
+                    break
                 consecutive_failures += 1
                 backoff_s = self._watchdog_retry_backoff_s(consecutive_failures)
                 if self._on_restart is not None:
@@ -1050,7 +1130,7 @@ class _ReceiverWorker(threading.Thread):
                 continue
             proc_exited = False
             next_channel_check = time.time() + self._watchdog_channel_check_s()
-            while not self._stop.is_set():
+            while not self._stop_event.is_set():
                 if self._proc.poll() is not None:
                     proc_exited = True
                     break
@@ -1058,20 +1138,20 @@ class _ReceiverWorker(threading.Thread):
                     next_channel_check = time.time() + self._watchdog_channel_check_s()
                     mode_norm = self._mode_label.strip().upper()
                     is_ssb = ("SSB" in mode_norm) or ("PHONE" in mode_norm)
-                    strict = bool(is_ssb)
+                    strict = bool(is_ssb) or bool(self._strict_digital_slot_enforcement())
                     if not self._verify_kiwi_rx_channel(
                         user_label=self._active_user_label,
                         expected_rx=self._rx,
                         timeout_s=0.9,
                         strict=strict,
-                        require_visible=is_ssb,
+                        require_visible=bool(strict),
                     ):
                         self._last_spawn_error_reason = "ssb_rx_mismatch" if is_ssb else "nonssb_rx_mismatch"
                         proc_exited = True
                         break
                 time.sleep(self._watchdog_loop_sleep_s())
             self._terminate_proc()
-            if not self._stop.is_set():
+            if not self._stop_event.is_set():
                 run_time_s = max(0.0, time.monotonic() - start_monotonic)
                 if run_time_s < unstable_window_s:
                     consecutive_failures += 1
@@ -1117,12 +1197,202 @@ class ReceiverManager:
         self._restart_by_rx: Dict[int, int] = {}
         self._restart_last_unix: Optional[float] = None
         self._watchdog_state_by_rx: Dict[int, Dict[str, object]] = {}
+        self._activity_by_rx: Dict[int, Dict[str, object]] = {}
+        self._stale_watch_state_by_rx: Dict[int, Dict[str, object]] = {}
+        self._mismatch_global_streak = 0
+        self._auto_kick_total = 0
+        self._auto_kick_last_unix: Optional[float] = None
+        self._auto_kick_last_reason = ""
+        self._auto_kick_last_result = ""
+        self._manager_stop = threading.Event()
         self._last_dependency_report: Dict[str, object] = {}
         self._cleanup_orphan_processes()
         self._last_dependency_report = self.dependency_report()
         missing = self._last_dependency_report.get("missing")
         if isinstance(missing, list) and missing:
             logger.error("Receiver runtime dependencies missing: %s", ", ".join(str(m) for m in missing))
+        self._stale_recovery_thread = threading.Thread(target=self._stale_recovery_loop, daemon=True)
+        self._stale_recovery_thread.start()
+
+    @staticmethod
+    def _env_bool(name: str, default: bool) -> bool:
+        raw = str(os.environ.get(name, "")).strip().lower()
+        if not raw:
+            return bool(default)
+        return raw not in {"0", "false", "no", "off"}
+
+    @staticmethod
+    def _env_float(name: str, default: float, *, min_v: float, max_v: float) -> float:
+        raw = str(os.environ.get(name, "")).strip()
+        if not raw:
+            return float(default)
+        try:
+            value = float(raw)
+        except Exception:
+            return float(default)
+        return max(float(min_v), min(float(max_v), value))
+
+    @staticmethod
+    def _env_int(name: str, default: int, *, min_v: int, max_v: int) -> int:
+        raw = str(os.environ.get(name, "")).strip()
+        if not raw:
+            return int(default)
+        try:
+            value = int(raw)
+        except Exception:
+            return int(default)
+        return max(int(min_v), min(int(max_v), value))
+
+    def _stale_recovery_enabled(self) -> bool:
+        return self._env_bool("KIWISCAN_STALE_RECOVERY_ENABLED", True)
+
+    def _stale_recovery_check_s(self) -> float:
+        return self._env_float("KIWISCAN_STALE_RECOVERY_CHECK_S", 5.0, min_v=1.0, max_v=30.0)
+
+    def _stale_recovery_min_age_s(self) -> float:
+        return self._env_float("KIWISCAN_STALE_RECOVERY_MIN_AGE_S", 30.0, min_v=15.0, max_v=900.0)
+
+    def _stale_recovery_cooldown_s(self) -> float:
+        return self._env_float("KIWISCAN_STALE_RECOVERY_COOLDOWN_S", 180.0, min_v=10.0, max_v=3600.0)
+
+    def _stale_recovery_required_checks(self) -> int:
+        return self._env_int("KIWISCAN_STALE_RECOVERY_REQUIRED_CHECKS", 2, min_v=1, max_v=10)
+
+    def _stale_recovery_mismatch_window_s(self) -> float:
+        return self._env_float("KIWISCAN_STALE_RECOVERY_MISMATCH_WINDOW_S", 20.0, min_v=5.0, max_v=300.0)
+
+    def _mismatch_autokick_enabled(self) -> bool:
+        return self._env_bool("KIWISCAN_MISMATCH_AUTOKICK_ENABLED", True)
+
+    def _mismatch_autokick_cooldown_s(self) -> float:
+        return self._env_float("KIWISCAN_MISMATCH_AUTOKICK_COOLDOWN_S", 90.0, min_v=30.0, max_v=3600.0)
+
+    def _mismatch_autokick_required_checks(self) -> int:
+        return self._env_int("KIWISCAN_MISMATCH_AUTOKICK_REQUIRED_CHECKS", 4, min_v=1, max_v=30)
+
+    def _mismatch_autokick_min_stalled(self) -> int:
+        return self._env_int("KIWISCAN_MISMATCH_AUTOKICK_MIN_STALLED", 4, min_v=1, max_v=16)
+
+    def _mismatch_autokick_min_fraction(self) -> float:
+        return self._env_float("KIWISCAN_MISMATCH_AUTOKICK_MIN_FRACTION", 0.75, min_v=0.25, max_v=1.0)
+
+    def _mismatch_autokick_timeout_s(self) -> float:
+        return self._env_float("KIWISCAN_MISMATCH_AUTOKICK_TIMEOUT_S", 12.0, min_v=2.0, max_v=60.0)
+
+    def _mismatch_require_decoder_gap(self) -> bool:
+        return self._env_bool("KIWISCAN_MISMATCH_REQUIRE_DECODER_GAP", True)
+
+    def _strict_digital_slot_enforcement(self) -> bool:
+        return self._env_bool("KIWISCAN_STRICT_DIGITAL_SLOT_ENFORCEMENT", True)
+
+    def _propagation_min_samples(self) -> int:
+        return self._env_int("KIWISCAN_PROPAGATION_MIN_SAMPLES", 3, min_v=1, max_v=50)
+
+    def _propagation_recent_max_s(self, silent_threshold_s: float) -> float:
+        default_v = max(1200.0, float(silent_threshold_s))
+        return self._env_float("KIWISCAN_PROPAGATION_RECENT_MAX_S", default_v, min_v=60.0, max_v=7200.0)
+
+    def _propagation_good_snr_db(self) -> float:
+        return self._env_float("KIWISCAN_PROPAGATION_GOOD_SNR_DB", -12.0, min_v=-40.0, max_v=20.0)
+
+    def _propagation_fair_snr_db(self) -> float:
+        return self._env_float("KIWISCAN_PROPAGATION_FAIR_SNR_DB", -20.0, min_v=-40.0, max_v=20.0)
+
+    def _propagation_marginal_snr_db(self) -> float:
+        return self._env_float("KIWISCAN_PROPAGATION_MARGINAL_SNR_DB", -25.0, min_v=-40.0, max_v=20.0)
+
+    @staticmethod
+    def _find_admin_kick_script() -> Optional[Path]:
+        here = Path(__file__).resolve()
+        for parent in here.parents:
+            candidate = parent / "tools" / "kiwi_admin_kick.py"
+            if candidate.exists():
+                return candidate
+        return None
+
+    def _run_admin_kick_all(self, *, host: str, port: int) -> bool:
+        script = self._find_admin_kick_script()
+        if script is None:
+            return False
+
+        live_auto_users = self._fetch_live_auto_users(str(host), int(port))
+        kick_targets = sorted({int(rx) for rx in live_auto_users.keys()})
+
+        cmd = [
+            sys.executable,
+            str(script),
+            "--host",
+            str(host),
+            "--port",
+            str(int(port)),
+            "--user",
+            "KiwiScanAutoKick",
+        ]
+        if kick_targets:
+            for target in kick_targets:
+                cmd.extend(["--kick", str(int(target))])
+        else:
+            cmd.append("--kick-all")
+        password = str(os.environ.get("KIWISCAN_KIWI_ADMIN_PASSWORD", "") or "").strip()
+        if password:
+            cmd.extend(["--password", password])
+        if self._env_bool("KIWISCAN_MISMATCH_AUTOKICK_TAKE_ADMIN", True):
+            cmd.append("--take-admin")
+
+        try:
+            completed = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=self._mismatch_autokick_timeout_s(),
+                check=False,
+            )
+        except Exception as exc:
+            logger.warning("Mismatch auto-kick failed to execute: %s", exc)
+            return False
+
+        stdout = str(completed.stdout or "").strip()
+        stderr = str(completed.stderr or "").strip()
+        if completed.returncode == 0:
+            if stdout:
+                logger.info("Mismatch auto-kick success: %s", stdout.splitlines()[-1])
+            return True
+
+        # Fallback: attempt generic kick-all in case per-target kick did not clear stuck sessions.
+        fallback_cmd = [
+            sys.executable,
+            str(script),
+            "--host",
+            str(host),
+            "--port",
+            str(int(port)),
+            "--kick-all",
+            "--user",
+            "KiwiScanAutoKick",
+        ]
+        if password:
+            fallback_cmd.extend(["--password", password])
+        if self._env_bool("KIWISCAN_MISMATCH_AUTOKICK_TAKE_ADMIN", True):
+            fallback_cmd.append("--take-admin")
+        try:
+            fallback = subprocess.run(
+                fallback_cmd,
+                capture_output=True,
+                text=True,
+                timeout=self._mismatch_autokick_timeout_s(),
+                check=False,
+            )
+            if fallback.returncode == 0:
+                f_stdout = str(fallback.stdout or "").strip()
+                if f_stdout:
+                    logger.info("Mismatch auto-kick fallback success: %s", f_stdout.splitlines()[-1])
+                return True
+        except Exception:
+            pass
+
+        detail = stderr or stdout or f"exit={completed.returncode}"
+        logger.warning("Mismatch auto-kick command failed: %s", detail)
+        return False
 
     @staticmethod
     def _mode_requires_digital(mode_label: str) -> bool:
@@ -1285,6 +1555,307 @@ class ReceiverManager:
                 "updated_unix": float(self._restart_last_unix),
             }
 
+    def _on_worker_activity(self, rx: int, band: str, mode_label: str, event_type: str, snr_db: Optional[float] = None) -> None:
+        now = time.time()
+        with self._lock:
+            current = dict(self._activity_by_rx.get(int(rx), {}))
+            current["band"] = str(band)
+            current["mode"] = str(mode_label)
+            current["last_event_type"] = str(event_type)
+            current["last_event_unix"] = float(now)
+            if event_type in {"decoder_output", "decode"}:
+                current["last_decoder_output_unix"] = float(now)
+            if event_type == "decode":
+                current["last_decode_unix"] = float(now)
+            if event_type == "decode" and isinstance(snr_db, (float, int)):
+                snr_value = float(snr_db)
+                current["snr_last_db"] = snr_value
+                current["last_snr_unix"] = float(now)
+                prior_avg = current.get("snr_avg_db")
+                try:
+                    prior_avg_f = float(prior_avg)
+                except Exception:
+                    prior_avg_f = snr_value
+                alpha = 0.2
+                current["snr_avg_db"] = float((alpha * snr_value) + ((1.0 - alpha) * prior_avg_f))
+                current["snr_samples"] = int(current.get("snr_samples", 0) or 0) + 1
+            self._activity_by_rx[int(rx)] = current
+
+    def _make_worker(self, *, host: str, port: int, assignment: ReceiverAssignment) -> _ReceiverWorker:
+        return _ReceiverWorker(
+            kiwirecorder_path=self._kiwirecorder_path,
+            ft8modem_path=self._ft8modem_path,
+            af2udp_path=self._af2udp_path,
+            sox_path=self._sox_path,
+            host=host,
+            port=port,
+            rx=assignment.rx,
+            band=assignment.band,
+            freq_hz=assignment.freq_hz,
+            mode_label=assignment.mode_label,
+            ssb_scan=assignment.ssb_scan,
+            sideband=assignment.sideband,
+            decode_callback=self._decode_callback,
+            on_restart=self._on_worker_restart,
+            on_activity=self._on_worker_activity,
+        )
+
+    @staticmethod
+    def _stop_worker(worker: Optional[_ReceiverWorker], *, join_timeout_s: float = 3.0) -> None:
+        if worker is None:
+            return
+        try:
+            worker.stop(join_timeout_s=join_timeout_s)
+        except TypeError:
+            worker.stop()
+
+    def _restart_receiver_worker(self, rx: int, reason: str) -> bool:
+        with self._lock:
+            assignment = self._assignments.get(int(rx))
+            host = str(getattr(self, "_active_host", "") or "")
+            port = int(getattr(self, "_active_port", 0) or 0)
+            old_worker = self._workers.pop(int(rx), None)
+            self._activity_by_rx.pop(int(rx), None)
+        if assignment is None or not host or port <= 0:
+            if old_worker is not None:
+                self._stop_worker(old_worker)
+            return False
+
+        if old_worker is not None:
+            self._stop_worker(old_worker)
+
+        new_worker = self._make_worker(host=host, port=port, assignment=assignment)
+        with self._lock:
+            if int(rx) not in self._assignments:
+                new_worker.stop()
+                return False
+            self._workers[int(rx)] = new_worker
+        new_worker.start()
+        self._on_worker_restart(int(rx), str(assignment.band), str(reason), 0.0, 1)
+        return True
+
+    def _stale_recovery_loop(self) -> None:
+        while not self._manager_stop.is_set():
+            sleep_s = self._stale_recovery_check_s()
+            if not self._stale_recovery_enabled():
+                self._manager_stop.wait(timeout=sleep_s)
+                continue
+
+            min_age_s = self._stale_recovery_min_age_s()
+            cooldown_s = self._stale_recovery_cooldown_s()
+            required_checks = self._stale_recovery_required_checks()
+            mismatch_window_s = self._stale_recovery_mismatch_window_s()
+
+            now = time.time()
+            summary = self.health_summary()
+            channels = summary.get("channels") if isinstance(summary, dict) else {}
+            channels = channels if isinstance(channels, dict) else {}
+
+            with self._lock:
+                active_rxs = set(int(rx) for rx in self._assignments.keys())
+                self._stale_watch_state_by_rx = {
+                    int(rx): dict(state)
+                    for rx, state in self._stale_watch_state_by_rx.items()
+                    if int(rx) in active_rxs
+                }
+
+            to_restart: list[tuple[int, str, float | None]] = []
+            for rx in sorted(active_rxs):
+                ch = channels.get(str(int(rx)))
+                if not isinstance(ch, dict):
+                    continue
+                is_stalled = bool(ch.get("is_stalled"))
+                reason = str(ch.get("last_reason") or "unknown")
+                try:
+                    decoder_age_s = float(ch.get("decoder_output_age_s"))
+                except Exception:
+                    decoder_age_s = None
+                try:
+                    kiwi_user_age_s = float(ch.get("kiwi_user_age_s"))
+                except Exception:
+                    kiwi_user_age_s = None
+
+                stale_reason = reason in {"stalled_no_decoder_output", "kiwi_assignment_mismatch"}
+                age_samples = [v for v in (decoder_age_s, kiwi_user_age_s) if isinstance(v, (float, int))]
+                generic_age_ok = (not age_samples) or (max(float(v) for v in age_samples) >= min_age_s)
+
+                with self._lock:
+                    state = dict(self._stale_watch_state_by_rx.get(int(rx), {}))
+                    prev_reason = str(state.get("reason") or "")
+                    streak = int(state.get("streak", 0) or 0)
+                    last_kick_unix = float(state.get("last_kick_unix", 0.0) or 0.0)
+                    first_seen_unix = float(state.get("first_seen_unix", now) or now)
+
+                    stale_age_ok = generic_age_ok
+                    if reason == "kiwi_assignment_mismatch":
+                        if prev_reason != reason:
+                            first_seen_unix = float(now)
+                        mismatch_age_s = max(0.0, now - first_seen_unix)
+                        stale_age_ok = bool(generic_age_ok or mismatch_age_s >= mismatch_window_s)
+
+                    is_candidate = bool(is_stalled and stale_reason and stale_age_ok)
+
+                    if is_candidate:
+                        streak = (streak + 1) if prev_reason == reason else 1
+                        state["reason"] = reason
+                        state["streak"] = int(streak)
+                        state["first_seen_unix"] = float(first_seen_unix)
+                        state["last_seen_unix"] = float(now)
+                        if streak >= required_checks and (now - last_kick_unix) >= cooldown_s:
+                            state["last_kick_unix"] = float(now)
+                            state["streak"] = 0
+                            self._stale_watch_state_by_rx[int(rx)] = state
+                            to_restart.append((int(rx), reason, decoder_age_s))
+                            continue
+                    else:
+                        state["streak"] = 0
+                        state["reason"] = ""
+                        state["first_seen_unix"] = float(now)
+                        state["last_seen_unix"] = float(now)
+
+                    self._stale_watch_state_by_rx[int(rx)] = state
+
+            for rx, reason, decoder_age_s in to_restart:
+                recycle_reason = f"stale_recovery_{reason}"
+                restarted = self._restart_receiver_worker(rx=rx, reason=recycle_reason)
+                if restarted:
+                    logger.warning(
+                        "Stale receiver recovery: recycled rx=%s reason=%s decoder_age_s=%s",
+                        rx,
+                        reason,
+                        decoder_age_s,
+                    )
+
+            active_receivers = int(summary.get("active_receivers", 0) or 0)
+            reason_counts = summary.get("reason_counts") if isinstance(summary, dict) else {}
+            reason_counts = reason_counts if isinstance(reason_counts, dict) else {}
+            mismatch_stalled = int(reason_counts.get("kiwi_assignment_mismatch", 0) or 0)
+            with self._lock:
+                self._mismatch_global_streak = (
+                    self._mismatch_global_streak + 1
+                    if (
+                        active_receivers > 0
+                        and mismatch_stalled >= self._mismatch_autokick_min_stalled()
+                        and (float(mismatch_stalled) / float(active_receivers)) >= self._mismatch_autokick_min_fraction()
+                    )
+                    else 0
+                )
+                mismatch_streak = int(self._mismatch_global_streak)
+                last_auto_kick_unix = float(self._auto_kick_last_unix or 0.0)
+
+            should_autokick = bool(
+                self._mismatch_autokick_enabled()
+                and mismatch_streak >= self._mismatch_autokick_required_checks()
+                and (time.time() - last_auto_kick_unix) >= self._mismatch_autokick_cooldown_s()
+            )
+            duplicate_autokick = False
+            active_host = str(getattr(self, "_active_host", "") or "")
+            active_port = int(getattr(self, "_active_port", 0) or 0)
+            if active_host and active_port > 0:
+                try:
+                    duplicate_live_labels = self._has_duplicate_live_auto_labels(active_host, active_port)
+                except Exception:
+                    duplicate_live_labels = False
+                duplicate_autokick = bool(
+                    duplicate_live_labels
+                    and (time.time() - last_auto_kick_unix) >= min(30.0, self._mismatch_autokick_cooldown_s())
+                )
+
+            if should_autokick:
+                if active_host and active_port > 0:
+                    kicked = self._run_admin_kick_all(host=active_host, port=active_port)
+                    result = "ok" if kicked else "failed"
+                    with self._lock:
+                        self._auto_kick_last_unix = float(time.time())
+                        self._auto_kick_last_reason = "kiwi_assignment_mismatch"
+                        self._auto_kick_last_result = result
+                        if kicked:
+                            self._auto_kick_total += 1
+                            self._mismatch_global_streak = 0
+                    if kicked:
+                        with self._lock:
+                            reclaim_rxs = sorted(int(rx) for rx in self._assignments.keys())
+                        for rx in reclaim_rxs:
+                            self._restart_receiver_worker(rx=rx, reason="auto_kick_reclaim")
+                        logger.warning(
+                            "Mismatch auto-kick: reclaimed receivers after widespread mismatch (%s/%s)",
+                            mismatch_stalled,
+                            active_receivers,
+                        )
+                    else:
+                        logger.warning(
+                            "Mismatch auto-kick: command failed (%s/%s)",
+                            mismatch_stalled,
+                            active_receivers,
+                        )
+
+            if duplicate_autokick:
+                kicked = self._run_admin_kick_all(host=active_host, port=active_port)
+                result = "ok" if kicked else "failed"
+                with self._lock:
+                    self._auto_kick_last_unix = float(time.time())
+                    self._auto_kick_last_reason = "duplicate_auto_labels"
+                    self._auto_kick_last_result = result
+                    if kicked:
+                        self._auto_kick_total += 1
+                if kicked:
+                    with self._lock:
+                        reclaim_rxs = sorted(int(rx) for rx in self._assignments.keys())
+                    for rx in reclaim_rxs:
+                        self._restart_receiver_worker(rx=rx, reason="duplicate_label_reclaim")
+                    logger.warning("Duplicate-label auto-kick: reclaimed receivers after duplicate AUTO labels")
+                else:
+                    logger.warning("Duplicate-label auto-kick: command failed")
+
+            self._manager_stop.wait(timeout=sleep_s)
+
+    @staticmethod
+    def _mode_decode_cycle_seconds(mode_label: str) -> float:
+        norm = str(mode_label or "").strip().upper()
+        if norm == "WSPR":
+            return 120.0
+        if norm == "FT4":
+            return 7.5
+        return 15.0
+
+    @classmethod
+    def _stall_threshold_seconds(cls, mode_label: str) -> float:
+        cycle = cls._mode_decode_cycle_seconds(mode_label)
+        return max(75.0, cycle * 4.0)
+
+    @classmethod
+    def _silent_threshold_seconds(cls, mode_label: str) -> float:
+        norm = str(mode_label or "").strip().upper()
+        if norm == "WSPR":
+            return 1800.0
+        if "FT4" in norm and "FT8" in norm:
+            return 900.0
+        if norm == "FT4":
+            return 600.0
+        return 900.0
+
+    @staticmethod
+    def _no_decode_warning_seconds() -> float:
+        raw = str(os.environ.get("KIWISCAN_NO_DECODE_WARN_S", "")).strip()
+        if not raw:
+            return 120.0
+        try:
+            value = float(raw)
+        except Exception:
+            return 120.0
+        return max(30.0, min(3600.0, value))
+
+    @staticmethod
+    def _digital_remap_grace_seconds() -> float:
+        raw = str(os.environ.get("KIWISCAN_DIGITAL_REMAP_GRACE_S", "")).strip()
+        if not raw:
+            return 20.0
+        try:
+            value = float(raw)
+        except Exception:
+            return 20.0
+        return max(5.0, min(300.0, value))
+
     def metrics_snapshot(self) -> Dict[str, object]:
         with self._lock:
             return {
@@ -1297,6 +1868,15 @@ class ReceiverManager:
                     str(k): dict(v)
                     for k, v in self._watchdog_state_by_rx.items()
                 },
+                "activity_by_rx": {
+                    str(k): dict(v)
+                    for k, v in self._activity_by_rx.items()
+                },
+                "mismatch_global_streak": int(self._mismatch_global_streak),
+                "auto_kick_total": int(self._auto_kick_total),
+                "auto_kick_last_unix": float(self._auto_kick_last_unix) if self._auto_kick_last_unix is not None else None,
+                "auto_kick_last_reason": str(self._auto_kick_last_reason or ""),
+                "auto_kick_last_result": str(self._auto_kick_last_result or ""),
             }
 
     def reset_metrics(self) -> Dict[str, object]:
@@ -1305,6 +1885,12 @@ class ReceiverManager:
             self._restart_by_rx.clear()
             self._restart_last_unix = None
             self._watchdog_state_by_rx.clear()
+            self._activity_by_rx.clear()
+            self._mismatch_global_streak = 0
+            self._auto_kick_total = 0
+            self._auto_kick_last_unix = None
+            self._auto_kick_last_reason = ""
+            self._auto_kick_last_result = ""
         return self.metrics_snapshot()
 
     def health_summary(self) -> Dict[str, object]:
@@ -1312,37 +1898,68 @@ class ReceiverManager:
             assignments = dict(self._assignments)
             watchdog_by_rx = {int(k): dict(v) for k, v in self._watchdog_state_by_rx.items()}
             restart_by_rx = {int(k): int(v) for k, v in self._restart_by_rx.items()}
+            activity_by_rx = {int(k): dict(v) for k, v in self._activity_by_rx.items()}
             restart_total = int(self._restart_total)
             active_host = str(getattr(self, "_active_host", "") or "")
             active_port = int(getattr(self, "_active_port", 0) or 0)
 
         users_by_rx: Dict[int, str] = {}
+        user_age_by_rx: Dict[int, int] = {}
         if active_host and active_port > 0:
-            try:
-                status_url = f"http://{active_host}:{active_port}/users"
-                with urllib.request.urlopen(status_url, timeout=0.8) as resp:
-                    payload = json.loads(resp.read().decode("utf-8", errors="ignore"))
-                if isinstance(payload, list):
-                    for row in payload:
-                        if not isinstance(row, dict):
-                            continue
-                        try:
-                            rx_i = int(row.get("i"))
-                        except Exception:
-                            continue
-                        name = urllib.parse.unquote(str(row.get("n") or "")).strip()
-                        users_by_rx[int(rx_i)] = name
-            except Exception:
-                users_by_rx = {}
+            payload = None
+            for path in ("/users?json=1", "/users?admin=1", "/users"):
+                try:
+                    status_url = f"http://{active_host}:{active_port}{path}"
+                    with urllib.request.urlopen(status_url, timeout=0.8) as resp:
+                        maybe = json.loads(resp.read().decode("utf-8", errors="ignore"))
+                    if isinstance(maybe, list):
+                        payload = maybe
+                        break
+                except Exception:
+                    continue
+            if isinstance(payload, list):
+                for row in payload:
+                    if not isinstance(row, dict):
+                        continue
+                    try:
+                        rx_i = int(row.get("i"))
+                    except Exception:
+                        continue
+                    name = urllib.parse.unquote(str(row.get("n") or "")).strip()
+                    users_by_rx[int(rx_i)] = name
+                    try:
+                        age_text = str(row.get("t") or "").strip()
+                        parts = [int(part) for part in age_text.split(":") if str(part).strip()]
+                        if len(parts) == 3:
+                            user_age_by_rx[int(rx_i)] = max(0, (parts[0] * 3600) + (parts[1] * 60) + parts[2])
+                        elif len(parts) == 2:
+                            user_age_by_rx[int(rx_i)] = max(0, (parts[0] * 60) + parts[1])
+                    except Exception:
+                        pass
+
+        live_auto_locations: Dict[str, list[tuple[int, int | None]]] = {}
+        for rx_i, name in users_by_rx.items():
+            label = str(name or "").strip().upper()
+            if not label.startswith("AUTO_"):
+                continue
+            live_auto_locations.setdefault(label, []).append((int(rx_i), user_age_by_rx.get(int(rx_i))))
 
         channels: Dict[str, Dict[str, object]] = {}
+        propagation_counts: Dict[str, int] = {"good": 0, "fair": 0, "marginal": 0, "poor": 0, "unknown": 0}
+        propagation_score_total = 0.0
+        propagation_score_count = 0
         unstable = 0
+        silent = 0
+        stalled = 0
+        no_decode_warning = 0
         reason_counts: Dict[str, int] = {}
         now = time.time()
+        remap_grace_s = self._digital_remap_grace_seconds()
         rx_set = sorted(set(list(assignments.keys()) + list(watchdog_by_rx.keys())))
         for rx in rx_set:
             assignment = assignments.get(rx)
             wd = watchdog_by_rx.get(rx, {})
+            activity = activity_by_rx.get(rx, {})
             consecutive = int(wd.get("consecutive_failures", 0) or 0)
             backoff_s = float(wd.get("backoff_s", 0.0) or 0.0)
             updated_unix = wd.get("updated_unix")
@@ -1359,71 +1976,290 @@ class ReceiverManager:
 
             is_active = assignment is not None
             last_reason = wd.get("reason")
+            visible_on_kiwi = False
+            kiwi_user_age_s = None
             if is_ssb and assignment is not None:
                 seen = str(users_by_rx.get(int(rx), "") or "")
                 seen_upper = seen.upper()
                 expected_prefix = f"AUTO_{str(assignment.band).upper()}_SSB"
                 is_active = expected_prefix in seen_upper
+                visible_on_kiwi = bool(is_active)
+                kiwi_user_age_s = user_age_by_rx.get(int(rx))
                 if not is_active:
                     last_reason = last_reason or "kiwi_not_visible"
+            elif assignment is not None:
+                seen = str(users_by_rx.get(int(rx), "") or "")
+                expected_prefix = f"AUTO_{str(assignment.band).upper()}_"
+                visible_on_kiwi = expected_prefix in seen.upper()
+                kiwi_user_age_s = user_age_by_rx.get(int(rx))
+
+            def _to_float(value: object) -> float | None:
+                try:
+                    return float(value)
+                except Exception:
+                    return None
+
+            last_decoder_output_unix = _to_float(activity.get("last_decoder_output_unix"))
+            last_decode_unix = _to_float(activity.get("last_decode_unix"))
+            decoder_output_age_s = max(0.0, now - last_decoder_output_unix) if last_decoder_output_unix is not None else None
+            decode_age_s = max(0.0, now - last_decode_unix) if last_decode_unix is not None else None
+            snr_last_db = _to_float(activity.get("snr_last_db"))
+            snr_avg_db = _to_float(activity.get("snr_avg_db"))
+            snr_samples = int(activity.get("snr_samples", 0) or 0)
+            last_snr_unix = _to_float(activity.get("last_snr_unix"))
+            snr_age_s = max(0.0, now - last_snr_unix) if last_snr_unix is not None else None
+
+            stall_threshold_s = self._stall_threshold_seconds(mode_label)
+            silent_threshold_s = self._silent_threshold_seconds(mode_label)
+            is_digital = self._mode_requires_digital(mode_label)
+
+            health_state = "healthy" if is_active else "inactive"
+            propagation_state = "unknown"
+            if is_digital and assignment is not None:
+                recent_enough = (snr_age_s is not None and snr_age_s <= self._propagation_recent_max_s(silent_threshold_s))
+                min_samples = self._propagation_min_samples()
+                good_db = self._propagation_good_snr_db()
+                fair_db = self._propagation_fair_snr_db()
+                marginal_db = self._propagation_marginal_snr_db()
+                # Ensure ordering remains monotonic if env vars are set inconsistently.
+                fair_db = min(good_db, fair_db)
+                marginal_db = min(fair_db, marginal_db)
+                if snr_samples >= min_samples and recent_enough and snr_avg_db is not None:
+                    if snr_avg_db >= good_db:
+                        propagation_state = "good"
+                    elif snr_avg_db >= fair_db:
+                        propagation_state = "fair"
+                    elif snr_avg_db >= marginal_db:
+                        propagation_state = "marginal"
+                    else:
+                        propagation_state = "poor"
+
+            if is_digital and assignment is not None:
+                decoder_missing = (decoder_output_age_s is None) or (decoder_output_age_s > stall_threshold_s)
+                expected_label = self._expected_user_label(assignment).upper()
+                live_locations = list(live_auto_locations.get(expected_label) or [])
+                wrong_slot_stale = False
+                if live_locations:
+                    live_rxs = {int(loc_rx) for loc_rx, _ in live_locations}
+                    if int(rx) not in live_rxs:
+                        ages = [age for _, age in live_locations]
+                        wrong_slot_stale = all(age is None or age >= remap_grace_s for age in ages)
+                occupant = str(users_by_rx.get(int(rx), "") or "").strip()
+                occupant_age_s = user_age_by_rx.get(int(rx))
+                displaced_by_stale_auto = bool(
+                    occupant.startswith("AUTO_")
+                    and not self._user_label_matches(expected_label, occupant)
+                    and (occupant_age_s is None or occupant_age_s >= remap_grace_s)
+                )
+                mismatch_detected = bool(wrong_slot_stale or displaced_by_stale_auto)
+                mismatch_actionable = bool(mismatch_detected)
+                if mismatch_actionable:
+                    health_state = "stalled"
+                    last_reason = "kiwi_assignment_mismatch"
+                elif mismatch_detected and not last_reason:
+                    last_reason = "kiwi_assignment_mismatch_observed"
+                elif visible_on_kiwi and decoder_missing:
+                    health_state = "stalled"
+                    last_reason = "stalled_no_decoder_output"
+                elif visible_on_kiwi and decode_age_s is not None and decode_age_s > silent_threshold_s:
+                    health_state = "silent"
+                    if not last_reason:
+                        last_reason = "silent_no_decodes"
+
+            no_decode_warn = False
+            if is_digital and assignment is not None and health_state not in {"stalled", "silent"}:
+                warn_after_s = self._no_decode_warning_seconds()
+                heartbeat_ok = (decoder_output_age_s is not None) and (decoder_output_age_s <= stall_threshold_s)
+                no_decode_warn = bool(visible_on_kiwi and heartbeat_ok and decode_age_s is not None and decode_age_s >= warn_after_s)
 
             is_unstable = (assignment is not None) and (
-                consecutive >= 3 or backoff_s >= 8.0 or (is_ssb and not is_active)
+                consecutive >= 3 or backoff_s >= 8.0 or (is_ssb and not is_active) or health_state == "stalled"
             )
             if is_unstable:
                 unstable += 1
+                if health_state == "stalled":
+                    stalled += 1
                 reason = str(last_reason or "unknown")
                 reason_counts[reason] = int(reason_counts.get(reason, 0)) + 1
+            elif health_state == "silent":
+                silent += 1
+                reason_counts["silent_no_decodes"] = int(reason_counts.get("silent_no_decodes", 0)) + 1
+            elif no_decode_warn:
+                no_decode_warning += 1
+                reason_counts["no_recent_decodes"] = int(reason_counts.get("no_recent_decodes", 0)) + 1
+
+            if health_state == "stalled":
+                status_level = "fault"
+            elif health_state == "silent" or no_decode_warn:
+                status_level = "warning"
+            else:
+                status_level = "healthy"
+
+            latest_health_unix = updated_unix_f
+            for candidate in (last_decoder_output_unix, last_decode_unix):
+                if candidate is None:
+                    continue
+                latest_health_unix = candidate if latest_health_unix is None else max(latest_health_unix, candidate)
 
             channels[str(rx)] = {
                 "rx": int(rx),
                 "band": assignment.band if assignment else wd.get("band"),
                 "mode": assignment.mode_label if assignment else None,
                 "active": bool(is_active),
+                "visible_on_kiwi": bool(visible_on_kiwi),
+                "kiwi_user_age_s": kiwi_user_age_s,
                 "restart_count": int(restart_by_rx.get(rx, 0)),
                 "consecutive_failures": consecutive,
                 "backoff_s": backoff_s,
                 "cooling_down": bool(cooling_down),
                 "cooldown_remaining_s": float(cooldown_remaining_s),
                 "last_reason": last_reason,
-                "last_updated_unix": updated_unix_f,
+                "last_updated_unix": latest_health_unix,
+                "last_decoder_output_unix": last_decoder_output_unix,
+                "last_decode_unix": last_decode_unix,
+                "decoder_output_age_s": decoder_output_age_s,
+                "decode_age_s": decode_age_s,
+                "snr_last_db": snr_last_db,
+                "snr_avg_db": snr_avg_db,
+                "snr_samples": snr_samples,
+                "snr_age_s": snr_age_s,
+                "propagation_state": propagation_state,
+                "health_state": health_state,
+                "status_level": status_level,
+                "is_no_decode_warning": bool(no_decode_warn),
+                "is_silent": health_state == "silent",
+                "is_stalled": health_state == "stalled",
                 "is_unstable": is_unstable,
             }
+
+            if is_digital and assignment is not None:
+                propagation_counts[propagation_state] = int(propagation_counts.get(propagation_state, 0)) + 1
+                score_map = {"good": 3.0, "fair": 2.0, "marginal": 1.0, "poor": 0.0}
+                if propagation_state in score_map:
+                    propagation_score_total += float(score_map[propagation_state])
+                    propagation_score_count += 1
+
+        # If one mode on a band has valid SNR but another mode has no decodes yet,
+        # infer band-level propagation for the unknown channel.
+        band_known_scores: Dict[str, list[float]] = {}
+        score_map = {"good": 3.0, "fair": 2.0, "marginal": 1.0, "poor": 0.0}
+        for channel in channels.values():
+            if not isinstance(channel, dict):
+                continue
+            if str(channel.get("health_state") or "") in {"inactive", "stalled"}:
+                continue
+            band_key = str(channel.get("band") or "").strip().lower()
+            state = str(channel.get("propagation_state") or "")
+            if not band_key or state not in score_map:
+                continue
+            band_known_scores.setdefault(band_key, []).append(float(score_map[state]))
+
+        for channel in channels.values():
+            if not isinstance(channel, dict):
+                continue
+            if str(channel.get("propagation_state") or "") != "unknown":
+                continue
+            if str(channel.get("health_state") or "") in {"inactive", "stalled"}:
+                continue
+            band_key = str(channel.get("band") or "").strip().lower()
+            band_scores = band_known_scores.get(band_key) or []
+            if not band_key or not band_scores:
+                continue
+            inferred_score = sum(band_scores) / float(len(band_scores))
+            if inferred_score >= 2.5:
+                inferred_state = "good"
+            elif inferred_score >= 1.5:
+                inferred_state = "fair"
+            elif inferred_score >= 0.5:
+                inferred_state = "marginal"
+            else:
+                inferred_state = "poor"
+            channel["propagation_state"] = inferred_state
+            channel["propagation_inferred"] = True
+
+        # Recompute propagation summary after per-band inference.
+        propagation_counts = {"good": 0, "fair": 0, "marginal": 0, "poor": 0, "unknown": 0}
+        propagation_score_total = 0.0
+        propagation_score_count = 0
+        for channel in channels.values():
+            if not isinstance(channel, dict):
+                continue
+            mode_norm = str(channel.get("mode") or "").strip().upper()
+            if not self._mode_requires_digital(mode_norm):
+                continue
+            if not bool(channel.get("active")):
+                continue
+            state = str(channel.get("propagation_state") or "unknown")
+            propagation_counts[state] = int(propagation_counts.get(state, 0)) + 1
+            if state in score_map:
+                propagation_score_total += float(score_map[state])
+                propagation_score_count += 1
 
         active = sum(1 for ch in channels.values() if bool(ch.get("active")))
         overall = "healthy"
         if unstable > 0:
             overall = "degraded"
+        elif silent > 0 or no_decode_warning > 0:
+            overall = "quiet"
         if active == 0:
             overall = "idle"
 
         latest_update = None
-        for rx, assignment in assignments.items():
-            if assignment is None:
+        for channel in channels.values():
+            if not bool(channel.get("active")):
                 continue
-            payload = watchdog_by_rx.get(rx, {})
             try:
-                ts = float(payload.get("updated_unix"))
-                latest_update = ts if latest_update is None else max(latest_update, ts)
+                ts = float(channel.get("last_updated_unix"))
             except Exception:
                 continue
+            latest_update = ts if latest_update is None else max(latest_update, ts)
         stale_seconds = None
         if active > 0:
-            if unstable <= 0:
+            if unstable <= 0 and silent <= 0:
                 stale_seconds = 0.0
             elif latest_update is None:
                 stale_seconds = 0.0
             else:
                 stale_seconds = max(0.0, now - latest_update)
 
+        if propagation_score_count <= 0:
+            propagation_overall = "unknown"
+            propagation_score_avg = None
+        else:
+            propagation_score_avg = propagation_score_total / float(propagation_score_count)
+            if propagation_score_avg >= 2.5:
+                propagation_overall = "good"
+            elif propagation_score_avg >= 1.5:
+                propagation_overall = "fair"
+            elif propagation_score_avg >= 0.5:
+                propagation_overall = "marginal"
+            else:
+                propagation_overall = "poor"
+
         return {
             "overall": overall,
             "active_receivers": active,
             "unstable_receivers": unstable,
+            "stalled_receivers": stalled,
+            "silent_receivers": silent,
+            "no_decode_warning_receivers": no_decode_warning,
             "restart_total": restart_total,
             "health_stale_seconds": stale_seconds,
             "reason_counts": reason_counts,
             "channels": channels,
+            "propagation": {
+                "overall": propagation_overall,
+                "counts": propagation_counts,
+                "score_avg": propagation_score_avg,
+                "sampled_channels": int(propagation_score_count),
+            },
+            "auto_kick": {
+                "total": int(self._auto_kick_total),
+                "last_unix": float(self._auto_kick_last_unix) if self._auto_kick_last_unix is not None else None,
+                "last_reason": str(self._auto_kick_last_reason or ""),
+                "last_result": str(self._auto_kick_last_result or ""),
+                "mismatch_streak": int(self._mismatch_global_streak),
+            },
         }
 
     def _cleanup_orphan_processes(self) -> None:
@@ -1494,6 +2330,32 @@ class ReceiverManager:
                 return
             time.sleep(0.25)
 
+    def _wait_for_kiwi_auto_users_missing(
+        self,
+        *,
+        host: str,
+        port: int,
+        labels: set[str],
+        timeout_s: float = 10.0,
+    ) -> None:
+        expected_labels = {str(label or "").strip() for label in labels if str(label or "").strip()}
+        if not expected_labels:
+            return
+        deadline = time.time() + max(1.0, float(timeout_s))
+        while time.time() < deadline:
+            live_users = self._fetch_live_auto_users(host, port)
+            if not live_users:
+                return
+            live_labels = [str(label or "").strip() for label in live_users.values()]
+            still_present = False
+            for expected in expected_labels:
+                if any(self._user_label_matches(expected, live) for live in live_labels):
+                    still_present = True
+                    break
+            if not still_present:
+                return
+            time.sleep(0.25)
+
     @staticmethod
     def _is_ssb_mode_label(mode_label: str) -> bool:
         norm = str(mode_label or "").strip().upper()
@@ -1539,6 +2401,119 @@ class ReceiverManager:
             if not cls._assignment_equivalent(current[rx], desired[rx]):
                 return False
         return True
+
+    @staticmethod
+    def _force_full_reset_on_band_change_enabled() -> bool:
+        raw = str(os.environ.get("KIWISCAN_RESET_ALL_ON_BAND_CHANGE", "1")).strip().lower()
+        return raw not in {"0", "false", "no", "off"}
+
+    @staticmethod
+    def _force_full_reset_on_reconcile_enabled() -> bool:
+        raw = str(os.environ.get("KIWISCAN_RESET_ALL_ON_RECONCILE", "1")).strip().lower()
+        return raw not in {"0", "false", "no", "off"}
+
+    @staticmethod
+    def _band_plan_changed(current: Dict[int, ReceiverAssignment], desired: Dict[int, ReceiverAssignment]) -> bool:
+        if not current or not desired:
+            return False
+        if set(current.keys()) != set(desired.keys()):
+            return True
+        for rx in current.keys():
+            cur_band = str(current[rx].band or "").strip().lower()
+            new_band = str(desired[rx].band or "").strip().lower()
+            if cur_band != new_band:
+                return True
+        return False
+
+    @staticmethod
+    def _user_label_matches(expected: str, actual: str) -> bool:
+        def _canon(value: str) -> str:
+            # Kiwi user names can vary in casing (e.g. AUTO_20m_FT8);
+            # compare canonicalized text to avoid false mismatches.
+            return str(value or "").strip().upper()
+
+        expected_text = _canon(expected)
+        actual_text = _canon(urllib.parse.unquote(str(actual or "").strip()))
+        if not expected_text or not actual_text:
+            return False
+        if actual_text == expected_text:
+            return True
+        if actual_text.startswith(expected_text) or expected_text.startswith(actual_text):
+            return True
+        return len(actual_text) >= max(8, len(expected_text) - 3) and expected_text.startswith(actual_text)
+
+    @classmethod
+    def _expected_user_label(cls, assignment: ReceiverAssignment) -> str:
+        if bool(assignment.ssb_scan) and cls._is_ssb_assignment(assignment):
+            return f"AUTO_{str(assignment.band).upper()}_SSBSCAN"
+        mode_tag = str(assignment.mode_label or "FT8").strip().upper().replace(" ", "").replace("/", "")
+        return f"AUTO_{str(assignment.band).upper()}_{mode_tag}"
+
+    @classmethod
+    def _fetch_live_auto_users(cls, host: str, port: int) -> Dict[int, str]:
+        out: Dict[int, str] = {}
+        status_url = f"http://{host}:{int(port)}/users?json=1"
+        try:
+            with urllib.request.urlopen(status_url, timeout=1.2) as resp:
+                payload = json.loads(resp.read().decode("utf-8", errors="ignore"))
+            if not isinstance(payload, list):
+                return {}
+            for row in payload:
+                if not isinstance(row, dict):
+                    continue
+                try:
+                    rx_i = int(row.get("i"))
+                except Exception:
+                    continue
+                name = urllib.parse.unquote(str(row.get("n") or "")).strip()
+                if name.startswith("AUTO_"):
+                    out[int(rx_i)] = name
+        except Exception:
+            return {}
+        return out
+
+    @classmethod
+    def _has_duplicate_live_auto_labels(cls, host: str, port: int) -> bool:
+        live_users = cls._fetch_live_auto_users(host, port)
+        if not live_users:
+            return False
+        counts: Dict[str, int] = {}
+        for label in live_users.values():
+            canon = str(label or "").strip().upper()
+            if not canon:
+                continue
+            counts[canon] = int(counts.get(canon, 0)) + 1
+        return any(v > 1 for v in counts.values())
+
+    def _assignment_slots_needing_reconcile(
+        self,
+        *,
+        host: str,
+        port: int,
+        assignments: Dict[int, ReceiverAssignment],
+    ) -> set[int]:
+        live_users = self._fetch_live_auto_users(host, port)
+        if not live_users:
+            return set()
+
+        expected_by_rx = {
+            int(rx): self._expected_user_label(assignment)
+            for rx, assignment in assignments.items()
+        }
+        out: set[int] = set()
+        for rx, expected_label in expected_by_rx.items():
+            live_label = live_users.get(int(rx), "")
+            if not self._user_label_matches(expected_label, live_label):
+                out.add(int(rx))
+                continue
+            worker = self._workers.get(int(rx))
+            if worker is None:
+                out.add(int(rx))
+                continue
+            active_label = str(getattr(worker, "_active_user_label", "") or "").strip()
+            if active_label and not self._user_label_matches(expected_label, active_label):
+                out.add(int(rx))
+        return out
 
     @classmethod
     def _can_hot_reconfigure_ssb(cls, current: ReceiverAssignment, desired: ReceiverAssignment) -> bool:
@@ -1623,9 +2598,23 @@ class ReceiverManager:
 
     def apply_assignments(self, host: str, port: int, assignments: Dict[int, ReceiverAssignment]) -> None:
         with self._lock:
+            prior_host = str(getattr(self, "_active_host", "") or "")
+            prior_port = int(getattr(self, "_active_port", 0) or 0)
             assignments = self._normalize_ssb_receivers(assignments)
-            if self._assignment_maps_equivalent(self._assignments, assignments):
-                return
+            equivalent_assignments = self._assignment_maps_equivalent(self._assignments, assignments)
+            reconcile_rxs: set[int] = set()
+            force_reconcile_full_reset = False
+            if equivalent_assignments:
+                reconcile_rxs = self._assignment_slots_needing_reconcile(host=host, port=port, assignments=assignments)
+                if not reconcile_rxs:
+                    return
+                logger.warning(
+                    "Receiver assignment drift detected; restarting workers for RXs %s",
+                    ", ".join(str(rx) for rx in sorted(reconcile_rxs)),
+                )
+                force_reconcile_full_reset = self._force_full_reset_on_reconcile_enabled()
+                if force_reconcile_full_reset:
+                    logger.warning("Drift reconcile policy forcing full Kiwi receiver reset before re-apply")
 
             dep_errors = self._required_dependency_errors(assignments)
             if dep_errors:
@@ -1648,12 +2637,21 @@ class ReceiverManager:
 
             current_rxs = set(int(rx) for rx in self._assignments.keys())
             desired_rxs = set(int(rx) for rx in assignments.keys())
+            force_full_reset = (
+                self._force_full_reset_on_band_change_enabled()
+                and self._band_plan_changed(self._assignments, assignments)
+            )
+            did_full_reset = bool(host_changed or force_full_reset or force_reconcile_full_reset)
+            if force_full_reset:
+                logger.warning("Band-plan change detected; forcing full Kiwi receiver reset before re-apply")
 
             to_stop: set[int] = set()
             to_reconfigure: set[int] = set()
-            if host_changed:
+            if did_full_reset:
                 to_stop |= current_rxs
+                to_reconfigure.clear()
             else:
+                to_stop |= set(int(rx) for rx in reconcile_rxs)
                 for rx in sorted(current_rxs):
                     if rx not in assignments:
                         to_stop.add(rx)
@@ -1664,16 +2662,24 @@ class ReceiverManager:
                         else:
                             to_stop.add(rx)
 
+            stopped_labels: set[str] = set()
+            for rx in sorted(to_stop):
+                current_assignment = self._assignments.get(rx)
+                if current_assignment is not None:
+                    stopped_labels.add(self._expected_user_label(current_assignment))
+
             for rx in sorted(to_stop):
                 worker = self._workers.pop(rx, None)
                 if worker is not None:
-                    worker.stop()
+                    self._stop_worker(worker)
+                self._activity_by_rx.pop(int(rx), None)
 
             for rx in sorted(to_reconfigure):
                 worker = self._workers.get(rx)
                 desired = assignments.get(rx)
                 if worker is None or desired is None:
                     continue
+                self._activity_by_rx.pop(int(rx), None)
                 worker.update_assignment(
                     band=desired.band,
                     freq_hz=desired.freq_hz,
@@ -1691,6 +2697,22 @@ class ReceiverManager:
                 self._wait_for_kiwi_auto_users_clear(host=host, port=port, timeout_s=10.0)
                 return
 
+            if stopped_labels:
+                wait_host = prior_host if prior_host else str(host)
+                wait_port = prior_port if prior_port > 0 else int(port)
+                self._wait_for_kiwi_auto_users_missing(
+                    host=wait_host,
+                    port=wait_port,
+                    labels=stopped_labels,
+                    timeout_s=8.0,
+                )
+
+            if did_full_reset:
+                self._cleanup_orphan_processes()
+                self._wait_for_orphan_cleanup(timeout_s=6.0)
+                _ = self._run_admin_kick_all(host=str(host), port=int(port))
+                self._wait_for_kiwi_auto_users_clear(host=str(host), port=int(port), timeout_s=8.0)
+
             time.sleep(0.2)
 
             for rx in sorted(desired_rxs):
@@ -1699,22 +2721,7 @@ class ReceiverManager:
                 if rx in self._workers and rx in self._assignments and self._assignment_equivalent(self._assignments[rx], assignments[rx]) and not host_changed:
                     continue
                 desired = assignments[rx]
-                worker = _ReceiverWorker(
-                    kiwirecorder_path=self._kiwirecorder_path,
-                    ft8modem_path=self._ft8modem_path,
-                    af2udp_path=self._af2udp_path,
-                    sox_path=self._sox_path,
-                    host=host,
-                    port=port,
-                    rx=desired.rx,
-                    band=desired.band,
-                    freq_hz=desired.freq_hz,
-                    mode_label=desired.mode_label,
-                    ssb_scan=desired.ssb_scan,
-                    sideband=desired.sideband,
-                    decode_callback=self._decode_callback,
-                    on_restart=self._on_worker_restart,
-                )
+                worker = self._make_worker(host=host, port=port, assignment=desired)
                 self._workers[rx] = worker
                 worker.start()
                 time.sleep(0.25)
@@ -1723,9 +2730,35 @@ class ReceiverManager:
             self._active_host = str(host)
             self._active_port = int(port)
 
+            if self._has_duplicate_live_auto_labels(str(host), int(port)):
+                logger.warning("Detected duplicate AUTO labels on Kiwi; forcing worker recycle and Kiwi kick-all")
+                for worker in list(self._workers.values()):
+                    self._stop_worker(worker)
+                self._workers.clear()
+                self._activity_by_rx.clear()
+                self._cleanup_orphan_processes()
+                self._wait_for_orphan_cleanup(timeout_s=6.0)
+                _ = self._run_admin_kick_all(host=str(host), port=int(port))
+                self._wait_for_kiwi_auto_users_clear(host=str(host), port=int(port), timeout_s=8.0)
+                for rx in sorted(desired_rxs):
+                    desired = self._assignments.get(int(rx))
+                    if desired is None:
+                        continue
+                    worker = self._make_worker(host=str(host), port=int(port), assignment=desired)
+                    self._workers[int(rx)] = worker
+                    worker.start()
+                    time.sleep(0.25)
+
     def stop_all(self) -> None:
+        self._manager_stop.set()
         with self._lock:
             for worker in list(self._workers.values()):
-                worker.stop()
+                self._stop_worker(worker)
             self._workers.clear()
             self._assignments.clear()
+            self._activity_by_rx.clear()
+            self._stale_watch_state_by_rx.clear()
+        try:
+            self._stale_recovery_thread.join(timeout=1.0)
+        except Exception:
+            pass

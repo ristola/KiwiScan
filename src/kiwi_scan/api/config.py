@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import inspect
 from typing import Dict
 
 from fastapi import APIRouter, HTTPException, Request
@@ -107,7 +108,19 @@ def make_router(*, mgr: object, waterholes: Dict[str, float], receiver_mgr: obje
         if receiver_mgr is None:
             raise HTTPException(status_code=503, detail="receiver manager unavailable")
         try:
-            report = receiver_mgr.dependency_report(test_injected_failures=True, apply_corrections=False)  # type: ignore[attr-defined]
+            dep_report = receiver_mgr.dependency_report  # type: ignore[attr-defined]
+            kwargs: Dict[str, object] = {}
+            try:
+                sig = inspect.signature(dep_report)
+                params = sig.parameters
+                if "test_injected_failures" in params:
+                    kwargs["test_injected_failures"] = True
+                if "apply_corrections" in params:
+                    kwargs["apply_corrections"] = False
+            except Exception:
+                kwargs = {}
+
+            report = dep_report(**kwargs)
         except Exception as exc:
             logger.exception("Runtime dependency path failure test failed")
             raise HTTPException(status_code=500, detail=f"path failure test failed: {exc}") from exc

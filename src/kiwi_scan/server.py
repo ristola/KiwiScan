@@ -52,6 +52,7 @@ from .api.admin import make_router as make_admin_router
 from .api.automation import make_router as make_automation_router
 from .api.metrics import make_router as make_metrics_router
 from .api.health import make_router as make_health_router
+from .api.system_info import make_router as make_system_info_router
 from .rx_monitor import RxMonitor
 from .app_lifecycle import register_lifecycle
 from .auto_set_loop import AutoSetLoop
@@ -96,6 +97,13 @@ def _resolve_app_version() -> str:
 
 def _resolve_git_commit() -> str | None:
     root = Path(__file__).resolve().parents[2]
+
+    try:
+        value = str(os.environ.get("KIWISCAN_BUILD_COMMIT", "") or "").strip()
+        if re.match(r"^[0-9a-fA-F]{7,40}$", value):
+            return value[:7].lower()
+    except Exception:
+        pass
 
     try:
         marker = root / "outputs" / "installed_commit.txt"
@@ -668,6 +676,7 @@ app.include_router(
     )
 )
 app.include_router(make_health_router(receiver_mgr=receiver_mgr))
+app.include_router(make_system_info_router(mgr=mgr))
 app.include_router(
     make_ws_status_router(
         mgr=mgr,

@@ -34,6 +34,7 @@ _DEFAULT_SETTINGS: Dict[str, Any] = {
     "useLaunchd": False,
     "uiThemeMode": "auto",
     "uiThemeNightHour": 21,
+    "uiThemeHourOffset": 0,
     "uiDensity": "normal",
     "scheduleProfiles": {},
 }

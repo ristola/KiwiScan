@@ -1,8 +1,9 @@
 services:
   kiwiscan:
-    image: n4ldr/kiwiscan:0.1.7
-    pull_policy: always
+    image: kiwiscan-local:latest
+    pull_policy: never
     container_name: kiwiscan
+    restart: unless-stopped
     platform: linux/amd64
     ports:
       - "4010:4010/tcp"
@@ -16,6 +17,11 @@ services:
       NO_RESTART: "1"
       KIWI_SCAN_WS4010: "1"
       KIWI_SCAN_UDP4010: "1"
+      KIWISCAN_STRICT_DIGITAL_SLOT_ENFORCEMENT: "0"
+      KIWISCAN_DIGITAL_REMAP_GRACE_S: "45"
+      KIWISCAN_STALE_RECOVERY_MISMATCH_WINDOW_S: "45"
+      KIWISCAN_MISMATCH_AUTOKICK_REQUIRED_CHECKS: "8"
+      KIWISCAN_MISMATCH_AUTOKICK_COOLDOWN_S: "180"
     logging:
       driver: json-file
       options:

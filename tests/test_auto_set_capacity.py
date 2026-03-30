@@ -1,0 +1,100 @@
+import threading
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from kiwi_scan.api.auto_set import make_router
+from kiwi_scan.receiver_manager import ReceiverAssignment
+
+
+class _MgrStub:
+    def __init__(self) -> None:
+        self.lock = threading.Lock()
+        self.host = "127.0.0.1"
+        self.port = 8073
+
+    def set_runtime_dependencies(self, *_args, **_kwargs) -> None:
+        return None
+
+
+class _ReceiverMgrStub:
+    def __init__(self) -> None:
+        self.last_assignments: dict[int, ReceiverAssignment] = {}
+
+    def dependency_report(self) -> dict:
+        return {}
+
+    def apply_assignments(self, _host: str, _port: int, assignments: dict[int, ReceiverAssignment]) -> None:
+        self.last_assignments = dict(assignments)
+
+
+def test_dual_mode_bands_can_fill_all_eight_receivers(monkeypatch):
+    monkeypatch.delenv("KIWISCAN_AUTOSET_MAX_RX", raising=False)
+
+    mgr = _MgrStub()
+    receiver_mgr = _ReceiverMgrStub()
+    app = FastAPI()
+    app.include_router(
+        make_router(
+            mgr=mgr,
+            receiver_mgr=receiver_mgr,
+            band_order=["10m", "12m", "15m", "17m", "20m", "30m", "40m", "60m", "80m", "160m"],
+            band_freqs_hz={
+                "20m": 14_074_000.0,
+                "30m": 10_136_000.0,
+                "40m": 7_074_000.0,
+                "60m": 5_357_000.0,
+                "80m": 3_573_000.0,
+                "160m": 1_840_000.0,
+            },
+            band_ft4_freqs_hz={
+                "20m": 14_080_000.0,
+                "40m": 7_047_500.0,
+            },
+            band_ssb_freqs_hz={},
+            band_wspr_freqs_hz={},
+        )
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/auto_set_receivers",
+        json={
+            "enabled": True,
+            "force": True,
+            "mode": "ft8",
+            "block": "00-04",
+            "selected_bands": ["20m", "30m", "40m", "60m", "80m", "160m"],
+            "band_modes": {
+                "20m": "FT4 / FT8",
+                "30m": "FT8",
+                "40m": "FT4 / FT8",
+                "60m": "FT8",
+                "80m": "FT8",
+                "160m": "FT8",
+            },
+            "wspr_scan_enabled": False,
+            "ssb_scan": {"use_kiwi_snr": False},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    ok_assignments = [row for row in payload["assignments"] if row.get("ok")]
+    counts_by_band_mode: dict[tuple[str, str], int] = {}
+    for row in ok_assignments:
+        key = (str(row["band"]), str(row["mode"]))
+        counts_by_band_mode[key] = counts_by_band_mode.get(key, 0) + 1
+
+    assert payload["assigned_other_tasks"] == 8
+    assert payload["other_max_receivers"] == 8
+    assert len(ok_assignments) == 8
+    assert counts_by_band_mode[("20m", "FT4")] == 1
+    assert counts_by_band_mode[("20m", "FT8")] == 1
+    assert counts_by_band_mode[("40m", "FT4")] == 1
+    assert counts_by_band_mode[("40m", "FT8")] == 1
+    assert counts_by_band_mode[("30m", "FT8")] == 1
+    assert counts_by_band_mode[("60m", "FT8")] == 1
+    assert counts_by_band_mode[("80m", "FT8")] == 1
+    assert counts_by_band_mode[("160m", "FT8")] == 1
+    assert len(receiver_mgr.last_assignments) == 8

@@ -4,11 +4,12 @@ import copy
 from datetime import datetime
 import logging
 import json
+import os
 import re
 import time
 from urllib.request import urlopen
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -168,6 +169,118 @@ def _sort_other_tasks_by_activity(
     return sorted(tasks, key=_task_key)
 
 
+def _normalize_other_tasks(
+    *,
+    tasks: List[Dict[str, str]],
+    band_modes: Dict[str, str],
+    is_dual_mode: Callable[[object], bool],
+    freq_for_band_mode: Callable[[str, object], Optional[float]],
+) -> List[Dict[str, str]]:
+    """Deduplicate (band, mode) tasks and preserve FT4/FT8 diversity for dual bands."""
+
+    normalized: List[Dict[str, str]] = []
+    seen_pairs: set[tuple[str, str]] = set()
+
+    for task in tasks:
+        band = str(task.get("band") or "")
+        mode = str(task.get("mode") or "FT8").strip().upper()
+        pair = (band, mode)
+        if pair not in seen_pairs:
+            normalized.append({"band": band, "mode": mode})
+            seen_pairs.add(pair)
+            continue
+
+        # If we see a duplicate mode for a dual-mode band, replace it with
+        # the missing FT4/FT8 counterpart when the frequency is available.
+        if not is_dual_mode(band_modes.get(band)):
+            continue
+        if mode not in {"FT4", "FT8"}:
+            continue
+
+        alternate = "FT4" if mode == "FT8" else "FT8"
+        alt_pair = (band, alternate)
+        if alt_pair in seen_pairs:
+            continue
+        if freq_for_band_mode(band, alternate) is None:
+            continue
+
+        normalized.append({"band": band, "mode": alternate})
+        seen_pairs.add(alt_pair)
+
+    return normalized
+
+
+def _select_other_tasks_with_band_coverage(
+    *,
+    tasks: List[Dict[str, str]],
+    capacity: int,
+    preferred_band_order: Optional[List[str]] = None,
+) -> List[Dict[str, str]]:
+    """Select tasks with a first pass that covers as many unique bands as possible.
+
+    This keeps one receiver on each selected band before allocating extra
+    slots to duplicate modes on the same band.
+    """
+
+    limit = max(0, int(capacity))
+    if limit <= 0 or not tasks:
+        return []
+
+    selected: List[Dict[str, str]] = []
+    selected_pairs: set[tuple[str, str]] = set()
+    seen_bands: set[str] = set()
+
+    ordered_bands: List[str] = []
+    if isinstance(preferred_band_order, list):
+        seen_pref: set[str] = set()
+        for band in preferred_band_order:
+            band_text = str(band or "")
+            if not band_text or band_text in seen_pref:
+                continue
+            ordered_bands.append(band_text)
+            seen_pref.add(band_text)
+
+    if ordered_bands:
+        for band in ordered_bands:
+            for task in tasks:
+                task_band = str(task.get("band") or "")
+                mode = str(task.get("mode") or "").strip().upper()
+                pair = (task_band, mode)
+                if task_band != band or not mode or task_band in seen_bands:
+                    continue
+                selected.append(task)
+                selected_pairs.add(pair)
+                seen_bands.add(task_band)
+                break
+            if len(selected) >= limit:
+                return selected
+    else:
+        for task in tasks:
+            band = str(task.get("band") or "")
+            mode = str(task.get("mode") or "").strip().upper()
+            pair = (band, mode)
+            if not band or not mode or band in seen_bands:
+                continue
+            selected.append(task)
+            selected_pairs.add(pair)
+            seen_bands.add(band)
+            if len(selected) >= limit:
+                return selected
+
+    for task in tasks:
+        if len(selected) >= limit:
+            break
+        band = str(task.get("band") or "")
+        mode = str(task.get("mode") or "").strip().upper()
+        pair = (band, mode)
+        if not band or not mode or pair in selected_pairs:
+            continue
+        selected.append(task)
+        selected_pairs.add(pair)
+
+    return selected
+
+
 def make_router(
     *,
     mgr: object,
@@ -201,6 +314,14 @@ def make_router(
         "12m": (24890.0, 24990.0),
         "10m": (28000.0, 29700.0),
     }
+
+    def _max_auto_receivers() -> int:
+        raw = str(os.environ.get("KIWISCAN_AUTOSET_MAX_RX", "8") or "8").strip()
+        try:
+            value = int(raw)
+        except Exception:
+            value = 8
+        return max(2, min(8, value))
 
     def _snr_to_threshold(value: object) -> float | None:
         try:
@@ -487,8 +608,10 @@ def make_router(
             separators=(",", ":"),
         )
 
+        force = bool(payload.get("force", False))
         if (
-            _last_apply_signature == apply_signature
+            not force
+            and _last_apply_signature == apply_signature
             and _last_apply_response is not None
             and (time.time() - _last_apply_ts) < 15.0
         ):
@@ -526,8 +649,8 @@ def make_router(
                 "block": block,
                 "open_bands": open_bands,
                 "assignments": [],
-                "ssb_max_receivers": 2,
-                "other_max_receivers": 6,
+                "ssb_max_receivers": min(2, _max_auto_receivers()),
+                "other_max_receivers": max(0, _max_auto_receivers() - min(2, _max_auto_receivers())),
                 "requested_ssb_tasks": 0,
                 "requested_other_tasks": 0,
                 "assigned_ssb_tasks": 0,
@@ -602,16 +725,25 @@ def make_router(
             block_key=block,
             local_dt=local_dt,
         )
+        other_tasks = _normalize_other_tasks(
+            tasks=other_tasks,
+            band_modes=band_modes,
+            is_dual_mode=_is_dual_mode,
+            freq_for_band_mode=_freq_for_band_mode,
+        )
 
-        ssb_capacity = min(2, len(ssb_tasks))
-        ssb_rx_request_list = [0, 1][:ssb_capacity]
+        max_total_rx = _max_auto_receivers()
+        all_rx_slots = list(range(max_total_rx))
+        ssb_capacity = min(2, len(ssb_tasks), len(all_rx_slots))
+        ssb_rx_request_list = all_rx_slots[:ssb_capacity]
         desired_ssb_tasks = ssb_tasks[: len(ssb_rx_request_list)]
-        if len(desired_ssb_tasks) > 0:
-            other_rx_request_list = [2, 3, 4, 5, 6, 7]
-        else:
-            other_rx_request_list = [0, 1, 2, 3, 4, 5, 6, 7]
+        other_rx_request_list = all_rx_slots[len(ssb_rx_request_list):]
 
-        desired_other_tasks = other_tasks[: len(other_rx_request_list)]
+        desired_other_tasks = _select_other_tasks_with_band_coverage(
+            tasks=other_tasks,
+            capacity=len(other_rx_request_list),
+            preferred_band_order=ordered_bands,
+        )
         requested_ssb_tasks = len(ssb_tasks)
         requested_other_tasks = len(other_tasks)
         assigned_ssb_tasks = len(desired_ssb_tasks)

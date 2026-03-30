@@ -2140,6 +2140,7 @@
                     <div class="config-actions">
                         <button id="cfg_discover_kiwi" type="button">Discover Kiwi</button>
                         <button id="cfg_save">Save</button>
+                        <button id="cfg_open_kiwi_admin" type="button">Kiwi Admin-Page</button>
                     </div>
                 </div>
                 <div class="config-card">
@@ -2523,6 +2524,25 @@
         let autoSetInProgress = false;
         let autoSetRequestId = 0;
         let lastAppliedAutoSetSignature = '';
+        const AUTO_SET_SIGNATURE_STORAGE_KEY = 'kiwiscan_last_autoset_signature';
+
+        function readLastAppliedAutoSetSignature() {
+            try {
+                return String(localStorage.getItem(AUTO_SET_SIGNATURE_STORAGE_KEY) || '');
+            } catch (e) {
+                return '';
+            }
+        }
+
+        function writeLastAppliedAutoSetSignature(value) {
+            try {
+                const text = String(value || '');
+                if (text) localStorage.setItem(AUTO_SET_SIGNATURE_STORAGE_KEY, text);
+                else localStorage.removeItem(AUTO_SET_SIGNATURE_STORAGE_KEY);
+            } catch (e) { }
+        }
+
+        lastAppliedAutoSetSignature = readLastAppliedAutoSetSignature();
         let receiverAssignments = {};
         let lastScheduleData = null;
         let lastScheduleByMode = {};
@@ -3184,6 +3204,7 @@
 
         let localTimeWallClockBaseMs = null;
         let localTimeWallClockSyncMs = null;
+        let localTimeLastAcceptedServerMs = null;
 
         function parseIsoWallClockMs(value) {
             const raw = String(value || '').trim();
@@ -3220,10 +3241,22 @@
             if (!Number.isFinite(wallClockMs)) {
                 localTimeWallClockBaseMs = null;
                 localTimeWallClockSyncMs = null;
+                localTimeLastAcceptedServerMs = null;
+                return;
+            }
+            const browserNowMs = Date.now();
+            const currentSyncedMs = (Number.isFinite(localTimeWallClockBaseMs) && Number.isFinite(localTimeWallClockSyncMs))
+                ? localTimeWallClockBaseMs + (browserNowMs - localTimeWallClockSyncMs)
+                : null;
+            const incomingIsOlder = Number.isFinite(localTimeLastAcceptedServerMs) && (wallClockMs + 1000) < localTimeLastAcceptedServerMs;
+            const incomingWouldRewind = Number.isFinite(currentSyncedMs) && (wallClockMs + 5000) < currentSyncedMs;
+            const incomingBrowserDriftMs = Math.abs(wallClockMs - browserNowMs);
+            if (incomingIsOlder || incomingWouldRewind || incomingBrowserDriftMs > 120000) {
                 return;
             }
             localTimeWallClockBaseMs = wallClockMs;
-            localTimeWallClockSyncMs = Date.now();
+            localTimeWallClockSyncMs = browserNowMs;
+            localTimeLastAcceptedServerMs = wallClockMs;
         }
 
         function getSynchronizedLocalDate() {
@@ -5788,6 +5821,39 @@
             return r.json();
         }
 
+        function normalizeKiwiHostForUrl(hostValue) {
+            const raw = String(hostValue || '').trim();
+            if (!raw) return '';
+            const withoutScheme = raw.replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+            if (!withoutScheme) return '';
+            if (withoutScheme.includes(':') && !withoutScheme.startsWith('[') && !withoutScheme.endsWith(']')) {
+                return `[${withoutScheme}]`;
+            }
+            return withoutScheme;
+        }
+
+        function buildKiwiAdminUrlFromInputs() {
+            const hostEl = document.getElementById('cfg_host');
+            const portEl = document.getElementById('cfg_port');
+            const host = normalizeKiwiHostForUrl(hostEl ? hostEl.value : '');
+            const portRaw = portEl ? String(portEl.value || '').trim() : '';
+            const portNum = Number.parseInt(portRaw, 10);
+            if (!host) return null;
+            if (!Number.isFinite(portNum) || portNum < 1 || portNum > 65535) return null;
+            return `http://${host}:${portNum}/admin`;
+        }
+
+        function openKiwiAdminPage() {
+            const url = buildKiwiAdminUrlFromInputs();
+            if (!url) {
+                setConfigStatus('Enter a valid Kiwi host and port first.', 'error');
+                showToast('Kiwi host/port is missing or invalid.', 'error', 1800);
+                return;
+            }
+            window.open(url, '_blank', 'noopener,noreferrer');
+            setConfigStatus(`Opened Kiwi admin page: ${url}`, 'ok');
+        }
+
         async function loadAutomationSettingsFromServer() {
             try {
                 const resp = await fetch('/automation/settings', { cache: 'no-store' });
@@ -5825,6 +5891,18 @@
             if (!payload || typeof payload !== 'object') return null;
             const merged = { ...DEFAULT_AUTOMATION, ...payload };
             saveAutomationSettings(merged);
+            const savedTheme = String(merged.uiThemeMode || '').toLowerCase();
+            const savedDensity = String(merged.uiDensity || '').toLowerCase();
+            const nextTheme = (savedTheme === 'dark' || savedTheme === 'auto' || savedTheme === 'light')
+                ? savedTheme
+                : UI_THEME_DEFAULT_MODE;
+            const nextDensity = (savedDensity === 'dense' || savedDensity === 'normal')
+                ? savedDensity
+                : UI_DENSITY_DEFAULT_MODE;
+            const nextNightHour = clampUiThemeHour(merged.uiThemeNightHour);
+            saveUiTheme(nextTheme);
+            saveUiThemeNightHour(nextNightHour);
+            saveUiDensity(nextDensity);
             bandModeCache = {};
             const elAutoScanWspr = document.getElementById('auto_scan_wspr');
             if (elAutoScanWspr) {
@@ -6695,7 +6773,8 @@
                 const isSelected = cb ? !!cb.checked : selected.has(band);
                 const rxMain = cell.querySelector('.schedule-rx-main') || cell;
                 const rxLabel = isSelected ? (receiverAssignments[band] || '') : '';
-                rxMain.textContent = rxLabel ? formatRxDisplayLabel(rxLabel) : '—';
+                const placeholder = isSelected ? 'Selected (no slot)' : '—';
+                rxMain.textContent = rxLabel ? formatRxDisplayLabel(rxLabel) : placeholder;
                 rxMain.classList.remove('is-warn', 'is-error');
                 rxMain.removeAttribute('title');
                 if (isSelected && rxLabel) {
@@ -6938,7 +7017,8 @@
                 let rxLabel = selected.has(b) ? (receiverAssignments[b] || '') : '';
                 const rxMain = document.createElement('div');
                 rxMain.className = 'schedule-rx-main';
-                rxMain.textContent = rxLabel ? formatRxDisplayLabel(rxLabel) : '—';
+                const placeholder = selected.has(b) ? 'Selected (no slot)' : '—';
+                rxMain.textContent = rxLabel ? formatRxDisplayLabel(rxLabel) : placeholder;
                 tdRx.appendChild(rxMain);
                 if (selected.has(b) && rxLabel) {
                     const summary = summarizeSchedulerRxStates(b, rxLabel);
@@ -7101,6 +7181,7 @@
                         })(),
                     ];
                     for (let i = 0; i < Math.min(rxRequestList.length, previewSlots.length); i++) {
+                        writeLastAppliedAutoSetSignature(autoSetSignature);
                         const slot = previewSlots[i];
                         const t = slot.task;
                         const b = t.band;
@@ -7308,6 +7389,23 @@
             });
         }
 
+        function captureCurrentAutoSetSignature() {
+            const mode = currentMode();
+            const activeBlock = currentBlock || viewedBlock;
+            if (!activeBlock) return '';
+            const settings = readAutomationSettings();
+            const selected = Array.from(getSelectedBandsForAutoSet(mode, activeBlock));
+            const effectiveBandModes = {};
+            for (const band of BAND_OPTIONS) {
+                const sel = document.getElementById(`mode_${band}`);
+                const storedMode = getBandModeCached(mode, activeBlock, band);
+                const selValue = sel && sel.value ? sel.value : '';
+                effectiveBandModes[band] = selValue || storedMode || '';
+            }
+            applyWsprScanOverride(effectiveBandModes);
+            return buildAutoSetSignature(mode, activeBlock, selected, effectiveBandModes, settings);
+        }
+
         function shouldHideDecodeLine(data) {
             if (!data || typeof data !== 'object') return false;
             const band = String(data.band || '').toLowerCase();
@@ -7435,6 +7533,22 @@
             setTimeout(pollDecodes, 1500);
         }
 
+        async function backfillRecentDecodes() {
+            try {
+                const r = await fetch('/decodes?since=0');
+                const data = await r.json();
+                if (data && Array.isArray(data.items)) {
+                    for (const item of data.items) {
+                        appendDecodeLine(item);
+                    }
+                }
+                if (data && typeof data.latest === 'number') {
+                    decodeCursor = Math.max(decodeCursor, data.latest);
+                }
+                await syncReceiverAssignmentsFromStatus();
+            } catch (e) { }
+        }
+
         async function syncReceiverAssignmentsFromStatus(force = false) {
             if (!force && (Date.now() - lastAssignmentSyncMs) < 1200) return false;
             lastAssignmentSyncMs = Date.now();
@@ -7443,7 +7557,8 @@
                 if (!resp.ok) return false;
                 const data = await resp.json();
                 const source = String((data && data.assignments_source) || '').trim().toLowerCase();
-                if (source !== 'kiwi_users' && source !== 'kiwi_users_cached') {
+                const allowedSources = new Set(['kiwi_users', 'kiwi_users_cached', 'receiver_manager_drift', 'receiver_manager']);
+                if (!allowedSources.has(source)) {
                     setReceiverRuntimeSyncLabel(new Date(), source || 'unknown');
                     return false;
                 }
@@ -7514,6 +7629,13 @@
                     }
                 }
                 setReceiverRuntimeSyncLabel(new Date(), source || 'kiwi_users');
+                if (!lastAppliedAutoSetSignature) {
+                    const derivedSignature = captureCurrentAutoSetSignature();
+                    if (derivedSignature) {
+                        lastAppliedAutoSetSignature = derivedSignature;
+                        writeLastAppliedAutoSetSignature(derivedSignature);
+                    }
+                }
                 return true;
             } catch (e) { }
             return false;
@@ -7552,6 +7674,7 @@
         let rxHealthLastFetchMs = null;
         let decodeWsClientPollTimer = null;
         let decodeStreamWsRef = null;
+        let decodeWsLastMessageMs = null;
         let infoMetricsLastFetchMs = null;
         let infoMetricsHelpCleanup = null;
 
@@ -7568,6 +7691,11 @@
                 && typeof WebSocket !== 'undefined'
                 && decodeStreamWsRef.readyState === WebSocket.OPEN
             );
+        }
+
+        function hasRecentDecodeWsMessage(maxAgeMs = 15000) {
+            if (!Number.isFinite(decodeWsLastMessageMs)) return false;
+            return (Date.now() - Number(decodeWsLastMessageMs)) <= Math.max(1000, Number(maxAgeMs) || 15000);
         }
 
         function startDecodeWsClientPolling(wsUrl) {
@@ -7616,7 +7744,8 @@
                     if (!Number.isFinite(visibleClients)) throw new Error('clients unavailable');
                     failedPolls = 0;
                     const baseText = String(statusEl.textContent || '').replace(/\s+\(clients:\s*\d+\)\s*$/i, '').trim();
-                    const cls = visibleClients > 0 ? 'stream-status-ws' : 'stream-status-polling';
+                    const forceWs = isDecode4010SocketOpen() && hasRecentDecodeWsMessage();
+                    const cls = (visibleClients > 0 || forceWs) ? 'stream-status-ws' : 'stream-status-polling';
                     setDecodeStreamStatus(`${baseText} (clients: ${visibleClients})`, cls);
                 } catch (e) {
                     failedPolls += 1;
@@ -7627,7 +7756,8 @@
                         const baseText = current.replace(/\s+\((clients:\s*\d+|clients:\s*unknown)\)\s*$/i, '').trim() || 'WS';
                         const localOpen = use4010 && isDecode4010SocketOpen();
                         if (localOpen) {
-                            setDecodeStreamStatus(`${baseText} (clients: 0)`, 'stream-status-polling');
+                            const cls = hasRecentDecodeWsMessage() ? 'stream-status-ws' : 'stream-status-polling';
+                            setDecodeStreamStatus(`${baseText} (clients: 0)`, cls);
                         } else {
                             setDecodeStreamStatus(`${baseText} (clients: unknown)`, 'stream-status-polling');
                         }
@@ -8478,6 +8608,9 @@
             }
             if (r === 'kiwi_busy') return 'Kiwi receiver busy';
             if (r === 'kiwi_connect_failed') return 'Kiwi connection failed';
+            if (r === 'stalled_no_decoder_output') return 'No decoder heartbeat';
+            if (r === 'silent_no_decodes') return 'No decodes for an extended window';
+            if (r === 'no_recent_decodes') return 'No recent decodes (watching)';
             if (r === 'spawn_exception' || r === 'spawn_io_error' || r === 'spawn_failed') return 'Spawn failed';
             if (r === 'process_exited') return 'Worker exited';
             return r.replaceAll('_', ' ');
@@ -8497,6 +8630,12 @@
             if (Number(c.spawn_exception || 0) > 0 || Number(c.spawn_io_error || 0) > 0 || Number(c.spawn_failed || 0) > 0) {
                 return 'Warning: local process spawn failure (permissions/path/runtime).';
             }
+            if (Number(c.stalled_no_decoder_output || 0) > 0) {
+                return 'Warning: one or more receivers are assigned on Kiwi but have no decoder heartbeat.';
+            }
+            if (Number(c.no_recent_decodes || 0) > 0) {
+                return 'Info: receiver heartbeat is healthy, but there have been no recent decodes on one or more channels.';
+            }
             return '';
         }
 
@@ -8515,7 +8654,7 @@
             const rows = Object.keys(channels)
                 .sort((a, b) => Number(a) - Number(b))
                 .map((key) => channels[key])
-                .filter((item) => item && item.is_unstable);
+                .filter((item) => item && (item.is_unstable || item.is_silent || item.is_no_decode_warning));
             const warningText = rxHealthWarningFromCounts(reasonCounts);
             const ageSec = rxHealthAgeSec(rxHealthLastFetchMs);
             const staleHint = (ageSec !== null && ageSec >= 30)
@@ -8545,7 +8684,14 @@
                 const backoff = Number(item.backoff_s || 0).toFixed(1);
                 const reason = item.last_reason ? String(item.last_reason) : 'unknown';
                 const reasonText = describeRxReason(reason);
-                return `<div class="rx-health-row">RX${rx} ${band} ${mode} — failures: ${fails}, backoff: ${backoff}s, reason: ${reasonText} (${reason})</div>`;
+                const state = String(item.health_state || (item.is_unstable ? 'stalled' : (item.is_silent ? 'silent' : 'healthy')));
+                const statusLevel = String(item.status_level || (item.is_unstable ? 'fault' : ((item.is_silent || item.is_no_decode_warning) ? 'warning' : 'healthy')));
+                const statusLabel = statusLevel === 'fault' ? 'FAULT' : (statusLevel === 'warning' ? 'WARN' : 'OK');
+                const decodeAge = Number(item.decode_age_s);
+                const outputAge = Number(item.decoder_output_age_s);
+                const decodePart = Number.isFinite(decodeAge) ? `, last decode ${Math.round(decodeAge)}s ago` : ', no decode yet';
+                const outputPart = Number.isFinite(outputAge) ? `, heartbeat ${Math.round(outputAge)}s ago` : ', no heartbeat yet';
+                return `<div class="rx-health-row">RX${rx} ${band} ${mode} — status: ${statusLabel}, state: ${state}, failures: ${fails}, backoff: ${backoff}s${decodePart}${outputPart}, reason: ${reasonText} (${reason})</div>`;
             }).join('') + warningLine + refreshLine;
             panel.style.display = 'block';
         }
@@ -8560,8 +8706,13 @@
                 const overall = String((data && data.overall) || 'unknown').toLowerCase();
                 const active = Number((data && data.active_receivers) || 0);
                 const unstable = Number((data && data.unstable_receivers) || 0);
+                const silent = Number((data && data.silent_receivers) || 0);
+                const noDecodeWarn = Number((data && data.no_decode_warning_receivers) || 0);
                 if (overall === 'healthy') {
                     setRxHealthBadge(`RX Health: Healthy (${active} active)`, 'stream-status-ws');
+                } else if (overall === 'quiet') {
+                    const warnCount = Math.max(0, Math.round(silent + noDecodeWarn));
+                    setRxHealthBadge(`RX Health: Warning (${warnCount} warning)`, 'stream-status-polling');
                 } else if (overall === 'degraded') {
                     setRxHealthBadge(`RX Health: Degraded (${unstable} unstable)`, 'stream-status-error');
                 } else if (overall === 'idle') {
@@ -8620,6 +8771,8 @@
                 header.textContent = `${decodePad('Time', decodeCols.time)}${decodeSep}${decodePad('Freq', decodeCols.freq)}${decodeSep}${decodePad('Mode', decodeCols.mode)}${decodeSep}${decodePad('Callsign', decodeCols.call)}${decodeSep}${decodePad('Grid', decodeCols.grid)}${decodeSep}${decodePad('Distance', decodeCols.dist)}${decodeSep}Message`;
             }
 
+            backfillRecentDecodes();
+
             // Prefer WebSocket streaming (legacy-compatible WS:4010), fall back to HTTP polling.
             let startedFallback = false;
             const startFallbackPolling = () => {
@@ -8659,15 +8812,16 @@
                         opened = true;
                         clearTimeout(openTimer);
                         decodeStreamWsRef = ws;
+                        decodeWsLastMessageMs = null;
                         try {
                             const u = new URL(urls[i]);
                             const is4010 = String(u.port || '') === '4010';
                             const base = is4010 ? 'WS' : 'WS connected';
-                            setDecodeStreamStatus(is4010 ? `${base} (clients: 0)` : base, is4010 ? 'stream-status-polling' : 'stream-status-ws');
+                            setDecodeStreamStatus(is4010 ? `${base} (clients: 0)` : base, 'stream-status-ws');
                             startDecodeWsClientPolling(urls[i]);
                         } catch (e) {
                             const is4010 = String(urls[i] || '').includes(':4010');
-                            setDecodeStreamStatus(is4010 ? 'WS connected (clients: 0)' : 'WS connected', is4010 ? 'stream-status-polling' : 'stream-status-ws');
+                            setDecodeStreamStatus(is4010 ? 'WS connected (clients: 0)' : 'WS connected', 'stream-status-ws');
                             startDecodeWsClientPolling(urls[i]);
                         }
                     };
@@ -8678,6 +8832,7 @@
                     ws.onclose = () => {
                         clearTimeout(openTimer);
                         if (decodeStreamWsRef === ws) decodeStreamWsRef = null;
+                        decodeWsLastMessageMs = null;
                         stopDecodeWsClientPolling();
                         if (!opened) {
                             tryConnect(i + 1);
@@ -8691,6 +8846,14 @@
                         try {
                             const data = JSON.parse(String(ev.data || ''));
                             if (data && typeof data === 'object') {
+                                decodeWsLastMessageMs = Date.now();
+                                const statusEl = document.getElementById('decode_stream_status');
+                                const baseText = String((statusEl && statusEl.textContent) || 'WS connected').replace(/\s+\(clients:\s*\d+\)\s*$/i, '').trim();
+                                if (/clients:\s*\d+/i.test(String((statusEl && statusEl.textContent) || ''))) {
+                                    setDecodeStreamStatus(baseText, 'stream-status-ws');
+                                } else {
+                                    setDecodeStreamStatus('WS connected', 'stream-status-ws');
+                                }
                                 if (String(data.type || '').toLowerCase() === 'command_ack') {
                                     (async () => {
                                         try {
@@ -9309,6 +9472,13 @@
                         setConfigStatus('Discover failed.', 'error');
                         showToast('Kiwi discovery failed.', 'error', 1800);
                     }
+                });
+            }
+
+            const kiwiAdminBtn = document.getElementById('cfg_open_kiwi_admin');
+            if (kiwiAdminBtn) {
+                kiwiAdminBtn.addEventListener('click', () => {
+                    openKiwiAdminPage();
                 });
             }
 

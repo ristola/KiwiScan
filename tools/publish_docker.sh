@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PYPROJECT="$ROOT_DIR/pyproject.toml"
-SOURCE_IMAGE="kiwiscan-kiwiscan:latest"
+SOURCE_IMAGE="kiwiscan-local:latest"
 TARGET_REPO="n4ldr/kiwiscan"
 DO_BUILD=0
 DO_LATEST=1
@@ -17,7 +17,7 @@ then pushes the versioned tag and, by default, the latest tag to Docker Hub.
 
 Options:
   --build               Build the local source image before tagging and pushing
-  --source-image IMAGE  Local image to publish (default: kiwiscan-kiwiscan:latest)
+  --source-image IMAGE  Local image to publish (default: kiwiscan-local:latest)
   --repo NAME           Target repo (default: n4ldr/kiwiscan)
   --no-latest           Push only the versioned tag
   -h, --help            Show this help
@@ -75,8 +75,13 @@ if [[ -z "$VERSION" ]]; then
   exit 2
 fi
 
+BUILD_COMMIT="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || true)"
+if [[ -z "$BUILD_COMMIT" ]]; then
+  BUILD_COMMIT="unknown"
+fi
+
 if [[ "$DO_BUILD" == "1" ]]; then
-  docker build -t "$SOURCE_IMAGE" .
+  docker build --build-arg GIT_COMMIT="$BUILD_COMMIT" -t "$SOURCE_IMAGE" .
 fi
 
 if ! docker image inspect "$SOURCE_IMAGE" >/dev/null 2>&1; then

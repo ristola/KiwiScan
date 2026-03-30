@@ -40,6 +40,7 @@ from .api.admin import make_router as make_admin_router
 from .api.automation import make_router as make_automation_router
 from .api.metrics import make_router as make_metrics_router
 from .api.health import make_router as make_health_router
+from .api.system_info import make_router as make_system_info_router
 from .rx_monitor import RxMonitor
 from .app_lifecycle import register_lifecycle
 
@@ -246,6 +247,7 @@ app.include_router(make_admin_router())
 app.include_router(make_automation_router())
 app.include_router(make_metrics_router(receiver_mgr=receiver_mgr, get_api_metrics=_get_api_metrics))
 app.include_router(make_health_router(receiver_mgr=receiver_mgr))
+app.include_router(make_system_info_router(mgr=mgr))
 app.include_router(
     make_ws_status_router(
         mgr=mgr,

@@ -16,6 +16,8 @@ def make_router(*, receiver_mgr: object) -> APIRouter:
             "overall": "unknown",
             "active_receivers": 0,
             "unstable_receivers": 0,
+            "stalled_receivers": 0,
+            "silent_receivers": 0,
             "restart_total": 0,
             "channels": {},
         }

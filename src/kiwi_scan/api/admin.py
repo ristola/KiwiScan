@@ -322,4 +322,28 @@ def make_router(*, auto_set_loop: object | None = None) -> APIRouter:
         enabled = bool(payload.get("enabled", False))
         return _set_launchd_enabled(enabled)
 
+    @router.post("/admin/force-reassign")
+    def force_reassign_endpoint() -> dict:
+        """Re-apply the current schedule assignments immediately.
+
+        Reads the saved automation settings and calls /auto_set_receivers with
+        ``force=True``, bypassing the endpoint's dedup cache.  This kicks any
+        receivers running on bands that are no longer selected and corrects Kiwi
+        slot drift detected by the assignment reconcile logic.
+
+        The reassign runs in a background thread so the response is instant.
+        """
+        if auto_set_loop is None:
+            raise HTTPException(status_code=503, detail="auto_set_loop unavailable")
+        import threading
+
+        def _bg() -> None:
+            try:
+                auto_set_loop.force_reassign()  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+        threading.Thread(target=_bg, daemon=True, name="force-reassign-bg").start()
+        return {"ok": True, "status": "reassigning"}
+
     return router
