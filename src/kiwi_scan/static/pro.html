@@ -26,6 +26,15 @@
             --accent: #0f4c81;
             --accent-2: #0ea5a0;
             --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+            --settings-toggle-width: 54px;
+            --settings-toggle-height: 30px;
+            --settings-toggle-thumb-size: 22px;
+            --settings-toggle-inset: 3px;
+            --settings-toggle-translate: 26px;
+            --settings-toggle-compact-width: 48px;
+            --settings-toggle-compact-height: 28px;
+            --settings-toggle-compact-thumb-size: 20px;
+            --settings-toggle-compact-translate: 22px;
         }
 
         * {
@@ -975,6 +984,10 @@
             gap: 4px;
         }
 
+        .control-field-toggle {
+            gap: 8px;
+        }
+
         .control-field input,
         .control-field select {
             border: 1px solid #cbd5e1;
@@ -992,6 +1005,69 @@
             appearance: auto;
         }
 
+        .settings-toggle-btn {
+            inline-size: 100%;
+            min-block-size: 54px;
+            border: 1px solid color-mix(in srgb, var(--accent), white 72%);
+            border-radius: 18px;
+            background: color-mix(in srgb, var(--panel), white 8%);
+            color: var(--ink);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            font: inherit;
+            font-weight: 700;
+            text-align: left;
+            cursor: pointer;
+            transition: background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, color 160ms ease;
+        }
+
+        .settings-toggle-btn .ui-icon {
+            width: 18px;
+            height: 18px;
+            flex: 0 0 18px;
+            color: color-mix(in srgb, var(--accent), white 18%);
+        }
+
+        .settings-toggle-label {
+            min-width: 0;
+            flex: 1 1 auto;
+            font-size: 0.98rem;
+            letter-spacing: 0;
+            text-transform: none;
+            color: inherit;
+        }
+
+        .settings-toggle-state {
+            margin-left: auto;
+            font-size: 0.86rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: color-mix(in srgb, var(--ink), white 18%);
+        }
+
+        .settings-toggle-btn:hover {
+            border-color: color-mix(in srgb, var(--accent), white 56%);
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1);
+        }
+
+        .settings-toggle-btn[aria-pressed="true"] {
+            border-color: color-mix(in srgb, var(--ok), white 46%);
+            background: color-mix(in srgb, var(--ok), white 86%);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--ok), white 54%);
+        }
+
+        .settings-toggle-btn[aria-pressed="true"] .ui-icon,
+        .settings-toggle-btn[aria-pressed="true"] .settings-toggle-state {
+            color: color-mix(in srgb, var(--ok), black 12%);
+        }
+
+        .settings-toggle-btn:focus-visible {
+            outline: 2px solid rgba(59, 130, 246, 0.35);
+            outline-offset: 2px;
+        }
+
         .refresh-row select option,
         .rx-toolbar select option,
         .control-field select option {
@@ -1003,6 +1079,42 @@
             color: #7b8794;
             -webkit-text-fill-color: #7b8794;
             opacity: 1;
+        }
+
+        body.theme-dark .settings-toggle-btn {
+            border-color: rgba(125, 211, 252, 0.18);
+            background: #173047;
+            color: #eef6ff;
+        }
+
+        body.theme-dark .settings-toggle-btn:hover {
+            border-color: rgba(125, 211, 252, 0.36);
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+        }
+
+        body.theme-dark .settings-toggle-btn[aria-pressed="true"] {
+            border-color: rgba(74, 222, 128, 0.56);
+            background: rgba(34, 197, 94, 0.18);
+            box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.26);
+        }
+
+        body.theme-dark .settings-toggle-btn[aria-pressed="true"] .ui-icon,
+        body.theme-dark .settings-toggle-btn[aria-pressed="true"] .settings-toggle-state {
+            color: #8af0b0;
+        }
+
+        body.density-compact .settings-toggle-btn {
+            min-block-size: 46px;
+            padding: 10px 12px;
+            gap: 10px;
+        }
+
+        body.density-compact .settings-toggle-label {
+            font-size: 0.92rem;
+        }
+
+        body.density-compact .settings-toggle-state {
+            font-size: 0.8rem;
         }
 
         .control-actions {
@@ -1048,6 +1160,67 @@
             padding: 10px;
             display: grid;
             gap: 10px;
+        }
+
+        .overview-topic-list {
+            display: grid;
+            gap: 8px;
+        }
+
+        .overview-topic-item {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 10px;
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: color-mix(in srgb, var(--panel), white 18%);
+            padding: 9px 12px;
+            cursor: grab;
+            user-select: none;
+        }
+
+        .overview-topic-item.is-dragging {
+            opacity: 0.58;
+            cursor: grabbing;
+        }
+
+        .overview-topic-handle {
+            color: var(--muted);
+            font-family: "IBM Plex Mono", monospace;
+            font-size: 0.82rem;
+            letter-spacing: -0.08em;
+        }
+
+        .overview-topic-label {
+            min-width: 0;
+            color: var(--ink);
+            font-size: 0.82rem;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+        }
+
+        .overview-topic-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin: 0;
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+
+        .overview-board {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+            margin-bottom: 14px;
+        }
+
+        .overview-board>* {
+            min-width: 0;
+        }
+
+        .overview-board>[data-overview-span="full"] {
+            grid-column: 1 / -1;
         }
 
         .settings-subcard-title {
@@ -1815,17 +1988,17 @@
         .assign-chart-tooltip {
             position: absolute;
             z-index: 5;
-            min-width: 170px;
-            max-width: 280px;
+            min-width: 160px;
+            max-width: 240px;
             pointer-events: none;
             border: 1px solid var(--line);
             border-radius: 8px;
             background: rgba(7, 20, 33, 0.92);
             color: #e7f3ff;
             box-shadow: 0 10px 22px rgba(15, 23, 42, 0.34);
-            padding: 7px 8px;
-            font-size: 0.72rem;
-            line-height: 1.35;
+            padding: 6px 7px;
+            font-size: 0.7rem;
+            line-height: 1.25;
             opacity: 0;
             transform: translateY(4px);
             transition: opacity 80ms ease, transform 80ms ease;
@@ -1838,28 +2011,61 @@
 
         .assign-chart-tooltip .tt-title {
             font-weight: 700;
-            margin-bottom: 3px;
+            margin-bottom: 2px;
             color: #f8fbff;
         }
 
         .assign-chart-tooltip .tt-sub {
             color: #bfd4e8;
-            margin-bottom: 4px;
+            margin-bottom: 3px;
             font-family: "IBM Plex Mono", monospace;
+            font-size: 0.66rem;
         }
 
         .assign-chart-tooltip .tt-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 8px;
-            white-space: nowrap;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 6px;
             font-family: "IBM Plex Mono", monospace;
         }
 
         .assign-chart-tooltip .tt-body {
             display: grid;
-            gap: 4px;
+            gap: 3px;
+        }
+
+        .assign-chart-tooltip .tt-main {
+            display: flex;
+            align-items: baseline;
+            gap: 5px;
+            min-width: 0;
+        }
+
+        .assign-chart-tooltip .tt-rx {
+            color: #f8fbff;
+            font-weight: 700;
+            flex: 0 0 auto;
+        }
+
+        .assign-chart-tooltip .tt-meta {
+            color: #bfd4e8;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .assign-chart-tooltip .tt-snr {
+            color: #9db6cc;
+            flex: 0 0 auto;
+            white-space: nowrap;
+        }
+
+        .assign-chart-tooltip .tt-count {
+            color: #f8fbff;
+            font-size: 0.66rem;
+            white-space: nowrap;
         }
 
         .assign-chart-tooltip .tt-empty {
@@ -2510,6 +2716,10 @@
             margin: 10px 0 12px;
         }
 
+        #balance .balance-grid {
+            margin-top: 0;
+        }
+
         .balance-item {
             border: 1px solid var(--line);
             border-radius: 9px;
@@ -2589,6 +2799,10 @@
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
 
+            .overview-board {
+                grid-template-columns: 1fr;
+            }
+
             .summary-strip {
                 grid-template-columns: 1fr;
             }
@@ -2604,6 +2818,10 @@
 
             .status-grid,
             .rx-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .overview-board {
                 grid-template-columns: 1fr;
             }
 
@@ -2656,14 +2874,17 @@
             <p class="side-subtitle">Operations Console</p>
             <ul class="side-nav" id="side-nav">
                 <li><a href="#overview" data-nav="overview" data-icon="dashboard">Overview</a></li>
-                <li><a href="#receivers" data-nav="receivers" data-icon="radio">Receiver Matrix</a></li>
-                <li><a href="#assignments" data-nav="assignments" data-icon="sliders">Receiver Statistics</a></li>
-                <li><a href="#faults" data-nav="faults" data-icon="alert">Fault Summary</a></li>
-                <li><a href="#messages" data-nav="messages" data-icon="messages">Decoded Messages</a></li>
-                <li><a href="#map" data-nav="map" data-icon="globe">Map</a></li>
+                <li data-overview-nav="receivers"><a href="#receivers" data-nav="receivers" data-icon="radio">Receiver
+                        Matrix</a></li>
+                <li data-overview-nav="assignments"><a href="#assignments" data-nav="assignments"
+                        data-icon="sliders">Receiver Statistics</a></li>
+                <li data-overview-nav="faults"><a href="#faults" data-nav="faults" data-icon="alert">Fault Summary</a>
+                </li>
+                <li data-overview-nav="messages"><a href="#messages" data-nav="messages" data-icon="messages">Decoded
+                        Messages</a></li>
+                <li data-overview-nav="map"><a href="#map" data-nav="map" data-icon="globe">Map</a></li>
                 <li><a href="#settings" data-nav="settings" data-icon="settings">Settings</a></li>
-                <li><a href="#system" data-nav="system" data-icon="server">System</a></li>
-                <li><a href="#automation" data-nav="automation" data-icon="spark">Automation</a></li>
+                <li><a href="#system" data-nav="system" data-icon="server">System Info</a></li>
             </ul>
             <div class="side-actions">
                 <a class="link-btn" href="/" data-icon="compass">Open Classic UI</a>
@@ -2761,6 +2982,8 @@
                     </div>
                 </article>
             </section>
+
+            <section class="overview-board view-hidden" id="overview-board" aria-live="polite"></section>
 
             <section class="layout" id="main-layout">
                 <article class="panel panel-collapsible" id="receivers" data-panel-card="receivers">
@@ -3090,21 +3313,44 @@
                             <div class="control-grid" style="margin-top: 0;">
                                 <div class="control-field" style="grid-column: 1 / -1;">
                                     Overview Topics
-                                    <div class="toggle-grid" id="cfg-overview-topics">
-                                        <label class="toggle-row">Status Strip <input id="cfg-overview-status"
-                                                type="checkbox" checked></label>
-                                        <label class="toggle-row">Receiver Matrix <input id="cfg-overview-receivers"
-                                                type="checkbox" checked></label>
-                                        <label class="toggle-row">Receiver Statistics <input
-                                                id="cfg-overview-assignments" type="checkbox" checked></label>
-                                        <label class="toggle-row">Fault Summary <input id="cfg-overview-faults"
-                                                type="checkbox" checked></label>
-                                        <label class="toggle-row">Assignment Balance <input id="cfg-overview-balance"
-                                                type="checkbox" checked></label>
-                                        <label class="toggle-row">Decoded Messages <input id="cfg-overview-messages"
-                                                type="checkbox" checked></label>
-                                        <label class="toggle-row">Map <input id="cfg-overview-map" type="checkbox"
-                                                checked></label>
+                                    <div class="overview-topic-list" id="cfg-overview-topics">
+                                        <div class="overview-topic-item" data-overview-key="status" draggable="true">
+                                            <span class="overview-topic-handle" aria-hidden="true">::</span>
+                                            <span class="overview-topic-label">Status Strip</span>
+                                            <input id="cfg-overview-status" type="checkbox" checked
+                                                aria-label="Show Status Strip in overview">
+                                        </div>
+                                        <div class="overview-topic-item" data-overview-key="receivers" draggable="true">
+                                            <span class="overview-topic-handle" aria-hidden="true">::</span>
+                                            <span class="overview-topic-label">Receiver Matrix</span>
+                                            <input id="cfg-overview-receivers" type="checkbox" checked
+                                                aria-label="Show Receiver Matrix in overview">
+                                        </div>
+                                        <div class="overview-topic-item" data-overview-key="assignments"
+                                            draggable="true">
+                                            <span class="overview-topic-handle" aria-hidden="true">::</span>
+                                            <span class="overview-topic-label">Receiver Statistics</span>
+                                            <input id="cfg-overview-assignments" type="checkbox" checked
+                                                aria-label="Show Receiver Statistics in overview">
+                                        </div>
+                                        <div class="overview-topic-item" data-overview-key="faults" draggable="true">
+                                            <span class="overview-topic-handle" aria-hidden="true">::</span>
+                                            <span class="overview-topic-label">Fault Summary</span>
+                                            <input id="cfg-overview-faults" type="checkbox" checked
+                                                aria-label="Show Fault Summary in overview">
+                                        </div>
+                                        <div class="overview-topic-item" data-overview-key="messages" draggable="true">
+                                            <span class="overview-topic-handle" aria-hidden="true">::</span>
+                                            <span class="overview-topic-label">Decoded Messages</span>
+                                            <input id="cfg-overview-messages" type="checkbox" checked
+                                                aria-label="Show Decoded Messages in overview">
+                                        </div>
+                                        <div class="overview-topic-item" data-overview-key="map" draggable="true">
+                                            <span class="overview-topic-handle" aria-hidden="true">::</span>
+                                            <span class="overview-topic-label">Map</span>
+                                            <input id="cfg-overview-map" type="checkbox" checked
+                                                aria-label="Show Map in overview">
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -3132,12 +3378,14 @@
                                     <input id="cfg-retune-pause-s" type="number" min="0" max="10" step="0.1"
                                         placeholder="0.5">
                                 </label>
-                                <label class="control-field">Fast Scan
-                                    <select id="cfg-fast-scan-enabled">
-                                        <option value="true">Enabled</option>
-                                        <option value="false">Disabled</option>
-                                    </select>
-                                </label>
+                                <div class="control-field control-field-toggle">
+                                    <button class="settings-toggle-btn" id="cfg-fast-scan-enabled" type="button"
+                                        aria-pressed="false" data-icon="bolt" data-toggle-on="ON" data-toggle-off="OFF"
+                                        aria-label="Fast Scan toggle">
+                                        <span class="settings-toggle-label">Fast Scan</span>
+                                        <span class="settings-toggle-state">OFF</span>
+                                    </button>
+                                </div>
                             </div>
                             <div class="control-actions" style="margin-top: 0;">
                                 <button class="action-btn" id="cfg-reload" type="button" data-icon="refresh">Reload
@@ -3149,11 +3397,149 @@
                             </div>
                         </section>
 
+                        <section class="settings-card" aria-labelledby="settings-automation-title">
+                            <div class="settings-card-title" id="settings-automation-title">Automation</div>
+                            <div class="settings-subcard-grid">
+                                <section class="settings-subcard" aria-labelledby="settings-automation-auto-scan-title">
+                                    <div class="settings-subcard-title" id="settings-automation-auto-scan-title">Auto
+                                        Scan Settings</div>
+                                    <div class="control-grid" style="margin-top: 0;">
+                                        <div class="control-field control-field-toggle">
+                                            <button class="settings-toggle-btn" id="auto-refresh-schedule" type="button"
+                                                aria-pressed="false" data-icon="refresh" data-toggle-on="ON"
+                                                data-toggle-off="OFF" aria-label="Auto-refresh schedule toggle">
+                                                <span class="settings-toggle-label">Auto-refresh schedule</span>
+                                                <span class="settings-toggle-state">OFF</span>
+                                            </button>
+                                        </div>
+                                        <div class="control-field control-field-toggle">
+                                            <button class="settings-toggle-btn" id="auto-scan-on-startup" type="button"
+                                                aria-pressed="false" data-icon="play" data-toggle-on="ON"
+                                                data-toggle-off="OFF" aria-label="Run band scan on startup toggle">
+                                                <span class="settings-toggle-label">Run band scan on startup</span>
+                                                <span class="settings-toggle-state">OFF</span>
+                                            </button>
+                                        </div>
+                                        <div class="control-field control-field-toggle">
+                                            <button class="settings-toggle-btn" id="auto-scan-on-block" type="button"
+                                                aria-pressed="false" data-icon="rotate" data-toggle-on="ON"
+                                                data-toggle-off="OFF" aria-label="Run band scan on block change toggle">
+                                                <span class="settings-toggle-label">Run band scan on block change</span>
+                                                <span class="settings-toggle-state">OFF</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </section>
+                                <section class="settings-subcard" aria-labelledby="settings-automation-wspr-title">
+                                    <div class="settings-subcard-title" id="settings-automation-wspr-title">WSPR
+                                        Settings</div>
+                                    <div class="control-grid" style="margin-top: 0;">
+                                        <div class="control-field control-field-toggle">
+                                            <button class="settings-toggle-btn" id="auto-scan-wspr" type="button"
+                                                aria-pressed="false" data-icon="radio" data-toggle-on="ON"
+                                                data-toggle-off="OFF" aria-label="Run WSPR band scan toggle">
+                                                <span class="settings-toggle-label">Run WSPR band scan</span>
+                                                <span class="settings-toggle-state">OFF</span>
+                                            </button>
+                                        </div>
+                                        <label class="control-field">Band hop duration (sec)
+                                            <input id="auto-band-hop-seconds" type="number" min="10" max="900" step="1"
+                                                placeholder="105">
+                                        </label>
+                                        <label class="control-field">WSPR start band
+                                            <select id="auto-wspr-start-band">
+                                                <option value="10m">10m</option>
+                                                <option value="12m">12m</option>
+                                                <option value="15m">15m</option>
+                                                <option value="17m">17m</option>
+                                                <option value="20m">20m</option>
+                                                <option value="30m">30m</option>
+                                                <option value="40m">40m</option>
+                                                <option value="60m">60m</option>
+                                                <option value="80m">80m</option>
+                                                <option value="160m">160m</option>
+                                            </select>
+                                        </label>
+                                    </div>
+                                </section>
+                                <section class="settings-subcard" aria-labelledby="settings-automation-ssb-title">
+                                    <div class="settings-subcard-title" id="settings-automation-ssb-title">SSB
+                                        Scan Settings</div>
+                                    <div class="control-grid" style="margin-top: 0;">
+                                        <div class="control-field control-field-toggle">
+                                            <button class="settings-toggle-btn" id="auto-ssb-enabled" type="button"
+                                                aria-pressed="false" data-icon="mic" data-toggle-on="ON"
+                                                data-toggle-off="OFF" aria-label="SSB scan enabled toggle">
+                                                <span class="settings-toggle-label">SSB scan enabled</span>
+                                                <span class="settings-toggle-state">OFF</span>
+                                            </button>
+                                        </div>
+                                        <label class="control-field">Sideband
+                                            <select id="auto-ssb-sideband">
+                                                <option value="USB">USB</option>
+                                                <option value="LSB">LSB</option>
+                                            </select>
+                                        </label>
+                                        <label class="control-field">Threshold dB
+                                            <input id="auto-ssb-threshold-db" type="number" min="1" max="60" step="0.1"
+                                                placeholder="20">
+                                        </label>
+                                        <div class="control-field control-field-toggle">
+                                            <button class="settings-toggle-btn" id="auto-ssb-adaptive-threshold"
+                                                type="button" aria-pressed="false" data-icon="trend" data-toggle-on="ON"
+                                                data-toggle-off="OFF" aria-label="Adaptive threshold toggle">
+                                                <span class="settings-toggle-label">Adaptive threshold</span>
+                                                <span class="settings-toggle-state">OFF</span>
+                                            </button>
+                                        </div>
+                                        <div class="control-field control-field-toggle">
+                                            <button class="settings-toggle-btn" id="auto-ssb-use-kiwi-snr" type="button"
+                                                aria-pressed="false" data-icon="gauge" data-toggle-on="ON"
+                                                data-toggle-off="OFF" aria-label="Use Kiwi SNR toggle">
+                                                <span class="settings-toggle-label">Use Kiwi SNR</span>
+                                                <span class="settings-toggle-state">OFF</span>
+                                            </button>
+                                        </div>
+                                        <label class="control-field">Wait (sec)
+                                            <input id="auto-ssb-wait-s" type="number" min="0.1" max="10" step="0.1"
+                                                placeholder="1">
+                                        </label>
+                                        <label class="control-field">Dwell (sec)
+                                            <input id="auto-ssb-dwell-s" type="number" min="1" max="60" step="0.1"
+                                                placeholder="6">
+                                        </label>
+                                        <label class="control-field">Tail (sec)
+                                            <input id="auto-ssb-tail-s" type="number" min="0.1" max="10" step="0.1"
+                                                placeholder="1">
+                                        </label>
+                                        <label class="control-field">Step strategy
+                                            <select id="auto-ssb-step-strategy">
+                                                <option value="adaptive">Adaptive</option>
+                                                <option value="fixed">Fixed</option>
+                                            </select>
+                                        </label>
+                                        <label class="control-field" id="auto-ssb-step-khz-field">Fixed step size (kHz)
+                                            <input id="auto-ssb-step-khz" type="number" min="0.1" max="20" step="0.1"
+                                                placeholder="10">
+                                        </label>
+                                    </div>
+                                </section>
+                            </div>
+                            <div class="control-actions" style="margin-top: 0;">
+                                <span class="autosave-badge">Autosave On</span>
+                                <button class="action-btn" id="auto-reload" type="button" data-icon="refresh">Reload
+                                    Automation</button>
+                                <button class="action-btn" id="auto-apply-now" type="button" data-icon="spark">Apply
+                                    Auto-Set Now</button>
+                            </div>
+                            <div class="control-status" id="auto-status">Automation: idle</div>
+                        </section>
+
                         <div class="control-status" id="cfg-status">Settings: idle</div>
                     </article>
                     <article class="panel" id="system">
                         <div class="panel-hdr">
-                            <h2 data-icon="server">System</h2>
+                            <h2 data-icon="server">System Info</h2>
                             <button class="action-btn-sm" id="system-refresh" type="button"
                                 data-icon="refresh">Refresh</button>
                         </div>
@@ -3216,101 +3602,7 @@
                                 </div>
                             </section>
                         </div>
-                        <div class="control-status" id="system-status">System: idle</div>
-                    </article>
-                    <article class="panel" id="automation">
-                        <h2 data-icon="spark">Automation</h2>
-                        <div class="control-grid">
-                            <label class="control-field">Auto Scan on Block
-                                <select id="auto-scan-on-block">
-                                    <option value="true">Enabled</option>
-                                    <option value="false">Disabled</option>
-                                </select>
-                            </label>
-                            <label class="control-field">Auto Refresh Schedule
-                                <select id="auto-refresh-schedule">
-                                    <option value="true">Enabled</option>
-                                    <option value="false">Disabled</option>
-                                </select>
-                            </label>
-                            <label class="control-field">WSPR Auto Scan
-                                <select id="auto-scan-wspr">
-                                    <option value="true">Enabled</option>
-                                    <option value="false">Disabled</option>
-                                </select>
-                            </label>
-                            <label class="control-field">Auto Scan on Startup
-                                <select id="auto-scan-on-startup">
-                                    <option value="true">Enabled</option>
-                                    <option value="false">Disabled</option>
-                                </select>
-                            </label>
-                            <label class="control-field">Alerts Enabled
-                                <select id="auto-alerts-enabled">
-                                    <option value="true">Enabled</option>
-                                    <option value="false">Disabled</option>
-                                </select>
-                            </label>
-                            <label class="control-field">Band Hop Seconds
-                                <input id="auto-band-hop-seconds" type="number" min="10" max="900" step="1"
-                                    placeholder="105">
-                            </label>
-                            <label class="control-field">WSPR Start Band
-                                <input id="auto-wspr-start-band" type="text" placeholder="10m">
-                            </label>
-                            <label class="control-field">Alert Threshold
-                                <input id="auto-alert-threshold" type="number" min="1" max="100" step="1"
-                                    placeholder="12">
-                            </label>
-                            <label class="control-field">SSB Enabled
-                                <select id="auto-ssb-enabled">
-                                    <option value="true">Enabled</option>
-                                    <option value="false">Disabled</option>
-                                </select>
-                            </label>
-                            <label class="control-field">SSB Threshold dB
-                                <input id="auto-ssb-threshold-db" type="number" min="1" max="60" step="0.1"
-                                    placeholder="20">
-                            </label>
-                            <label class="control-field">Quiet Start
-                                <input id="auto-quiet-start" type="text" placeholder="22:00">
-                            </label>
-                            <label class="control-field">Quiet End
-                                <input id="auto-quiet-end" type="text" placeholder="06:00">
-                            </label>
-                            <label class="control-field">UI Theme Mode
-                                <select id="auto-ui-theme-mode">
-                                    <option value="auto">Auto</option>
-                                    <option value="light">Light</option>
-                                    <option value="dark">Dark</option>
-                                </select>
-                            </label>
-                            <label class="control-field">UI Density
-                                <select id="auto-ui-density">
-                                    <option value="compact">Compact</option>
-                                    <option value="normal">Normal</option>
-                                    <option value="comfortable">Comfortable</option>
-                                </select>
-                            </label>
-                            <label class="control-field">Apply Mode
-                                <select id="auto-apply-mode">
-                                    <option value="ft8" selected>FT8</option>
-                                    <option value="phone">Phone</option>
-                                </select>
-                            </label>
-                            <label class="control-field">Selected Bands (comma)
-                                <input id="auto-selected-bands" type="text"
-                                    placeholder="10m,12m,15m,17m,20m,30m,40m,60m,80m,160m">
-                            </label>
-                        </div>
-                        <div class="control-actions">
-                            <span class="autosave-badge">Autosave On</span>
-                            <button class="action-btn" id="auto-reload" type="button" data-icon="refresh">Reload
-                                Automation</button>
-                            <button class="action-btn" id="auto-apply-now" type="button" data-icon="spark">Apply
-                                Auto-Set Now</button>
-                        </div>
-                        <div class="control-status" id="auto-status">Automation: idle</div>
+                        <div class="control-status" id="system-status">System Info: idle</div>
                     </article>
                 </div>
             </section>
@@ -3379,6 +3671,7 @@
         let automationAutosaveTimer = null;
         let configSaveInFlight = false;
         let automationSaveInFlight = false;
+        let latestAutomationSettings = {};
         let pendingConfigAutosave = false;
         let pendingAutomationAutosave = false;
         let lastReceiverGridSignature = "";
@@ -3389,9 +3682,9 @@
             receivers: true,
             assignments: true,
             faults: true,
-            balance: true,
             messages: true,
             map: true,
+            order: ["status", "receivers", "assignments", "faults", "messages", "map"],
         };
 
         const REFRESH_INTERVAL_KEY = "kiwiscan.pro.refreshIntervalMs";
@@ -3415,7 +3708,15 @@
         const OVERVIEW_TOPICS_STORAGE_KEY = "kiwiscan.pro.overviewTopics";
         const RECEIVER_SORT_STORAGE_KEY = "kiwiscan.pro.receiverSortMode.v2";
         const DECODE_EXTRA_FILTERS_STORAGE_KEY = "kiwiscan.pro.decodeExtraFilters.v1";
-        const OVERVIEW_TOPIC_KEYS = ["status", "receivers", "assignments", "faults", "balance", "messages", "map"];
+        const OVERVIEW_TOPIC_KEYS = ["status", "receivers", "assignments", "faults", "messages", "map"];
+        const OVERVIEW_TOPIC_METADATA = Object.freeze({
+            status: { sectionId: "status-strip", fullWidth: true },
+            receivers: { sectionId: "receivers", fullWidth: true },
+            assignments: { sectionId: "assignments", fullWidth: true },
+            faults: { sectionId: "faults", fullWidth: false },
+            messages: { sectionId: "messages", fullWidth: true },
+            map: { sectionId: "map", fullWidth: true },
+        });
         const GRAPH_WINDOW_MIN_MS = 5 * 60 * 1000;
         const GRAPH_HISTORY_MAX_SAMPLES = 360;
         const RECEIVER_MATRIX_AGE_REFRESH_MS = 15000;
@@ -3440,6 +3741,12 @@
         const MAP_GLOBE_DAY_IMAGE_URL = "https://unpkg.com/three-globe/example/img/earth-day.jpg";
         const MAP_GLOBE_NIGHT_IMAGE_URL = "https://unpkg.com/three-globe/example/img/earth-night.jpg";
         const MAP_GLOBE_DEFAULT_ALTITUDE = 2.35;
+        const CONTINENTAL_US_BOUNDS = Object.freeze({
+            minLat: 24.396308,
+            maxLat: 49.384358,
+            minLon: -124.848974,
+            maxLon: -66.885444,
+        });
         const DECODE_SORT_DEFAULT = { key: "time", direction: "desc" };
         let recentDecodeItems = [];
         let decodeSelectedModes = new Set(MAP_MODE_FILTERS);
@@ -3461,6 +3768,8 @@
         let mapHasAutoFit = false;
         let mapViewMode = readStoredMapViewMode();
         let globeResizeBound = false;
+        let draggedOverviewTopicEl = null;
+        let overviewTopicPlaceholders = null;
 
         function byId(id) {
             return document.getElementById(id);
@@ -4184,12 +4493,26 @@
         function setSelectBool(id, value) {
             const el = byId(id);
             if (!el) return;
+            if (el.tagName === "BUTTON") {
+                const enabled = !!value;
+                el.setAttribute("aria-pressed", enabled ? "true" : "false");
+                const stateEl = el.querySelector(".settings-toggle-state");
+                if (stateEl) {
+                    stateEl.textContent = enabled
+                        ? String(el.dataset.toggleOn || "ON")
+                        : String(el.dataset.toggleOff || "OFF");
+                }
+                return;
+            }
             el.value = value ? "true" : "false";
         }
 
         function readSelectBool(id, fallback = false) {
             const el = byId(id);
             if (!el) return fallback;
+            if (el.tagName === "BUTTON") {
+                return el.getAttribute("aria-pressed") === "true";
+            }
             return String(el.value || "false") === "true";
         }
 
@@ -4310,10 +4633,76 @@
                 receivers: true,
                 assignments: true,
                 faults: true,
-                balance: true,
                 messages: true,
                 map: true,
+                order: [...OVERVIEW_TOPIC_KEYS],
             };
+        }
+
+        function normalizeOverviewTopicOrder(rawOrder, fallbackOrder = null) {
+            const baseOrder = Array.isArray(fallbackOrder) ? fallbackOrder : OVERVIEW_TOPIC_KEYS;
+            const source = Array.isArray(rawOrder) ? rawOrder : [];
+            const seen = new Set();
+            const next = [];
+            for (const key of [...source, ...baseOrder, ...OVERVIEW_TOPIC_KEYS]) {
+                if (!OVERVIEW_TOPIC_KEYS.includes(key) || seen.has(key)) continue;
+                seen.add(key);
+                next.push(key);
+            }
+            return next;
+        }
+
+        function getOverviewTopicSectionElement(key) {
+            const meta = OVERVIEW_TOPIC_METADATA[key];
+            return meta ? byId(meta.sectionId) : null;
+        }
+
+        function captureOverviewTopicPlaceholders() {
+            if (overviewTopicPlaceholders) return;
+            overviewTopicPlaceholders = {};
+            for (const key of OVERVIEW_TOPIC_KEYS) {
+                const el = getOverviewTopicSectionElement(key);
+                if (!el || !el.parentNode) continue;
+                const marker = document.createComment(`overview-topic-${key}`);
+                el.parentNode.insertBefore(marker, el);
+                overviewTopicPlaceholders[key] = marker;
+            }
+        }
+
+        function restoreOverviewTopicLayout() {
+            captureOverviewTopicPlaceholders();
+            for (const key of OVERVIEW_TOPIC_KEYS) {
+                const el = getOverviewTopicSectionElement(key);
+                const marker = overviewTopicPlaceholders && overviewTopicPlaceholders[key];
+                if (!el || !marker || !marker.parentNode) continue;
+                marker.parentNode.insertBefore(el, marker.nextSibling);
+                el.removeAttribute("data-overview-span");
+            }
+        }
+
+        function renderOverviewBoard() {
+            const board = byId("overview-board");
+            if (!board) return;
+            captureOverviewTopicPlaceholders();
+            const order = normalizeOverviewTopicOrder(overviewTopicPrefs.order, OVERVIEW_TOPIC_KEYS);
+            for (const key of order) {
+                const el = getOverviewTopicSectionElement(key);
+                if (!el) continue;
+                const meta = OVERVIEW_TOPIC_METADATA[key] || {};
+                if (meta.fullWidth) el.setAttribute("data-overview-span", "full");
+                else el.removeAttribute("data-overview-span");
+                board.appendChild(el);
+            }
+        }
+
+        function renderOverviewTopicConfigOrder(order) {
+            const container = byId("cfg-overview-topics");
+            if (!container) return;
+            const normalizedOrder = normalizeOverviewTopicOrder(order, overviewTopicPrefs.order);
+            normalizedOrder.forEach((key) => {
+                const item = container.querySelector(`[data-overview-key="${key}"]`);
+                if (item) container.appendChild(item);
+            });
         }
 
         function normalizeGridSquare(value) {
@@ -4363,14 +4752,23 @@
             return { lat, lon };
         }
 
+        function isLatLonWithinContinentalUs(lat, lon) {
+            if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) return false;
+            return Number(lat) >= CONTINENTAL_US_BOUNDS.minLat
+                && Number(lat) <= CONTINENTAL_US_BOUNDS.maxLat
+                && Number(lon) >= CONTINENTAL_US_BOUNDS.minLon
+                && Number(lon) <= CONTINENTAL_US_BOUNDS.maxLon;
+        }
+
+        function isDxDecodeGrid(grid) {
+            const pos = maidenheadToLatLon(grid);
+            if (!pos) return false;
+            return !isLatLonWithinContinentalUs(pos.lat, pos.lon);
+        }
+
         function isCqDecodeMessage(message) {
             const text = String(message || "").toUpperCase();
             return /\bCQ\b/.test(text) || /\bCQDX\b/.test(text);
-        }
-
-        function isDxDecodeMessage(message) {
-            const text = String(message || "").toUpperCase();
-            return /\bDX\b/.test(text) || /\bCQDX\b/.test(text);
         }
 
         function shouldKeepDecodeItem(data) {
@@ -4486,7 +4884,7 @@
             const filtered = (Array.isArray(items) ? items : []).filter((item) => {
                 if (!decodeSelectedModes.has(String(item && item.mode || "").toUpperCase())) return false;
                 if (decodeCqOnly && !isCqDecodeMessage(item && item.message)) return false;
-                if (decodeDxOnly && !isDxDecodeMessage(item && item.message)) return false;
+                if (decodeDxOnly && !isDxDecodeGrid(item && item.grid)) return false;
                 return true;
             });
             const sorted = sortRecentDecodeItems(filtered);
@@ -4591,7 +4989,7 @@
             const filtered = recentDecodeItems.filter((item) => {
                 if (!decodeSelectedModes.has(String(item && item.mode || "").toUpperCase())) return false;
                 if (decodeCqOnly && !isCqDecodeMessage(item && item.message)) return false;
-                if (decodeDxOnly && !isDxDecodeMessage(item && item.message)) return false;
+                if (decodeDxOnly && !isDxDecodeGrid(item && item.grid)) return false;
                 return true;
             });
             const latestItem = filtered.reduce((latest, item) => {
@@ -5171,14 +5569,16 @@
         }
 
         function normalizeOverviewTopicPrefs(raw, fallback = null) {
-            const base = fallback && typeof fallback === "object" ? fallback : defaultOverviewTopicPrefs();
-            const next = { ...base };
+            const defaults = defaultOverviewTopicPrefs();
+            const base = fallback && typeof fallback === "object" ? fallback : defaults;
+            const next = { ...defaults, ...base };
             const src = raw && typeof raw === "object" ? raw : {};
             for (const key of OVERVIEW_TOPIC_KEYS) {
                 if (Object.prototype.hasOwnProperty.call(src, key)) {
                     next[key] = !!src[key];
                 }
             }
+            next.order = normalizeOverviewTopicOrder(src.order, next.order);
             return next;
         }
 
@@ -5209,11 +5609,21 @@
                 const el = byId(`cfg-overview-${key}`);
                 if (el) next[key] = !!el.checked;
             }
+            const container = byId("cfg-overview-topics");
+            if (container) {
+                next.order = normalizeOverviewTopicOrder(
+                    Array.from(container.querySelectorAll("[data-overview-key]"))
+                        .map((item) => String(item.dataset.overviewKey || "").trim())
+                        .filter(Boolean),
+                    overviewTopicPrefs.order,
+                );
+            }
             return next;
         }
 
         function applyOverviewTopicPrefs(prefs) {
             overviewTopicPrefs = normalizeOverviewTopicPrefs(prefs, overviewTopicPrefs);
+            renderOverviewTopicConfigOrder(overviewTopicPrefs.order);
             for (const key of OVERVIEW_TOPIC_KEYS) {
                 const el = byId(`cfg-overview-${key}`);
                 if (el) el.checked = !!overviewTopicPrefs[key];
@@ -5226,6 +5636,48 @@
 
         function previewOverviewTopicsFromConfig() {
             applyOverviewTopicPrefs(collectOverviewTopicPrefsFromConfig());
+        }
+
+        function getOverviewTopicInsertAfter(container, clientY) {
+            const items = Array.from(container.querySelectorAll(".overview-topic-item:not(.is-dragging)"));
+            let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
+            items.forEach((item) => {
+                const rect = item.getBoundingClientRect();
+                const offset = clientY - rect.top - (rect.height / 2);
+                if (offset < 0 && offset > closest.offset) {
+                    closest = { offset, element: item };
+                }
+            });
+            return closest.element;
+        }
+
+        function initOverviewTopicSortControls() {
+            const container = byId("cfg-overview-topics");
+            if (!container || container.dataset.bound === "1") return;
+            container.dataset.bound = "1";
+
+            container.addEventListener("dragover", (event) => {
+                if (!draggedOverviewTopicEl) return;
+                event.preventDefault();
+                const after = getOverviewTopicInsertAfter(container, event.clientY);
+                if (after) container.insertBefore(draggedOverviewTopicEl, after);
+                else container.appendChild(draggedOverviewTopicEl);
+            });
+
+            container.querySelectorAll(".overview-topic-item[data-overview-key]").forEach((item) => {
+                item.addEventListener("dragstart", () => {
+                    draggedOverviewTopicEl = item;
+                    item.classList.add("is-dragging");
+                });
+                item.addEventListener("dragend", () => {
+                    item.classList.remove("is-dragging");
+                    if (draggedOverviewTopicEl !== item) return;
+                    draggedOverviewTopicEl = null;
+                    previewOverviewTopicsFromConfig();
+                    scheduleConfigAutosave();
+                    scheduleAutomationAutosave();
+                });
+            });
         }
 
         function getThemeBrowserHour() {
@@ -5396,6 +5848,12 @@
         function setAutomationStatus(text) {
             const el = byId("auto-status");
             if (el) el.textContent = `Automation: ${text}`;
+        }
+
+        function updateAutomationSsbStepVisibility(strategyValue) {
+            const el = byId("auto-ssb-step-khz-field");
+            if (!el) return;
+            el.style.display = String(strategyValue || "").toLowerCase() === "fixed" ? "" : "none";
         }
 
         function setKiwiNoticeVisible(visible, detailText = "Running auto Discover.") {
@@ -5807,6 +6265,7 @@
             setAutomationStatus("loading...");
             try {
                 const a = await getJson("/automation/settings");
+                latestAutomationSettings = a && typeof a === "object" ? { ...a } : {};
                 const nextThemeMode = normalizeUiThemeMode(a.uiThemeMode, UI_THEME_DEFAULT_MODE);
                 const nextDensity = normalizeUiDensityMode(a.uiDensity, UI_DENSITY_DEFAULT_MODE);
                 const nextNightHour = Number.isFinite(Number(a.uiThemeNightHour))
@@ -5822,16 +6281,19 @@
                 setSelectBool("auto-refresh-schedule", !!a.autoRefreshSchedule);
                 setSelectBool("auto-scan-wspr", !!a.autoScanWspr);
                 setSelectBool("auto-scan-on-startup", !!a.autoScanOnStartup);
-                setSelectBool("auto-alerts-enabled", !!a.alertsEnabled);
                 setSelectBool("auto-ssb-enabled", !!a.ssbEnabled);
+                setSelectBool("auto-ssb-adaptive-threshold", a.ssbAdaptiveThreshold !== false);
+                setSelectBool("auto-ssb-use-kiwi-snr", a.ssbUseKiwiSnr !== false);
                 byId("auto-band-hop-seconds").value = Number.isFinite(Number(a.bandHopSeconds)) ? String(Number(a.bandHopSeconds)) : "";
                 byId("auto-wspr-start-band").value = safeText(a.wsprStartBand, "");
-                byId("auto-alert-threshold").value = Number.isFinite(Number(a.alertThreshold)) ? String(Number(a.alertThreshold)) : "";
+                byId("auto-ssb-sideband").value = safeText(a.ssbSideband, "USB").toUpperCase();
                 byId("auto-ssb-threshold-db").value = Number.isFinite(Number(a.ssbThresholdDb)) ? String(Number(a.ssbThresholdDb)) : "";
-                byId("auto-quiet-start").value = safeText(a.quietStart, "");
-                byId("auto-quiet-end").value = safeText(a.quietEnd, "");
-                byId("auto-ui-theme-mode").value = nextThemeMode;
-                byId("auto-ui-density").value = nextDensity;
+                byId("auto-ssb-wait-s").value = Number.isFinite(Number(a.ssbWaitS)) ? String(Number(a.ssbWaitS)) : "";
+                byId("auto-ssb-dwell-s").value = Number.isFinite(Number(a.ssbDwellS)) ? String(Number(a.ssbDwellS)) : "";
+                byId("auto-ssb-tail-s").value = Number.isFinite(Number(a.ssbTailS)) ? String(Number(a.ssbTailS)) : "";
+                byId("auto-ssb-step-strategy").value = safeText(a.ssbStepStrategy, "adaptive").toLowerCase();
+                byId("auto-ssb-step-khz").value = Number.isFinite(Number(a.ssbStepKHz)) ? String(Number(a.ssbStepKHz)) : "";
+                updateAutomationSsbStepVisibility(byId("auto-ssb-step-strategy").value);
                 applyAndPersistUiPreferences(nextThemeMode, nextDensity, nextNightHour, nextHourOffset);
                 applyOverviewTopicPrefs(nextOverviewTopics);
                 setAutomationStatus("loaded");
@@ -5843,27 +6305,36 @@
         async function saveAutomationSection(options = {}) {
             const autosave = !!options.autosave;
             setAutomationStatus(autosave ? "autosaving..." : "saving...");
+            const snapshot = latestAutomationSettings && typeof latestAutomationSettings === "object"
+                ? latestAutomationSettings
+                : {};
             const payload = {
+                ...snapshot,
                 autoScanOnBlock: readSelectBool("auto-scan-on-block", false),
                 autoRefreshSchedule: readSelectBool("auto-refresh-schedule", true),
                 autoScanWspr: readSelectBool("auto-scan-wspr", false),
                 autoScanOnStartup: readSelectBool("auto-scan-on-startup", false),
-                alertsEnabled: readSelectBool("auto-alerts-enabled", true),
                 bandHopSeconds: readNumberInput("auto-band-hop-seconds", 105),
                 wsprStartBand: readTextInput("auto-wspr-start-band", "10m"),
-                alertThreshold: readNumberInput("auto-alert-threshold", 12),
                 ssbEnabled: readSelectBool("auto-ssb-enabled", true),
+                ssbSideband: readTextInput("auto-ssb-sideband", "USB").toUpperCase(),
                 ssbThresholdDb: readNumberInput("auto-ssb-threshold-db", 20),
-                quietStart: readTextInput("auto-quiet-start", "22:00"),
-                quietEnd: readTextInput("auto-quiet-end", "06:00"),
-                uiThemeMode: normalizeUiThemeMode(readTextInput("auto-ui-theme-mode", "auto"), "auto"),
+                ssbAdaptiveThreshold: readSelectBool("auto-ssb-adaptive-threshold", true),
+                ssbUseKiwiSnr: readSelectBool("auto-ssb-use-kiwi-snr", true),
+                ssbWaitS: readNumberInput("auto-ssb-wait-s", 1),
+                ssbDwellS: readNumberInput("auto-ssb-dwell-s", 6),
+                ssbTailS: readNumberInput("auto-ssb-tail-s", 1),
+                ssbStepStrategy: readTextInput("auto-ssb-step-strategy", "adaptive").toLowerCase(),
+                ssbStepKHz: readNumberInput("auto-ssb-step-khz", 10),
+                uiThemeMode: normalizeUiThemeMode(snapshot.uiThemeMode, currentUiThemeMode || "auto"),
                 uiThemeNightHour: authoritativeUiThemeNightHour,
                 uiThemeHourOffset: authoritativeUiThemeHourOffset,
-                uiDensity: readTextInput("auto-ui-density", "normal"),
+                uiDensity: normalizeUiDensityMode(snapshot.uiDensity, currentUiDensity || "normal"),
                 overviewTopics: overviewTopicPrefs,
             };
             try {
                 await postJson("/automation/settings", payload);
+                latestAutomationSettings = { ...payload };
                 authoritativeUiThemeNightHour = clampUiThemeHour(payload.uiThemeNightHour);
                 authoritativeUiThemeHourOffset = clampUiThemeHourOffset(payload.uiThemeHourOffset);
                 applyAndPersistUiPreferences(payload.uiThemeMode, payload.uiDensity, authoritativeUiThemeNightHour, authoritativeUiThemeHourOffset);
@@ -5895,8 +6366,9 @@
         }
 
         function parseSelectedBands() {
+            if (!byId("auto-selected-bands")) return [...MAP_BAND_OPTIONS];
             const text = readTextInput("auto-selected-bands", "");
-            if (!text) return [];
+            if (!text) return [...MAP_BAND_OPTIONS];
             const out = [];
             for (const raw of text.split(",")) {
                 const band = String(raw || "").trim();
@@ -5931,7 +6403,9 @@
         async function applyAutomationNow() {
             setAutomationStatus("applying auto-set...");
             try {
-                const mode = readTextInput("auto-apply-mode", "ft8").toLowerCase() || "ft8";
+                const mode = byId("auto-apply-mode")
+                    ? (readTextInput("auto-apply-mode", "ft8").toLowerCase() || "ft8")
+                    : "ft8";
                 const sched = await getJson(`/schedule?mode=${encodeURIComponent(mode)}`);
                 const block = safeText(sched.block, "");
                 if (!block) throw new Error("missing schedule block");
@@ -5975,14 +6449,14 @@
             const cfgUiThemeNightHour = byId("cfg-ui-theme-night-hour");
             const cfgUiThemeHourOffset = byId("cfg-ui-theme-hour-offset");
             const cfgUiDensity = byId("cfg-ui-density");
+            initOverviewTopicSortControls();
             const cfgOverviewTopicInputs = OVERVIEW_TOPIC_KEYS
                 .map((key) => byId(`cfg-overview-${key}`))
                 .filter(Boolean);
             const autoReload = byId("auto-reload");
             const autoSave = byId("auto-save");
             const autoApplyNow = byId("auto-apply-now");
-            const autoUiThemeMode = byId("auto-ui-theme-mode");
-            const autoUiDensity = byId("auto-ui-density");
+            const autoSsbStepStrategy = byId("auto-ssb-step-strategy");
             let discoverFeedbackTimer = null;
             const configAutosaveIds = [
                 "cfg-host",
@@ -6005,16 +6479,18 @@
                 "auto-refresh-schedule",
                 "auto-scan-wspr",
                 "auto-scan-on-startup",
-                "auto-alerts-enabled",
                 "auto-band-hop-seconds",
                 "auto-wspr-start-band",
-                "auto-alert-threshold",
                 "auto-ssb-enabled",
+                "auto-ssb-sideband",
                 "auto-ssb-threshold-db",
-                "auto-quiet-start",
-                "auto-quiet-end",
-                "auto-ui-theme-mode",
-                "auto-ui-density",
+                "auto-ssb-adaptive-threshold",
+                "auto-ssb-use-kiwi-snr",
+                "auto-ssb-wait-s",
+                "auto-ssb-dwell-s",
+                "auto-ssb-tail-s",
+                "auto-ssb-step-strategy",
+                "auto-ssb-step-khz",
             ];
 
             const setConfigActionState = (button, state = "idle") => {
@@ -6083,13 +6559,25 @@
             if (autoApplyNow) autoApplyNow.addEventListener("click", () => { applyAutomationNow(); });
             const correctAssignmentsBtn = byId("correct-assignments");
             if (correctAssignmentsBtn) correctAssignmentsBtn.addEventListener("click", () => { forceCorrectAssignments(); });
-            if (autoUiThemeMode) autoUiThemeMode.addEventListener("change", previewUiPreferencesFromAutomation);
-            if (autoUiDensity) autoUiDensity.addEventListener("change", previewUiPreferencesFromAutomation);
+            if (autoSsbStepStrategy) {
+                autoSsbStepStrategy.addEventListener("change", () => {
+                    updateAutomationSsbStepVisibility(autoSsbStepStrategy.value);
+                });
+                updateAutomationSsbStepVisibility(autoSsbStepStrategy.value);
+            }
 
             configAutosaveIds.forEach((id) => {
                 const el = byId(id);
                 if (!el) return;
                 const queue = () => { scheduleConfigAutosave(); };
+                if (el.tagName === "BUTTON") {
+                    el.addEventListener("click", () => {
+                        const next = el.getAttribute("aria-pressed") !== "true";
+                        setSelectBool(id, next);
+                        queue();
+                    });
+                    return;
+                }
                 el.addEventListener("change", queue);
                 if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
                     el.addEventListener("input", queue);
@@ -6100,6 +6588,14 @@
                 const el = byId(id);
                 if (!el) return;
                 const queue = () => { scheduleAutomationAutosave(); };
+                if (el.tagName === "BUTTON") {
+                    el.addEventListener("click", () => {
+                        const next = el.getAttribute("aria-pressed") !== "true";
+                        setSelectBool(id, next);
+                        queue();
+                    });
+                    return;
+                }
                 el.addEventListener("change", queue);
                 if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
                     el.addEventListener("input", queue);
@@ -6152,6 +6648,7 @@
                         if (!bandBreakdown[band]) bandBreakdown[band] = {};
                         bandBreakdown[band][key] = Number(bandBreakdown[band][key] || 0) + 1;
                     }
+
                 }
 
                 const knownBands = new Set(Object.keys(bandActivityHistory));
@@ -6545,8 +7042,17 @@
             };
 
             const showTooltip = (title, sub, rows, anchorX, anchorY) => {
+                const renderRow = (row) => {
+                    const fallbackLeft = String(row && row.left || "");
+                    const fallbackParts = fallbackLeft ? fallbackLeft.split("|").map((part) => part.trim()).filter(Boolean) : [];
+                    const rx = row && row.rx ? String(row.rx) : (fallbackParts[0] || "--");
+                    const meta = row && row.meta ? String(row.meta) : fallbackParts.slice(1, 3).join(" ");
+                    const snr = row && row.snr ? String(row.snr) : (fallbackParts[3] || "");
+                    const right = row && row.right ? String(row.right) : "0";
+                    return `<div class="tt-row"><div class="tt-main"><span class="tt-rx">${escapeHtml(rx)}</span>${meta ? `<span class="tt-meta">${escapeHtml(meta)}</span>` : ""}${snr ? `<span class="tt-snr">${escapeHtml(snr)}</span>` : ""}</div><strong class="tt-count">${escapeHtml(right)}</strong></div>`;
+                };
                 const body = rows.length
-                    ? `<div class="tt-body">${rows.map((row) => `<div class="tt-row"><span>${escapeHtml(row.left)}</span><strong>${escapeHtml(row.right)}</strong></div>`).join("")}</div>`
+                    ? `<div class="tt-body">${rows.map((row) => renderRow(row)).join("")}</div>`
                     : `<div class="tt-empty">No decode details in this sample.</div>`;
                 tooltip.innerHTML = `<div class="tt-title">${escapeHtml(title)}</div>${sub ? `<div class="tt-sub">${escapeHtml(sub)}</div>` : ""}${body}`;
                 tooltip.classList.add("show");
@@ -6641,7 +7147,9 @@
                             const decodeCount = Math.max(0, Number(v) || 0);
                             const snrText = snrAvgTextForRx(rx);
                             rows.push({
-                                left: `${rx} | ${seriesEntry.band} | ${mode} | ${snrText}`,
+                                rx,
+                                meta: `${seriesEntry.band} ${mode}`,
+                                snr: snrText,
                                 right: `${decodeCount} dec`,
                                 count: decodeCount,
                             });
@@ -6654,19 +7162,23 @@
                     if (assigned.length) {
                         for (const item of assigned) {
                             rows.push({
-                                left: `${safeText(item.rxLabel, "RX?")} | ${closestSeries.band} | ${String(safeText(item.mode, "?")).toUpperCase()} | ${safeText(item.snrText, "--")}`,
+                                rx: safeText(item.rxLabel, "RX?"),
+                                meta: `${closestSeries.band} ${String(safeText(item.mode, "?")).toUpperCase()}`,
+                                snr: safeText(item.snrText, "--"),
                                 right: `${count} dec`,
                                 count,
                             });
                         }
                     } else {
-                        rows.push({ left: closestSeries.band, right: `${count} dec`, count });
+                        rows.push({ rx: closestSeries.band, right: `${count} dec`, count });
                     }
                 }
                 rows.sort((a, b) => {
                     const countDiff = Number(b.count || 0) - Number(a.count || 0);
                     if (countDiff) return countDiff;
-                    return String(a.left || "").localeCompare(String(b.left || ""));
+                    const aLabel = `${String(a.rx || "")} ${String(a.meta || a.left || "")}`.trim();
+                    const bLabel = `${String(b.rx || "")} ${String(b.meta || b.left || "")}`.trim();
+                    return aLabel.localeCompare(bLabel);
                 });
 
                 const hoverPoint = closestSeries.pts[idx];
@@ -6877,15 +7389,19 @@
         function initSectionNav() {
             const links = Array.from(document.querySelectorAll("#side-nav a[data-nav]"));
             if (!links.length) return;
+            const sideNav = byId("side-nav");
+            const overviewNavItems = Array.from(document.querySelectorAll("#side-nav [data-overview-nav]"));
 
             const statusStrip = byId("status-strip");
+            const overviewBoard = byId("overview-board");
             const layout = byId("main-layout");
             const receivers = byId("receivers");
             const rightCol = layout ? layout.querySelector(".right-col") : null;
-            const rightPanels = ["assignments", "faults", "messages", "map", "settings", "system", "automation"]
+            const rightPanels = ["assignments", "faults", "messages", "map", "settings", "system"]
                 .map((id) => byId(id))
                 .filter(Boolean);
-            const validIds = new Set(["overview", "receivers", "assignments", "faults", "messages", "map", "settings", "system", "automation"]);
+            const validIds = new Set(["overview", "receivers", "assignments", "faults", "messages", "map", "settings", "system"]);
+            const overviewLinkedNavIds = new Set(["receivers", "assignments", "faults", "messages", "map"]);
 
             const activate = (id) => {
                 links.forEach((link) => {
@@ -6898,36 +7414,78 @@
                 el.classList.toggle("view-hidden", !visible);
             };
 
+            const isNavVisible = (navId) => {
+                if (!overviewLinkedNavIds.has(navId)) return true;
+                return !!overviewTopicPrefs[navId];
+            };
+
+            const syncSideNavVisibility = () => {
+                overviewNavItems.forEach((item) => {
+                    const navId = String(item.dataset.overviewNav || "");
+                    item.hidden = !isNavVisible(navId);
+                });
+            };
+
+            const syncSideNavOrder = () => {
+                if (!sideNav) return;
+                const settingsItem = sideNav.querySelector(':scope > li > a[data-nav="settings"]')?.parentElement;
+                if (!settingsItem) return;
+                const navItemsById = new Map(
+                    overviewNavItems.map((item) => [String(item.dataset.overviewNav || ""), item]),
+                );
+                overviewTopicPrefs.order
+                    .filter((key) => overviewLinkedNavIds.has(key))
+                    .forEach((key) => {
+                        const item = navItemsById.get(key);
+                        if (item) sideNav.insertBefore(item, settingsItem);
+                    });
+            };
+
+            const syncSideNavLayout = () => {
+                syncSideNavOrder();
+                syncSideNavVisibility();
+            };
+
             const setView = (id, pushHash) => {
-                const requestedId = id === "config" ? "settings" : (id === "balance" ? "receivers" : id);
-                const navId = validIds.has(requestedId) ? requestedId : "overview";
+                const requestedId = id === "config" || id === "automation"
+                    ? "settings"
+                    : (id === "balance" ? "receivers" : id);
+                const normalizedId = validIds.has(requestedId) ? requestedId : "overview";
+                syncSideNavLayout();
+                const navId = isNavVisible(normalizedId) ? normalizedId : "overview";
                 currentSectionNavId = navId;
                 activate(navId);
 
-                show(statusStrip, navId === "overview" && !!overviewTopicPrefs.status);
+                if (navId === "overview") {
+                    renderOverviewBoard();
+                    show(overviewBoard, true);
+                    show(layout, false);
+                    show(rightCol, false);
+                    OVERVIEW_TOPIC_KEYS.forEach((key) => {
+                        show(getOverviewTopicSectionElement(key), !!overviewTopicPrefs[key]);
+                    });
+                } else {
+                    show(overviewBoard, false);
+                    restoreOverviewTopicLayout();
+                    show(statusStrip, false);
+                    show(layout, true);
 
-                const panelOnly = navId !== "overview";
-                show(layout, panelOnly || navId === "overview");
+                    if (layout) {
+                        layout.classList.toggle("layout-single", true);
+                        layout.classList.toggle("layout-overview", false);
+                    }
 
-                if (layout) {
-                    const single = panelOnly;
-                    layout.classList.toggle("layout-single", single);
-                    layout.classList.toggle("layout-overview", navId === "overview");
+                    show(receivers, navId === "receivers");
+
+                    let anyRightPanelVisible = false;
+                    rightPanels.forEach((panel) => {
+                        const panelId = panel && panel.id ? panel.id : "";
+                        const panelVisible = panelId === navId;
+                        show(panel, panelVisible);
+                        anyRightPanelVisible = anyRightPanelVisible || panelVisible;
+                    });
+                    show(rightCol, anyRightPanelVisible);
                 }
-
-                const showReceivers = navId === "receivers" || (navId === "overview" && !!overviewTopicPrefs.receivers);
-                show(receivers, showReceivers);
-
-                let anyRightPanelVisible = false;
-                rightPanels.forEach((panel) => {
-                    const panelId = panel && panel.id ? panel.id : "";
-                    const panelVisible = navId === "overview"
-                        ? !!overviewTopicPrefs[panelId]
-                        : panelId === navId;
-                    show(panel, panelVisible);
-                    anyRightPanelVisible = anyRightPanelVisible || panelVisible;
-                });
-                show(rightCol, anyRightPanelVisible);
 
                 if (navId === "overview" ? !!overviewTopicPrefs.messages : navId === "messages") {
                     renderRecentDecodePanel();
@@ -6962,10 +7520,11 @@
 
             window.addEventListener("hashchange", () => {
                 const id = String(window.location.hash || "").replace(/^#/, "");
-                if (validIds.has(id)) setView(id, false);
+                if (validIds.has(id) || id === "automation" || id === "config") setView(id, false);
             });
 
             const initial = String(window.location.hash || "").replace(/^#/, "");
+            syncSideNavLayout();
             setView(initial, false);
             window.kiwiProSetView = setView;
         }
@@ -7327,8 +7886,8 @@
         }
 
         function renderAssignmentBalance(assignments) {
-            const el = byId("assignment-balance");
-            if (!el) return;
+            const targets = [byId("assignment-balance")].filter(Boolean);
+            if (!targets.length) return;
 
             const rows = assignments && typeof assignments === "object" ? Object.values(assignments) : [];
             const counts = {};
@@ -7343,14 +7902,15 @@
                 return delta !== 0 ? delta : a.localeCompare(b);
             });
 
-            if (!bands.length) {
-                el.innerHTML = "<div class=\"balance-item\"><div class=\"balance-band\">none</div><div class=\"balance-value\">0</div></div>";
-                return;
-            }
+            const html = !bands.length
+                ? "<div class=\"balance-item\"><div class=\"balance-band\">none</div><div class=\"balance-value\">0</div></div>"
+                : bands.slice(0, 9).map((band) => {
+                    return `<div class=\"balance-item\"><div class=\"balance-band\">${band}</div><div class=\"balance-value\">${counts[band]}</div></div>`;
+                }).join("");
 
-            el.innerHTML = bands.slice(0, 9).map((band) => {
-                return `<div class=\"balance-item\"><div class=\"balance-band\">${band}</div><div class=\"balance-value\">${counts[band]}</div></div>`;
-            }).join("");
+            targets.forEach((el) => {
+                el.innerHTML = html;
+            });
         }
 
         function updateBandFilter(channels) {
