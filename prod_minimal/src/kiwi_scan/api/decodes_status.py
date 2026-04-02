@@ -245,7 +245,11 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
                     continue
                 mismatch_rxs.append(int(rx))
             mismatch_count = len(mismatch_rxs)
-            if compared < 2 or mismatch_count == 0:
+            # Only fall back to internal state when every compared slot mismatches,
+            # which suggests a completely different KiwiSDR session.
+            # Partial mismatches are normal during band-hop / mode-change transitions
+            # and should still show the live state so Receiver Stats matches Active Receivers.
+            if compared < 2 or mismatch_count < compared:
                 return (False, [])
             return (True, mismatch_rxs)
 
@@ -274,11 +278,15 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
                     continue
                 reason = str(channel.get("last_reason") or "").strip().lower()
                 state = str(channel.get("health_state") or "").strip().lower()
-                if reason == "kiwi_assignment_mismatch" or state == "stalled":
+                # Reason may be "kiwi_assignment_mismatch" or "kiwi_assignment_mismatch_observed"
+                if "kiwi_assignment_mismatch" in reason or state == "stalled":
                     mismatch_rxs.append(rx)
 
             mismatch_rxs = sorted(set(mismatch_rxs))
-            if len(mismatch_rxs) < max(2, max(1, len(expected_assignments) // 2)):
+            # Only prefer internal state when >75% of channels show mismatch,
+            # so partial transition states still show live KiwiSDR data.
+            threshold = max(2, int(len(expected_assignments) * 0.75) + 1)
+            if len(mismatch_rxs) < threshold:
                 return (False, [])
             return (True, mismatch_rxs)
 

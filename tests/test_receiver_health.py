@@ -101,17 +101,20 @@ def test_health_summary_marks_stalled_receiver_when_heartbeat_is_missing(monkeyp
 
 
 def test_health_summary_marks_stalled_receiver_when_assignment_is_stuck_on_wrong_rx(monkeypatch) -> None:
+    """Stall is raised when the expected slot has an alien AUTO_ user and our
+    worker is not visible at ANY slot.  This covers the case where the worker
+    failed to connect and a wrong-band process has taken its slot."""
     manager = _make_manager()
     manager._assignments = {
         2: ReceiverAssignment(rx=2, band="20m", freq_hz=14_074_000.0, mode_label="FT8")
     }
     manager._active_host = "kiwi.local"
     manager._active_port = 8073
+    # Only an alien band at the expected slot; our 20m worker is absent entirely.
     _set_users_payload(
         monkeypatch,
         [
             {"i": 2, "n": "AUTO_40M_FT8", "t": "0:10:00"},
-            {"i": 7, "n": "AUTO_20M_FT8", "t": "0:10:00"},
         ],
     )
 
@@ -130,3 +133,37 @@ def test_health_summary_marks_stalled_receiver_when_assignment_is_stuck_on_wrong
     assert channel["health_state"] == "stalled"
     assert channel["is_stalled"] is True
     assert channel["last_reason"] == "kiwi_assignment_mismatch"
+
+
+def test_health_summary_healthy_when_worker_visible_at_offset_slot(monkeypatch) -> None:
+    """A worker connected at a non-matching physical slot (e.g. because a legacy
+    service occupies the expected slot) is healthy as long as the KiwiSDR shows
+    it active and the decoder is producing output."""
+    manager = _make_manager()
+    manager._assignments = {
+        2: ReceiverAssignment(rx=2, band="20m", freq_hz=14_074_000.0, mode_label="FT8")
+    }
+    manager._active_host = "kiwi.local"
+    manager._active_port = 8073
+    # Slot 2 (expected) is taken by a legacy service; our worker landed at slot 7.
+    _set_users_payload(
+        monkeypatch,
+        [
+            {"i": 2, "n": "AUTO_40M_FT8", "t": "0:10:00"},
+            {"i": 7, "n": "AUTO_20M_FT8", "t": "0:10:00"},
+        ],
+    )
+
+    now = time.time()
+    manager._activity_by_rx[2] = {
+        "last_decoder_output_unix": now - 5.0,
+        "last_decode_unix": None,
+    }
+
+    summary = manager.health_summary()
+
+    # Worker is visible (at slot 7) and decoder is active — should be healthy.
+    channel = summary["channels"]["2"]
+    assert channel["visible_on_kiwi"] is True
+    assert channel["health_state"] == "healthy"
+    assert channel["is_stalled"] is False

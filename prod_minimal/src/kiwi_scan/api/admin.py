@@ -142,6 +142,10 @@ def _set_launchd_enabled(enabled: bool) -> dict[str, object]:
             "enabled": bool(enabled),
             "labels": [],
             "updated": 0,
+            "started": 0,
+            "stopped": 0,
+            "launchd_enabled": False,
+            "launchd_running": False,
             "failed": [],
         }
 
@@ -193,6 +197,31 @@ def _set_launchd_enabled(enabled: bool) -> dict[str, object]:
 
         if target_updated:
             updated += 1
+
+    # When disabling, also stop any currently-running instances via bootout so
+    # the service halts immediately rather than lingering until next reboot.
+    stopped = 0
+    if not enabled:
+        for item in candidates:
+            label = str(item.get("label") or "").strip()
+            plist = str(item.get("plist") or "").strip()
+            if not label:
+                continue
+            scoped_targets = _scoped_targets(label, plist)
+            for domain, scoped in scoped_targets:
+                try:
+                    proc = subprocess.run(
+                        ["launchctl", "bootout", scoped],
+                        capture_output=True,
+                        text=True,
+                        timeout=5.0,
+                        check=False,
+                    )
+                    if proc.returncode == 0:
+                        stopped += 1
+                        break
+                except Exception:
+                    pass
 
     started = 0
     if enabled:
@@ -249,6 +278,7 @@ def _set_launchd_enabled(enabled: bool) -> dict[str, object]:
             if start_ok:
                 started += 1
 
+    post_status = _launchd_status()
     return {
         "ok": True,
         "changed": updated > 0,
@@ -256,6 +286,9 @@ def _set_launchd_enabled(enabled: bool) -> dict[str, object]:
         "labels": labels,
         "updated": int(updated),
         "started": int(started),
+        "stopped": int(stopped),
+        "launchd_enabled": post_status["launchd_enabled"],
+        "launchd_running": post_status["launchd_running"],
         "failed": failed,
     }
 

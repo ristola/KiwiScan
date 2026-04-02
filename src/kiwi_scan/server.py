@@ -56,6 +56,8 @@ from .api.system_info import make_router as make_system_info_router
 from .rx_monitor import RxMonitor
 from .app_lifecycle import register_lifecycle
 from .auto_set_loop import AutoSetLoop
+from .smart_scheduler import SmartScheduler
+from .api.smart_scheduler import make_router as make_smart_scheduler_router
 
 # Configure logging to output to console (stderr) with timestamps
 logging.basicConfig(
@@ -644,6 +646,16 @@ mgr = DiscoveryManager(
 rx_monitor = RxMonitor(kiwirecorder_path=_KIWIRECORDER_PATH, mgr=mgr)
 auto_set_loop = AutoSetLoop()
 
+# SmartScheduler: merges seasonal tables + live propagation evidence + user pins
+# into a band-condition map.  Fires force_reassign() when conditions change so
+# receivers are reallocated away from dead bands without waiting for the next
+# 30-second AutoSetLoop tick.
+smart_scheduler = SmartScheduler(
+    receiver_mgr=receiver_mgr,
+    on_condition_change=auto_set_loop.force_reassign,
+)
+auto_set_loop.set_smart_scheduler(smart_scheduler)
+
 # Asyncio event loop for scheduling broadcasts from the discovery thread
 loop: Optional[asyncio.AbstractEventLoop] = None
 
@@ -677,6 +689,7 @@ app.include_router(
 )
 app.include_router(make_health_router(receiver_mgr=receiver_mgr))
 app.include_router(make_system_info_router(mgr=mgr))
+app.include_router(make_smart_scheduler_router(smart_scheduler=smart_scheduler))
 app.include_router(
     make_ws_status_router(
         mgr=mgr,
@@ -698,6 +711,7 @@ register_lifecycle(
     receiver_mgr=receiver_mgr,
     rx_monitor=rx_monitor,
     auto_set_loop=auto_set_loop,
+    smart_scheduler=smart_scheduler,
     set_decodes_loop=set_decodes_loop,
     set_loop=lambda v: globals().__setitem__("loop", v),
 )

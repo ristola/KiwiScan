@@ -541,6 +541,41 @@
             color: #ef4444;
         }
 
+        .topbar-auto-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            height: 36px;
+            padding: 0 14px;
+            border: 1px solid color-mix(in srgb, var(--accent), transparent 55%);
+            border-radius: 10px;
+            background: color-mix(in srgb, var(--accent), transparent 85%);
+            color: var(--accent);
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background 0.15s, border-color 0.15s;
+        }
+
+        .topbar-auto-btn:hover {
+            background: color-mix(in srgb, var(--accent), transparent 72%);
+            border-color: color-mix(in srgb, var(--accent), transparent 25%);
+        }
+
+        .topbar-auto-btn[aria-pressed="false"] {
+            border-color: color-mix(in srgb, var(--muted), transparent 40%);
+            background: color-mix(in srgb, var(--panel), white 6%);
+            color: var(--muted);
+        }
+
+        .topbar-auto-btn .settings-toggle-state {
+            font-size: 0.72rem;
+            font-weight: 800;
+            opacity: 0.85;
+        }
+
         .topbar-icon-btn svg {
             width: 22px;
             height: 22px;
@@ -863,7 +898,7 @@
 
         .layout {
             display: grid;
-            grid-template-columns: 2fr 1fr;
+            grid-template-columns: 1fr;
             gap: 14px;
             align-items: start;
             width: 100%;
@@ -963,7 +998,7 @@
 
         .rx-grid {
             display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            grid-template-columns: repeat(5, minmax(0, 1fr));
             gap: 10px;
             contain: layout paint;
         }
@@ -1231,6 +1266,768 @@
             letter-spacing: 0.06em;
         }
 
+        /* ── Band Schedule grid (FT8 time-block planner) ── */
+        .band-sched-wrap {
+            overflow-x: auto;
+            margin-top: 2px;
+        }
+
+        .band-sched-table {
+            border-collapse: collapse;
+            font-size: 0.78rem;
+            width: 100%;
+        }
+
+        .band-sched-table th,
+        .band-sched-table td {
+            padding: 3px 5px;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        .band-sched-band-lbl {
+            text-align: left !important;
+            font-weight: 700;
+            color: var(--ink);
+            padding-right: 8px !important;
+        }
+
+        .band-sched-block-hdr {
+            font-weight: 700;
+            color: var(--ink);
+            border-bottom: 2px solid var(--line);
+            padding-bottom: 4px;
+            font-size: 0.75rem;
+        }
+
+        .band-sched-block-hdr.band-sched-cur {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+        }
+
+        .band-sched-cur-marker {
+            display: block;
+            font-size: 0.63rem;
+            font-weight: 500;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-top: 1px;
+        }
+
+        .band-sched-auto-cell {
+            padding: 3px 4px !important;
+        }
+
+        .band-sched-auto-lbl {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            font-size: 0.72rem;
+            color: var(--muted);
+            cursor: pointer;
+        }
+
+        .band-sched-auto-lbl input[type="checkbox"] {
+            width: 12px;
+            height: 12px;
+            accent-color: var(--accent);
+            margin: 0;
+            cursor: pointer;
+        }
+
+        .band-sched-band-cell {
+            text-align: center;
+        }
+
+        .band-sched-band-cell.band-sched-is-auto {
+            opacity: 0.3;
+        }
+
+        .band-sched-band-cell.band-sched-cur {
+            background: color-mix(in srgb, var(--accent), transparent 90%);
+        }
+
+        .band-sched-chk {
+            width: 14px;
+            height: 14px;
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+
+        .band-sched-chk:disabled {
+            cursor: default;
+        }
+
+        .band-sched-mode-cell {
+            padding: 2px 4px !important;
+        }
+
+        .band-sched-mode-sel {
+            font-size: 0.72rem;
+            padding: 1px 2px;
+            border: 1px solid var(--line);
+            border-radius: 4px;
+            background: var(--panel);
+            color: var(--ink);
+            cursor: pointer;
+            max-width: 82px;
+        }
+
+        .band-sched-band-col-hdr {
+            text-align: left;
+            color: var(--muted);
+            font-size: 0.7rem;
+            font-weight: 400;
+        }
+
+        .band-sched-mode-col-hdr {
+            color: var(--muted);
+            font-size: 0.7rem;
+            font-weight: 400;
+            white-space: nowrap;
+        }
+
+        .band-sched-hint {
+            font-size: 0.72rem;
+            color: var(--muted);
+            margin-top: 4px;
+            margin-bottom: 0;
+        }
+
+        .band-sched-table tbody tr:hover {
+            background: color-mix(in srgb, var(--accent), transparent 94%);
+        }
+
+        .band-sched-row-disabled td {
+            opacity: 0.35;
+        }
+
+        .band-sched-row-disabled .band-sched-en-chk {
+            opacity: 1;
+        }
+
+        /* ── Smart Scheduler / Band Conditions panel ── */
+        .bc-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .bc-band-card {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 9px 10px 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            background: color-mix(in srgb, var(--panel), white 8%);
+            position: relative;
+            transition: border-color 0.22s ease, box-shadow 0.22s ease, background 0.22s ease;
+        }
+
+        .bc-band-card.bc-card-changed {
+            border-color: color-mix(in srgb, var(--accent), white 28%);
+            background: color-mix(in srgb, var(--accent), var(--panel) 90%);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent), white 62%), 0 8px 20px rgba(15, 23, 42, 0.08);
+        }
+
+        .bc-band-name {
+            font-size: 1rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+
+        .bc-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            padding: 2px 7px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            width: fit-content;
+        }
+
+        .bc-badge.bc-open {
+            background: color-mix(in srgb, #22c55e, var(--panel) 84%);
+            border-color: color-mix(in srgb, #22c55e, var(--line) 55%);
+            color: #16a34a;
+        }
+
+        .bc-badge.bc-marginal {
+            background: color-mix(in srgb, #f59e0b, var(--panel) 84%);
+            border-color: color-mix(in srgb, #f59e0b, var(--line) 55%);
+            color: #b45309;
+        }
+
+        .bc-badge.bc-closed {
+            background: color-mix(in srgb, #ef4444, var(--panel) 84%);
+            border-color: color-mix(in srgb, #ef4444, var(--line) 55%);
+            color: #b91c1c;
+        }
+
+        .bc-badge.bc-unknown {
+            background: color-mix(in srgb, var(--fg), var(--panel) 92%);
+            border-color: color-mix(in srgb, var(--fg-muted), var(--line) 70%);
+            color: var(--fg-muted);
+        }
+
+        body.theme-dark .bc-badge.bc-open {
+            background: color-mix(in srgb, #22c55e, var(--panel) 88%);
+            border-color: color-mix(in srgb, #22c55e, var(--line) 52%);
+            color: #86efac;
+        }
+
+        body.theme-dark .bc-badge.bc-marginal {
+            background: color-mix(in srgb, #f59e0b, var(--panel) 88%);
+            border-color: color-mix(in srgb, #f59e0b, var(--line) 52%);
+            color: #fcd34d;
+        }
+
+        body.theme-dark .bc-badge.bc-closed {
+            background: color-mix(in srgb, #ef4444, var(--panel) 88%);
+            border-color: color-mix(in srgb, #ef4444, var(--line) 52%);
+            color: #fca5a5;
+        }
+
+        body.theme-dark .bc-badge.bc-unknown {
+            background: color-mix(in srgb, var(--fg), var(--panel) 94%);
+        }
+
+        .bc-source {
+            font-size: 0.68rem;
+            color: var(--fg-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .bc-source.bc-source-override {
+            color: color-mix(in srgb, var(--accent), transparent 20%);
+            font-weight: 700;
+        }
+
+        .bc-source.bc-source-empirical {
+            color: color-mix(in srgb, #22c55e, var(--fg-muted) 30%);
+        }
+
+        .bc-detail-row {
+            display: flex;
+            gap: 6px;
+            font-size: 0.65rem;
+            color: var(--fg-muted);
+            flex-wrap: wrap;
+        }
+
+        .bc-detail-val {
+            white-space: nowrap;
+        }
+
+        .bc-detail-val.open {
+            color: #16a34a;
+        }
+
+        .bc-detail-val.marginal {
+            color: #b45309;
+        }
+
+        .bc-detail-val.closed {
+            color: #b91c1c;
+        }
+
+        body.theme-dark .bc-detail-val.open {
+            color: #86efac;
+        }
+
+        body.theme-dark .bc-detail-val.marginal {
+            color: #fcd34d;
+        }
+
+        body.theme-dark .bc-detail-val.closed {
+            color: #fca5a5;
+        }
+
+        .bc-next-change {
+            font-size: 0.65rem;
+            color: var(--fg-muted);
+            opacity: 0.8;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .bc-pin-btn {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            color: var(--fg-muted);
+            opacity: 0.6;
+            transition: opacity 0.15s,
+                background 0.15s;
+        }
+
+        .bc-pin-btn:hover {
+            opacity: 1;
+            background: color-mix(in srgb, var(--accent), transparent 80%);
+        }
+
+        .bc-pin-btn.active {
+            opacity: 1;
+            color: var(--accent);
+        }
+
+        .bc-override-row {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+            margin-top: 2px;
+        }
+
+        .bc-override-btn {
+            font-size: 0.68rem;
+            font-weight: 600;
+            padding: 2px 7px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: transparent;
+            cursor: pointer;
+            color: var(--fg-muted);
+            box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+            transition: background 0.12s, color 0.12s, border-color 0.12s, box-shadow 0.12s, transform 0.12s;
+        }
+
+        .bc-override-btn:hover {
+            background: color-mix(in srgb, var(--accent), var(--panel) 90%);
+            border-color: var(--accent);
+            color: var(--accent);
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+        }
+
+        .bc-override-btn:focus-visible {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent), transparent 78%);
+        }
+
+        .bc-override-btn:active {
+            transform: translateY(1px);
+            box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.12);
+        }
+
+        .bc-override-btn.sel-open {
+            background: color-mix(in srgb, #22c55e, transparent 70%);
+            color: #16a34a;
+            border-color: #22c55e;
+            box-shadow: 0 1px 6px rgba(34, 197, 94, 0.18);
+        }
+
+        .bc-override-btn.sel-marginal {
+            background: color-mix(in srgb, #f59e0b, transparent 70%);
+            color: #b45309;
+            border-color: #f59e0b;
+            box-shadow: 0 1px 6px rgba(245, 158, 11, 0.18);
+        }
+
+        .bc-override-btn.sel-closed {
+            background: color-mix(in srgb, #ef4444, transparent 70%);
+            color: #b91c1c;
+            border-color: #ef4444;
+            box-shadow: 0 1px 6px rgba(239, 68, 68, 0.18);
+        }
+
+        .bc-override-btn.is-busy {
+            background: color-mix(in srgb, var(--accent-2), white 88%);
+            border-color: color-mix(in srgb, var(--accent-2), white 44%);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-2), white 58%);
+        }
+
+        .bc-override-btn.is-error {
+            background: color-mix(in srgb, var(--fault), white 92%);
+            border-color: color-mix(in srgb, var(--fault), white 52%);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--fault), white 64%);
+        }
+
+        .bc-override-btn:disabled {
+            opacity: 1;
+            cursor: default;
+        }
+
+        body.theme-dark .bc-override-btn:hover {
+            background: color-mix(in srgb, var(--accent), var(--panel) 86%);
+            box-shadow: 0 2px 10px rgba(2, 6, 23, 0.3);
+        }
+
+        body.theme-dark .bc-override-btn.sel-open {
+            color: #86efac;
+        }
+
+        body.theme-dark .bc-override-btn.sel-marginal {
+            color: #fcd34d;
+        }
+
+        body.theme-dark .bc-override-btn.sel-closed {
+            color: #fca5a5;
+        }
+
+        body.theme-dark .bc-override-btn.is-busy {
+            background: color-mix(in srgb, var(--accent-2), var(--panel) 86%);
+            border-color: color-mix(in srgb, var(--accent-2), white 18%);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-2), transparent 34%);
+        }
+
+        body.theme-dark .bc-override-btn.is-error {
+            background: color-mix(in srgb, var(--fault), var(--panel) 88%);
+            border-color: color-mix(in srgb, var(--fault), white 14%);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--fault), transparent 34%);
+        }
+
+        .bc-intro {
+            font-size: 0.82rem;
+            color: var(--fg-muted);
+            margin: 0 0 6px;
+            line-height: 1.35;
+        }
+
+        .bc-intro-extra {
+            display: inline;
+        }
+
+        .bc-btn-short {
+            display: none;
+        }
+
+        .bc-legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 4px;
+            font-size: 0.72rem;
+            color: var(--fg-muted);
+        }
+
+        .bc-legend-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .bc-legend-source {
+            margin-left: 8px;
+        }
+
+        .bc-legend-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .bc-legend-dot.open {
+            background: #22c55e;
+        }
+
+        .bc-legend-dot.marginal {
+            background: #f59e0b;
+        }
+
+        .bc-legend-dot.closed {
+            background: #ef4444;
+        }
+
+        .bc-legend-dot.unknown {
+            background: var(--fg-muted);
+        }
+
+        .bc-summary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 8px 0 10px;
+        }
+
+        .bc-summary.bc-summary-inline {
+            margin: 0;
+            justify-content: center;
+        }
+
+        .bc-summary-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 0.28rem 0.55rem;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: color-mix(in srgb, var(--panel), white 18%);
+            font-size: 0.84rem;
+            color: var(--fg-muted);
+            font-weight: 800;
+            letter-spacing: 0.02em;
+        }
+
+        .bc-summary-chip strong {
+            color: var(--fg);
+            font-weight: 800;
+            font-size: 1.18em;
+        }
+
+        .bc-summary-chip.open {
+            background: color-mix(in srgb, #22c55e, var(--panel) 84%);
+            border-color: color-mix(in srgb, #22c55e, var(--line) 55%);
+            color: #16a34a;
+        }
+
+        .bc-summary-chip.open strong {
+            color: #16a34a;
+        }
+
+        .bc-summary-chip.marginal {
+            background: color-mix(in srgb, #f59e0b, var(--panel) 84%);
+            border-color: color-mix(in srgb, #f59e0b, var(--line) 55%);
+            color: #b45309;
+        }
+
+        .bc-summary-chip.marginal strong {
+            color: #b45309;
+        }
+
+        .bc-summary-chip.closed {
+            background: color-mix(in srgb, #ef4444, var(--panel) 84%);
+            border-color: color-mix(in srgb, #ef4444, var(--line) 55%);
+            color: #b91c1c;
+        }
+
+        .bc-summary-chip.closed strong {
+            color: #b91c1c;
+        }
+
+        .bc-summary-chip.pinned {
+            background: color-mix(in srgb, var(--accent), var(--panel) 84%);
+            border-color: color-mix(in srgb, var(--accent), var(--line) 55%);
+            color: color-mix(in srgb, var(--accent), white 15%);
+        }
+
+        .bc-summary-chip.pinned strong {
+            color: color-mix(in srgb, var(--accent), white 15%);
+        }
+
+        body.theme-dark .bc-summary-chip.open,
+        body.theme-dark .bc-summary-chip.open strong {
+            color: #86efac;
+        }
+
+        body.theme-dark .bc-summary-chip.open {
+            background: color-mix(in srgb, #22c55e, var(--panel) 88%);
+            border-color: color-mix(in srgb, #22c55e, var(--line) 52%);
+        }
+
+        body.theme-dark .bc-summary-chip.marginal,
+        body.theme-dark .bc-summary-chip.marginal strong {
+            color: #fcd34d;
+        }
+
+        body.theme-dark .bc-summary-chip.marginal {
+            background: color-mix(in srgb, #f59e0b, var(--panel) 88%);
+            border-color: color-mix(in srgb, #f59e0b, var(--line) 52%);
+        }
+
+        body.theme-dark .bc-summary-chip.closed,
+        body.theme-dark .bc-summary-chip.closed strong {
+            color: #fca5a5;
+        }
+
+        body.theme-dark .bc-summary-chip.closed {
+            background: color-mix(in srgb, #ef4444, var(--panel) 88%);
+            border-color: color-mix(in srgb, #ef4444, var(--line) 52%);
+        }
+
+        body.theme-dark .bc-summary-chip.pinned,
+        body.theme-dark .bc-summary-chip.pinned strong {
+            color: color-mix(in srgb, var(--accent), white 28%);
+        }
+
+        body.theme-dark .bc-summary-chip.pinned {
+            background: color-mix(in srgb, var(--accent), var(--panel) 88%);
+            border-color: color-mix(in srgb, var(--accent), var(--line) 52%);
+        }
+
+        @media (max-width: 1180px) {
+            .panel-hdr.bc-panel-hdr {
+                grid-template-columns: 1fr auto;
+                align-items: start;
+            }
+
+            .panel-hdr.bc-panel-hdr .bc-summary.bc-summary-inline {
+                grid-column: 1 / -1;
+                order: 3;
+                margin-top: 4px;
+            }
+
+            .panel-hdr.bc-panel-hdr .panel-hdr-actions {
+                gap: 6px;
+            }
+        }
+
+        @media (max-width: 820px) {
+            .panel-hdr.bc-panel-hdr {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+
+            .panel-hdr.bc-panel-hdr h2,
+            .panel-hdr.bc-panel-hdr .panel-hdr-actions {
+                justify-self: stretch;
+            }
+
+            .panel-hdr.bc-panel-hdr .panel-hdr-actions {
+                justify-content: center;
+            }
+
+            .bc-summary.bc-summary-inline {
+                gap: 6px;
+            }
+
+            .bc-summary-chip {
+                padding: 0.24rem 0.48rem;
+                font-size: 0.78rem;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .panel-hdr.bc-panel-hdr .panel-hdr-actions {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+                width: 100%;
+            }
+
+            .panel-hdr.bc-panel-hdr .panel-hdr-actions .bc-mode-toggle {
+                grid-column: 1 / -1;
+                justify-self: center;
+                margin-bottom: 2px;
+            }
+
+            .panel-hdr.bc-panel-hdr .panel-hdr-actions .action-btn-sm {
+                width: 100%;
+            }
+
+            .panel-hdr.bc-panel-hdr .panel-hdr-actions .panel-toggle {
+                justify-self: end;
+            }
+        }
+
+        @media (max-width: 700px) {
+            .bc-grid {
+                grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+                gap: 6px;
+            }
+
+            .bc-legend {
+                gap: 6px;
+                font-size: 0.68rem;
+            }
+
+            .bc-legend-item {
+                gap: 3px;
+            }
+
+            .bc-legend-source {
+                margin-left: 0;
+                flex-basis: 100%;
+                padding-top: 2px;
+                line-height: 1.3;
+            }
+
+            .bc-intro {
+                font-size: 0.76rem;
+                margin-bottom: 4px;
+            }
+
+            .bc-intro-extra {
+                display: none;
+            }
+
+            .bc-btn-full {
+                display: none;
+            }
+
+            .bc-btn-short {
+                display: inline;
+            }
+
+            .bc-band-card {
+                padding: 8px 8px 7px;
+                gap: 4px;
+            }
+
+            .bc-band-name {
+                font-size: 0.94rem;
+            }
+
+            .bc-source,
+            .bc-detail-row,
+            .bc-next-change {
+                font-size: 0.63rem;
+            }
+
+            .bc-detail-row {
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 2px;
+            }
+
+            .bc-next-change {
+                white-space: normal;
+                overflow: visible;
+                text-overflow: clip;
+                line-height: 1.25;
+            }
+
+            .bc-override-row {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 5px;
+            }
+
+            .bc-override-btn {
+                width: 100%;
+                min-height: 26px;
+                padding: 3px 6px;
+                text-align: center;
+            }
+
+            .bc-override-btn[data-bc-cond=""] {
+                grid-column: 1 / -1;
+            }
+        }
+
+        /* ── Home station map marker ── */
+        .map-home-icon {
+            width: 18px !important;
+            height: 18px !important;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .map-home-icon::before {
+            content: "";
+            display: block;
+            width: 12px;
+            height: 12px;
+            background: #f97316;
+            border: 2.5px solid #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 0 2px #f97316, 0 2px 6px rgba(0, 0, 0, 0.5);
+        }
+
         .kiwi-notice {
             position: fixed;
             inset: 18px 18px auto 18px;
@@ -1338,6 +2135,29 @@
             -webkit-text-fill-color: #0f4c81;
         }
 
+        .action-btn-sm.is-busy {
+            background: color-mix(in srgb, var(--accent-2), white 88%);
+            border-color: color-mix(in srgb, var(--accent-2), white 44%);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-2), white 58%);
+        }
+
+        .action-btn-sm.is-success {
+            background: color-mix(in srgb, var(--ok), white 90%);
+            border-color: color-mix(in srgb, var(--ok), white 46%);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--ok), white 58%);
+        }
+
+        .action-btn-sm.is-error {
+            background: color-mix(in srgb, var(--fault), white 92%);
+            border-color: color-mix(in srgb, var(--fault), white 52%);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--fault), white 64%);
+        }
+
+        .action-btn-sm:disabled {
+            opacity: 1;
+            cursor: progress;
+        }
+
         .action-btn-sm:disabled {
             opacity: 0.5;
             cursor: default;
@@ -1360,6 +2180,21 @@
 
         .panel-hdr h2 {
             margin: 0;
+        }
+
+        .panel-hdr.bc-panel-hdr {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .panel-hdr.bc-panel-hdr h2 {
+            justify-self: start;
+        }
+
+        .panel-hdr.bc-panel-hdr .panel-hdr-actions {
+            justify-self: end;
         }
 
         .panel-collapsible {
@@ -1416,6 +2251,73 @@
             color: var(--muted);
             font-size: 0.82rem;
             min-height: 1.2em;
+        }
+
+        .bc-action-note {
+            margin-top: 4px;
+            min-height: 1.1em;
+            font-size: 0.76rem;
+            color: var(--fg-muted);
+        }
+
+        .bc-action-note.success {
+            color: var(--ok);
+        }
+
+        .bc-action-note.error {
+            color: var(--fault);
+        }
+
+        .bc-mode-toggle {
+            display: inline-flex;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .bc-mode-btn {
+            font: inherit;
+            font-size: 0.78rem;
+            font-weight: 600;
+            padding: 3px 9px;
+            border: none;
+            border-right: 1px solid #cbd5e1;
+            background: #fff;
+            color: #486581;
+            -webkit-text-fill-color: #486581;
+            cursor: pointer;
+            transition: background 0.12s, color 0.12s;
+        }
+
+        .bc-mode-btn:last-child {
+            border-right: none;
+        }
+
+        .bc-mode-btn.is-active {
+            background: color-mix(in srgb, var(--accent), white 82%);
+            color: var(--accent);
+            -webkit-text-fill-color: var(--accent);
+        }
+
+        .bc-mode-btn:hover:not(.is-active) {
+            background: color-mix(in srgb, var(--accent), white 92%);
+        }
+
+        body.theme-dark .bc-mode-toggle {
+            border-color: var(--line);
+        }
+
+        body.theme-dark .bc-mode-btn {
+            background: var(--panel);
+            color: var(--fg-muted);
+            -webkit-text-fill-color: var(--fg-muted);
+            border-right-color: var(--line);
+        }
+
+        body.theme-dark .bc-mode-btn.is-active {
+            background: color-mix(in srgb, var(--accent), var(--panel) 80%);
+            color: var(--accent);
+            -webkit-text-fill-color: var(--accent);
         }
 
         .autosave-badge {
@@ -1682,7 +2584,7 @@
             border-radius: 12px;
             padding: 10px;
             background: #fff;
-            min-height: 120px;
+            min-height: 100px;
             transition: none;
             animation: none;
             contain: layout paint style;
@@ -1780,12 +2682,34 @@
             gap: 2px;
         }
 
+        .kv-icon {
+            width: 13px;
+            height: 13px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 13px;
+            color: color-mix(in srgb, var(--accent), var(--muted) 55%);
+            vertical-align: middle;
+        }
+
+        .kv-icon svg {
+            width: 100%;
+            height: 100%;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
         .mono {
             font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         }
 
         .right-col {
             display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 14px;
             align-content: start;
             align-items: start;
@@ -1793,6 +2717,7 @@
 
         .layout.layout-single .right-col {
             min-height: 0;
+            grid-template-columns: 1fr;
         }
 
         .layout.layout-single #map:not(.view-hidden) {
@@ -1890,6 +2815,41 @@
 
         .assign-table tbody tr:hover td {
             background: color-mix(in srgb, var(--accent-2), white 95%);
+        }
+
+        .prop-cond-wrap {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            flex-wrap: wrap;
+        }
+
+        .prop-source {
+            font-size: 0.68rem;
+            line-height: 1;
+            padding: 0.15rem 0.35rem;
+            border-radius: 999px;
+            color: var(--fg-muted);
+            background: color-mix(in srgb, var(--panel), white 28%);
+            border: 1px solid var(--line);
+            text-transform: lowercase;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+        }
+
+        .prop-open {
+            color: #16a34a;
+            font-weight: 600;
+        }
+
+        .prop-marginal {
+            color: #b45309;
+            font-weight: 600;
+        }
+
+        .prop-closed {
+            color: #b91c1c;
+            font-weight: 600;
         }
 
         .assign-color-col {
@@ -2073,6 +3033,43 @@
             font-style: italic;
         }
 
+        #heart-chart-popup {
+            position: fixed;
+            z-index: 1100;
+            pointer-events: none;
+            background: rgba(7, 20, 33, 0.96);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            box-shadow: 0 12px 32px rgba(15, 23, 42, 0.5);
+            padding: 7px 9px 9px;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(5px);
+            transition: opacity 120ms ease, transform 120ms ease, visibility 120ms;
+        }
+
+        #heart-chart-popup.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .hcp-label {
+            font-size: 0.67rem;
+            font-weight: 700;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 5px;
+        }
+
+        #heart-chart-img {
+            display: block;
+            border-radius: 4px;
+            width: 420px;
+            height: 135px;
+        }
+
         .trend-box {
             border: 1px solid var(--line);
             border-radius: 10px;
@@ -2241,7 +3238,7 @@
 
         .decode-feed-head {
             display: grid;
-            grid-template-columns: 72px 64px 48px 46px 74px 54px minmax(0, 1fr);
+            grid-template-columns: 72px 64px 48px 46px 44px 74px 54px 52px minmax(0, 1fr);
             gap: 8px;
             align-items: center;
             border: 1px solid var(--line);
@@ -2347,7 +3344,7 @@
 
         .decode-feed-row {
             display: grid;
-            grid-template-columns: 72px 64px 48px 46px 74px 54px minmax(0, 1fr);
+            grid-template-columns: 72px 64px 48px 46px 44px 74px 54px 52px minmax(0, 1fr);
             gap: 8px;
             align-items: start;
             padding: 7px 9px;
@@ -2367,18 +3364,22 @@
 
         .decode-feed-row[data-mode="WSPR"] {
             border-left: 3px solid #a855f7;
+            color: #c084fc;
         }
 
         .decode-feed-row[data-mode="FT8"] {
             border-left: 3px solid #3b82f6;
+            color: #60a5fa;
         }
 
         .decode-feed-row[data-mode="FT4"] {
             border-left: 3px solid #22c55e;
+            color: #4ade80;
         }
 
         .decode-feed-row[data-mode="SSB"] {
             border-left: 3px solid #ef4444;
+            color: #f87171;
         }
 
         .decode-feed-cell {
@@ -2393,7 +3394,8 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            color: #dbeafe;
+            color: inherit;
+            padding-left: 8px;
         }
 
         .map-toolbar {
@@ -2506,6 +3508,24 @@
         body.theme-dark .action-btn-sm {
             color: #486581;
             -webkit-text-fill-color: #486581;
+        }
+
+        body.theme-dark .action-btn-sm.is-busy {
+            background: rgba(14, 165, 160, 0.18);
+            border-color: rgba(94, 234, 212, 0.44);
+            box-shadow: 0 0 0 1px rgba(94, 234, 212, 0.26);
+        }
+
+        body.theme-dark .action-btn-sm.is-success {
+            background: rgba(34, 197, 94, 0.18);
+            border-color: rgba(74, 222, 128, 0.46);
+            box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.26);
+        }
+
+        body.theme-dark .action-btn-sm.is-error {
+            background: rgba(248, 113, 113, 0.18);
+            border-color: rgba(248, 113, 113, 0.44);
+            box-shadow: 0 0 0 1px rgba(248, 113, 113, 0.24);
         }
 
         body.theme-dark .action-btn.is-busy {
@@ -2770,6 +3790,12 @@
             }
         }
 
+        @media (max-width: 1400px) {
+            .rx-grid {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+        }
+
         @media (max-width: 1200px) {
             .rx-grid {
                 grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2856,6 +3882,10 @@
             .layout.layout-overview .right-col {
                 grid-template-columns: 1fr;
             }
+
+            .right-col {
+                grid-template-columns: 1fr;
+            }
         }
     </style>
 </head>
@@ -2874,8 +3904,6 @@
             <p class="side-subtitle">Operations Console</p>
             <ul class="side-nav" id="side-nav">
                 <li><a href="#overview" data-nav="overview" data-icon="dashboard">Overview</a></li>
-                <li data-overview-nav="receivers"><a href="#receivers" data-nav="receivers" data-icon="radio">Receiver
-                        Matrix</a></li>
                 <li data-overview-nav="assignments"><a href="#assignments" data-nav="assignments"
                         data-icon="sliders">Receiver Statistics</a></li>
                 <li data-overview-nav="faults"><a href="#faults" data-nav="faults" data-icon="alert">Fault Summary</a>
@@ -2883,11 +3911,13 @@
                 <li data-overview-nav="messages"><a href="#messages" data-nav="messages" data-icon="messages">Decoded
                         Messages</a></li>
                 <li data-overview-nav="map"><a href="#map" data-nav="map" data-icon="globe">Map</a></li>
+                <li data-overview-nav="active-receivers"><a href="#active-receivers" data-nav="active-receivers"
+                        data-icon="users">Active Receivers</a></li>
                 <li><a href="#settings" data-nav="settings" data-icon="settings">Settings</a></li>
                 <li><a href="#system" data-nav="system" data-icon="server">System Info</a></li>
             </ul>
             <div class="side-actions">
-                <a class="link-btn" href="/" data-icon="compass">Open Classic UI</a>
+
             </div>
         </aside>
 
@@ -2899,6 +3929,12 @@
                     </p>
                 </div>
                 <div class="topbar-actions" aria-label="Top bar actions">
+                    <button class="topbar-auto-btn settings-toggle-btn" id="auto-mode-enabled" type="button"
+                        aria-pressed="true" data-icon="spark" data-toggle-on="AUTO" data-toggle-off="MANUAL"
+                        aria-label="Auto Mode toggle">
+                        <span class="settings-toggle-label">Auto</span>
+                        <span class="settings-toggle-state">AUTO</span>
+                    </button>
                     <button class="topbar-icon-btn notify" id="topbar-notifications" type="button"
                         aria-label="Open notifications">
                         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -2986,56 +4022,11 @@
             <section class="overview-board view-hidden" id="overview-board" aria-live="polite"></section>
 
             <section class="layout" id="main-layout">
-                <article class="panel panel-collapsible" id="receivers" data-panel-card="receivers">
-                    <div class="panel-hdr">
-                        <h2 data-icon="radio">Receiver Matrix</h2>
-                        <button class="panel-toggle" type="button" aria-expanded="true"
-                            aria-label="Collapse Receiver Matrix">
-                            <svg viewBox="0 0 24 24" aria-hidden="true">
-                                <path d="m6 9 6 6 6-6"></path>
-                            </svg>
-                        </button>
-                    </div>
-                    <div class="panel-body">
-                        <div class="rx-toolbar">
-                            <label>
-                                Status Filter
-                                <select id="rx-level-filter">
-                                    <option value="all" selected>All</option>
-                                    <option value="attention">Fault + Warn</option>
-                                    <option value="fault">Fault Only</option>
-                                </select>
-                            </label>
-                            <label>
-                                Band Filter
-                                <select id="rx-band-filter">
-                                    <option value="all" selected>All Bands</option>
-                                </select>
-                            </label>
-                            <label>
-                                Sort
-                                <select id="rx-sort-mode">
-                                    <option value="rx">RX Number</option>
-                                    <option value="severity">Severity</option>
-                                    <option value="band" selected>Band + RX</option>
-                                    <option value="activity">Recent Activity</option>
-                                </select>
-                            </label>
-                            <div id="rx-filter-meta" class="rx-toolbar-meta">Showing --</div>
-                        </div>
-                        <div id="assignment-balance" class="balance-grid balance-grid-inline"></div>
-                        <div id="rx-grid" class="rx-grid"></div>
-                    </div>
-                </article>
-
                 <div class="right-col">
-                    <article class="panel panel-collapsible panel-full" id="assignments" data-panel-card="assignments">
+                    <article class="panel panel-collapsible" id="assignments" data-panel-card="assignments">
                         <div class="panel-hdr">
                             <h2 data-icon="sliders">Receiver Statistics</h2>
                             <div class="panel-hdr-actions">
-                                <button class="action-btn-sm" id="correct-assignments" type="button"
-                                    data-icon="wand">Correct
-                                    Assignments</button>
                                 <button class="panel-toggle" type="button" aria-expanded="true"
                                     aria-label="Collapse Receiver Statistics">
                                     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -3045,7 +4036,7 @@
                             </div>
                         </div>
                         <div class="panel-body">
-                            <div id="assignments-table" class="assign-table-wrap"></div>
+                            <div id="assignments-band-cards" class="rx-grid"></div>
                             <div class="assign-band-chart-wrap">
                                 <div class="assign-band-chart-header">
                                     <span>Decodes by Band</span>
@@ -3067,6 +4058,11 @@
                             <div class="summary-k">Fault Load</div>
                             <div class="summary-v" id="summary-fault-load">--</div>
                             <canvas id="spark-fault-load" class="summary-spark" width="280" height="28"></canvas>
+                        </article>
+                        <article class="summary-card" data-icon="messages">
+                            <div class="summary-k">Decode Rate</div>
+                            <div class="summary-v" id="summary-decode-rate">--</div>
+                            <canvas id="spark-decode-rate" class="summary-spark" width="280" height="28"></canvas>
                         </article>
                         <ul id="reasons" class="assign-list"></ul>
                     </article>
@@ -3135,6 +4131,14 @@
                                         <span class="decode-feed-sort-chevron decode-feed-sort-chevron-down"></span>
                                     </span>
                                 </button>
+                                <button type="button" class="decode-feed-sort" data-sort-key="snr"
+                                    data-sort-direction="none" aria-label="Sort by SNR ascending">
+                                    <span class="decode-feed-sort-label">SNR</span>
+                                    <span class="decode-feed-sort-icon" aria-hidden="true">
+                                        <span class="decode-feed-sort-chevron decode-feed-sort-chevron-up"></span>
+                                        <span class="decode-feed-sort-chevron decode-feed-sort-chevron-down"></span>
+                                    </span>
+                                </button>
                                 <button type="button" class="decode-feed-sort" data-sort-key="call"
                                     data-sort-direction="none" aria-label="Sort by Call ascending">
                                     <span class="decode-feed-sort-label">Call</span>
@@ -3146,6 +4150,15 @@
                                 <button type="button" class="decode-feed-sort" data-sort-key="grid"
                                     data-sort-direction="none" aria-label="Sort by Grid ascending">
                                     <span class="decode-feed-sort-label">Grid</span>
+                                    <span class="decode-feed-sort-icon" aria-hidden="true">
+                                        <span class="decode-feed-sort-chevron decode-feed-sort-chevron-up"></span>
+                                        <span class="decode-feed-sort-chevron decode-feed-sort-chevron-down"></span>
+                                    </span>
+                                </button>
+                                <button type="button" class="decode-feed-sort" data-sort-key="dist"
+                                    data-sort-direction="none" aria-label="Sort by Distance ascending"
+                                    title="Distance from your station to the decoded grid square">
+                                    <span class="decode-feed-sort-label">Dist</span>
                                     <span class="decode-feed-sort-icon" aria-hidden="true">
                                         <span class="decode-feed-sort-chevron decode-feed-sort-chevron-up"></span>
                                         <span class="decode-feed-sort-chevron decode-feed-sort-chevron-down"></span>
@@ -3219,7 +4232,23 @@
                             </div>
                         </div>
                     </article>
-                    <article class="panel" id="settings">
+                    <article class="panel panel-collapsible panel-full" id="active-receivers"
+                        data-panel-card="active-receivers">
+                        <div class="panel-hdr">
+                            <h2 data-icon="users">Active Receivers</h2>
+                            <button class="panel-toggle" type="button" aria-expanded="true"
+                                aria-label="Collapse Active Receivers">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="m6 9 6 6 6-6"></path>
+                                </svg>
+                            </button>
+                        </div>
+                        <div class="panel-body">
+                            <div id="active-receivers-table" class="system-users-wrap"></div>
+                        </div>
+                    </article>
+
+                    <article class="panel panel-full" id="settings">
                         <div class="panel-hdr">
                             <h2 data-icon="settings">Settings</h2>
                         </div>
@@ -3301,6 +4330,11 @@
                                     <input id="cfg-longitude" type="number" min="-180" max="180" step="0.0001"
                                         placeholder="0">
                                 </label>
+                                <label class="control-field">Grid Square
+                                    <input id="cfg-kiwi-grid" type="text" placeholder="--" readonly
+                                        style="cursor:default;"
+                                        title="Maidenhead grid square reported by the KiwiSDR GPS receiver">
+                                </label>
                             </div>
                             <div class="control-actions" style="margin-top: 0;">
                                 <button class="action-btn" id="cfg-discover" type="button" data-icon="search">Discover
@@ -3319,12 +4353,6 @@
                                             <span class="overview-topic-label">Status Strip</span>
                                             <input id="cfg-overview-status" type="checkbox" checked
                                                 aria-label="Show Status Strip in overview">
-                                        </div>
-                                        <div class="overview-topic-item" data-overview-key="receivers" draggable="true">
-                                            <span class="overview-topic-handle" aria-hidden="true">::</span>
-                                            <span class="overview-topic-label">Receiver Matrix</span>
-                                            <input id="cfg-overview-receivers" type="checkbox" checked
-                                                aria-label="Show Receiver Matrix in overview">
                                         </div>
                                         <div class="overview-topic-item" data-overview-key="assignments"
                                             draggable="true">
@@ -3351,192 +4379,99 @@
                                             <input id="cfg-overview-map" type="checkbox" checked
                                                 aria-label="Show Map in overview">
                                         </div>
+                                        <div class="overview-topic-item" data-overview-key="active-receivers"
+                                            draggable="true">
+                                            <span class="overview-topic-handle" aria-hidden="true">::</span>
+                                            <span class="overview-topic-label">Active Receivers</span>
+                                            <input id="cfg-overview-active-receivers" type="checkbox" checked
+                                                aria-label="Show Active Receivers in overview">
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        </section>
-
-                        <section class="settings-card" aria-labelledby="settings-runtime-title">
-                            <div class="settings-card-title" id="settings-runtime-title">Runtime</div>
-                            <div class="control-grid" style="margin-top: 0;">
-                                <label class="control-field">Dwell Seconds
-                                    <input id="cfg-dwell-s" type="number" min="0.1" max="600" step="0.1"
-                                        placeholder="18">
-                                </label>
-                                <label class="control-field">Span Hz
-                                    <input id="cfg-span-hz" type="number" min="100" max="30000" step="10"
-                                        placeholder="3000">
-                                </label>
-                                <label class="control-field">Threshold dB
-                                    <input id="cfg-threshold-db" type="number" min="0" max="60" step="0.1"
-                                        placeholder="12">
-                                </label>
-                                <label class="control-field">FPS
-                                    <input id="cfg-fps" type="number" min="0.1" max="10" step="0.1" placeholder="2">
-                                </label>
-                                <label class="control-field">Retune Pause (s)
-                                    <input id="cfg-retune-pause-s" type="number" min="0" max="10" step="0.1"
-                                        placeholder="0.5">
-                                </label>
-                                <div class="control-field control-field-toggle">
-                                    <button class="settings-toggle-btn" id="cfg-fast-scan-enabled" type="button"
-                                        aria-pressed="false" data-icon="bolt" data-toggle-on="ON" data-toggle-off="OFF"
-                                        aria-label="Fast Scan toggle">
-                                        <span class="settings-toggle-label">Fast Scan</span>
-                                        <span class="settings-toggle-state">OFF</span>
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="control-actions" style="margin-top: 0;">
-                                <button class="action-btn" id="cfg-reload" type="button" data-icon="refresh">Reload
-                                    Settings</button>
-                                <button class="action-btn" id="cfg-deps-refresh" type="button" data-icon="bolt">Refresh
-                                    Runtime Deps</button>
-                                <button class="action-btn" id="cfg-deps-test" type="button" data-icon="flask">Test Path
-                                    Failures</button>
                             </div>
                         </section>
 
                         <section class="settings-card" aria-labelledby="settings-automation-title">
-                            <div class="settings-card-title" id="settings-automation-title">Automation</div>
-                            <div class="settings-subcard-grid">
-                                <section class="settings-subcard" aria-labelledby="settings-automation-auto-scan-title">
-                                    <div class="settings-subcard-title" id="settings-automation-auto-scan-title">Auto
-                                        Scan Settings</div>
-                                    <div class="control-grid" style="margin-top: 0;">
-                                        <div class="control-field control-field-toggle">
-                                            <button class="settings-toggle-btn" id="auto-refresh-schedule" type="button"
-                                                aria-pressed="false" data-icon="refresh" data-toggle-on="ON"
-                                                data-toggle-off="OFF" aria-label="Auto-refresh schedule toggle">
-                                                <span class="settings-toggle-label">Auto-refresh schedule</span>
-                                                <span class="settings-toggle-state">OFF</span>
-                                            </button>
+                            <div class="settings-card-title" id="settings-automation-title">Receiver Mode</div>
+
+                            <div id="auto-mode-content">
+                                <div class="settings-subcard-grid">
+                                    <section class="settings-subcard" id="auto-fixed-plan-card"
+                                        aria-labelledby="auto-fixed-plan-title">
+                                        <div class="settings-subcard-title" id="auto-fixed-plan-title">Fixed Receiver
+                                            Plan
                                         </div>
-                                        <div class="control-field control-field-toggle">
-                                            <button class="settings-toggle-btn" id="auto-scan-on-startup" type="button"
-                                                aria-pressed="false" data-icon="play" data-toggle-on="ON"
-                                                data-toggle-off="OFF" aria-label="Run band scan on startup toggle">
-                                                <span class="settings-toggle-label">Run band scan on startup</span>
-                                                <span class="settings-toggle-state">OFF</span>
-                                            </button>
-                                        </div>
-                                        <div class="control-field control-field-toggle">
-                                            <button class="settings-toggle-btn" id="auto-scan-on-block" type="button"
-                                                aria-pressed="false" data-icon="rotate" data-toggle-on="ON"
-                                                data-toggle-off="OFF" aria-label="Run band scan on block change toggle">
-                                                <span class="settings-toggle-label">Run band scan on block change</span>
-                                                <span class="settings-toggle-state">OFF</span>
-                                            </button>
-                                        </div>
+                                        <table class="band-sched-table" style="font-size:0.82em;margin-bottom:6px;">
+                                            <thead>
+                                                <tr>
+                                                    <th class="band-sched-band-col-hdr">RX</th>
+                                                    <th class="band-sched-mode-col-hdr">Band</th>
+                                                    <th class="band-sched-mode-col-hdr">Mode</th>
+                                                    <th style="width:28px;text-align:center"
+                                                        title="Live health verified by auto-set loop"></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="auto-fixed-plan-rows">
+                                                <tr data-fixed-rx="2">
+                                                    <td>RX2</td>
+                                                    <td>20m</td>
+                                                    <td>FT4 / FT8 (IQ)</td>
+                                                    <td class="fixed-rx-status" style="text-align:center"></td>
+                                                </tr>
+                                                <tr data-fixed-rx="3">
+                                                    <td>RX3</td>
+                                                    <td>20m</td>
+                                                    <td>WSPR</td>
+                                                    <td class="fixed-rx-status" style="text-align:center"></td>
+                                                </tr>
+                                                <tr data-fixed-rx="4">
+                                                    <td>RX4</td>
+                                                    <td>40m</td>
+                                                    <td>FT8</td>
+                                                    <td class="fixed-rx-status" style="text-align:center"></td>
+                                                </tr>
+                                                <tr data-fixed-rx="5">
+                                                    <td>RX5</td>
+                                                    <td>40m</td>
+                                                    <td>FT4 / WSPR (IQ)</td>
+                                                    <td class="fixed-rx-status" style="text-align:center"></td>
+                                                </tr>
+                                                <tr data-fixed-rx="6">
+                                                    <td>RX6</td>
+                                                    <td>30m</td>
+                                                    <td>FT4 / FT8 / WSPR (IQ)</td>
+                                                    <td class="fixed-rx-status" style="text-align:center"></td>
+                                                </tr>
+                                                <tr data-fixed-rx="7">
+                                                    <td>RX7</td>
+                                                    <td>17m</td>
+                                                    <td>FT4 / FT8 / WSPR (IQ)</td>
+                                                    <td class="fixed-rx-status" style="text-align:center"></td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                        <p class="band-sched-hint" style="margin:0;">
+                                            Roaming (RX0&ndash;1): Day 07:00&ndash;21:00: <strong>15m FT8 + 10m
+                                                FT8</strong>
+                                            &nbsp;/&nbsp; Night: <strong>80m FT4+FT8 + 160m WSPR</strong>
+                                        </p>
+                                    </section>
+                                    <div class="control-actions" style="margin-top: 0;">
+                                        <span class="autosave-badge">Autosave On</span>
+                                        <button class="action-btn" id="auto-reload" type="button"
+                                            data-icon="refresh">Reload
+                                            Automation</button>
+                                        <button class="action-btn" id="auto-apply-now" type="button"
+                                            data-icon="spark">Apply
+                                            Auto-Set Now</button>
                                     </div>
-                                </section>
-                                <section class="settings-subcard" aria-labelledby="settings-automation-wspr-title">
-                                    <div class="settings-subcard-title" id="settings-automation-wspr-title">WSPR
-                                        Settings</div>
-                                    <div class="control-grid" style="margin-top: 0;">
-                                        <div class="control-field control-field-toggle">
-                                            <button class="settings-toggle-btn" id="auto-scan-wspr" type="button"
-                                                aria-pressed="false" data-icon="radio" data-toggle-on="ON"
-                                                data-toggle-off="OFF" aria-label="Run WSPR band scan toggle">
-                                                <span class="settings-toggle-label">Run WSPR band scan</span>
-                                                <span class="settings-toggle-state">OFF</span>
-                                            </button>
-                                        </div>
-                                        <label class="control-field">Band hop duration (sec)
-                                            <input id="auto-band-hop-seconds" type="number" min="10" max="900" step="1"
-                                                placeholder="105">
-                                        </label>
-                                        <label class="control-field">WSPR start band
-                                            <select id="auto-wspr-start-band">
-                                                <option value="10m">10m</option>
-                                                <option value="12m">12m</option>
-                                                <option value="15m">15m</option>
-                                                <option value="17m">17m</option>
-                                                <option value="20m">20m</option>
-                                                <option value="30m">30m</option>
-                                                <option value="40m">40m</option>
-                                                <option value="60m">60m</option>
-                                                <option value="80m">80m</option>
-                                                <option value="160m">160m</option>
-                                            </select>
-                                        </label>
-                                    </div>
-                                </section>
-                                <section class="settings-subcard" aria-labelledby="settings-automation-ssb-title">
-                                    <div class="settings-subcard-title" id="settings-automation-ssb-title">SSB
-                                        Scan Settings</div>
-                                    <div class="control-grid" style="margin-top: 0;">
-                                        <div class="control-field control-field-toggle">
-                                            <button class="settings-toggle-btn" id="auto-ssb-enabled" type="button"
-                                                aria-pressed="false" data-icon="mic" data-toggle-on="ON"
-                                                data-toggle-off="OFF" aria-label="SSB scan enabled toggle">
-                                                <span class="settings-toggle-label">SSB scan enabled</span>
-                                                <span class="settings-toggle-state">OFF</span>
-                                            </button>
-                                        </div>
-                                        <label class="control-field">Sideband
-                                            <select id="auto-ssb-sideband">
-                                                <option value="USB">USB</option>
-                                                <option value="LSB">LSB</option>
-                                            </select>
-                                        </label>
-                                        <label class="control-field">Threshold dB
-                                            <input id="auto-ssb-threshold-db" type="number" min="1" max="60" step="0.1"
-                                                placeholder="20">
-                                        </label>
-                                        <div class="control-field control-field-toggle">
-                                            <button class="settings-toggle-btn" id="auto-ssb-adaptive-threshold"
-                                                type="button" aria-pressed="false" data-icon="trend" data-toggle-on="ON"
-                                                data-toggle-off="OFF" aria-label="Adaptive threshold toggle">
-                                                <span class="settings-toggle-label">Adaptive threshold</span>
-                                                <span class="settings-toggle-state">OFF</span>
-                                            </button>
-                                        </div>
-                                        <div class="control-field control-field-toggle">
-                                            <button class="settings-toggle-btn" id="auto-ssb-use-kiwi-snr" type="button"
-                                                aria-pressed="false" data-icon="gauge" data-toggle-on="ON"
-                                                data-toggle-off="OFF" aria-label="Use Kiwi SNR toggle">
-                                                <span class="settings-toggle-label">Use Kiwi SNR</span>
-                                                <span class="settings-toggle-state">OFF</span>
-                                            </button>
-                                        </div>
-                                        <label class="control-field">Wait (sec)
-                                            <input id="auto-ssb-wait-s" type="number" min="0.1" max="10" step="0.1"
-                                                placeholder="1">
-                                        </label>
-                                        <label class="control-field">Dwell (sec)
-                                            <input id="auto-ssb-dwell-s" type="number" min="1" max="60" step="0.1"
-                                                placeholder="6">
-                                        </label>
-                                        <label class="control-field">Tail (sec)
-                                            <input id="auto-ssb-tail-s" type="number" min="0.1" max="10" step="0.1"
-                                                placeholder="1">
-                                        </label>
-                                        <label class="control-field">Step strategy
-                                            <select id="auto-ssb-step-strategy">
-                                                <option value="adaptive">Adaptive</option>
-                                                <option value="fixed">Fixed</option>
-                                            </select>
-                                        </label>
-                                        <label class="control-field" id="auto-ssb-step-khz-field">Fixed step size (kHz)
-                                            <input id="auto-ssb-step-khz" type="number" min="0.1" max="20" step="0.1"
-                                                placeholder="10">
-                                        </label>
-                                    </div>
-                                </section>
-                            </div>
-                            <div class="control-actions" style="margin-top: 0;">
-                                <span class="autosave-badge">Autosave On</span>
-                                <button class="action-btn" id="auto-reload" type="button" data-icon="refresh">Reload
-                                    Automation</button>
-                                <button class="action-btn" id="auto-apply-now" type="button" data-icon="spark">Apply
-                                    Auto-Set Now</button>
-                            </div>
-                            <div class="control-status" id="auto-status">Automation: idle</div>
+                                    <div class="control-status" id="auto-status">Automation: idle</div>
+                                </div><!-- /auto-mode-content -->
                         </section>
 
                         <div class="control-status" id="cfg-status">Settings: idle</div>
                     </article>
+
                     <article class="panel" id="system">
                         <div class="panel-hdr">
                             <h2 data-icon="server">System Info</h2>
@@ -3586,21 +4521,7 @@
                                     </div>
                                 </div>
                             </section>
-                            <section class="system-card system-card-wide" data-icon="users"
-                                data-system-card="kiwi-users">
-                                <div class="system-card-header">
-                                    <div class="system-card-title">Active Kiwi Users</div>
-                                    <button class="system-card-toggle" type="button" aria-expanded="true"
-                                        aria-label="Collapse Active Kiwi Users card">
-                                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                                            <path d="m6 9 6 6 6-6"></path>
-                                        </svg>
-                                    </button>
-                                </div>
-                                <div class="system-card-body">
-                                    <div id="system-kiwi-users" class="system-users-wrap"></div>
-                                </div>
-                            </section>
+
                         </div>
                         <div class="control-status" id="system-status">System Info: idle</div>
                     </article>
@@ -3626,6 +4547,12 @@
         let lastIntervalMessages = 0;
         let rateHistory = [];
         let summaryFaultLoadHistory = [];
+        let summaryDecodeRateHistory = [];
+        let latestBcConditions = {};
+        let latestBcStatus = null;
+        let latestBcChangedBands = new Set();
+        let bcCurrentMode = 'ft8';
+        let bcChangedBandsTimer = null;
         let bandActivityHistory = {};
         let bandBreakdownHistory = {};
         let receiverActivityHistory = {};
@@ -3648,6 +4575,7 @@
         let pausedBandChartSnapshot = null;
         let decodeRateWarmupCycles = 2;
         let latestChannelsMap = {};
+        let latestAssignments = {};
         let lastRateTickMs = Date.now();
         let refreshTimer = null;
         let refreshIntervalMs = 3000;
@@ -3674,17 +4602,15 @@
         let latestAutomationSettings = {};
         let pendingConfigAutosave = false;
         let pendingAutomationAutosave = false;
-        let lastReceiverGridSignature = "";
-        let lastReceiverAgeRefreshMs = 0;
         let lastBandActivitySampleMs = Date.now();
         let overviewTopicPrefs = {
             status: true,
-            receivers: true,
             assignments: true,
             faults: true,
             messages: true,
             map: true,
-            order: ["status", "receivers", "assignments", "faults", "messages", "map"],
+            "active-receivers": true,
+            order: ["status", "assignments", "faults", "messages", "map", "active-receivers"],
         };
 
         const REFRESH_INTERVAL_KEY = "kiwiscan.pro.refreshIntervalMs";
@@ -3706,23 +4632,25 @@
         });
         const DEFAULT_SUBTITLE_TEXT = "Realtime operations dashboard for receiver health and propagation";
         const OVERVIEW_TOPICS_STORAGE_KEY = "kiwiscan.pro.overviewTopics";
-        const RECEIVER_SORT_STORAGE_KEY = "kiwiscan.pro.receiverSortMode.v2";
         const DECODE_EXTRA_FILTERS_STORAGE_KEY = "kiwiscan.pro.decodeExtraFilters.v1";
-        const OVERVIEW_TOPIC_KEYS = ["status", "receivers", "assignments", "faults", "messages", "map"];
+        const OVERVIEW_TOPIC_KEYS = ["status", "assignments", "faults", "messages", "map", "active-receivers"];
         const OVERVIEW_TOPIC_METADATA = Object.freeze({
             status: { sectionId: "status-strip", fullWidth: true },
-            receivers: { sectionId: "receivers", fullWidth: true },
             assignments: { sectionId: "assignments", fullWidth: true },
             faults: { sectionId: "faults", fullWidth: false },
             messages: { sectionId: "messages", fullWidth: true },
             map: { sectionId: "map", fullWidth: true },
+            "active-receivers": { sectionId: "active-receivers", fullWidth: true },
         });
         const GRAPH_WINDOW_MIN_MS = 5 * 60 * 1000;
         const GRAPH_HISTORY_MAX_SAMPLES = 360;
-        const RECEIVER_MATRIX_AGE_REFRESH_MS = 15000;
         const RECEIVER_ACTIVITY_WINDOW_MS = 60 * 60 * 1000;
         const BAND_ACTIVITY_HISTORY_MAX = GRAPH_HISTORY_MAX_SAMPLES;
+        let chartBucketMs = 15000;  // updated from server /decodes/chart bucket_s
         const BAND_CHART_PALETTE = ["#0ea5a0", "#f59e0b", "#60a5fa", "#f43f5e", "#a855f7", "#22c55e", "#eab308", "#06b6d4", "#f97316", "#8b5cf6"];
+        const BAND_COLOR_OVERRIDES = { "160m": "#f472b6" };
+        const RX_COLORS = ["#ef4444", "#22c55e", "#eab308", "#f97316", "#60a5fa", "#4ade80", "#f472b6", "#a855f7"];
+        function rxColor(rxNum) { const n = Number(rxNum); return (Number.isFinite(n) && n >= 0 && n < RX_COLORS.length) ? RX_COLORS[n] : "#94a3b8"; }
         const RECENT_DECODE_LIMIT = 120;
         const RECENT_DECODE_RENDER_LIMIT = 80;
         const MAP_POINT_TTL_MS = 24 * 60 * 60 * 1000;
@@ -3768,6 +4696,10 @@
         let mapHasAutoFit = false;
         let mapViewMode = readStoredMapViewMode();
         let globeResizeBound = false;
+        /** KiwiSDR receiver location from config (kiwi_latitude / kiwi_longitude). */
+        let stationLat = null;
+        let stationLon = null;
+        let homeMarkerLayer = null;
         let draggedOverviewTopicEl = null;
         let overviewTopicPlaceholders = null;
 
@@ -4104,8 +5036,37 @@
             return value === "FT8" || value === "FT4" || value === "WSPR";
         }
 
+        function _bcEntryForBand(band) {
+            if (!band || !Object.keys(latestBcConditions).length) return null;
+            return latestBcConditions[band] || latestBcConditions[String(band).toLowerCase()] || null;
+        }
+
+        function _bcSourceShort(source) {
+            return { user_override: "pin", empirical: "live", seasonal: "prediction" }[source] || "";
+        }
+
+        function _bcSourceTitle(source) {
+            return {
+                user_override: "Manual pin",
+                empirical: "Live decodes",
+                seasonal: "Prediction",
+            }[source] || "";
+        }
+
+        function _bcForBand(band) {
+            const entry = _bcEntryForBand(band);
+            return entry ? (entry.merged || null) : null;
+        }
+
         function propagationDisplayText(channel) {
             if (!channel || typeof channel !== "object") return "--";
+            const bcEntry = _bcEntryForBand(channel.band);
+            const bc = bcEntry ? bcEntry.merged : null;
+            if (bc) {
+                const source = _bcSourceShort(bcEntry && bcEntry.source);
+                const label = bc.charAt(0) + bc.slice(1).toLowerCase();
+                return source ? `${label} (${source})` : label;
+            }
             const state = String(channel.propagation_state || "").trim().toLowerCase();
             if (state && state !== "unknown") return state;
             if (!isDigitalMode(channel.mode)) return "--";
@@ -4114,6 +5075,24 @@
             const snrAvgDb = Number(channel.snr_avg_db);
             if (snrSamples <= 0 || !Number.isFinite(snrAvgDb)) return "warning";
             return "unknown";
+        }
+
+        function propagationColor(text) {
+            const t = String(text || "").toLowerCase();
+            return (t.includes("open") && t.includes("live")) ? "#4ade80" : "";
+        }
+
+        function propagationCellHtml(band, channel) {
+            const bcEntry = _bcEntryForBand(band);
+            const bc = bcEntry ? bcEntry.merged : null;
+            if (bc) {
+                const cls = { OPEN: 'prop-open', MARGINAL: 'prop-marginal', CLOSED: 'prop-closed' }[bc] || '';
+                const label = bc.charAt(0) + bc.slice(1).toLowerCase();
+                const source = _bcSourceShort(bcEntry && bcEntry.source);
+                const title = _bcSourceTitle(bcEntry && bcEntry.source);
+                return `<span class="prop-cond-wrap"><span class="prop-cond ${cls}">${label}</span>${source ? `<span class="prop-source" title="${title}">${source}</span>` : ''}</span>`;
+            }
+            return propagationDisplayText(channel);
         }
 
         function setSystemStatus(text) {
@@ -4222,27 +5201,26 @@
                 ["Time", safeText(kiwiStatus.date, "--")],
             ]);
 
-            const usersEl = byId("system-kiwi-users");
+            const usersEl = byId("active-receivers-table");
             if (!usersEl) return;
             const users = Array.isArray(kiwi.active_users) ? kiwi.active_users : [];
             if (!users.length) {
-                usersEl.innerHTML = `<div class="control-status">No active Kiwi users reported.</div>`;
+                usersEl.innerHTML = `<div class="control-status">No active receivers reported.</div>`;
                 return;
             }
             const body = users.map((user) => `
                 <tr>
-                    <td class="mono">RX${escapeHtml(safeText(user.rx, "--"))}</td>
+                    <td class="mono" style="color:${rxColor(user.rx)};font-weight:700">RX${escapeHtml(safeText(user.rx, "--"))}</td>
                     <td>${escapeHtml(safeText(user.name, "--"))}</td>
                     <td class="mono">${escapeHtml(Number.isFinite(Number(user.freq_khz)) ? `${Number(user.freq_khz).toFixed(3)} kHz` : "--")}</td>
                     <td>${escapeHtml(safeText(user.mode, "--"))}</td>
-                    <td>${escapeHtml(safeText(user.location, "--"))}</td>
                     <td class="mono">${escapeHtml(Number.isFinite(Number(user.connected_seconds)) ? fmtDurationCompact(user.connected_seconds) : "--")}</td>
                 </tr>
             `).join("");
             usersEl.innerHTML = `
                 <div class="assign-table-wrap">
                     <table class="assign-table">
-                        <thead><tr><th>RX</th><th>Name</th><th>Freq</th><th>Mode</th><th>Location</th><th>Connected</th></tr></thead>
+                        <thead><tr><th>RX</th><th>Name</th><th>Freq</th><th>Mode</th><th>Connected</th></tr></thead>
                         <tbody>${body}</tbody>
                     </table>
                 </div>
@@ -4434,7 +5412,8 @@
             stream: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7c2.5 0 2.5 2 5 2s2.5-2 5-2 2.5 2 5 2"></path><path d="M4 12c2.5 0 2.5 2 5 2s2.5-2 5-2 2.5 2 5 2"></path><path d="M4 17c2.5 0 2.5 2 5 2s2.5-2 5-2 2.5 2 5 2"></path></svg>`,
             trend: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17 10 11l4 4 6-8"></path><path d="M20 11V7h-4"></path></svg>`,
             users: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 19a4 4 0 0 0-8 0"></path><circle cx="12" cy="10" r="3"></circle><path d="M20 19a3 3 0 0 0-3-3"></path><path d="M4 19a3 3 0 0 1 3-3"></path></svg>`,
-            wand: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 10-10"></path><path d="m14 4 1 3"></path><path d="m19 7-3 1"></path><path d="m17 2 .8 2.2L20 5"></path><path d="m10 14 1.5 1.5"></path></svg>`
+            wand: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 20 10-10"></path><path d="m14 4 1 3"></path><path d="m19 7-3 1"></path><path d="m17 2 .8 2.2L20 5"></path><path d="m10 14 1.5 1.5"></path></svg>`,
+            heart: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>`
         });
 
         function buildIconMarkup(name) {
@@ -4630,11 +5609,11 @@
         function defaultOverviewTopicPrefs() {
             return {
                 status: true,
-                receivers: true,
                 assignments: true,
                 faults: true,
                 messages: true,
                 map: true,
+                "active-receivers": true,
                 order: [...OVERVIEW_TOPIC_KEYS],
             };
         }
@@ -4760,9 +5739,29 @@
                 && Number(lon) <= CONTINENTAL_US_BOUNDS.maxLon;
         }
 
+        /**
+         * Great-circle distance in km between two lat/lon pairs (Haversine formula).
+         */
+        function haversineKm(lat1, lon1, lat2, lon2) {
+            const R = 6371;
+            const toRad = d => d * Math.PI / 180;
+            const dLat = toRad(lat2 - lat1);
+            const dLon = toRad(lon2 - lon1);
+            const a = Math.sin(dLat / 2) ** 2
+                + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        }
+
+        /** Minimum km beyond which a contact is considered DX when using position-based filtering. */
+        const DX_DISTANCE_THRESHOLD_KM = 1000;
+
         function isDxDecodeGrid(grid) {
             const pos = maidenheadToLatLon(grid);
             if (!pos) return false;
+            // Prefer distance-based DX classification when receiver location is known.
+            if (Number.isFinite(stationLat) && Number.isFinite(stationLon)) {
+                return haversineKm(stationLat, stationLon, pos.lat, pos.lon) >= DX_DISTANCE_THRESHOLD_KM;
+            }
             return !isLatLonWithinContinentalUs(pos.lat, pos.lon);
         }
 
@@ -4883,7 +5882,7 @@
         function applyDecodeListFilters(items) {
             const filtered = (Array.isArray(items) ? items : []).filter((item) => {
                 if (!decodeSelectedModes.has(String(item && item.mode || "").toUpperCase())) return false;
-                if (decodeCqOnly && !isCqDecodeMessage(item && item.message)) return false;
+                if (decodeCqOnly && (item && item.mode) !== "WSPR" && !isCqDecodeMessage(item && item.message)) return false;
                 if (decodeDxOnly && !isDxDecodeGrid(item && item.grid)) return false;
                 return true;
             });
@@ -4964,9 +5963,18 @@
             if (key === "time") return decodeItemTimestampMs(a) - decodeItemTimestampMs(b);
             if (key === "freq") return (Number(a && a.frequency_mhz) || 0) - (Number(b && b.frequency_mhz) || 0);
             if (key === "band") return compareBandLabels(String(a && a.band || ""), String(b && b.band || ""));
+            if (key === "snr") return (Number.isFinite(a && a.snr) ? a.snr : -Infinity) - (Number.isFinite(b && b.snr) ? b.snr : -Infinity);
             if (key === "mode") return String(a && a.mode || "").localeCompare(String(b && b.mode || ""));
             if (key === "call") return sanitizeCallsign(a && a.callsign, a && a.grid).localeCompare(sanitizeCallsign(b && b.callsign, b && b.grid));
             if (key === "grid") return normalizeGridSquare(a && a.grid).localeCompare(normalizeGridSquare(b && b.grid));
+            if (key === "dist") {
+                const distOf = (item) => {
+                    if (!Number.isFinite(stationLat) || !Number.isFinite(stationLon)) return Infinity;
+                    const pos = maidenheadToLatLon(normalizeGridSquare(item && item.grid));
+                    return pos ? haversineKm(stationLat, stationLon, pos.lat, pos.lon) : Infinity;
+                };
+                return distOf(a) - distOf(b);
+            }
             return 0;
         }
 
@@ -4988,7 +5996,7 @@
             if (!list) return;
             const filtered = recentDecodeItems.filter((item) => {
                 if (!decodeSelectedModes.has(String(item && item.mode || "").toUpperCase())) return false;
-                if (decodeCqOnly && !isCqDecodeMessage(item && item.message)) return false;
+                if (decodeCqOnly && (item && item.mode) !== "WSPR" && !isCqDecodeMessage(item && item.message)) return false;
                 if (decodeDxOnly && !isDxDecodeGrid(item && item.grid)) return false;
                 return true;
             });
@@ -5015,13 +6023,20 @@
                 const call = sanitizeCallsign(item.callsign, item.grid) || "--";
                 const grid = normalizeGridSquare(item.grid) || "--";
                 const message = safeText(item.message, "");
+                let distText = "--";
+                if (Number.isFinite(stationLat) && Number.isFinite(stationLon) && grid !== "--") {
+                    const pos = maidenheadToLatLon(grid);
+                    if (pos) distText = Math.round(haversineKm(stationLat, stationLon, pos.lat, pos.lon) * 0.621371) + " mi";
+                }
                 return `<div class="decode-feed-row" data-mode="${escapeHtml(mode)}">
                     <span class="decode-feed-cell">${escapeHtml(formatDecodeClockText(item))}</span>
                     <span class="decode-feed-cell">${escapeHtml(formatDecodeFreqText(item))}</span>
                     <span class="decode-feed-cell">${escapeHtml(mode)}</span>
                     <span class="decode-feed-cell">${escapeHtml(band)}</span>
+                    <span class="decode-feed-cell">${Number.isFinite(item.snr) ? (item.snr >= 0 ? "+" : "") + item.snr : "--"}</span>
                     <span class="decode-feed-cell">${escapeHtml(call)}</span>
                     <span class="decode-feed-cell">${escapeHtml(grid)}</span>
+                    <span class="decode-feed-cell">${escapeHtml(distText)}</span>
                     <span class="decode-feed-cell decode-feed-message">${escapeHtml(message)}</span>
                 </div>`;
             }).join("");
@@ -5042,7 +6057,12 @@
             const mode = entry.mode || "---";
             const snr = Number.isFinite(entry.snr) ? `${entry.snr} dB` : "n/a";
             const seen = Number.isFinite(entry.lastSeen) ? `${Math.max(0, Math.round((Date.now() - entry.lastSeen) / 1000))}s ago` : "n/a";
-            return `${escapeHtml(title)}<br>Mode: ${escapeHtml(mode)} | Band: ${escapeHtml(band)}<br>Signal: ${escapeHtml(snr)}<br>Seen: ${escapeHtml(seen)}`;
+            let dist = "";
+            if (Number.isFinite(stationLat) && Number.isFinite(stationLon)) {
+                const pos = maidenheadToLatLon(normalizeGridSquare(grid));
+                if (pos) dist = `<br>Distance: ${Math.round(haversineKm(stationLat, stationLon, pos.lat, pos.lon) * 0.621371).toLocaleString()} mi`;
+            }
+            return `${escapeHtml(title)}<br>Mode: ${escapeHtml(mode)} | Band: ${escapeHtml(band)}<br>Signal: ${escapeHtml(snr)}${dist}<br>Seen: ${escapeHtml(seen)}`;
         }
 
         function getGlobeAtmosphereColor() {
@@ -5332,6 +6352,7 @@
                 maxZoom: 12,
             }).addTo(mapInstance);
             mapMarkerLayer = L.layerGroup().addTo(mapInstance);
+            homeMarkerLayer = L.layerGroup().addTo(mapInstance);
         }
 
         function mapPointMatchesFilters(entry) {
@@ -5432,13 +6453,20 @@
                     return;
                 }
                 updateGlobeDayNightOverlay();
-                globeInstance.pointsData(entries.map((entry) => ({
+                // Build decode points; append home station marker when location is known.
+                const homeGlobePoint = (Number.isFinite(stationLat) && Number.isFinite(stationLon))
+                    ? [{
+                        lat: stationLat, lon: stationLon, color: "#f97316", altitude: 0.22, radius: 0.42,
+                        label: `Receiver: ${stationLat.toFixed(4)}, ${stationLon.toFixed(4)}`
+                    }]
+                    : [];
+                globeInstance.pointsData([...entries.map((entry) => ({
                     ...entry,
                     color: MAP_MODE_COLORS[String(entry.mode || "").toUpperCase()] || "#94a3b8",
                     altitude: 0.14,
                     radius: 0.26,
                     label: formatMapTooltip(entry),
-                })));
+                })), ...homeGlobePoint]);
                 resizeGlobeMap();
                 if (!mapHasAutoFit && entries.length) fitMapToVisibleEntries();
             } else {
@@ -5461,6 +6489,20 @@
                     });
                     marker.bindTooltip(formatMapTooltip(entry));
                     marker.addTo(mapMarkerLayer);
+                }
+                // Home station marker — only rendered when receiver location is known.
+                if (homeMarkerLayer) {
+                    homeMarkerLayer.clearLayers();
+                    if (Number.isFinite(stationLat) && Number.isFinite(stationLon)) {
+                        const homeIcon = L.divIcon({
+                            className: "map-home-icon",
+                            iconSize: [18, 18],
+                            iconAnchor: [9, 9],
+                        });
+                        L.marker([stationLat, stationLon], { icon: homeIcon })
+                            .bindTooltip(`Receiver: ${stationLat.toFixed(4)}, ${stationLon.toFixed(4)}`)
+                            .addTo(homeMarkerLayer);
+                    }
                 }
                 if (!mapHasAutoFit && entries.length) fitMapToVisibleEntries();
             }
@@ -5935,11 +6977,11 @@
                 byId("cfg-port").value = String(nextKiwiSettings.port);
                 byId("cfg-latitude").value = String(nextKiwiSettings.latitude);
                 byId("cfg-longitude").value = String(nextKiwiSettings.longitude);
-                byId("cfg-dwell-s").value = Number.isFinite(Number(cfg.dwell_s)) ? String(Number(cfg.dwell_s)) : "";
-                byId("cfg-span-hz").value = Number.isFinite(Number(cfg.span_hz)) ? String(Number(cfg.span_hz)) : "";
-                byId("cfg-threshold-db").value = Number.isFinite(Number(cfg.threshold_db)) ? String(Number(cfg.threshold_db)) : "";
-                byId("cfg-fps").value = Number.isFinite(Number(cfg.fps)) ? String(Number(cfg.fps)) : "";
-                byId("cfg-retune-pause-s").value = Number.isFinite(Number(cfg.retune_pause_s)) ? String(Number(cfg.retune_pause_s)) : "";
+                const _cfgDwellS = byId("cfg-dwell-s"); if (_cfgDwellS) _cfgDwellS.value = Number.isFinite(Number(cfg.dwell_s)) ? String(Number(cfg.dwell_s)) : "";
+                const _cfgSpanHz = byId("cfg-span-hz"); if (_cfgSpanHz) _cfgSpanHz.value = Number.isFinite(Number(cfg.span_hz)) ? String(Number(cfg.span_hz)) : "";
+                const _cfgThresholdDb = byId("cfg-threshold-db"); if (_cfgThresholdDb) _cfgThresholdDb.value = Number.isFinite(Number(cfg.threshold_db)) ? String(Number(cfg.threshold_db)) : "";
+                const _cfgFps = byId("cfg-fps"); if (_cfgFps) _cfgFps.value = Number.isFinite(Number(cfg.fps)) ? String(Number(cfg.fps)) : "";
+                const _cfgRetunePauseS = byId("cfg-retune-pause-s"); if (_cfgRetunePauseS) _cfgRetunePauseS.value = Number.isFinite(Number(cfg.retune_pause_s)) ? String(Number(cfg.retune_pause_s)) : "";
                 setSelectBool("cfg-fast-scan-enabled", !!cfg.fast_scan_enabled);
                 byId("cfg-ui-theme-mode").value = nextThemeMode;
                 byId("cfg-ui-theme-night-hour").value = String(nextNightHour);
@@ -5953,7 +6995,15 @@
                 applyOverviewTopicPrefs(nextOverviewTopics);
                 const kiwiLat = Number(cfg.kiwi_latitude);
                 const kiwiLon = Number(cfg.kiwi_longitude);
+                const kiwiGridRaw = String(cfg.kiwi_grid || "").trim();
+                const kiwiGrid = kiwiGridRaw.length >= 6
+                    ? kiwiGridRaw.slice(0, 4).toUpperCase() + kiwiGridRaw.slice(4).toLowerCase()
+                    : kiwiGridRaw.toUpperCase();
+                const gridEl = byId("cfg-kiwi-grid");
+                if (gridEl) gridEl.value = kiwiGrid || "--";
                 if (Number.isFinite(kiwiLat) && Number.isFinite(kiwiLon)) {
+                    stationLat = kiwiLat;
+                    stationLon = kiwiLon;
                     setConfigStatus(`loaded (Kiwi GPS ${kiwiLat.toFixed(4)}, ${kiwiLon.toFixed(4)})`);
                 } else {
                     setConfigStatus("loaded");
@@ -6090,6 +7140,11 @@
                     postJson("/config", payload),
                     postJson("/automation/settings", automationPayload),
                 ]);
+                // Keep latestAutomationSettings in sync so saveAutomationSection
+                // doesn't overwrite these values with a stale snapshot.
+                if (latestAutomationSettings && typeof latestAutomationSettings === "object") {
+                    latestAutomationSettings = { ...latestAutomationSettings, ...automationPayload };
+                }
                 applyAndPersistUiPreferences(
                     automationPayload.uiThemeMode,
                     automationPayload.uiDensity,
@@ -6156,10 +7211,12 @@
                 const loopRunning = !!r.running;
                 const headless = !!r.headless_enabled;
                 const launchd = !!r.launchd_enabled;
+                const launchdRunning = !!r.launchd_running;
                 const envEnabled = !!r.env_enabled;
                 const intervalS = Number.isFinite(Number(r.interval_seconds)) ? Number(r.interval_seconds) : null;
                 const intervalTxt = intervalS == null ? "-" : `${Math.round(intervalS)}s`;
-                const txt = `Loop ${loopRunning ? "running" : "stopped"} · headless ${headless ? "on" : "off"} · launchd ${launchd ? "on" : "off"} · env ${envEnabled ? "on" : "off"} · ${intervalTxt}`;
+                const launchdTxt = launchd ? "on" : (launchdRunning ? "off (process still running—restart may be needed)" : "off");
+                const txt = `Loop ${loopRunning ? "running" : "stopped"} · headless ${headless ? "on" : "off"} · launchd ${launchdTxt} · env ${envEnabled ? "on" : "off"} · ${intervalTxt}`;
                 runtimeStatusText = txt;
                 setServiceToggleState({ headlessEnabled: headless, useLaunchd: launchd });
                 if (el) el.textContent = txt;
@@ -6279,13 +7336,10 @@
                 authoritativeUiThemeHourOffset = nextHourOffset;
                 setSelectBool("auto-scan-on-block", !!a.autoScanOnBlock);
                 setSelectBool("auto-refresh-schedule", !!a.autoRefreshSchedule);
-                setSelectBool("auto-scan-wspr", !!a.autoScanWspr);
                 setSelectBool("auto-scan-on-startup", !!a.autoScanOnStartup);
                 setSelectBool("auto-ssb-enabled", !!a.ssbEnabled);
                 setSelectBool("auto-ssb-adaptive-threshold", a.ssbAdaptiveThreshold !== false);
                 setSelectBool("auto-ssb-use-kiwi-snr", a.ssbUseKiwiSnr !== false);
-                byId("auto-band-hop-seconds").value = Number.isFinite(Number(a.bandHopSeconds)) ? String(Number(a.bandHopSeconds)) : "";
-                byId("auto-wspr-start-band").value = safeText(a.wsprStartBand, "");
                 byId("auto-ssb-sideband").value = safeText(a.ssbSideband, "USB").toUpperCase();
                 byId("auto-ssb-threshold-db").value = Number.isFinite(Number(a.ssbThresholdDb)) ? String(Number(a.ssbThresholdDb)) : "";
                 byId("auto-ssb-wait-s").value = Number.isFinite(Number(a.ssbWaitS)) ? String(Number(a.ssbWaitS)) : "";
@@ -6294,8 +7348,25 @@
                 byId("auto-ssb-step-strategy").value = safeText(a.ssbStepStrategy, "adaptive").toLowerCase();
                 byId("auto-ssb-step-khz").value = Number.isFinite(Number(a.ssbStepKHz)) ? String(Number(a.ssbStepKHz)) : "";
                 updateAutomationSsbStepVisibility(byId("auto-ssb-step-strategy").value);
+                const fixedEnabled = a.fixedModeEnabled !== false;
+                setSelectBool("auto-mode-enabled", fixedEnabled);
+                applyAutoModeVisibility(fixedEnabled);
                 applyAndPersistUiPreferences(nextThemeMode, nextDensity, nextNightHour, nextHourOffset);
                 applyOverviewTopicPrefs(nextOverviewTopics);
+                // Render the band schedule grid; fetch the current block best-effort
+                let bsCurrentBlock = "";
+                try {
+                    const sched = await getJson("/schedule?mode=ft8");
+                    bsCurrentBlock = safeText(sched.block, "");
+                } catch (_) { /* ok if schedule endpoint is unavailable */ }
+                let bsAllowedBands = null;
+                try {
+                    const scanCfg = await getJson("/smart_scheduler/scan_config");
+                    if (Array.isArray(scanCfg.allowed_bands)) {
+                        bsAllowedBands = new Set(scanCfg.allowed_bands);
+                    }
+                } catch (_) { /* ok — defaults to all enabled */ }
+                renderBandScheduleGrid(a.scheduleProfiles || {}, bsCurrentBlock, bsAllowedBands);
                 setAutomationStatus("loaded");
             } catch (err) {
                 setAutomationStatus(`load failed: ${String((err && err.message) || err)}`);
@@ -6308,14 +7379,13 @@
             const snapshot = latestAutomationSettings && typeof latestAutomationSettings === "object"
                 ? latestAutomationSettings
                 : {};
+            const bsGrid = readBandScheduleFromGrid();
             const payload = {
                 ...snapshot,
                 autoScanOnBlock: readSelectBool("auto-scan-on-block", false),
                 autoRefreshSchedule: readSelectBool("auto-refresh-schedule", true),
-                autoScanWspr: readSelectBool("auto-scan-wspr", false),
                 autoScanOnStartup: readSelectBool("auto-scan-on-startup", false),
-                bandHopSeconds: readNumberInput("auto-band-hop-seconds", 105),
-                wsprStartBand: readTextInput("auto-wspr-start-band", "10m"),
+                fixedModeEnabled: readSelectBool("auto-mode-enabled", true),
                 ssbEnabled: readSelectBool("auto-ssb-enabled", true),
                 ssbSideband: readTextInput("auto-ssb-sideband", "USB").toUpperCase(),
                 ssbThresholdDb: readNumberInput("auto-ssb-threshold-db", 20),
@@ -6331,6 +7401,7 @@
                 uiThemeHourOffset: authoritativeUiThemeHourOffset,
                 uiDensity: normalizeUiDensityMode(snapshot.uiDensity, currentUiDensity || "normal"),
                 overviewTopics: overviewTopicPrefs,
+                ...(bsGrid !== null ? { scheduleProfiles: bsGrid } : {}),
             };
             try {
                 await postJson("/automation/settings", payload);
@@ -6365,8 +7436,273 @@
             }, Math.max(0, Number(delayMs) || 0));
         }
 
+        const BAND_SCHED_BANDS = ["10m", "12m", "15m", "17m", "20m", "30m", "40m", "60m", "80m", "160m"];
+        const BAND_SCHED_BLOCKS = ["00-04", "04-08", "08-10", "10-16", "16-20", "20-24"];
+        const BAND_SCHED_MODES = ["FT8", "FT4 / FT8", "FT4 / FT8 / WSPR", "FT4", "WSPR"];
+
+        // Band capabilities derived from the standard mode plan.
+        // share_ft8_ft4: FT8+FT4 fit in one 12 kHz IQ window (single RX slot).
+        // share_all:     FT8+FT4+WSPR also fit (single RX slot for all three).
+        // has_ft4:       band has a standard FT4 dial frequency.
+        const BAND_CAPABILITIES = {
+            "160m": { has_ft4: false, share_ft8_ft4: false, share_all: false },
+            "80m": { has_ft4: true, share_ft8_ft4: true, share_all: false },
+            "60m": { has_ft4: false, share_ft8_ft4: false, share_all: false },
+            "40m": { has_ft4: true, share_ft8_ft4: false, share_all: false },
+            "30m": { has_ft4: true, share_ft8_ft4: true, share_all: true },
+            "20m": { has_ft4: true, share_ft8_ft4: true, share_all: false },
+            "17m": { has_ft4: true, share_ft8_ft4: true, share_all: true },
+            "15m": { has_ft4: true, share_ft8_ft4: false, share_all: false },
+            "12m": { has_ft4: true, share_ft8_ft4: true, share_all: true },
+            "10m": { has_ft4: true, share_ft8_ft4: false, share_all: false },
+        };
+
+        function allowedModesForBand(band) {
+            const cap = BAND_CAPABILITIES[band] || {};
+            const modes = ["FT8"];
+            if (cap.share_all) modes.push("FT4 / FT8 / WSPR");
+            if (cap.share_ft8_ft4) modes.push("FT4 / FT8");
+            if (cap.has_ft4) modes.push("FT4");
+            modes.push("WSPR");
+            return modes;
+        }
+
+        function renderBandScheduleGrid(scheduleProfiles, currentBlock, allowedBands) {
+            const wrap = byId("auto-band-schedule-wrap");
+            if (!wrap) return;
+            const ft8Profile = (scheduleProfiles && scheduleProfiles.ft8) ? scheduleProfiles.ft8 : {};
+            // allowedBands: Set of enabled bands; null/undefined → all enabled
+            const allowedSet = (allowedBands instanceof Set) ? allowedBands : new Set(BAND_SCHED_BANDS);
+
+            const table = document.createElement("table");
+            table.className = "band-sched-table";
+
+            // Header row: band col, enabled col, mode col, then one th per block
+            const thead = table.createTHead();
+            const hdrRow = thead.insertRow();
+            const thBand = document.createElement("th");
+            thBand.className = "band-sched-band-col-hdr";
+            thBand.textContent = "Band";
+            hdrRow.appendChild(thBand);
+            const thEn = document.createElement("th");
+            thEn.className = "band-sched-mode-col-hdr";
+            thEn.title = "Enable/disable this band globally. Disabled bands are never assigned.";
+            thEn.textContent = "On";
+            hdrRow.appendChild(thEn);
+            const thMode = document.createElement("th");
+            thMode.className = "band-sched-mode-col-hdr";
+            thMode.textContent = "Mode";
+            hdrRow.appendChild(thMode);
+            for (const block of BAND_SCHED_BLOCKS) {
+                const th = document.createElement("th");
+                const isCur = block === currentBlock;
+                th.className = "band-sched-block-hdr" + (isCur ? " band-sched-cur" : "");
+                const span = document.createElement("span");
+                span.textContent = block;
+                th.appendChild(span);
+                if (isCur) {
+                    const marker = document.createElement("span");
+                    marker.className = "band-sched-cur-marker";
+                    marker.textContent = "now";
+                    th.appendChild(marker);
+                }
+                hdrRow.appendChild(th);
+            }
+
+            // Auto-toggle row (one checkbox per block: checked = auto/null)
+            const autoRow = thead.insertRow();
+            autoRow.insertCell(); // band col spacer
+            autoRow.insertCell(); // enabled col spacer
+            autoRow.insertCell(); // mode col spacer
+            for (const block of BAND_SCHED_BLOCKS) {
+                const td = autoRow.insertCell();
+                td.className = "band-sched-auto-cell" + (block === currentBlock ? " band-sched-cur" : "");
+                const blockData = ft8Profile[block] || {};
+                const isAuto = blockData.selectedBands === null || blockData.selectedBands === undefined;
+                const lbl = document.createElement("label");
+                lbl.className = "band-sched-auto-lbl";
+                lbl.title = "Auto: let Band Conditions decide which bands to assign";
+                const chk = document.createElement("input");
+                chk.type = "checkbox";
+                chk.className = "band-sched-auto-chk";
+                chk.dataset.block = block;
+                chk.checked = isAuto;
+                const autoSpan = document.createElement("span");
+                autoSpan.textContent = "Auto";
+                lbl.appendChild(chk);
+                lbl.appendChild(autoSpan);
+                td.appendChild(lbl);
+            }
+
+            // Band rows
+            const tbody = table.createTBody();
+            for (const band of BAND_SCHED_BANDS) {
+                const isEnabled = allowedSet.has(band);
+                const row = tbody.insertRow();
+                if (!isEnabled) row.classList.add("band-sched-row-disabled");
+
+                // Band label cell
+                const tdBand = row.insertCell();
+                tdBand.className = "band-sched-band-lbl";
+                tdBand.textContent = band;
+
+                // Enabled (allowlist) checkbox
+                const tdEn = row.insertCell();
+                tdEn.className = "band-sched-mode-cell";
+                const enChk = document.createElement("input");
+                enChk.type = "checkbox";
+                enChk.className = "band-sched-en-chk band-sched-chk";
+                enChk.id = `bsched-en-${band}`;
+                enChk.dataset.band = band;
+                enChk.checked = isEnabled;
+                enChk.title = isEnabled ? "Band enabled — will be considered for assignment" : "Band disabled — never assigned";
+                tdEn.appendChild(enChk);
+
+                // Mode dropdown: only show modes allowed for this specific band
+                const tdMode = row.insertCell();
+                tdMode.className = "band-sched-mode-cell";
+                const modeSel = document.createElement("select");
+                modeSel.className = "band-sched-mode-sel";
+                modeSel.id = `bsched-mode-${band}`;
+                modeSel.dataset.band = band;
+                modeSel.disabled = !isEnabled;
+                const bandAllowedModes = allowedModesForBand(band);
+                for (const m of bandAllowedModes) {
+                    const opt = document.createElement("option");
+                    opt.value = m;
+                    opt.textContent = m;
+                    modeSel.appendChild(opt);
+                }
+                // Pick mode from the first block that has a non-empty bandModes entry;
+                // if the stored mode is no longer allowed for this band, fall back to FT8.
+                let globalMode = "FT8";
+                for (const block of BAND_SCHED_BLOCKS) {
+                    const bm = (ft8Profile[block] || {}).bandModes || {};
+                    if (bm[band]) { globalMode = bm[band]; break; }
+                }
+                if (!bandAllowedModes.includes(globalMode)) globalMode = "FT8";
+                modeSel.value = globalMode;
+                modeSel.addEventListener("change", () => scheduleAutomationAutosave());
+                tdMode.appendChild(modeSel);
+
+                // One checkbox per block column
+                for (const block of BAND_SCHED_BLOCKS) {
+                    const blockData = ft8Profile[block] || {};
+                    const isAuto = blockData.selectedBands === null || blockData.selectedBands === undefined;
+                    const isCur = block === currentBlock;
+                    const isChk = isAuto || (Array.isArray(blockData.selectedBands) && blockData.selectedBands.includes(band));
+                    const td = row.insertCell();
+                    td.className = "band-sched-band-cell"
+                        + (isCur ? " band-sched-cur" : "")
+                        + (isAuto ? " band-sched-is-auto" : "");
+                    const chk = document.createElement("input");
+                    chk.type = "checkbox";
+                    chk.className = "band-sched-chk";
+                    chk.dataset.block = block;
+                    chk.dataset.band = band;
+                    chk.checked = isChk;
+                    chk.disabled = isAuto || !isEnabled;
+                    chk.addEventListener("change", () => scheduleAutomationAutosave());
+                    td.appendChild(chk);
+                }
+            }
+
+            wrap.innerHTML = "";
+            wrap.appendChild(table);
+
+            // Wire enabled (allowlist) checkboxes
+            wrap.querySelectorAll(".band-sched-en-chk").forEach((enChk) => {
+                enChk.addEventListener("change", async () => {
+                    const band = enChk.dataset.band;
+                    const enabled = enChk.checked;
+                    const row = enChk.closest("tr");
+                    if (row) row.classList.toggle("band-sched-row-disabled", !enabled);
+                    // Toggle mode select
+                    const modeSel = byId(`bsched-mode-${band}`);
+                    if (modeSel) modeSel.disabled = !enabled;
+                    // Toggle per-block checkboxes
+                    wrap.querySelectorAll(`.band-sched-chk[data-band="${CSS.escape(band)}"]`).forEach((chk) => {
+                        if (chk.classList.contains("band-sched-en-chk")) return;
+                        chk.disabled = !enabled || chk.closest("td")?.classList.contains("band-sched-is-auto");
+                    });
+                    // Save allowlist immediately
+                    await saveBandAllowlist();
+                });
+            });
+
+            // Wire auto-toggle checkboxes: toggle disabled state of matching band cells
+            wrap.querySelectorAll(".band-sched-auto-chk").forEach((autoChk) => {
+                autoChk.addEventListener("change", () => {
+                    const block = autoChk.dataset.block;
+                    const isAuto = autoChk.checked;
+                    wrap.querySelectorAll(`.band-sched-chk[data-block="${CSS.escape(block)}"]`).forEach((chk) => {
+                        if (chk.classList.contains("band-sched-en-chk")) return;
+                        const band = chk.dataset.band;
+                        const enChk2 = byId(`bsched-en-${band}`);
+                        const bandEnabled = !enChk2 || enChk2.checked;
+                        chk.disabled = isAuto || !bandEnabled;
+                        const td = chk.closest("td");
+                        if (td) {
+                            td.classList.toggle("band-sched-is-auto", isAuto);
+                            if (isAuto) chk.checked = true;
+                        }
+                    });
+                    scheduleAutomationAutosave();
+                });
+            });
+        }
+
+        async function saveBandAllowlist() {
+            const wrap = byId("auto-band-schedule-wrap");
+            if (!wrap) return;
+            const allowedBands = [];
+            for (const band of BAND_SCHED_BANDS) {
+                const enChk = byId(`bsched-en-${band}`);
+                if (!enChk || enChk.checked) allowedBands.push(band);
+            }
+            try {
+                const resp = await fetch("/smart_scheduler/scan_config", {
+                    method: "PUT",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ allowed_bands: allowedBands }),
+                });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                fetchSmartScheduler().catch(() => { });
+            } catch (err) {
+                setAutomationStatus(`allowlist save failed: ${String((err && err.message) || err)}`);
+            }
+        }
+
+        function readBandScheduleFromGrid() {
+            const wrap = byId("auto-band-schedule-wrap");
+            // Return null if the grid hasn't been rendered yet
+            if (!wrap || !wrap.querySelector(".band-sched-auto-chk")) return null;
+            const ft8 = {};
+            for (const block of BAND_SCHED_BLOCKS) {
+                const autoChk = wrap.querySelector(`.band-sched-auto-chk[data-block="${CSS.escape(block)}"]`);
+                const isAuto = !autoChk || autoChk.checked;
+                const bandModes = {};
+                const selectedBands = [];
+                for (const band of BAND_SCHED_BANDS) {
+                    const modeSel = byId(`bsched-mode-${band}`);
+                    bandModes[band] = modeSel ? modeSel.value : "FT8";
+                    if (!isAuto) {
+                        const enChkEl = byId(`bsched-en-${band}`);
+                        if (!enChkEl || enChkEl.checked) {
+                            const chk = wrap.querySelector(`.band-sched-chk[data-block="${CSS.escape(block)}"][data-band="${CSS.escape(band)}"]`);
+                            if (chk && chk.checked) selectedBands.push(band);
+                        }
+                    }
+                }
+                ft8[block] = {
+                    selectedBands: isAuto ? null : selectedBands,
+                    bandModes,
+                };
+            }
+            return { ft8 };
+        }
+
         function parseSelectedBands() {
-            if (!byId("auto-selected-bands")) return [...MAP_BAND_OPTIONS];
             const text = readTextInput("auto-selected-bands", "");
             if (!text) return [...MAP_BAND_OPTIONS];
             const out = [];
@@ -6378,31 +7714,19 @@
             return out;
         }
 
-        async function forceCorrectAssignments() {
-            const btn = byId("correct-assignments");
-            const origText = btn ? btn.textContent : "";
-            if (btn) { btn.disabled = true; btn.textContent = "Correcting..."; }
-            try {
-                const res = await postJson("/admin/force-reassign", {});
-                if (res && res.ok) {
-                    if (btn) btn.textContent = "Corrected!";
-                    setTimeout(() => { if (btn) { btn.textContent = origText; btn.disabled = false; } decorateUiIcons(); refresh(); }, 1800);
-                } else {
-                    const msg = (res && res.error) ? String(res.error).slice(0, 80) : "failed";
-                    if (btn) { btn.textContent = origText; btn.disabled = false; }
-                    decorateUiIcons();
-                    setAutomationStatus("Correct failed: " + msg);
-                }
-            } catch (err) {
-                if (btn) { btn.textContent = origText; btn.disabled = false; }
-                decorateUiIcons();
-                setAutomationStatus("Correct error: " + String((err && err.message) || err));
-            }
-        }
-
         async function applyAutomationNow() {
             setAutomationStatus("applying auto-set...");
             try {
+                // When Auto Mode is ON, use force-reassign so the backend builds the
+                // fixed+roaming payload from current settings (day/night roaming etc).
+                const fixedOn = readSelectBool("auto-mode-enabled", true);
+                if (fixedOn) {
+                    await postJson("/admin/force-reassign", {});
+                    setAutomationStatus("applied (fixed+roaming mode)");
+                    refresh();
+                    return;
+                }
+
                 const mode = byId("auto-apply-mode")
                     ? (readTextInput("auto-apply-mode", "ft8").toLowerCase() || "ft8")
                     : "ft8";
@@ -6410,10 +7734,21 @@
                 const block = safeText(sched.block, "");
                 if (!block) throw new Error("missing schedule block");
 
-                const selectedBands = parseSelectedBands();
-                const bandModes = {};
-                for (const band of selectedBands) {
-                    bandModes[band] = mode === "phone" ? "SSB" : "FT8";
+                // Use band schedule grid if available, otherwise fall back to parseSelectedBands
+                let selectedBands;
+                let bandModes = {};
+                const bsGrid = readBandScheduleFromGrid();
+                if (bsGrid && bsGrid.ft8 && bsGrid.ft8[block]) {
+                    const blockProfile = bsGrid.ft8[block];
+                    selectedBands = Array.isArray(blockProfile.selectedBands)
+                        ? blockProfile.selectedBands
+                        : [...MAP_BAND_OPTIONS];
+                    bandModes = blockProfile.bandModes || {};
+                } else {
+                    selectedBands = parseSelectedBands();
+                    for (const band of selectedBands) {
+                        bandModes[band] = mode === "phone" ? "SSB" : "FT8";
+                    }
                 }
 
                 const payload = {
@@ -6423,6 +7758,7 @@
                     selected_bands: selectedBands,
                     band_modes: bandModes,
                     wspr_scan_enabled: readSelectBool("auto-scan-wspr", false),
+                    force: true,
                 };
 
                 const res = await postJson("/auto_set_receivers", payload);
@@ -6433,6 +7769,31 @@
                 refresh();
             } catch (err) {
                 setAutomationStatus(`apply failed: ${String((err && err.message) || err)}`);
+            }
+        }
+
+        function applyAutoModeVisibility(enabled) {
+            const content = byId("auto-mode-content");
+            if (content) content.style.display = enabled ? "" : "none";
+            const roamingLabel = byId("auto-roaming-label");
+            if (roamingLabel && enabled) {
+                const h = new Date().getHours();
+                const isDay = h >= 7 && h < 21;
+                roamingLabel.textContent = isDay ? "15m FT8 + 10m FT8" : "80m FT4+FT8 + 160m WSPR";
+            }
+        }
+
+        async function applyAutoModeEnabled(enabled) {
+            setAutomationStatus(enabled ? "enabling Auto Mode..." : "disabling Auto Mode...");
+            try {
+                if (!enabled) {
+                    await postJson("/auto_set_receivers", { enabled: false });
+                    setAutomationStatus("Auto Mode OFF — all receivers stopped");
+                } else {
+                    await applyAutomationNow();
+                }
+            } catch (err) {
+                setAutomationStatus(`Auto Mode toggle failed: ${String((err && err.message) || err)}`);
             }
         }
 
@@ -6477,10 +7838,7 @@
             const automationAutosaveIds = [
                 "auto-scan-on-block",
                 "auto-refresh-schedule",
-                "auto-scan-wspr",
                 "auto-scan-on-startup",
-                "auto-band-hop-seconds",
-                "auto-wspr-start-band",
                 "auto-ssb-enabled",
                 "auto-ssb-sideband",
                 "auto-ssb-threshold-db",
@@ -6557,8 +7915,17 @@
             if (autoReload) autoReload.addEventListener("click", () => { loadAutomationSection(); });
             if (autoSave) autoSave.addEventListener("click", () => { saveAutomationSection(); });
             if (autoApplyNow) autoApplyNow.addEventListener("click", () => { applyAutomationNow(); });
-            const correctAssignmentsBtn = byId("correct-assignments");
-            if (correctAssignmentsBtn) correctAssignmentsBtn.addEventListener("click", () => { forceCorrectAssignments(); });
+
+            const autoModeBtn = byId("auto-mode-enabled");
+            if (autoModeBtn) {
+                autoModeBtn.addEventListener("click", () => {
+                    const next = autoModeBtn.getAttribute("aria-pressed") !== "true";
+                    setSelectBool("auto-mode-enabled", next);
+                    applyAutoModeVisibility(next);
+                    scheduleAutomationAutosave();
+                    applyAutoModeEnabled(next);
+                });
+            }
             if (autoSsbStepStrategy) {
                 autoSsbStepStrategy.addEventListener("change", () => {
                     updateAutomationSsbStepVisibility(autoSsbStepStrategy.value);
@@ -6628,8 +7995,6 @@
                 const data = await getJson(`/decodes?since=${encodeURIComponent(decodeCursor)}`);
                 const items = Array.isArray(data.items) ? data.items : [];
 
-                const bandCounts = {};
-                const bandBreakdown = {};
                 const receiverCounts = {};
 
                 for (const item of items) {
@@ -6637,31 +8002,14 @@
                     ingestDecodeItem(item);
                     const band = String(item.band || "").trim();
                     if (!band || band.toLowerCase() === "control") continue;
-                    bandCounts[band] = Number(bandCounts[band] || 0) + 1;
 
                     const rxLabel = parseDecodeReceiverLabel(item);
                     const modeLabel = String(item.mode || "?").trim().toUpperCase() || "?";
                     if (rxLabel) {
                         receiverCounts[rxLabel] = Number(receiverCounts[rxLabel] || 0) + 1;
                         receiverDecodeTotals[rxLabel] = Number(receiverDecodeTotals[rxLabel] || 0) + 1;
-                        const key = `${rxLabel}|${modeLabel}`;
-                        if (!bandBreakdown[band]) bandBreakdown[band] = {};
-                        bandBreakdown[band][key] = Number(bandBreakdown[band][key] || 0) + 1;
                     }
 
-                }
-
-                const knownBands = new Set(Object.keys(bandActivityHistory));
-                for (const band of Object.keys(bandCounts)) knownBands.add(band);
-                lastBandActivitySampleMs = Date.now();
-                for (const band of knownBands) {
-                    const samples = Array.isArray(bandActivityHistory[band]) ? bandActivityHistory[band] : [];
-                    samples.push(Number(bandCounts[band] || 0));
-                    bandActivityHistory[band] = samples.slice(-BAND_ACTIVITY_HISTORY_MAX);
-
-                    const detail = Array.isArray(bandBreakdownHistory[band]) ? bandBreakdownHistory[band] : [];
-                    detail.push(bandBreakdown[band] && typeof bandBreakdown[band] === "object" ? bandBreakdown[band] : {});
-                    bandBreakdownHistory[band] = detail.slice(-BAND_ACTIVITY_HISTORY_MAX);
                 }
 
                 const knownReceivers = new Set(Object.keys(receiverActivityHistory));
@@ -6686,6 +8034,31 @@
             }
         }
 
+        function applyChartData(data) {
+            if (!data || !Array.isArray(data.buckets) || !data.buckets.length) return;
+            chartBucketMs = Math.max(1000, (Number(data.bucket_s) || 15) * 1000);
+            const buckets = data.buckets;
+            const allBands = new Set();
+            for (const b of buckets) {
+                for (const band of Object.keys(b.bands || {})) allBands.add(band);
+            }
+            const newActivity = {};
+            const newBreakdown = {};
+            for (const band of allBands) {
+                newActivity[band] = buckets.map((b) => {
+                    const bdata = b.bands && b.bands[band];
+                    return bdata ? Math.max(0, Number(bdata.total || 0)) : 0;
+                });
+                newBreakdown[band] = buckets.map((b) => {
+                    const bdata = b.bands && b.bands[band];
+                    return (bdata && bdata.breakdown && typeof bdata.breakdown === "object") ? { ...bdata.breakdown } : {};
+                });
+            }
+            bandActivityHistory = newActivity;
+            bandBreakdownHistory = newBreakdown;
+            lastBandActivitySampleMs = (Number(buckets[buckets.length - 1].ts) || 0) * 1000 || Date.now();
+        }
+
         function getBandTrendSamples(band, windowSize = 14, historySource = null) {
             const source = historySource && typeof historySource === "object" ? historySource : bandActivityHistory;
             const raw = Array.isArray(source[band]) ? source[band] : [];
@@ -6696,7 +8069,7 @@
         }
 
         function getChartWindowSamples(minWindowMs = GRAPH_WINDOW_MIN_MS) {
-            const intervalMs = Math.max(1000, Number(refreshIntervalMs) || 1000);
+            const intervalMs = Math.max(1000, chartBucketMs);
             return Math.max(2, Math.ceil(minWindowMs / intervalMs) + 1);
         }
 
@@ -6714,7 +8087,7 @@
             const ticks = Math.max(2, Number(tickCount) || 5);
             if (!count) return new Array(ticks).fill("");
 
-            const intervalMs = Math.max(1000, Number(refreshIntervalMs) || 1000);
+            const intervalMs = Math.max(1000, chartBucketMs);
             const effectiveLatestSampleTs = Math.max(0, Number(latestSampleTs ?? lastBandActivitySampleMs) || Date.now());
             const oldestSampleTs = effectiveLatestSampleTs - Math.max(0, (count - 1) * intervalMs);
             const labels = [];
@@ -6733,7 +8106,7 @@
             const count = Math.max(0, Number(sampleCount) || 0);
             if (!count) return "--:--:--";
             const idx = Math.max(0, Math.min(count - 1, Number(sampleIdx) || 0));
-            const intervalMs = Math.max(1000, Number(refreshIntervalMs) || 1000);
+            const intervalMs = Math.max(1000, chartBucketMs);
             const effectiveLatestSampleTs = Math.max(0, Number(latestSampleTs ?? lastBandActivitySampleMs) || Date.now());
             const oldestSampleTs = effectiveLatestSampleTs - Math.max(0, (count - 1) * intervalMs);
             const sampleTs = oldestSampleTs + (idx * intervalMs);
@@ -6769,7 +8142,7 @@
                 .sort(compareBandLabels);
             const map = {};
             uniqueBands.forEach((band, idx) => {
-                map[band] = BAND_CHART_PALETTE[idx % BAND_CHART_PALETTE.length];
+                map[band] = BAND_COLOR_OVERRIDES[band] || BAND_CHART_PALETTE[idx % BAND_CHART_PALETTE.length];
             });
             return map;
         }
@@ -6896,7 +8269,8 @@
                 return;
             }
 
-            const windowSamples = getChartWindowSamples();
+            const firstBandRaw = Array.isArray(bandHistorySource[bands[0]]) ? bandHistorySource[bands[0]] : [];
+            const windowSamples = Math.max(2, firstBandRaw.length || getChartWindowSamples());
             const series = bands.map((band, idx) => ({
                 band,
                 color: renderBandColorMap[band] || BAND_CHART_PALETTE[idx % BAND_CHART_PALETTE.length],
@@ -7397,11 +8771,11 @@
             const layout = byId("main-layout");
             const receivers = byId("receivers");
             const rightCol = layout ? layout.querySelector(".right-col") : null;
-            const rightPanels = ["assignments", "faults", "messages", "map", "settings", "system"]
+            const rightPanels = ["assignments", "faults", "messages", "map", "active-receivers", "settings", "system"]
                 .map((id) => byId(id))
                 .filter(Boolean);
-            const validIds = new Set(["overview", "receivers", "assignments", "faults", "messages", "map", "settings", "system"]);
-            const overviewLinkedNavIds = new Set(["receivers", "assignments", "faults", "messages", "map"]);
+            const validIds = new Set(["overview", "receivers", "assignments", "faults", "messages", "map", "active-receivers", "settings", "system"]);
+            const overviewLinkedNavIds = new Set(["assignments", "faults", "messages", "map", "active-receivers"]);
 
             const activate = (id) => {
                 links.forEach((link) => {
@@ -7502,7 +8876,9 @@
                 if (navId === "system") {
                     refreshSystemInfo(true).catch(() => { });
                 }
-
+                if (navId === "overview" ? !!overviewTopicPrefs["active-receivers"] : navId === "active-receivers") {
+                    refreshSystemInfo(false).catch(() => { });
+                }
                 if (pushHash) {
                     if (window.location.hash !== `#${navId}`) {
                         window.location.hash = navId;
@@ -7640,10 +9016,10 @@
 
             if (launchdToggleBtn) {
                 launchdToggleBtn.addEventListener("click", async () => {
-                    setServiceToggleState({
-                        useLaunchd: !readServiceToggle("useLaunchd", false),
-                    });
+                    const nowEnabled = !readServiceToggle("useLaunchd", false);
+                    setServiceToggleState({ useLaunchd: nowEnabled });
                     syncTopbarMenuState();
+                    setConfigStatus(nowEnabled ? "enabling Launch Service..." : "stopping Launch Service...");
                     await saveTopbarServiceToggles();
                     setMenuOpen(true);
                 });
@@ -7821,19 +9197,22 @@
         }
 
         function renderAssignments(assignments) {
-            const el = byId("assignments-table");
-            if (!el) return;
+            const cardEl = byId("assignments-band-cards");
+            if (!cardEl) return;
             const rows = assignments && typeof assignments === "object" ? Object.entries(assignments) : [];
             const list = rows
                 .filter(([, item]) => item && typeof item === "object")
-                .map(([rx, item]) => ({
-                    rxNum: Number(rx),
-                    rxLabel: `RX${rx}`,
-                    band: String(safeText(item.band, "unknown")).replace(/^(\d+)\s*[mM]$/, "$1m"),
-                    mode: safeText(item.mode, "?"),
-                    propagation: propagationDisplayText(latestChannelsMap[String(rx)] || null),
-                    snrText: snrAvgTextForRx(`RX${rx}`),
-                }))
+                .map(([rx, item]) => {
+                    const healthCh = latestChannelsMap[String(rx)] || {};
+                    const resolvedMode = (healthCh.mode && String(healthCh.mode).trim()) || safeText(item.mode, "?");
+                    return {
+                        rxNum: Number(rx),
+                        rxLabel: `RX${rx}`,
+                        band: String(safeText(item.band, "unknown")).replace(/^(\d+)\s*[mM]$/, "$1m"),
+                        mode: resolvedMode,
+                        snrText: snrAvgTextForRx(`RX${rx}`),
+                    };
+                })
                 .sort((a, b) => {
                     if (Number.isFinite(a.rxNum) && Number.isFinite(b.rxNum)) return a.rxNum - b.rxNum;
                     return String(a.rxLabel).localeCompare(String(b.rxLabel));
@@ -7852,22 +9231,86 @@
             currentBandAssignments = nextBandAssignments;
 
             if (!list.length) {
-                el.innerHTML = "<div class=\"assign-empty\">No runtime assignments</div>";
+                cardEl.innerHTML = "<div class=\"assign-empty\">No runtime assignments</div>";
                 _bandChartLiveBands = [];
                 _bandChartLiveColorMap = {};
                 if (!assignmentsBandChartPaused) renderAssignmentsBandChart([]);
                 return;
             }
 
-            const bodyRows = list
-                .map((r) => {
-                    const color = bandColorMap[r.band] || "#94a3b8";
-                    const perHour = receiverDecodesPerHour(r.rxLabel);
-                    const total = Math.max(0, Number(receiverDecodeTotals[r.rxLabel] || 0));
-                    return `<tr><td class="assign-color-col"><span class="assign-color-dot" style="background:${color}"></span></td><td class="mono">${r.rxLabel}</td><td class="mono">${r.snrText}</td><td>${r.band}</td><td>${r.mode}</td><td>${r.propagation}</td><td class="mono assign-num">${perHour}</td><td class="mono assign-num">${total}</td></tr>`;
-                })
-                .join("");
-            el.innerHTML = `<table class="assign-table"><thead><tr><th>Color</th><th>Receiver</th><th>SNR(avg)</th><th>Band</th><th>Mode</th><th>Propagation</th><th># / Hr</th><th>Total</th></tr></thead><tbody>${bodyRows}</tbody></table>`;
+            const colorMap = makeBandColorMap(MAP_BAND_OPTIONS);
+            const iconLine = (iconName, label, cls, value, iconColor = "") => {
+                const svg = UI_ICONS[iconName] || "";
+                const colorAttr = iconColor ? ` style="color:${iconColor}"` : "";
+                return `<span class="${cls}"><span class="ui-icon kv-icon"${colorAttr} aria-label="${label}" title="${label}">${svg}</span>\u00a0\u00a0<span${colorAttr}>${safeText(value)}</span></span>`;
+            };
+            const modeColor = (m) => ({ FT8: "#60a5fa", FT4: "#4ade80", SSB: "#f87171", WSPR: "#c084fc" })[String(m).toUpperCase()] || "var(--muted)";
+            cardEl.innerHTML = "";
+            for (const band of MAP_BAND_OPTIONS) {
+                const bandRows = list.filter((r) => r.band === band);
+                const color = colorMap[band] || "#94a3b8";
+                const card = document.createElement("div");
+                card.className = "rx-card";
+                if (!bandRows.length) {
+                    card.dataset.level = "healthy";
+                    card.innerHTML = `<div class="rx-top"><span class="rx-band-label" style="font-size:1rem;font-weight:800">${band}</span><span style="color:var(--muted);font-size:0.82rem">&mdash;</span></div><p class="kv" style="color:var(--muted);font-style:italic;font-size:0.8rem">Unassigned</p>`;
+                } else {
+                    const row = bandRows[0];
+                    const ch = latestChannelsMap[String(row.rxNum)] || {};
+                    const level = String(ch.status_level || "healthy").toLowerCase();
+                    card.dataset.level = level;
+                    // Build a (band:mode) → kiwi_rx lookup from health summary (physical slot)
+                    const kiwiRxByBandMode = {};
+                    for (const [logKey, lch] of Object.entries(latestChannelsMap)) {
+                        if (!lch || lch.kiwi_rx == null) continue;
+                        const lband = safeText(lch.band, "");
+                        const lmode = String(lch.mode || "").trim().toUpperCase().replace(/\s+/g, "");
+                        if (lband && lmode && !((`${lband}:${lmode}`) in kiwiRxByBandMode))
+                            kiwiRxByBandMode[`${lband}:${lmode}`] = lch.kiwi_rx;
+                    }
+                    const rxPills = bandRows.map((r) => {
+                        const modeNorm = String(r.mode || "").trim().toUpperCase().replace(/\s+/g, "");
+                        const physRx = kiwiRxByBandMode[`${r.band}:${modeNorm}`];
+                        const displayRx = physRx != null ? `RX${physRx}` : r.rxLabel;
+                        const modeLabel = r.mode.split(" / ").map((m) => `<span style="color:${modeColor(m.trim())}">${safeText(m.trim())}</span>`).join(`<span style="color:var(--muted)"> / </span>`);
+                        return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span class="rx-id-pill" style="color:${rxColor(physRx != null ? physRx : r.rxNum)};min-width:52px">${displayRx}</span><span style="font-size:0.72rem;font-weight:600">${modeLabel}</span></div>`;
+                    }).join("");
+                    const heartColor = level === "fault" ? "#f87171" : level === "warning" ? "#f59e0b" : "#4ade80";
+                    // Aggregate decode rates by mode across all receivers on this band
+                    const modeOrder = [];
+                    const modeAgg = {};
+                    for (const r of bandRows) {
+                        const rch = latestChannelsMap[String(r.rxNum)] || {};
+                        const byMode = rch.decode_rates_by_mode || {};
+                        const subModes = String(r.mode || "").split(" / ").map((m) => m.trim()).filter(Boolean);
+                        if (subModes.length > 1) {
+                            for (const m of subModes) {
+                                if (!modeAgg[m]) { modeAgg[m] = { pm: null, ph: null, tot: null }; modeOrder.push(m); }
+                                const ms = byMode[m] || {};
+                                if (ms.decode_rate_per_min != null) modeAgg[m].pm = (modeAgg[m].pm ?? 0) + Number(ms.decode_rate_per_min);
+                                if (ms.decode_rate_per_hour != null) modeAgg[m].ph = (modeAgg[m].ph ?? 0) + Number(ms.decode_rate_per_hour);
+                                if (ms.decode_total != null) modeAgg[m].tot = (modeAgg[m].tot ?? 0) + Number(ms.decode_total);
+                            }
+                        } else {
+                            const m = subModes[0] || r.mode;
+                            if (!modeAgg[m]) { modeAgg[m] = { pm: null, ph: null, tot: null }; modeOrder.push(m); }
+                            if (rch.decode_rate_per_min != null) modeAgg[m].pm = (modeAgg[m].pm ?? 0) + Number(rch.decode_rate_per_min);
+                            if (rch.decode_rate_per_hour != null) modeAgg[m].ph = (modeAgg[m].ph ?? 0) + Number(rch.decode_rate_per_hour);
+                            if (rch.decode_total != null) modeAgg[m].tot = (modeAgg[m].tot ?? 0) + Number(rch.decode_total);
+                        }
+                    }
+                    const decodeRateRows = modeOrder.map((m) => {
+                        const agg = modeAgg[m];
+                        const pm = agg.pm != null ? agg.pm : 0;
+                        const ph = agg.ph != null ? agg.ph : 0;
+                        const tot = agg.tot != null ? agg.tot : 0;
+                        const mc = modeColor(m);
+                        return `<span style="display:inline-flex;align-items:baseline;gap:4px;font-size:0.72rem"><span style="font-weight:700;color:${mc}">${safeText(m)}:</span><span>${pm} min</span><span style="color:var(--muted)">&#8226;</span><span>${ph} hr</span><span style="color:var(--muted)">&#8226;</span><span>${tot} total</span></span>`;
+                    }).join("<br>");
+                    card.innerHTML = `<div class="rx-top"><div style="display:flex;flex-direction:column;gap:2px"><span class="rx-band-label" style="font-size:1rem;font-weight:800">${band}</span>${iconLine("heart", "State/Health", "rx-state-line", safeText(ch.health_state, "-"), heartColor)}</div><div style="display:flex;align-items:flex-start;gap:6px">${rxPills}</div></div><p class="kv">${iconLine("gauge", "SNR(avg)", "rx-snr-line", (() => { const t = snrAvgTextForRx(row.rxLabel); return t !== "--" ? t : (Number.isFinite(Number(ch.snr_avg_db)) ? `${Number(ch.snr_avg_db).toFixed(1)} dB` : "--"); })())}${(() => { const pt = propagationDisplayText(ch); return iconLine("trend", "Propagation", "rx-prop-line", pt, propagationColor(pt)); })()}<span class="rx-decode-rates" style="display:block;margin-top:4px;line-height:1.6">${decodeRateRows}</span></p>`;
+                }
+                cardEl.append(card);
+            }
             if (!assignmentsBandChartPaused) renderAssignmentsBandChart(_bandChartLiveBands, _bandChartLiveColorMap);
         }
 
@@ -7913,46 +9356,15 @@
             });
         }
 
-        function updateBandFilter(channels) {
-            const sel = byId("rx-band-filter");
-            if (!sel) return;
-
-            const map = channels && typeof channels === "object" ? channels : {};
-            const bands = Object.values(map)
-                .map((ch) => safeText(ch && ch.band, ""))
-                .filter((band) => band && band !== "-")
-                .sort(compareBandLabels);
-
-            const uniq = [];
-            for (const band of bands) {
-                if (!uniq.includes(band)) uniq.push(band);
-            }
-
-            const current = sel.value || "all";
-            const options = ['<option value="all">All Bands</option>']
-                .concat(uniq.map((band) => `<option value="${band}">${band}</option>`));
-            const nextMarkup = options.join("");
-            if (sel.dataset.optionsMarkup !== nextMarkup) {
-                sel.innerHTML = nextMarkup;
-                sel.dataset.optionsMarkup = nextMarkup;
-            }
-            if (uniq.includes(current)) sel.value = current;
-            else sel.value = "all";
-        }
-
         function includeReceiverByFilter(ch) {
             const levelSel = byId("rx-level-filter");
-            const bandSel = byId("rx-band-filter");
 
             const level = String(ch && ch.status_level || "healthy").toLowerCase();
-            const band = safeText(ch && ch.band, "-");
 
             const levelFilter = levelSel ? levelSel.value : "all";
-            const bandFilter = bandSel ? bandSel.value : "all";
 
             if (levelFilter === "attention" && !(level === "fault" || level === "warning")) return false;
             if (levelFilter === "fault" && level !== "fault") return false;
-            if (bandFilter !== "all" && band !== bandFilter) return false;
             return true;
         }
 
@@ -7988,7 +9400,6 @@
 
         function initReceiverFilters() {
             const levelSel = byId("rx-level-filter");
-            const bandSel = byId("rx-band-filter");
             const sortSel = byId("rx-sort-mode");
 
             if (sortSel) {
@@ -7999,11 +9410,6 @@
 
             if (levelSel) {
                 levelSel.addEventListener("change", () => {
-                    renderReceivers(latestChannelsMap);
-                });
-            }
-            if (bandSel) {
-                bandSel.addEventListener("change", () => {
                     renderReceivers(latestChannelsMap);
                 });
             }
@@ -8074,7 +9480,7 @@
                 return {
                     key: String(key),
                     level: String(ch.status_level || "healthy").toLowerCase(),
-                    rx: `RX${safeText(ch.rx, key)}`,
+                    rx: `RX${safeText(ch.kiwi_rx != null ? ch.kiwi_rx : ch.rx, key)}`,
                     band: safeText(ch.band, "-"),
                     mode: safeText(ch.mode, "-"),
                     state: safeText(ch.health_state, "-"),
@@ -8090,12 +9496,15 @@
             const emptyKey = "__empty__";
             const existingCards = new Map(Array.from(grid.querySelectorAll(".rx-card[data-rx-key]")).map((card) => [card.dataset.rxKey, card]));
 
-            const makeLine = (label, className) => {
+            const makeIconLine = (iconName, label, className) => {
                 const span = document.createElement("span");
                 span.className = className;
-                const strong = document.createElement("strong");
-                strong.textContent = `${label}:`;
-                span.append(strong, " ");
+                const iconEl = document.createElement("span");
+                iconEl.className = "ui-icon kv-icon";
+                iconEl.setAttribute("aria-label", label);
+                iconEl.setAttribute("title", label);
+                iconEl.innerHTML = UI_ICONS[iconName] || "";
+                span.append(iconEl, "\u00a0");
                 return span;
             };
 
@@ -8130,15 +9539,15 @@
                 const kv = document.createElement("p");
                 kv.className = "kv";
 
-                const mode = makeLine("Mode", "rx-mode-line");
+                const mode = makeIconLine("radio", "Mode", "rx-mode-line");
                 mode.dataset.field = "mode";
-                const state = makeLine("State", "rx-state-line");
+                const state = makeIconLine("heart", "State/Health", "rx-state-line");
                 state.dataset.field = "state";
-                const ages = makeLine("Decode/HB", "rx-age-line");
+                const ages = makeIconLine("activity", "Decode/HB", "rx-age-line");
                 ages.dataset.field = "ages";
-                const snr = makeLine("SNR(avg)", "rx-snr-line");
+                const snr = makeIconLine("gauge", "SNR(avg)", "rx-snr-line");
                 snr.dataset.field = "snr";
-                const prop = makeLine("Propagation", "rx-prop-line");
+                const prop = makeIconLine("trend", "Propagation", "rx-prop-line");
                 prop.dataset.field = "prop";
 
                 kv.append(mode, state, ages, snr, prop);
@@ -8146,16 +9555,28 @@
                 return card;
             };
 
-            const setLineValue = (card, field, value) => {
+            const setLineValue = (card, field, value, color = "") => {
                 const line = card.querySelector(`[data-field="${field}"]`);
                 if (!line) return;
                 const nextValue = String(value ?? "");
-                if (line.dataset.value === nextValue) return;
-                const strong = line.querySelector("strong");
+                if (line.dataset.value === nextValue && line.dataset.colorVal === color) return;
+                const icon = line.querySelector(".kv-icon");
                 line.textContent = "";
-                if (strong) line.append(strong, " ");
-                line.append(document.createTextNode(nextValue));
+                if (icon) {
+                    icon.style.color = color || "";
+                    line.append(icon, "\u00a0");
+                }
+                const txtNode = document.createTextNode(nextValue);
+                if (color) {
+                    const s = document.createElement("span");
+                    s.style.color = color;
+                    s.appendChild(txtNode);
+                    line.append(s);
+                } else {
+                    line.append(txtNode);
+                }
                 line.dataset.value = nextValue;
+                line.dataset.colorVal = color;
             };
 
             const receiverCardSignature = (key) => {
@@ -8164,10 +9585,11 @@
                 const band = safeText(ch.band, "-");
                 const mode = safeText(ch.mode, "-");
                 const state = safeText(ch.health_state, "-");
-                const snrText = snrAvgTextForRx(`RX${key}`);
+                const rawSnr = snrAvgTextForRx(`RX${key}`);
+                const snrText = rawSnr !== "--" ? rawSnr : (Number.isFinite(Number(ch.snr_avg_db)) ? `${Number(ch.snr_avg_db).toFixed(1)} dB` : "--");
                 const prop = propagationDisplayText(ch);
                 return JSON.stringify({
-                    rx: `RX${safeText(ch.rx, key)}`,
+                    rx: `RX${safeText(ch.kiwi_rx != null ? ch.kiwi_rx : ch.rx, key)}`,
                     level,
                     band,
                     mode,
@@ -8187,8 +9609,10 @@
                 const decAge = fmtAge(ch.decode_age_s);
                 const hbAge = fmtAge(ch.decoder_output_age_s);
                 const nextAgeSig = `${decAge}|${hbAge}`;
-                const snrText = snrAvgTextForRx(`RX${key}`);
+                const rawSnr = snrAvgTextForRx(`RX${key}`);
+                const snrText = rawSnr !== "--" ? rawSnr : (Number.isFinite(Number(ch.snr_avg_db)) ? `${Number(ch.snr_avg_db).toFixed(1)} dB` : "--");
                 const prop = propagationDisplayText(ch);
+                const propColor = propagationColor(prop);
                 const nextSig = receiverCardSignature(key);
 
                 card.dataset.rxKey = String(key);
@@ -8209,14 +9633,15 @@
                 const nameEl = card.querySelector('[data-field="name"]');
                 const rxIdEl = card.querySelector('[data-field="rx-id"]');
                 const bandLabelEl = card.querySelector('[data-field="band-label"]');
-                const rxLabel = `RX${safeText(ch.rx, key)}`;
+                const rxLabel = `RX${safeText(ch.kiwi_rx != null ? ch.kiwi_rx : ch.rx, key)}`;
                 const bandColor = bandColorMap[band] || "#94a3b8";
+                const thisRxColor = rxColor(ch.kiwi_rx != null ? ch.kiwi_rx : ch.rx != null ? ch.rx : key);
                 if (nameEl) {
-                    nameEl.style.color = bandColor;
+                    nameEl.style.color = thisRxColor;
                 }
                 if (rxIdEl) {
                     rxIdEl.textContent = rxLabel;
-                    rxIdEl.style.color = bandColor;
+                    rxIdEl.style.color = thisRxColor;
                 }
                 if (bandLabelEl) {
                     bandLabelEl.textContent = band;
@@ -8232,7 +9657,8 @@
                 setLineValue(card, "state", state);
                 setLineValue(card, "ages", `${decAge} / ${hbAge}`);
                 setLineValue(card, "snr", snrText);
-                setLineValue(card, "prop", prop);
+                setLineValue(card, "prop", prop, propColor);
+
                 card.style.order = String(idx);
                 card.style.display = "";
             };
@@ -8267,9 +9693,33 @@
 
             latestChannelsMap = h.channels || {};
             updateLastKnownSnrCache(latestChannelsMap);
-            updateBandFilter(latestChannelsMap);
-            renderReceivers(latestChannelsMap);
+            renderAssignments(latestAssignments);
             renderReasons(h.reason_counts || {});
+            renderFixedPlanVerification(latestChannelsMap);
+        }
+
+        function renderFixedPlanVerification(channelsMap) {
+            const tbody = byId("auto-fixed-plan-rows");
+            if (!tbody) return;
+            const rows = tbody.querySelectorAll("tr[data-fixed-rx]");
+            rows.forEach((tr) => {
+                const rx = tr.dataset.fixedRx;
+                const ch = (channelsMap && channelsMap[String(rx)]) || {};
+                const level = String(ch.status_level || "").toLowerCase();
+                const active = Boolean(ch.active);
+                let dot = "";
+                if (!active || !ch.status_level) {
+                    dot = `<span title="Inactive / not yet verified" style="color:#6b7280;font-size:0.9em">&#9679;</span>`;
+                } else if (level === "fault") {
+                    dot = `<span title="Fault: ${safeText(ch.last_reason, 'unknown')}" style="color:#f87171;font-size:0.9em">&#9679;</span>`;
+                } else if (level === "warning") {
+                    dot = `<span title="Warning: ${safeText(ch.last_reason, 'no decodes')}" style="color:#f59e0b;font-size:0.9em">&#9679;</span>`;
+                } else {
+                    dot = `<span title="Healthy" style="color:#4ade80;font-size:0.9em">&#9679;</span>`;
+                }
+                const statusCell = tr.querySelector("td.fixed-rx-status");
+                if (statusCell) statusCell.innerHTML = dot;
+            });
         }
 
         function setServerChip(statusText, endpointText = "--") {
@@ -8285,8 +9735,9 @@
             const port = Number(s.assignments_port || 0);
             const endpoint = host && Number.isFinite(port) && port > 0 ? `${host}:${port}` : "--";
             setServerChip("Online", endpoint);
-            renderAssignments(s.assignments || {});
-            renderAssignmentBalance(s.assignments || {});
+            latestAssignments = s.assignments || {};
+            renderAssignments(latestAssignments);
+            renderAssignmentBalance(latestAssignments);
         }
 
         function applyExecutiveSummary(status, health, ratePerMin) {
@@ -8325,6 +9776,13 @@
             summaryFaultLoadHistory.push(faultLoad);
             summaryFaultLoadHistory = summaryFaultLoadHistory.slice(-60);
             renderSummarySparkline("spark-fault-load", summaryFaultLoadHistory, severity.color);
+
+            const rate = Math.max(0, Number(ratePerMin || 0));
+            const rateEl = byId("summary-decode-rate");
+            if (rateEl) rateEl.textContent = `${rate.toFixed(1)}/min`;
+            summaryDecodeRateHistory.push(rate);
+            summaryDecodeRateHistory = summaryDecodeRateHistory.slice(-60);
+            renderSummarySparkline("spark-decode-rate", summaryDecodeRateHistory, "#3b82f6");
         }
 
         function applyVersion(version) {
@@ -8334,13 +9792,392 @@
             byId("app-build-info").textContent = `Copyright ShackMate ${new Date().getFullYear()} Version: ${ver} Build: ${commit}`;
         }
 
+        // ── Smart Scheduler / Band Conditions ──────────────────────────────────
+        function _bcBadgeHtml(cond) {
+            const cls = { OPEN: 'bc-open', MARGINAL: 'bc-marginal', CLOSED: 'bc-closed' }[cond] || 'bc-unknown';
+            const label = cond || 'UNKNOWN';
+            return `<span class="bc-badge ${cls}">\u25cf ${label}</span>`;
+        }
+
+        function _bcSourceLabel(source) {
+            const map = { user_override: 'pin', empirical: 'live', seasonal: 'prediction', default: 'default' };
+            const cls = source === 'user_override'
+                ? 'bc-source bc-source-override'
+                : source === 'empirical'
+                    ? 'bc-source bc-source-empirical'
+                    : 'bc-source';
+            return `<span class="${cls}">${map[source] || source || '\u2014'}</span>`;
+        }
+
+        function _bcNextChange(secs, cond) {
+            if (!secs || !cond) return '';
+            const h = Math.floor(secs / 3600);
+            const m = Math.floor((secs % 3600) / 60);
+            const timeStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
+            const label = cond.charAt(0) + cond.slice(1).toLowerCase();
+            const cls = { OPEN: 'open', MARGINAL: 'marginal', CLOSED: 'closed' }[cond] || '';
+            return `<div class="bc-next-change">&#8594; <span class="bc-detail-val ${cls}">${label}</span> in ${timeStr}</div>`;
+        }
+
+        function _bcDetailVal(label, cond) {
+            if (!cond) return `<span class="bc-detail-val">${label}: <span style="opacity:0.5">--</span></span>`;
+            const cls = { OPEN: 'open', MARGINAL: 'marginal', CLOSED: 'closed' }[cond] || '';
+            return `<span class="bc-detail-val ${cls}">${label}: ${cond.charAt(0) + cond.slice(1).toLowerCase()}</span>`;
+        }
+
+        function _bcStatusText(data) {
+            if (!data) return 'Band Conditions: idle';
+            const compact = window.matchMedia('(max-width: 700px)').matches;
+            const running = data.running ? 'Running' : 'Paused';
+            const lastCheck = data.last_check_ts
+                ? new Date(data.last_check_ts * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+                : '—';
+            const interval = `${data.interval_s ?? '—'}s`;
+            return compact
+                ? `${running} · ${lastCheck} · ${interval}`
+                : `Scheduler: ${running} · Last check: ${lastCheck} · Interval: ${interval}`;
+        }
+
+        function _bcMergedStateMap(conditions) {
+            const source = conditions && typeof conditions === 'object' ? conditions : {};
+            const merged = {};
+            Object.entries(source).forEach(([band, entry]) => {
+                if (!entry || typeof entry !== 'object') return;
+                merged[band] = String(entry.merged || 'UNKNOWN').toUpperCase();
+            });
+            return merged;
+        }
+
+        function _bcConditionChanges(beforeConditions, afterConditions) {
+            const before = _bcMergedStateMap(beforeConditions);
+            const after = _bcMergedStateMap(afterConditions);
+            const changes = [];
+            new Set([...Object.keys(before), ...Object.keys(after)]).forEach((band) => {
+                const prev = before[band] || 'UNKNOWN';
+                const next = after[band] || 'UNKNOWN';
+                if (prev !== next) changes.push({ band, prev, next });
+            });
+            changes.sort((a, b) => (parseInt(a.band, 10) || 0) - (parseInt(b.band, 10) || 0));
+            return changes;
+        }
+
+        function _bcChangeSummary(beforeConditions, afterConditions) {
+            const changes = _bcConditionChanges(beforeConditions, afterConditions);
+            if (!changes.length) return 'No band changes';
+            const preview = changes.slice(0, 3)
+                .map(({ band, prev, next }) => `${band} ${prev.toLowerCase()} -> ${next.toLowerCase()}`)
+                .join(' · ');
+            return changes.length > 3
+                ? `${changes.length} bands changed: ${preview} ...`
+                : `Bands changed: ${preview}`;
+        }
+
+        function _bcActionChangeDetail(actionBand, changes) {
+            const exact = (changes || []).find(({ band }) => band === actionBand);
+            if (exact) return `${actionBand} ${exact.prev.toLowerCase()} -> ${exact.next.toLowerCase()}`;
+            if (changes && changes.length) return `${changes.length} band${changes.length === 1 ? '' : 's'} changed`;
+            return 'No merged-state change';
+        }
+
+        function _bcSetChangedBands(changes, data) {
+            latestBcChangedBands = new Set((changes || []).map(({ band }) => band));
+            if (bcChangedBandsTimer) {
+                window.clearTimeout(bcChangedBandsTimer);
+                bcChangedBandsTimer = null;
+            }
+            if (data) applySmartScheduler(data);
+            if (!latestBcChangedBands.size) return;
+            bcChangedBandsTimer = window.setTimeout(() => {
+                latestBcChangedBands = new Set();
+                bcChangedBandsTimer = null;
+                if (latestBcStatus) applySmartScheduler(latestBcStatus);
+            }, 4200);
+        }
+
+        function applySmartScheduler(data) {
+            latestBcStatus = data || null;
+            latestBcConditions = (data && data.conditions) ? data.conditions : {};
+            const grid = byId('bc-grid');
+            const statusEl = byId('bc-status');
+            if (!grid || !data) return;
+            const conditions = data.conditions || {};
+            const overrideBusy = grid.dataset.bcBusy === 'true';
+            const overrideBusyBand = grid.dataset.bcBusyBand || '';
+            const overrideBusyCond = Object.prototype.hasOwnProperty.call(grid.dataset, 'bcBusyCond')
+                ? grid.dataset.bcBusyCond
+                : null;
+            const bands = Object.keys(conditions).sort((a, b) => {
+                // sort by numeric MHz value (e.g. "40m" → 40)
+                const n = s => parseInt(s, 10) || 0;
+                return n(a) - n(b);
+            });
+            if (!bands.length) {
+                grid.innerHTML = '<span style="font-size:0.82rem;color:var(--fg-muted)">No band condition data yet \u2014 waiting for first scheduler cycle.</span>';
+                if (statusEl) statusEl.textContent = 'Band Conditions: waiting for first cycle';
+                return;
+            }
+            if (statusEl) {
+                statusEl.textContent = _bcStatusText(data);
+            }
+            grid.innerHTML = bands.map(band => {
+                const c = conditions[band] || {};
+                const merged = c.merged || 'UNKNOWN';
+                const override = c.user_override || null;
+                const selOpen = override === 'OPEN' ? 'sel-open' : '';
+                const selMarg = override === 'MARGINAL' ? 'sel-marginal' : '';
+                const selClose = override === 'CLOSED' ? 'sel-closed' : '';
+                const disableAttr = overrideBusy ? ' disabled aria-disabled="true"' : '';
+                const isBusyOpen = overrideBusy && overrideBusyBand === band && overrideBusyCond === 'OPEN' ? ' is-busy' : '';
+                const isBusyMarg = overrideBusy && overrideBusyBand === band && overrideBusyCond === 'MARGINAL' ? ' is-busy' : '';
+                const isBusyClose = overrideBusy && overrideBusyBand === band && overrideBusyCond === 'CLOSED' ? ' is-busy' : '';
+                const isBusyClear = overrideBusy && overrideBusyBand === band && overrideBusyCond === '' ? ' is-busy' : '';
+                const unpinBtn = override
+                    ? `<button class="bc-override-btn${isBusyClear}" data-bc-band="${band}" data-bc-cond="" title="Remove pin"${disableAttr}>✕</button>`
+                    : '';
+                const changedCls = latestBcChangedBands.has(band) ? ' bc-card-changed' : '';
+                return `<div class="bc-band-card${changedCls}" data-bc-card-band="${band}">
+  <span class="bc-band-name">${band}</span>
+  ${_bcBadgeHtml(merged)}
+  ${_bcSourceLabel(c.source)}
+    <div class="bc-detail-row">${_bcDetailVal('Prediction', c.seasonal)}${_bcDetailVal('Live', c.empirical)}</div>
+  ${_bcNextChange(c.next_seasonal_change_in_s, c.next_seasonal_condition)}
+  <div class="bc-override-row">
+        <button class="bc-override-btn ${selOpen}${isBusyOpen}"  data-bc-band="${band}" data-bc-cond="OPEN"     title="Pin Open"${disableAttr}>Open</button>
+        <button class="bc-override-btn ${selMarg}${isBusyMarg}"  data-bc-band="${band}" data-bc-cond="MARGINAL" title="Pin Marginal"${disableAttr}>Marg</button>
+        <button class="bc-override-btn ${selClose}${isBusyClose}" data-bc-band="${band}" data-bc-cond="CLOSED"   title="Pin Closed"${disableAttr}>Close</button>
+    ${unpinBtn}
+  </div>
+</div>`;
+            }).join('');
+        }
+
+        async function fetchSmartScheduler() {
+            const data = await getJson('/smart_scheduler/status?mode=' + encodeURIComponent(bcCurrentMode)).catch(() => null);
+            if (data) applySmartScheduler(data);
+            return data;
+        }
+
+        function initBandConditionsPanel() {
+            const feedbackTimers = new Map();
+            let bcActionInFlight = false;
+            let refreshBtn = null;
+            let forceBtn = null;
+            const setBcActionNote = (message = '', kind = '') => {
+                const noteEl = byId('bc-action-note');
+                if (!noteEl) return;
+                noteEl.textContent = message;
+                noteEl.classList.toggle('success', kind === 'success');
+                noteEl.classList.toggle('error', kind === 'error');
+            };
+
+            const bcActionTimeLabel = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+            const ensureBcActionOk = async (response) => {
+                if (response && response.ok) return response;
+                let detail = '';
+                try {
+                    detail = await response.text();
+                } catch {
+                    // Ignore response-body failures and surface the status fallback below.
+                }
+                const status = response ? `${response.status} ${response.statusText || ''}`.trim() : 'request failed';
+                throw new Error(detail || status);
+            };
+
+            const setBcActionState = (button, state = 'idle') => {
+                if (!button) return;
+                button.classList.toggle('is-busy', state === 'busy');
+                button.classList.toggle('is-success', state === 'success');
+                button.classList.toggle('is-error', state === 'error');
+                button.disabled = state === 'busy';
+                button.setAttribute('aria-busy', state === 'busy' ? 'true' : 'false');
+            };
+
+            const flashBcActionState = (button, state) => {
+                if (!button) return;
+                if (feedbackTimers.has(button)) {
+                    window.clearTimeout(feedbackTimers.get(button));
+                }
+                setBcActionState(button, state);
+                const timer = window.setTimeout(() => {
+                    setBcActionState(button, 'idle');
+                    feedbackTimers.delete(button);
+                }, 1200);
+                feedbackTimers.set(button, timer);
+            };
+
+            const setBcOverrideRowBusy = (button, busy) => {
+                if (!button) return;
+                const row = button.closest('.bc-override-row');
+                const buttons = row ? Array.from(row.querySelectorAll('.bc-override-btn')) : [button];
+                buttons.forEach(candidate => {
+                    candidate.disabled = busy;
+                    if (busy) candidate.classList.remove('is-error');
+                    candidate.classList.toggle('is-busy', busy && candidate === button);
+                    candidate.setAttribute('aria-busy', busy && candidate === button ? 'true' : 'false');
+                });
+            };
+
+            const flashBcOverrideError = (button) => {
+                if (!button) return;
+                if (feedbackTimers.has(button)) {
+                    window.clearTimeout(feedbackTimers.get(button));
+                }
+                button.classList.remove('is-busy');
+                button.classList.add('is-error');
+                const timer = window.setTimeout(() => {
+                    button.classList.remove('is-error');
+                    feedbackTimers.delete(button);
+                }, 1200);
+                feedbackTimers.set(button, timer);
+            };
+
+            const setBcPanelBusy = (busy, activeButton = null) => {
+                bcActionInFlight = busy;
+                [refreshBtn, forceBtn].forEach(candidate => {
+                    if (!candidate || candidate === activeButton) return;
+                    candidate.disabled = busy;
+                    candidate.setAttribute('aria-disabled', busy ? 'true' : 'false');
+                });
+                const gridEl = byId('bc-grid');
+                if (!gridEl) return;
+                gridEl.dataset.bcBusy = busy ? 'true' : 'false';
+                if (busy && activeButton && activeButton.dataset && activeButton.dataset.bcBand) {
+                    gridEl.dataset.bcBusyBand = activeButton.dataset.bcBand || '';
+                    gridEl.dataset.bcBusyCond = Object.prototype.hasOwnProperty.call(activeButton.dataset, 'bcCond') ? (activeButton.dataset.bcCond || '') : '';
+                } else {
+                    delete gridEl.dataset.bcBusyBand;
+                    delete gridEl.dataset.bcBusyCond;
+                }
+                gridEl.querySelectorAll('.bc-override-btn').forEach(candidate => {
+                    if (candidate === activeButton) return;
+                    candidate.disabled = busy;
+                    candidate.setAttribute('aria-disabled', busy ? 'true' : 'false');
+                });
+            };
+
+            let resizeTimer = null;
+            window.addEventListener('resize', () => {
+                if (resizeTimer) window.clearTimeout(resizeTimer);
+                resizeTimer = window.setTimeout(() => {
+                    const statusEl = byId('bc-status');
+                    if (statusEl && latestBcStatus) statusEl.textContent = _bcStatusText(latestBcStatus);
+                }, 80);
+            });
+            refreshBtn = byId('bc-refresh');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', async () => {
+                    if (bcActionInFlight) return;
+                    setBcPanelBusy(true, refreshBtn);
+                    setBcActionState(refreshBtn, 'busy');
+                    try {
+                        await fetchSmartScheduler();
+                        setBcActionNote(`Refreshed ${bcActionTimeLabel()}`, 'success');
+                        flashBcActionState(refreshBtn, 'success');
+                    } catch {
+                        setBcActionNote('Refresh failed', 'error');
+                        flashBcActionState(refreshBtn, 'error');
+                    } finally {
+                        setBcPanelBusy(false, refreshBtn);
+                    }
+                });
+            }
+            forceBtn = byId('bc-force-check');
+            if (forceBtn) {
+                forceBtn.addEventListener('click', async () => {
+                    if (bcActionInFlight) return;
+                    const statusEl = byId('bc-status');
+                    const beforeConditions = latestBcConditions;
+                    setBcPanelBusy(true, forceBtn);
+                    if (statusEl) statusEl.textContent = 'Forcing check…';
+                    setBcActionState(forceBtn, 'busy');
+                    try {
+                        await ensureBcActionOk(await fetch('/smart_scheduler/force_check', { method: 'POST' }));
+                        // wait briefly for the background thread to complete
+                        await new Promise(r => setTimeout(r, 1200));
+                        const data = await getJson('/smart_scheduler/status?mode=' + encodeURIComponent(bcCurrentMode)).catch(() => null);
+                        const changes = _bcConditionChanges(beforeConditions, data && data.conditions);
+                        if (data) {
+                            _bcSetChangedBands(changes, data);
+                        }
+                        setBcActionNote(`${_bcChangeSummary(beforeConditions, data && data.conditions)} · ${bcActionTimeLabel()}`, 'success');
+                        flashBcActionState(forceBtn, 'success');
+                    } catch (err) {
+                        if (statusEl) statusEl.textContent = `Error: ${String((err && err.message) || err)}`;
+                        setBcActionNote('Force check failed', 'error');
+                        flashBcActionState(forceBtn, 'error');
+                    } finally {
+                        setBcPanelBusy(false, forceBtn);
+                        if (!forceBtn.classList.contains('is-success') && !forceBtn.classList.contains('is-error')) {
+                            setBcActionState(forceBtn, 'idle');
+                        }
+                    }
+                });
+            }
+            const grid = byId('bc-grid');
+            if (!grid) return;
+            // Mode toggle (FT8 / Phone)
+            document.querySelectorAll('.bc-mode-btn').forEach(modeBtn => {
+                modeBtn.addEventListener('click', () => {
+                    if (modeBtn.dataset.bcMode === bcCurrentMode) return;
+                    bcCurrentMode = modeBtn.dataset.bcMode;
+                    document.querySelectorAll('.bc-mode-btn').forEach(b => {
+                        b.classList.toggle('is-active', b.dataset.bcMode === bcCurrentMode);
+                    });
+                    fetchSmartScheduler().catch(() => { });
+                });
+            });
+            grid.addEventListener('click', async e => {
+                const btn = e.target.closest('[data-bc-band]');
+                if (!btn) return;
+                if (bcActionInFlight) return;
+                const band = btn.dataset.bcBand;
+                const cond = btn.dataset.bcCond;
+                if (!band) return;
+                setBcPanelBusy(true, btn);
+                setBcOverrideRowBusy(btn, true);
+                try {
+                    const beforeConditions = latestBcConditions;
+                    let actionLabel = '';
+                    if (!cond) {
+                        await ensureBcActionOk(await fetch(`/smart_scheduler/band_override/${encodeURIComponent(band)}`, { method: 'DELETE' }));
+                        actionLabel = `Unpinned ${band}`;
+                    } else {
+                        await ensureBcActionOk(await fetch('/smart_scheduler/band_override', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ band, condition: cond }),
+                        }));
+                        actionLabel = `Pinned ${band} to ${cond}`;
+                    }
+                    const data = await getJson('/smart_scheduler/status?mode=' + encodeURIComponent(bcCurrentMode)).catch(() => null);
+                    const changes = _bcConditionChanges(beforeConditions, data && data.conditions);
+                    if (data) {
+                        _bcSetChangedBands(changes, data);
+                        setBcActionNote(`${actionLabel} · ${_bcActionChangeDetail(band, changes)} · ${bcActionTimeLabel()}`, 'success');
+                    } else {
+                        await fetchSmartScheduler();
+                        setBcActionNote(`${actionLabel} · ${bcActionTimeLabel()}`, 'success');
+                    }
+                } catch (err) {
+                    setBcActionNote(`Band update failed: ${String((err && err.message) || err)}`, 'error');
+                    flashBcOverrideError(btn);
+                } finally {
+                    setBcOverrideRowBusy(btn, false);
+                    setBcPanelBusy(false, btn);
+                }
+            });
+        }
+        // ── End Smart Scheduler ─────────────────────────────────────────────
+
         async function refresh() {
             try {
-                const [healthResult, statusResult, versionResult, deltaInfo] = await Promise.all([
+                const [healthResult, statusResult, versionResult, deltaInfo, chartData] = await Promise.all([
                     getJson("/health/rx"),
                     getJson("/decodes/status"),
                     getJson("/version").catch(() => null),
                     pollDecodeDelta(),
+                    getJson("/decodes/chart").catch(() => null),
                 ]);
                 const health = healthResult;
                 const status = statusResult;
@@ -8365,13 +10202,17 @@
 
                 applyHealth(health);
                 applyStatus(status);
+                if (chartData) applyChartData(chartData);
                 if (version && typeof version === "object") {
                     applyVersion(version);
                 }
                 updateDecodeStreamChip();
-                if (currentSectionNavId === "system") {
+                if (currentSectionNavId === "system" || currentSectionNavId === "active-receivers" || currentSectionNavId === "overview") {
                     refreshSystemInfo(false).catch(() => { });
                 }
+                getJson('/smart_scheduler/status?mode=' + encodeURIComponent(bcCurrentMode)).then(d => {
+                    if (d) applySmartScheduler(d);
+                }).catch(() => { });
                 renderTrend();
                 applyExecutiveSummary(status, health, ratePerMin);
                 byId("subtitle").textContent = DEFAULT_SUBTITLE_TEXT;
@@ -8393,8 +10234,8 @@
         applyOverviewTopicPrefs(readStoredOverviewTopicPrefs());
         initRefreshControls();
         initAssignmentsBandChartControls();
-        initReceiverFilters();
         initConfigAutomationControls();
+        initBandConditionsPanel();
         initMapPanel();
         initSectionNav();
         initTopbarActions();
@@ -8414,7 +10255,60 @@
         }, 60000);
         setInterval(updateDecodeStreamChip, 1000);
         setInterval(updateRefreshStatus, 1000);
+
+        (function initHeartChartPopup() {
+            const popup = byId("heart-chart-popup");
+            const img = byId("heart-chart-img");
+            const cardGrid = byId("assignments-band-cards");
+            if (!popup || !img || !cardGrid) return;
+            let hideTimer = null;
+
+            function showPopup(triggerEl) {
+                const chartCanvas = byId("assign-band-chart");
+                if (!chartCanvas) return;
+                clearTimeout(hideTimer);
+                try {
+                    img.src = chartCanvas.toDataURL("image/png");
+                } catch (_) { return; }
+                popup.classList.add("show");
+                popup.removeAttribute("aria-hidden");
+                const rect = triggerEl.getBoundingClientRect();
+                const popW = popup.offsetWidth || 438;
+                const popH = popup.offsetHeight || 162;
+                const margin = 10;
+                let left = rect.left;
+                let top = rect.top - popH - 8;
+                if (left + popW + margin > window.innerWidth) left = window.innerWidth - popW - margin;
+                if (left < margin) left = margin;
+                if (top < margin) top = rect.bottom + 8;
+                popup.style.left = `${Math.round(left)}px`;
+                popup.style.top = `${Math.round(top)}px`;
+            }
+
+            function hidePopup() {
+                popup.classList.remove("show");
+                popup.setAttribute("aria-hidden", "true");
+            }
+
+            cardGrid.addEventListener("mouseover", (ev) => {
+                const line = ev.target.closest(".rx-state-line");
+                if (!line) return;
+                clearTimeout(hideTimer);
+                showPopup(line);
+            });
+
+            cardGrid.addEventListener("mouseout", (ev) => {
+                const line = ev.target.closest(".rx-state-line");
+                if (!line) return;
+                hideTimer = setTimeout(hidePopup, 100);
+            });
+        })();
     </script>
+
+    <div id="heart-chart-popup" aria-hidden="true">
+        <div class="hcp-label">Decodes by Band</div>
+        <img id="heart-chart-img" alt="Decodes by Band chart">
+    </div>
 </body>
 
 </html>

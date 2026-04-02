@@ -42,6 +42,9 @@ from .api.metrics import make_router as make_metrics_router
 from .api.health import make_router as make_health_router
 from .api.system_info import make_router as make_system_info_router
 from .rx_monitor import RxMonitor
+from .auto_set_loop import AutoSetLoop
+from .smart_scheduler import SmartScheduler
+from .api.smart_scheduler import make_router as make_smart_scheduler_router
 from .app_lifecycle import register_lifecycle
 
 # Configure logging to output to console (stderr) with timestamps
@@ -243,11 +246,24 @@ app.include_router(
     )
 )
 app.include_router(make_rx_monitor_router(monitor=rx_monitor))
-app.include_router(make_admin_router())
+auto_set_loop = AutoSetLoop()
+
+# SmartScheduler: merges seasonal tables + live propagation evidence + user pins
+# into a band-condition map.  Fires force_reassign() when conditions change so
+# receivers are reallocated away from dead bands without waiting for the next
+# 30-second AutoSetLoop tick.
+smart_scheduler = SmartScheduler(
+    receiver_mgr=receiver_mgr,
+    on_condition_change=auto_set_loop.force_reassign,
+)
+auto_set_loop.set_smart_scheduler(smart_scheduler)
+
+app.include_router(make_admin_router(auto_set_loop=auto_set_loop))
 app.include_router(make_automation_router())
 app.include_router(make_metrics_router(receiver_mgr=receiver_mgr, get_api_metrics=_get_api_metrics))
 app.include_router(make_health_router(receiver_mgr=receiver_mgr))
 app.include_router(make_system_info_router(mgr=mgr))
+app.include_router(make_smart_scheduler_router(smart_scheduler=smart_scheduler))
 app.include_router(
     make_ws_status_router(
         mgr=mgr,
@@ -270,6 +286,8 @@ register_lifecycle(
     rx_monitor=rx_monitor,
     set_decodes_loop=set_decodes_loop,
     set_loop=lambda v: globals().__setitem__("loop", v),
+    auto_set_loop=auto_set_loop,
+    smart_scheduler=smart_scheduler,
 )
 
 

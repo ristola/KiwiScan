@@ -75,6 +75,7 @@ def register_lifecycle(
     receiver_mgr: object,
     rx_monitor: object | None = None,
     auto_set_loop: object | None = None,
+    smart_scheduler: object | None = None,
     set_decodes_loop: Callable[[Optional[asyncio.AbstractEventLoop]], None],
     set_loop: Callable[[Optional[asyncio.AbstractEventLoop]], None],
 ) -> None:
@@ -131,6 +132,12 @@ def register_lifecycle(
             except Exception:
                 logger.exception("Auto-set loop failed to start")
 
+        if smart_scheduler is not None:
+            try:
+                smart_scheduler.start()  # type: ignore[attr-defined]
+            except Exception:
+                logger.exception("SmartScheduler failed to start")
+
     async def _shutdown() -> None:
         try:
             mgr.stop()  # type: ignore[attr-defined]
@@ -161,6 +168,12 @@ def register_lifecycle(
             if auto_set_loop is not None:
                 try:
                     auto_set_loop.stop()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+
+            if smart_scheduler is not None:
+                try:
+                    smart_scheduler.stop()  # type: ignore[attr-defined]
                 except Exception:
                     pass
 

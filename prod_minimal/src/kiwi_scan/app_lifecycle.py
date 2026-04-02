@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Callable, Optional
 
 from fastapi import FastAPI
+
+logger = logging.getLogger(__name__)
 
 
 def register_lifecycle(
@@ -12,6 +15,8 @@ def register_lifecycle(
     mgr: object,
     receiver_mgr: object,
     rx_monitor: object | None = None,
+    auto_set_loop: object | None = None,
+    smart_scheduler: object | None = None,
     set_decodes_loop: Callable[[Optional[asyncio.AbstractEventLoop]], None],
     set_loop: Callable[[Optional[asyncio.AbstractEventLoop]], None],
 ) -> None:
@@ -34,6 +39,18 @@ def register_lifecycle(
             # Best effort: don't block startup if WS4010 cannot bind.
             pass
 
+        if auto_set_loop is not None:
+            try:
+                auto_set_loop.start()  # type: ignore[attr-defined]
+            except Exception:
+                logger.exception("Auto-set loop failed to start")
+
+        if smart_scheduler is not None:
+            try:
+                smart_scheduler.start()  # type: ignore[attr-defined]
+            except Exception:
+                logger.exception("SmartScheduler failed to start")
+
     async def _shutdown() -> None:
         try:
             mgr.stop()  # type: ignore[attr-defined]
@@ -53,6 +70,18 @@ def register_lifecycle(
                 stop_ws4010()
             except Exception:
                 pass
+
+            if auto_set_loop is not None:
+                try:
+                    auto_set_loop.stop()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+
+            if smart_scheduler is not None:
+                try:
+                    smart_scheduler.stop()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
 
     app.add_event_handler("startup", _startup)
     app.add_event_handler("shutdown", _shutdown)

@@ -32,6 +32,14 @@ _decode_seq = 0
 _decode_buffer: deque[Dict] = deque(maxlen=500)
 _decode_times: deque[float] = deque(maxlen=5000)
 
+# Server-side band activity chart buckets: fixed 15-second wall-clock intervals so the
+# data is accurate regardless of browser tab visibility or polling throttling.
+_CHART_BUCKET_S = 15.0
+_CHART_MAX_BUCKETS = 60  # 15 minutes of history
+_chart_lock = threading.Lock()
+_chart_buckets: deque = deque(maxlen=_CHART_MAX_BUCKETS)
+_chart_running: Dict[str, Any] = {}  # {"ts": float, "bands": {band: {"RXn|MODE": count}}}
+
 _loop: asyncio.AbstractEventLoop | None = None
 _loop_4010: asyncio.AbstractEventLoop | None = None
 
@@ -783,6 +791,7 @@ def _parse_decode_line(line: str) -> Dict[str, Optional[str]]:
     snr = None
     dt = None
     hz = None
+    power = None
     if raw.startswith("D:"):
         parts = raw.split()
         # Expected formats:
@@ -815,8 +824,32 @@ def _parse_decode_line(line: str) -> Dict[str, Optional[str]]:
                     message = " ".join(parts[7:])
                 else:
                     message = " ".join(parts[3:]) if len(parts) > 3 else ""
+            elif mode == "WSPR":
+                # D: WSPR <epoch> <date> <time> <sync> <snr> <dt> <freq_audio_mhz> <call> <grid> <power> [...]
+                # indices:    0     1      2      3     4      5      6       7         8      9    10    11
+                if len(parts) >= 12:
+                    try:
+                        snr = float(parts[6])
+                    except Exception:
+                        snr = None
+                    try:
+                        dt = float(parts[7])
+                    except Exception:
+                        dt = None
+                    try:
+                        hz = float(parts[8]) * 1e6  # audio freq MHz -> Hz
+                    except Exception:
+                        hz = None
+                    try:
+                        power = int(float(parts[11]))
+                    except Exception:
+                        power = None
+                    # callsign=parts[9], grid=parts[10]; let the regex below extract them
+                    message = " ".join(parts[9:12])
+                else:
+                    message = " ".join(parts[3:]) if len(parts) > 3 else ""
             else:
-                # For WSPR and other modes, keep the rest of the decoder line.
+                # For other modes, keep the rest of the decoder line.
                 message = " ".join(parts[3:]) if len(parts) > 3 else ""
 
     callsign = None
@@ -850,6 +883,7 @@ def _parse_decode_line(line: str) -> Dict[str, Optional[str]]:
         "snr": snr,
         "dt": dt,
         "hz": hz,
+        "power": power,
     }
 
 
@@ -982,6 +1016,8 @@ def publish_decode(payload: Dict) -> None:
         while _decode_times and _decode_times[0] < cutoff:
             _decode_times.popleft()
 
+    _chart_ingest(payload, now)
+
     loop = _loop
     loop_4010 = _loop_4010
     if loop is None and loop_4010 is None:
@@ -1043,6 +1079,7 @@ def decode_callback(event: Dict) -> None:
             "snr": parsed.get("snr"),
             "dt": parsed.get("dt"),
             "hz": parsed.get("hz"),
+            "power": parsed.get("power"),
             "band": event.get("band"),
             "rx": event.get("rx"),
         }
@@ -1088,6 +1125,70 @@ def get_decodes(since: int = 0):
         ]
         latest = _decode_seq
     return {"latest": latest, "items": items}
+
+
+def _chart_ingest(payload: Dict, now: float) -> None:
+    """Accumulate one decode event into the current wall-clock bucket."""
+    global _chart_running
+    band = str(payload.get("band") or "").strip()
+    if not band or band.lower() == "control":
+        return
+    rx_raw = payload.get("rx")
+    if rx_raw is None or rx_raw == -1:
+        rx_label = "RX?"
+    else:
+        try:
+            rx_label = f"RX{int(rx_raw)}"
+        except Exception:
+            rx_label = "RX?"
+    mode = str(payload.get("mode") or "?").strip().upper() or "?"
+    key = f"{rx_label}|{mode}"
+    bucket_ts = (now // _CHART_BUCKET_S) * _CHART_BUCKET_S
+    with _chart_lock:
+        if not _chart_running or _chart_running.get("ts") != bucket_ts:
+            if _chart_running:
+                _chart_buckets.append(_chart_running)
+            _chart_running = {"ts": bucket_ts, "bands": {}}
+        bands = _chart_running["bands"]
+        if band not in bands:
+            bands[band] = {}
+        bands[band][key] = bands[band].get(key, 0) + 1
+
+
+@router.get("/decodes/chart")
+def get_decodes_chart():
+    """Return server-side band activity time series (fixed 15s buckets)."""
+    with _chart_lock:
+        completed = list(_chart_buckets)
+        running = dict(_chart_running) if _chart_running else None
+        running_bands = {}
+        if running:
+            running_bands = {k: dict(v) for k, v in running.get("bands", {}).items()}
+
+    result: List[Dict] = []
+    for b in completed:
+        result.append({
+            "ts": b["ts"],
+            "bands": {
+                band: {
+                    "total": sum(breakdown.values()),
+                    "breakdown": dict(breakdown),
+                }
+                for band, breakdown in b.get("bands", {}).items()
+            },
+        })
+    if running:
+        result.append({
+            "ts": running["ts"],
+            "bands": {
+                band: {
+                    "total": sum(breakdown.values()),
+                    "breakdown": dict(breakdown),
+                }
+                for band, breakdown in running_bands.items()
+            },
+        })
+    return {"bucket_s": _CHART_BUCKET_S, "buckets": result}
 
 
 def get_decode_ws_counts() -> Dict[str, int]:

@@ -23,6 +23,101 @@ from .ssb_scan_hits import log_ssb_scan_hit, update_ssb_scan_status
 
 logger = logging.getLogger(__name__)
 
+# FT8 and FT4 dial frequencies (Hz) per band, used to compute the IQ centre
+# and sub-band offsets when running dual-mode (FT4 / FT8).
+# 60m has no standard FT4 frequency and is excluded.
+# Bands where the two separations are > 10 kHz fall back to USB+fanout.
+_BAND_DUAL_FREQS: dict[str, tuple[float, float]] = {
+    "10m":  (28.074e6, 28.180e6),   # 106 kHz apart — too wide for IQ
+    "12m":  (24.915e6, 24.919e6),   # 4 kHz — IQ OK
+    "15m":  (21.074e6, 21.140e6),   # 66 kHz apart — too wide for IQ
+    "17m":  (18.100e6, 18.104e6),   # 4 kHz — IQ OK
+    "20m":  (14.074e6, 14.080e6),   # 6 kHz — IQ OK
+    "30m":  (10.136e6, 10.140e6),   # 4 kHz — IQ OK
+    "40m":  (7.074e6,  7.0475e6),   # 26.5 kHz apart — too wide for IQ
+    "80m":  (3.573e6,  3.575e6),    # 2 kHz — IQ OK
+    "160m": (1.840e6,  1.843e6),    # 3 kHz — IQ OK
+}
+# FT4 + WSPR IQ pairs (bands where FT4 and WSPR dial freqs are < 10 kHz apart)
+_BAND_FT4_WSPR_PAIRS: dict[str, tuple[float, float]] = {
+    "40m": (7.0475e6, 7.0386e6),   # 8.9 kHz span — IQ OK
+}
+
+# WSPR dial frequencies (Hz) per band
+_BAND_WSPR_FREQS: dict[str, float] = {
+    "160m": 1.8366e6,
+    "80m":  3.5686e6,
+    "40m":  7.0386e6,
+    "30m":  10.1387e6,
+    "20m":  14.0956e6,
+    "17m":  18.1046e6,
+    "15m":  21.0946e6,
+    "12m":  24.9246e6,
+    "10m":  28.1246e6,
+    "60m":  5.2887e6,
+}
+_IQ_MAX_SEPARATION_HZ = 10_000  # ±5 kHz fits safely within 12 kHz IQ bandwidth
+
+
+def _ft4_wspr_iq_params(band: str) -> "tuple[str, float, float] | None":
+    """Return (iq_centre_khz_str, ft4_offset_hz, wspr_offset_hz) for FT4+WSPR IQ dual-mode."""
+    pair = _BAND_FT4_WSPR_PAIRS.get(band)
+    if pair is None:
+        return None
+    ft4_hz, wspr_hz = pair
+    if abs(ft4_hz - wspr_hz) > _IQ_MAX_SEPARATION_HZ:
+        return None
+    centre_hz = (ft4_hz + wspr_hz) / 2.0
+    ft4_off = ft4_hz - centre_hz
+    wspr_off = wspr_hz - centre_hz
+    khz = centre_hz / 1000.0
+    centre_str = f"{khz:.3f}".rstrip("0").rstrip(".")
+    return centre_str, ft4_off, wspr_off
+
+
+def _dual_mode_iq_params(band: str) -> "tuple[str, float, float] | None":
+    """Return (iq_centre_khz_str, ft8_offset_hz, ft4_offset_hz) when the band's
+    FT8 and FT4 dial frequencies are close enough to share a 12 kHz IQ window.
+    Returns None for bands where they are too far apart.
+    """
+    pair = _BAND_DUAL_FREQS.get(band)
+    if pair is None:
+        return None
+    ft8_hz, ft4_hz = pair
+    if abs(ft8_hz - ft4_hz) > _IQ_MAX_SEPARATION_HZ:
+        return None
+    centre_hz = (ft8_hz + ft4_hz) / 2.0
+    ft8_off = ft8_hz - centre_hz
+    ft4_off = ft4_hz - centre_hz
+    khz = centre_hz / 1000.0
+    centre_str = f"{khz:.3f}".rstrip("0").rstrip(".")
+    return centre_str, ft8_off, ft4_off
+
+
+def _triple_mode_iq_params(band: str) -> "tuple[str, float, float, float] | None":
+    """Return (iq_centre_khz_str, ft8_off, ft4_off, wspr_off) when FT8, FT4,
+    and WSPR dial frequencies all fit inside the 12 kHz IQ window.
+    Returns None when the span is too wide or the band has no FT4.
+    """
+    pair = _BAND_DUAL_FREQS.get(band)
+    if pair is None:
+        return None  # band has no FT4 (e.g. 60m, 160m standalone)
+    ft8_hz, ft4_hz = pair
+    wspr_hz = _BAND_WSPR_FREQS.get(band)
+    if wspr_hz is None:
+        return None
+    freqs = [ft8_hz, ft4_hz, wspr_hz]
+    lo, hi = min(freqs), max(freqs)
+    if hi - lo > _IQ_MAX_SEPARATION_HZ:
+        return None
+    centre_hz = (lo + hi) / 2.0
+    ft8_off  = ft8_hz  - centre_hz
+    ft4_off  = ft4_hz  - centre_hz
+    wspr_off = wspr_hz - centre_hz
+    khz = centre_hz / 1000.0
+    centre_str = f"{khz:.3f}".rstrip("0").rstrip(".")
+    return centre_str, ft8_off, ft4_off, wspr_off
+
 
 @dataclass(frozen=True)
 class ReceiverAssignment:
@@ -32,6 +127,7 @@ class ReceiverAssignment:
     mode_label: str
     ssb_scan: Optional[dict] = None
     sideband: Optional[str] = None
+    ignore_slot_check: bool = False
 
 
 class _ReceiverWorker(threading.Thread):
@@ -53,8 +149,11 @@ class _ReceiverWorker(threading.Thread):
         decode_callback: Optional[Callable[[dict], None]] = None,
         on_restart: Optional[Callable[[int, str, str, float, int], None]] = None,
         on_activity: Optional[Callable[[int, str, str, str, Optional[float]], None]] = None,
+        initial_rx_chan_adjust: int = 0,
+        ignore_slot_check: bool = False,
     ) -> None:
         super().__init__(daemon=True)
+        self._ignore_slot_check = bool(ignore_slot_check)
         self._kiwirecorder_path = kiwirecorder_path
         self._ft8modem_path = ft8modem_path
         self._af2udp_path = af2udp_path
@@ -80,10 +179,12 @@ class _ReceiverWorker(threading.Thread):
         self._active_user_label: str = ""
         self._cfg_lock = threading.Lock()
         self._reconfigure = threading.Event()
+        self._slot_ready = threading.Event()
         try:
-            self._rx_chan_adjust = int(str(os.environ.get("KIWISCAN_RX_CHAN_OFFSET", "0")).strip())
+            env_adjust = int(str(os.environ.get("KIWISCAN_RX_CHAN_OFFSET", "0")).strip())
         except Exception:
-            self._rx_chan_adjust = 0
+            env_adjust = 0
+        self._rx_chan_adjust = int(initial_rx_chan_adjust) if initial_rx_chan_adjust else env_adjust
 
     @staticmethod
     def _env_float(name: str, default: float, *, min_v: float, max_v: float) -> float:
@@ -308,6 +409,28 @@ class _ReceiverWorker(threading.Thread):
             return int(self._rx)
         return int((int(self._rx) + int(self._rx_chan_adjust)) % 8)
 
+    def _wait_for_kiwi_user_connected(self, user_label: str, timeout_s: float = 8.0) -> None:
+        """Poll /users until user label appears, confirming Kiwi connection is established."""
+        deadline = time.time() + max(1.0, float(timeout_s))
+        wanted = str(user_label or "").strip()
+        if not wanted:
+            return
+        status_url = f"http://{self._host}:{self._port}/users"
+        while time.time() < deadline and not self._stop_event.is_set():
+            try:
+                with urllib.request.urlopen(status_url, timeout=1.2) as resp:
+                    payload = json.loads(resp.read().decode("utf-8", errors="ignore"))
+                if isinstance(payload, list):
+                    for row in payload:
+                        if not isinstance(row, dict):
+                            continue
+                        name = urllib.parse.unquote(str(row.get("n") or "")).strip()
+                        if name == wanted or name.startswith(wanted) or wanted.startswith(name):
+                            return
+            except Exception:
+                pass
+            time.sleep(0.3)
+
     def _adapt_rx_chan_adjust(self, *, expected_rx: int, actual_rx: int, user_label: str) -> None:
         try:
             expected = int(expected_rx)
@@ -435,11 +558,22 @@ class _ReceiverWorker(threading.Thread):
 
     def _is_digital_mode(self) -> bool:
         norm = self._mode_label.strip().upper()
-        return norm in {"FT4", "FT8", "FT4 / FT8", "FT4/FT8", "FT8 / FT4", "FT8/FT4", "WSPR"}
+        return norm in {
+            "FT4", "FT8", "FT4 / FT8", "FT4/FT8", "FT8 / FT4", "FT8/FT4",
+            "WSPR", "FT4 / FT8 / WSPR", "FT4 / WSPR",
+        }
+
+    def _is_triple_mode(self) -> bool:
+        norm = self._mode_label.strip().upper()
+        return "FT4" in norm and "FT8" in norm and "WSPR" in norm
 
     def _is_dual_mode(self) -> bool:
         norm = self._mode_label.strip().upper()
-        return "FT4" in norm and "FT8" in norm
+        return "FT4" in norm and "FT8" in norm and "WSPR" not in norm
+
+    def _is_ft4_wspr_mode(self) -> bool:
+        norm = self._mode_label.strip().upper()
+        return norm == "FT4 / WSPR"
 
     def _decoder_mode(self) -> str:
         norm = self._mode_label.strip().upper()
@@ -629,7 +763,7 @@ class _ReceiverWorker(threading.Thread):
 
             if not self._verify_kiwi_rx_channel(
                 user_label=f"AUTO_{self._band}_SSBSCAN",
-                expected_rx=self._rx,
+                expected_rx=self._kiwi_rx_chan(),
                 timeout_s=6.0,
                 strict=True,
                 require_visible=True,
@@ -763,7 +897,7 @@ class _ReceiverWorker(threading.Thread):
                     next_channel_check = time.time() + self._watchdog_channel_check_s()
                     if not self._verify_kiwi_rx_channel(
                         user_label=f"AUTO_{self._band}_SSBSCAN",
-                        expected_rx=self._rx,
+                        expected_rx=self._kiwi_rx_chan(),
                         timeout_s=0.9,
                         strict=True,
                         require_visible=True,
@@ -891,12 +1025,18 @@ class _ReceiverWorker(threading.Thread):
             if len(parts) < 4:
                 return None
             mode_name = str(parts[1] or "").strip().upper()
-            if mode_name not in {"FT8", "FT4", "JT9", "JT65"}:
-                return None
-            try:
-                return float(parts[3])
-            except Exception:
-                return None
+            if mode_name in {"FT8", "FT4", "JT9", "JT65"}:
+                try:
+                    return float(parts[3])
+                except Exception:
+                    return None
+            # D: WSPR <epoch> <date> <time> <sync> <snr> ...
+            if mode_name == "WSPR" and len(parts) >= 7:
+                try:
+                    return float(parts[6])
+                except Exception:
+                    return None
+            return None
 
         def _reader() -> None:
             if proc.stdout is None:
@@ -915,7 +1055,7 @@ class _ReceiverWorker(threading.Thread):
                         pass
                 if self._on_activity is not None:
                     try:
-                        self._on_activity(self._rx, self._band, self._mode_label, "decoder_output")
+                        self._on_activity(self._rx, self._band, mode, "decoder_output")
                     except Exception:
                         pass
                 if not msg.startswith("D:"):
@@ -923,7 +1063,7 @@ class _ReceiverWorker(threading.Thread):
                 snr_db = _decode_line_snr(msg)
                 if self._on_activity is not None:
                     try:
-                        self._on_activity(self._rx, self._band, self._mode_label, "decode", snr_db)
+                        self._on_activity(self._rx, self._band, mode, "decode", snr_db)
                     except Exception:
                         pass
                 if self._decode_callback is not None:
@@ -946,6 +1086,70 @@ class _ReceiverWorker(threading.Thread):
 
         self._decoder_threads.append(threading.Thread(target=_reader, daemon=True))
         self._decoder_threads[-1].start()
+
+        # For WSPR mode, wsprd writes decoded spots to a file rather than stdout.
+        # Tail that file and fire decode + activity callbacks for each new spot.
+        if str(mode or "").strip().upper() == "WSPR":
+            spots_path = Path(str(temp_root)) / f"udp-{udp_port}" / "wspr_spots.txt"
+
+            def _wspr_spots_reader() -> None:
+                """Continuously tail wspr_spots.txt and publish each new spot."""
+                file_pos: Optional[int] = None
+                while not self._stop_event.is_set():
+                    try:
+                        if not spots_path.exists():
+                            self._stop_event.wait(2.0)
+                            continue
+                        with open(spots_path, "r", encoding="utf-8", errors="replace") as f:
+                            if file_pos is None:
+                                # First open: seek to end so we don't replay old spots.
+                                f.seek(0, 2)
+                                file_pos = f.tell()
+                            else:
+                                f.seek(file_pos)
+                            for raw_line in f:
+                                if self._stop_event.is_set():
+                                    break
+                                stripped = raw_line.strip()
+                                if not stripped:
+                                    continue
+                                spot_parts = stripped.split()
+                                # wsprd: date time sync snr dt freq_audio_mhz call grid power [...]
+                                if len(spot_parts) < 9:
+                                    continue
+                                epoch = int(time.time())
+                                d_line = f"D: WSPR {epoch} {stripped}"
+                                snr_db: Optional[float] = None
+                                try:
+                                    snr_db = float(spot_parts[3])
+                                except Exception:
+                                    pass
+                                if self._on_activity is not None:
+                                    try:
+                                        self._on_activity(
+                                            self._rx, self._band,
+                                            mode, "decode", snr_db,
+                                        )
+                                    except Exception:
+                                        pass
+                                if self._decode_callback is not None:
+                                    try:
+                                        self._decode_callback({
+                                            "rx": self._rx,
+                                            "band": self._band,
+                                            "freq_hz": self._freq_hz,
+                                            "mode_label": mode,
+                                            "message": d_line,
+                                        })
+                                    except Exception:
+                                        pass
+                            file_pos = f.tell()
+                    except Exception:
+                        file_pos = None
+                    self._stop_event.wait(5.0)
+
+            self._decoder_threads.append(threading.Thread(target=_wspr_spots_reader, daemon=True))
+            self._decoder_threads[-1].start()
 
         def _watcher() -> None:
             rc = proc.wait()
@@ -992,20 +1196,147 @@ class _ReceiverWorker(threading.Thread):
                 logger.warning("af2udp not executable on PATH or fallback at %s", self._af2udp_path)
                 self._last_spawn_error_reason = "af2udp_missing"
                 return None
-            if self._is_dual_mode():
+            if self._is_triple_mode():
+                udp_port_ft8  = 3100 + self._rx
+                udp_port_ft4  = 3200 + self._rx
+                udp_port_wspr = 3300 + self._rx
+                self._start_decoder(udp_port_ft8,  "FT8")
+                self._start_decoder(udp_port_ft4,  "FT4")
+                self._start_decoder(udp_port_wspr, "WSPR")
+                iq_params = _triple_mode_iq_params(self._band)
+                if iq_params is not None:
+                    iq_centre_khz, ft8_off, ft4_off, wspr_off = iq_params
+                    iq_splitter_path = Path(__file__).resolve().parent / "iq_splitter.py"
+                    logger.info(
+                        "IQ triple-mode rx=%s band=%s centre=%s kHz "
+                        "ft8_off=%.0f ft4_off=%.0f wspr_off=%.0f Hz",
+                        self._rx, self._band, iq_centre_khz, ft8_off, ft4_off, wspr_off,
+                    )
+                    pipeline_cmd = (
+                        f"{self._python_cmd} {self._kiwirecorder_path} "
+                        f"-s {self._host} -p {self._port} -f {iq_centre_khz} -m iq "
+                        f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
+                        f"{self._python_cmd} -u {iq_splitter_path} "
+                        f"{ft8_off:.1f} {udp_port_ft8} "
+                        f"{ft4_off:.1f} {udp_port_ft4} "
+                        f"{wspr_off:.1f} {udp_port_wspr}"
+                    )
+                else:
+                    # Span too wide for a single IQ window; degrade to dual FT8+FT4
+                    # and drop WSPR rather than waste two slots.
+                    iq_dual = _dual_mode_iq_params(self._band)
+                    if iq_dual is not None:
+                        iq_centre_khz, ft8_off, ft4_off = iq_dual
+                        iq_splitter_path = Path(__file__).resolve().parent / "iq_splitter.py"
+                        logger.warning(
+                            "Triple IQ not feasible for band=%s — falling back to FT8+FT4 dual IQ",
+                            self._band,
+                        )
+                        pipeline_cmd = (
+                            f"{self._python_cmd} {self._kiwirecorder_path} "
+                            f"-s {self._host} -p {self._port} -f {iq_centre_khz} -m iq "
+                            f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
+                            f"{self._python_cmd} -u {iq_splitter_path} "
+                            f"{ft8_off:.1f} {udp_port_ft8} {ft4_off:.1f} {udp_port_ft4}"
+                        )
+                    else:
+                        logger.warning(
+                            "Triple/dual IQ not feasible for band=%s — USB FT8 only",
+                            self._band,
+                        )
+                        udp_sender_cmd = self._udp_audio_sender_cmd(
+                            udp_port=udp_port_ft8, af2udp_path=af2udp_path
+                        )
+                        pipeline_cmd = (
+                            f"{self._python_cmd} {self._kiwirecorder_path} "
+                            f"-s {self._host} -p {self._port} -f {freq_khz} -m usb "
+                            f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
+                            f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
+                                f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
+                            f"{udp_sender_cmd}"
+                        )
+            elif self._is_dual_mode():
                 udp_port_ft8 = 3100 + self._rx
                 udp_port_ft4 = 3200 + self._rx
                 self._start_decoder(udp_port_ft8, "FT8")
                 self._start_decoder(udp_port_ft4, "FT4")
-                fanout_path = Path(__file__).resolve().parent / "udp_fanout.py"
-                pipeline_cmd = (
-                    f"{self._python_cmd} {self._kiwirecorder_path} "
-                    f"-s {self._host} -p {self._port} -f {freq_khz} -m usb "
-                    f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
-                    f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
-                        f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
-                    f"{self._python_cmd} -u {fanout_path} 127.0.0.1 {udp_port_ft8} {udp_port_ft4}"
-                )
+                iq_params = _dual_mode_iq_params(self._band)
+                if iq_params is not None:
+                    # IQ dual-mode: tune to the midpoint and extract each sub-band
+                    # via DSP in iq_splitter.py — both modes decoded from one RX slot.
+                    iq_centre_khz, ft8_off_hz, ft4_off_hz = iq_params
+                    iq_splitter_path = Path(__file__).resolve().parent / "iq_splitter.py"
+                    logger.info(
+                        "IQ dual-mode rx=%s band=%s centre=%s kHz "
+                        "ft8_off=%.0f Hz ft4_off=%.0f Hz",
+                        self._rx, self._band, iq_centre_khz, ft8_off_hz, ft4_off_hz,
+                    )
+                    pipeline_cmd = (
+                        f"{self._python_cmd} {self._kiwirecorder_path} "
+                        f"-s {self._host} -p {self._port} -f {iq_centre_khz} -m iq "
+                        f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
+                        f"{self._python_cmd} -u {iq_splitter_path} "
+                        f"{ft8_off_hz:.1f} {udp_port_ft8} {ft4_off_hz:.1f} {udp_port_ft4}"
+                    )
+                else:
+                    # Bands too far apart for IQ window: fall back to USB + fanout.
+                    # Both decoders receive the same audio tuned to the FT8 frequency.
+                    fanout_path = Path(__file__).resolve().parent / "udp_fanout.py"
+                    logger.info(
+                        "USB fanout dual-mode fallback rx=%s band=%s (modes too far apart for IQ)",
+                        self._rx, self._band,
+                    )
+                    pipeline_cmd = (
+                        f"{self._python_cmd} {self._kiwirecorder_path} "
+                        f"-s {self._host} -p {self._port} -f {freq_khz} -m usb "
+                        f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
+                        f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
+                            f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
+                        f"{self._python_cmd} -u {fanout_path} 127.0.0.1 {udp_port_ft8} {udp_port_ft4}"
+                    )
+            elif self._is_ft4_wspr_mode():
+                udp_port_ft4  = 3200 + self._rx
+                udp_port_wspr = 3300 + self._rx
+                self._start_decoder(udp_port_ft4,  "FT4")
+                self._start_decoder(udp_port_wspr, "WSPR")
+                iq_params = _ft4_wspr_iq_params(self._band)
+                if iq_params is not None:
+                    iq_centre_khz, ft4_off_hz, wspr_off_hz = iq_params
+                    iq_splitter_path = Path(__file__).resolve().parent / "iq_splitter.py"
+                    logger.info(
+                        "IQ FT4+WSPR dual-mode rx=%s band=%s centre=%s kHz "
+                        "ft4_off=%.0f Hz wspr_off=%.0f Hz",
+                        self._rx, self._band, iq_centre_khz, ft4_off_hz, wspr_off_hz,
+                    )
+                    pipeline_cmd = (
+                        f"{self._python_cmd} {self._kiwirecorder_path} "
+                        f"-s {self._host} -p {self._port} -f {iq_centre_khz} -m iq "
+                        f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
+                        f"{self._python_cmd} -u {iq_splitter_path} "
+                        f"{ft4_off_hz:.1f} {udp_port_ft4} {wspr_off_hz:.1f} {udp_port_wspr}"
+                    )
+                else:
+                    # IQ not feasible for this band; fall back to WSPR only.
+                    logger.warning(
+                        "FT4/WSPR IQ not feasible for band=%s — falling back to WSPR only",
+                        self._band,
+                    )
+                    wspr_freq_hz = _BAND_WSPR_FREQS.get(self._band)
+                    wspr_freq_khz = (
+                        f"{wspr_freq_hz / 1000.0:.3f}".rstrip("0").rstrip(".")
+                        if wspr_freq_hz else freq_khz
+                    )
+                    udp_sender_cmd = self._udp_audio_sender_cmd(
+                        udp_port=udp_port_wspr, af2udp_path=af2udp_path
+                    )
+                    pipeline_cmd = (
+                        f"{self._python_cmd} {self._kiwirecorder_path} "
+                        f"-s {self._host} -p {self._port} -f {wspr_freq_khz} -m usb "
+                        f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
+                        f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
+                            f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
+                        f"{udp_sender_cmd}"
+                    )
             else:
                 udp_port = 3100 + self._rx
                 self._start_decoder(udp_port, self._decoder_mode())
@@ -1036,11 +1367,11 @@ class _ReceiverWorker(threading.Thread):
                     self._terminate_external_proc(proc)
                     self._last_spawn_error_reason = "stop_requested"
                     return None
-                if int(self._rx) >= 2:
+                if int(self._rx) >= 2 and not self._ignore_slot_check:
                     strict_digital = self._strict_digital_slot_enforcement()
                     if not self._verify_kiwi_rx_channel(
                         user_label=user_label,
-                        expected_rx=self._rx,
+                        expected_rx=self._kiwi_rx_chan(),
                         timeout_s=6.0,
                         strict=bool(strict_digital),
                         require_visible=bool(strict_digital),
@@ -1097,7 +1428,7 @@ class _ReceiverWorker(threading.Thread):
                 self._last_spawn_error_reason = "stop_requested"
                 return None
             if ("SSB" in self._mode_label.strip().upper()) or ("PHONE" in self._mode_label.strip().upper()):
-                if not self._verify_kiwi_rx_channel(user_label=user_label, expected_rx=self._rx, timeout_s=6.0, strict=True, require_visible=True):
+                if not self._verify_kiwi_rx_channel(user_label=user_label, expected_rx=self._kiwi_rx_chan(), timeout_s=6.0, strict=True, require_visible=True):
                     self._terminate_external_proc(proc)
                     self._last_spawn_error_reason = "ssb_rx_mismatch"
                     return None
@@ -1117,6 +1448,7 @@ class _ReceiverWorker(threading.Thread):
             start_monotonic = time.monotonic()
             self._proc = self._spawn()
             if self._proc is None:
+                self._slot_ready.set()  # unblock waiter even on failure
                 if self._stop_event.is_set():
                     break
                 consecutive_failures += 1
@@ -1129,6 +1461,12 @@ class _ReceiverWorker(threading.Thread):
                 time.sleep(backoff_s)
                 continue
             proc_exited = False
+            # Wait until Kiwi acknowledges the connection before signalling _slot_ready.
+            # This ensures sequential slot acquisition so workers claim slots in order
+            # (preventing racing when multiple workers start rapidly).
+            if self._is_digital_mode() and self._active_user_label:
+                self._wait_for_kiwi_user_connected(self._active_user_label, timeout_s=8.0)
+            self._slot_ready.set()  # slot confirmed by _spawn()
             next_channel_check = time.time() + self._watchdog_channel_check_s()
             while not self._stop_event.is_set():
                 if self._proc.poll() is not None:
@@ -1138,17 +1476,18 @@ class _ReceiverWorker(threading.Thread):
                     next_channel_check = time.time() + self._watchdog_channel_check_s()
                     mode_norm = self._mode_label.strip().upper()
                     is_ssb = ("SSB" in mode_norm) or ("PHONE" in mode_norm)
-                    strict = bool(is_ssb) or bool(self._strict_digital_slot_enforcement())
-                    if not self._verify_kiwi_rx_channel(
-                        user_label=self._active_user_label,
-                        expected_rx=self._rx,
-                        timeout_s=0.9,
-                        strict=strict,
-                        require_visible=bool(strict),
-                    ):
-                        self._last_spawn_error_reason = "ssb_rx_mismatch" if is_ssb else "nonssb_rx_mismatch"
-                        proc_exited = True
-                        break
+                    if not self._ignore_slot_check:
+                        strict = bool(is_ssb) or bool(self._strict_digital_slot_enforcement())
+                        if not self._verify_kiwi_rx_channel(
+                            user_label=self._active_user_label,
+                            expected_rx=self._kiwi_rx_chan(),
+                            timeout_s=0.9,
+                            strict=strict,
+                            require_visible=bool(strict),
+                        ):
+                            self._last_spawn_error_reason = "ssb_rx_mismatch" if is_ssb else "nonssb_rx_mismatch"
+                            proc_exited = True
+                            break
                 time.sleep(self._watchdog_loop_sleep_s())
             self._terminate_proc()
             if not self._stop_event.is_set():
@@ -1310,7 +1649,7 @@ class ReceiverManager:
                 return candidate
         return None
 
-    def _run_admin_kick_all(self, *, host: str, port: int) -> bool:
+    def _run_admin_kick_all(self, *, host: str, port: int, force_all: bool = False) -> bool:
         script = self._find_admin_kick_script()
         if script is None:
             return False
@@ -1328,11 +1667,13 @@ class ReceiverManager:
             "--user",
             "KiwiScanAutoKick",
         ]
-        if kick_targets:
+        # force_all=True (used at initial startup) ensures ALL Kiwi channels are freed,
+        # including sessions from a previous container run that may still be closing.
+        if force_all or not kick_targets:
+            cmd.append("--kick-all")
+        else:
             for target in kick_targets:
                 cmd.extend(["--kick", str(int(target))])
-        else:
-            cmd.append("--kick-all")
         password = str(os.environ.get("KIWISCAN_KIWI_ADMIN_PASSWORD", "") or "").strip()
         if password:
             cmd.extend(["--password", password])
@@ -1567,6 +1908,21 @@ class ReceiverManager:
                 current["last_decoder_output_unix"] = float(now)
             if event_type == "decode":
                 current["last_decode_unix"] = float(now)
+                current["decode_total"] = int(current.get("decode_total", 0) or 0) + 1
+                ts_list: list = list(current.get("decode_timestamps", []) or [])
+                ts_list.append(float(now))
+                cutoff_1h = now - 3600.0
+                ts_list = [t for t in ts_list if t >= cutoff_1h]
+                current["decode_timestamps"] = ts_list
+                _by_mode: dict = dict(current.get("_decode_ts_by_mode", {}) or {})
+                _mode_ts: list = list(_by_mode.get(mode_label, []) or [])
+                _mode_ts.append(float(now))
+                _mode_ts = [t for t in _mode_ts if t >= cutoff_1h]
+                _by_mode[mode_label] = _mode_ts
+                current["_decode_ts_by_mode"] = _by_mode
+                _total_by_mode: dict = dict(current.get("_decode_total_by_mode", {}) or {})
+                _total_by_mode[mode_label] = int(_total_by_mode.get(mode_label, 0) or 0) + 1
+                current["_decode_total_by_mode"] = _total_by_mode
             if event_type == "decode" and isinstance(snr_db, (float, int)):
                 snr_value = float(snr_db)
                 current["snr_last_db"] = snr_value
@@ -1581,7 +1937,7 @@ class ReceiverManager:
                 current["snr_samples"] = int(current.get("snr_samples", 0) or 0) + 1
             self._activity_by_rx[int(rx)] = current
 
-    def _make_worker(self, *, host: str, port: int, assignment: ReceiverAssignment) -> _ReceiverWorker:
+    def _make_worker(self, *, host: str, port: int, assignment: ReceiverAssignment, rx_chan_adjust: int = 0) -> _ReceiverWorker:
         return _ReceiverWorker(
             kiwirecorder_path=self._kiwirecorder_path,
             ft8modem_path=self._ft8modem_path,
@@ -1598,6 +1954,8 @@ class ReceiverManager:
             decode_callback=self._decode_callback,
             on_restart=self._on_worker_restart,
             on_activity=self._on_worker_activity,
+            initial_rx_chan_adjust=rx_chan_adjust,
+            ignore_slot_check=bool(getattr(assignment, "ignore_slot_check", False)),
         )
 
     @staticmethod
@@ -1621,10 +1979,11 @@ class ReceiverManager:
                 self._stop_worker(old_worker)
             return False
 
+        old_adjust = int(old_worker._rx_chan_adjust) if old_worker is not None else 0
         if old_worker is not None:
             self._stop_worker(old_worker)
 
-        new_worker = self._make_worker(host=host, port=port, assignment=assignment)
+        new_worker = self._make_worker(host=host, port=port, assignment=assignment, rx_chan_adjust=old_adjust)
         with self._lock:
             if int(rx) not in self._assignments:
                 new_worker.stop()
@@ -1729,7 +2088,7 @@ class ReceiverManager:
             active_receivers = int(summary.get("active_receivers", 0) or 0)
             reason_counts = summary.get("reason_counts") if isinstance(summary, dict) else {}
             reason_counts = reason_counts if isinstance(reason_counts, dict) else {}
-            mismatch_stalled = int(reason_counts.get("kiwi_assignment_mismatch", 0) or 0)
+            mismatch_stalled = int(reason_counts.get("kiwi_assignment_mismatch", 0) or 0) + int(reason_counts.get("kiwi_assignment_mismatch_observed", 0) or 0)
             with self._lock:
                 self._mismatch_global_streak = (
                     self._mismatch_global_streak + 1
@@ -1978,20 +2337,29 @@ class ReceiverManager:
             last_reason = wd.get("reason")
             visible_on_kiwi = False
             kiwi_user_age_s = None
+            visible_slot: int | None = None
             if is_ssb and assignment is not None:
-                seen = str(users_by_rx.get(int(rx), "") or "")
-                seen_upper = seen.upper()
                 expected_prefix = f"AUTO_{str(assignment.band).upper()}_SSB"
-                is_active = expected_prefix in seen_upper
+                # Search all kiwi slots — workers may land on any slot index at connect time
+                visible_slot = next(
+                    (slot for slot, name in users_by_rx.items() if expected_prefix in name.upper()),
+                    None,
+                )
+                is_active = visible_slot is not None
                 visible_on_kiwi = bool(is_active)
-                kiwi_user_age_s = user_age_by_rx.get(int(rx))
+                kiwi_user_age_s = user_age_by_rx.get(visible_slot if visible_slot is not None else int(rx))
                 if not is_active:
                     last_reason = last_reason or "kiwi_not_visible"
             elif assignment is not None:
-                seen = str(users_by_rx.get(int(rx), "") or "")
-                expected_prefix = f"AUTO_{str(assignment.band).upper()}_"
-                visible_on_kiwi = expected_prefix in seen.upper()
-                kiwi_user_age_s = user_age_by_rx.get(int(rx))
+                _mode_tag = str(assignment.mode_label or "FT8").strip().upper().replace(" ", "").replace("/", "")
+                expected_prefix = f"AUTO_{str(assignment.band).upper()}_{_mode_tag}"
+                # Search all kiwi slots — workers may land on any slot index at connect time
+                visible_slot = next(
+                    (slot for slot, name in users_by_rx.items() if expected_prefix in name.upper()),
+                    None,
+                )
+                visible_on_kiwi = visible_slot is not None
+                kiwi_user_age_s = user_age_by_rx.get(visible_slot if visible_slot is not None else int(rx))
 
             def _to_float(value: object) -> float | None:
                 try:
@@ -2008,6 +2376,21 @@ class ReceiverManager:
             snr_samples = int(activity.get("snr_samples", 0) or 0)
             last_snr_unix = _to_float(activity.get("last_snr_unix"))
             snr_age_s = max(0.0, now - last_snr_unix) if last_snr_unix is not None else None
+            decode_total = int(activity.get("decode_total", 0) or 0)
+            _decode_ts: list = list(activity.get("decode_timestamps", []) or [])
+            decode_rate_per_min = sum(1 for t in _decode_ts if t >= now - 60.0)
+            decode_rate_per_hour = len(_decode_ts)
+            _decode_ts_by_mode: dict = {k: list(v) for k, v in (activity.get("_decode_ts_by_mode") or {}).items()}
+            _decode_total_by_mode: dict = dict(activity.get("_decode_total_by_mode") or {})
+            decode_rates_by_mode: dict = {
+                m: {
+                    "decode_rate_per_min": sum(1 for t in mts if t >= now - 60.0),
+                    "decode_rate_per_hour": sum(1 for t in mts if t >= now - 3600.0),
+                    "decode_total": int(_decode_total_by_mode.get(m, 0) or 0),
+                }
+                for m, mts in _decode_ts_by_mode.items()
+                if mts
+            }
 
             stall_threshold_s = self._stall_threshold_seconds(mode_label)
             silent_threshold_s = self._silent_threshold_seconds(mode_label)
@@ -2039,11 +2422,15 @@ class ReceiverManager:
                 expected_label = self._expected_user_label(assignment).upper()
                 live_locations = list(live_auto_locations.get(expected_label) or [])
                 wrong_slot_stale = False
+                kiwi_actual_rx: int | None = None
+                kiwi_occupant: str | None = None
                 if live_locations:
                     live_rxs = {int(loc_rx) for loc_rx, _ in live_locations}
                     if int(rx) not in live_rxs:
                         ages = [age for _, age in live_locations]
                         wrong_slot_stale = all(age is None or age >= remap_grace_s for age in ages)
+                        # Record where the worker actually landed
+                        kiwi_actual_rx = int(live_locations[0][0])
                 occupant = str(users_by_rx.get(int(rx), "") or "").strip()
                 occupant_age_s = user_age_by_rx.get(int(rx))
                 displaced_by_stale_auto = bool(
@@ -2051,8 +2438,14 @@ class ReceiverManager:
                     and not self._user_label_matches(expected_label, occupant)
                     and (occupant_age_s is None or occupant_age_s >= remap_grace_s)
                 )
+                # Record what is blocking the expected slot (if anything foreign is there)
+                if occupant and not self._user_label_matches(expected_label, occupant):
+                    kiwi_occupant = occupant
                 mismatch_detected = bool(wrong_slot_stale or displaced_by_stale_auto)
-                mismatch_actionable = bool(mismatch_detected)
+                # Only act on slot mismatch if the decoder is also not producing output.
+                # When a worker adapts to a different KiwiSDR slot but is running fine,
+                # decoder_missing=False means data is flowing — no stall action needed.
+                mismatch_actionable = bool(mismatch_detected and decoder_missing)
                 if mismatch_actionable:
                     health_state = "stalled"
                     last_reason = "kiwi_assignment_mismatch"
@@ -2081,6 +2474,10 @@ class ReceiverManager:
                     stalled += 1
                 reason = str(last_reason or "unknown")
                 reason_counts[reason] = int(reason_counts.get(reason, 0)) + 1
+            elif last_reason == "kiwi_assignment_mismatch_observed":
+                # Ghost connection: slot is occupied by a stale foreign AUTO_ process.
+                # Not yet stalled (decoder may still be alive) but counts toward auto-kick.
+                reason_counts["kiwi_assignment_mismatch_observed"] = int(reason_counts.get("kiwi_assignment_mismatch_observed", 0)) + 1
             elif health_state == "silent":
                 silent += 1
                 reason_counts["silent_no_decodes"] = int(reason_counts.get("silent_no_decodes", 0)) + 1
@@ -2103,11 +2500,14 @@ class ReceiverManager:
 
             channels[str(rx)] = {
                 "rx": int(rx),
+                "kiwi_rx": visible_slot if visible_slot is not None else int(rx),
                 "band": assignment.band if assignment else wd.get("band"),
                 "mode": assignment.mode_label if assignment else None,
                 "active": bool(is_active),
                 "visible_on_kiwi": bool(visible_on_kiwi),
                 "kiwi_user_age_s": kiwi_user_age_s,
+                "kiwi_actual_rx": kiwi_actual_rx if is_digital and assignment is not None else None,
+                "kiwi_occupant": kiwi_occupant if is_digital and assignment is not None else None,
                 "restart_count": int(restart_by_rx.get(rx, 0)),
                 "consecutive_failures": consecutive,
                 "backoff_s": backoff_s,
@@ -2123,6 +2523,10 @@ class ReceiverManager:
                 "snr_avg_db": snr_avg_db,
                 "snr_samples": snr_samples,
                 "snr_age_s": snr_age_s,
+                "decode_total": decode_total,
+                "decode_rate_per_min": decode_rate_per_min,
+                "decode_rate_per_hour": decode_rate_per_hour,
+                "decode_rates_by_mode": decode_rates_by_mode,
                 "propagation_state": propagation_state,
                 "health_state": health_state,
                 "status_level": status_level,
@@ -2502,8 +2906,27 @@ class ReceiverManager:
         }
         out: set[int] = set()
         for rx, expected_label in expected_by_rx.items():
-            live_label = live_users.get(int(rx), "")
-            if not self._user_label_matches(expected_label, live_label):
+            assignment = assignments.get(int(rx))
+            ignore_slot = bool(getattr(assignment, "ignore_slot_check", False))
+            if ignore_slot:
+                # For fixed receivers (ignore_slot_check=True), the Kiwi slot won't
+                # match the app rx number — only check if the worker is alive and correct.
+                worker = self._workers.get(int(rx))
+                if worker is None:
+                    out.add(int(rx))
+                    continue
+                active_label = str(getattr(worker, "_active_user_label", "") or "").strip()
+                if active_label and not self._user_label_matches(expected_label, active_label):
+                    out.add(int(rx))
+                continue
+            # For roaming receivers, check if the expected label appears on ANY active Kiwi
+            # slot (not just the "expected" slot number). This avoids false drift triggers
+            # when a human listener occupies the expected slot.
+            label_found = any(
+                self._user_label_matches(expected_label, lbl)
+                for lbl in live_users.values()
+            )
+            if not label_found:
                 out.add(int(rx))
                 continue
             worker = self._workers.get(int(rx))
@@ -2648,7 +3071,21 @@ class ReceiverManager:
             to_stop: set[int] = set()
             to_reconfigure: set[int] = set()
             if did_full_reset:
-                to_stop |= current_rxs
+                for rx in current_rxs:
+                    assignment = assignments.get(int(rx))
+                    # Fixed receivers (ignore_slot_check) keep running through a full reset
+                    # if their assignment is unchanged and this isn't a host-change reset.
+                    if (
+                        not host_changed
+                        and assignment is not None
+                        and bool(getattr(assignment, "ignore_slot_check", False))
+                        and int(rx) in self._assignments
+                        and self._assignment_equivalent(self._assignments[int(rx)], assignment)
+                        and self._workers.get(int(rx)) is not None
+                    ):
+                        logger.debug("Full reset: preserving fixed receiver RX%s (%s %s)", rx, assignment.band, assignment.mode_label)
+                        continue
+                    to_stop.add(int(rx))
                 to_reconfigure.clear()
             else:
                 to_stop |= set(int(rx) for rx in reconcile_rxs)
@@ -2661,6 +3098,13 @@ class ReceiverManager:
                             to_reconfigure.add(rx)
                         else:
                             to_stop.add(rx)
+
+            # Capture offsets from workers about to be stopped so replacements inherit them.
+            adjust_cache: Dict[int, int] = {}
+            for rx in set(to_stop) | desired_rxs:
+                w = self._workers.get(rx)
+                if w is not None:
+                    adjust_cache[int(rx)] = int(w._rx_chan_adjust)
 
             stopped_labels: set[str] = set()
             for rx in sorted(to_stop):
@@ -2710,21 +3154,34 @@ class ReceiverManager:
             if did_full_reset:
                 self._cleanup_orphan_processes()
                 self._wait_for_orphan_cleanup(timeout_s=6.0)
-                _ = self._run_admin_kick_all(host=str(host), port=int(port))
-                self._wait_for_kiwi_auto_users_clear(host=str(host), port=int(port), timeout_s=8.0)
+                # Only kick ALL Kiwi channels when the host changed or every fixed receiver
+                # is also being stopped. When fixed receivers are preserved (band-plan only
+                # changes for roaming slots) a kick-all would disconnect their Kiwi sessions.
+                any_fixed_preserved = any(
+                    assignments.get(int(rx)) is not None
+                    and bool(getattr(assignments[int(rx)], "ignore_slot_check", False))
+                    and int(rx) not in to_stop
+                    for rx in current_rxs | desired_rxs
+                )
+                if host_changed or not any_fixed_preserved:
+                    # Use force_all=True on initial host connection so ALL Kiwi channels are
+                    # freed (including sessions from a previous container run that are still
+                    # in a TCP-closing state and wouldn't appear as AUTO users).
+                    _ = self._run_admin_kick_all(host=str(host), port=int(port), force_all=bool(host_changed))
+                    self._wait_for_kiwi_auto_users_clear(host=str(host), port=int(port), timeout_s=8.0)
 
             time.sleep(0.2)
 
-            for rx in sorted(desired_rxs):
+            for rx in sorted(desired_rxs, key=lambda rx: rx if rx >= 2 else rx + 8):
                 if rx in to_reconfigure and rx in self._workers:
                     continue
                 if rx in self._workers and rx in self._assignments and self._assignment_equivalent(self._assignments[rx], assignments[rx]) and not host_changed:
                     continue
                 desired = assignments[rx]
-                worker = self._make_worker(host=host, port=port, assignment=desired)
+                worker = self._make_worker(host=host, port=port, assignment=desired, rx_chan_adjust=adjust_cache.get(int(rx), 0))
                 self._workers[rx] = worker
                 worker.start()
-                time.sleep(0.25)
+                worker._slot_ready.wait(timeout=8.0)
 
             self._assignments = {int(rx): assignments[int(rx)] for rx in sorted(desired_rxs)}
             self._active_host = str(host)
@@ -2732,6 +3189,7 @@ class ReceiverManager:
 
             if self._has_duplicate_live_auto_labels(str(host), int(port)):
                 logger.warning("Detected duplicate AUTO labels on Kiwi; forcing worker recycle and Kiwi kick-all")
+                dup_adjust_cache = {rx: int(w._rx_chan_adjust) for rx, w in self._workers.items() if w is not None}
                 for worker in list(self._workers.values()):
                     self._stop_worker(worker)
                 self._workers.clear()
@@ -2740,14 +3198,14 @@ class ReceiverManager:
                 self._wait_for_orphan_cleanup(timeout_s=6.0)
                 _ = self._run_admin_kick_all(host=str(host), port=int(port))
                 self._wait_for_kiwi_auto_users_clear(host=str(host), port=int(port), timeout_s=8.0)
-                for rx in sorted(desired_rxs):
+                for rx in sorted(desired_rxs, key=lambda rx: rx if rx >= 2 else rx + 8):
                     desired = self._assignments.get(int(rx))
                     if desired is None:
                         continue
-                    worker = self._make_worker(host=str(host), port=int(port), assignment=desired)
+                    worker = self._make_worker(host=str(host), port=int(port), assignment=desired, rx_chan_adjust=dup_adjust_cache.get(int(rx), 0))
                     self._workers[int(rx)] = worker
                     worker.start()
-                    time.sleep(0.25)
+                    worker._slot_ready.wait(timeout=8.0)
 
     def stop_all(self) -> None:
         self._manager_stop.set()

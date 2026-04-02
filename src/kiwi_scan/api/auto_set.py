@@ -505,7 +505,7 @@ def make_router(
                     if band not in band_modes_raw:
                         continue
                     val = str(band_modes_raw.get(band) or "FT8").strip().upper()
-                    if val in {"FT8", "FT4", "FT4 / FT8", "WSPR", "SSB"}:
+                    if val in {"FT8", "FT4", "FT4 / FT8", "FT4 / FT8 / WSPR", "FT4 / WSPR", "WSPR", "SSB"}:
                         band_modes_out[band] = val
                     else:
                         band_modes_out[band] = "FT8"
@@ -527,10 +527,18 @@ def make_router(
             b for b in band_order
             if str(block_data.get(b, "")).upper() == "OPEN"
         ]
+
+        # Empirically-closed bands supplied by SmartScheduler (via AutoSetLoop).
+        # These override the static schedule so receivers aren't wasted on dead bands.
+        closed_bands_raw = payload.get("closed_bands")
+        empirical_closed: set[str] = set()
+        if isinstance(closed_bands_raw, list):
+            empirical_closed = {str(b) for b in closed_bands_raw if b}
+
         if selected_set is not None:
-            desired_bands = [b for b in band_order if b in selected_set]
+            desired_bands = [b for b in band_order if b in selected_set and b not in empirical_closed]
         else:
-            desired_bands = list(open_bands)
+            desired_bands = [b for b in open_bands if b not in empirical_closed]
 
         has_selected_ssb_band = False
         if desired_bands:
@@ -679,9 +687,40 @@ def make_router(
 
         def _is_dual_mode(value: object) -> bool:
             raw = str(value or "").strip().lower()
-            return "ft4" in raw and "ft8" in raw and raw not in {"ft4", "ft8"}
+            return "ft4" in raw and "ft8" in raw and "wspr" not in raw and raw not in {"ft4", "ft8"}
+
+        def _is_triple_mode(value: object) -> bool:
+            raw = str(value or "").strip().lower()
+            return "ft4" in raw and "ft8" in raw and "wspr" in raw
+
+        def _is_ft4_wspr_mode(value: object) -> bool:
+            raw = str(value or "").strip().lower().replace(" ", "").replace("/", "")
+            return raw == "ft4wspr"
 
         def _freq_for_band_mode(band: str, mode_label: object) -> Optional[float]:
+            # For IQ triple-mode return the centre of (ft8, ft4, wspr) span.
+            if _is_triple_mode(mode_label):
+                ft8_hz = band_freqs_hz.get(band)
+                ft4_hz = band_ft4_freqs_hz.get(band)
+                wspr_hz = band_wspr_freqs_hz.get(band)
+                if ft8_hz and ft4_hz and wspr_hz:
+                    freqs = [float(ft8_hz), float(ft4_hz), float(wspr_hz)]
+                    return (min(freqs) + max(freqs)) / 2.0
+                return band_freqs_hz.get(band)
+            # For IQ dual-mode return the midpoint of FT8 and FT4 dials.
+            if _is_dual_mode(mode_label):
+                ft8_hz = band_freqs_hz.get(band)
+                ft4_hz = band_ft4_freqs_hz.get(band)
+                if ft8_hz and ft4_hz:
+                    return (float(ft8_hz) + float(ft4_hz)) / 2.0
+                return band_freqs_hz.get(band)
+            # For FT4+WSPR IQ dual-mode return the midpoint of FT4 and WSPR dials.
+            if _is_ft4_wspr_mode(mode_label):
+                ft4_hz = band_ft4_freqs_hz.get(band)
+                wspr_hz = band_wspr_freqs_hz.get(band)
+                if ft4_hz and wspr_hz:
+                    return (float(ft4_hz) + float(wspr_hz)) / 2.0
+                return band_wspr_freqs_hz.get(band)
             norm = _normalize_mode(mode_label)
             if norm == "ssb":
                 return band_ssb_freqs_hz.get(band)
@@ -709,9 +748,35 @@ def make_router(
         skipped_ssb_due_to_wspr = 0
         for band in ordered_bands:
             mode_label = str(band_modes.get(band) or "FT8")
-            if _is_dual_mode(mode_label):
-                tasks.append({"band": str(band), "mode": "FT4"})
-                tasks.append({"band": str(band), "mode": "FT8"})
+            if _is_triple_mode(mode_label):
+                # Check all three dial frequencies fit within the 12 kHz IQ window.
+                ft8_hz = band_freqs_hz.get(band)
+                ft4_hz = band_ft4_freqs_hz.get(band)
+                wspr_hz = band_wspr_freqs_hz.get(band)
+                if ft8_hz and ft4_hz and wspr_hz:
+                    freqs = [float(ft8_hz), float(ft4_hz), float(wspr_hz)]
+                    if max(freqs) - min(freqs) <= 10_000:
+                        tasks.append({"band": str(band), "mode": "FT4 / FT8 / WSPR"})
+                    else:
+                        # Too wide: fall back to FT8+FT4 dual if possible, else single
+                        if abs(float(ft8_hz) - float(ft4_hz)) <= 10_000:
+                            tasks.append({"band": str(band), "mode": "FT4 / FT8"})
+                        else:
+                            tasks.append({"band": str(band), "mode": "FT8"})
+                        tasks.append({"band": str(band), "mode": "WSPR"})
+                else:
+                    tasks.append({"band": str(band), "mode": "FT8"})
+            elif _is_dual_mode(mode_label):
+                # Check if the two mode dial frequencies fit within a 12 kHz IQ window.
+                ft8_hz = band_freqs_hz.get(band)
+                ft4_hz = band_ft4_freqs_hz.get(band)
+                if ft8_hz and ft4_hz and abs(float(ft8_hz) - float(ft4_hz)) <= 10_000:
+                    # IQ-capable: one receiver decodes both FT8 and FT4 simultaneously.
+                    tasks.append({"band": str(band), "mode": "FT4 / FT8"})
+                else:
+                    # Modes too far apart for the 12 kHz IQ window: two receivers.
+                    tasks.append({"band": str(band), "mode": "FT4"})
+                    tasks.append({"band": str(band), "mode": "FT8"})
             else:
                 norm = _normalize_mode(mode_label)
                 tasks.append({"band": str(band), "mode": norm.upper()})
@@ -732,8 +797,29 @@ def make_router(
             freq_for_band_mode=_freq_for_band_mode,
         )
 
+        # Fixed assignments: pin specified RX slots directly, leaving remaining slots for roaming tasks.
+        fixed_rx_slots: set[int] = set()
+        fixed_assignments_list: List[Dict[str, object]] = []
+        raw_fixed = payload.get("fixed_assignments")
         max_total_rx = _max_auto_receivers()
-        all_rx_slots = list(range(max_total_rx))
+
+        if isinstance(raw_fixed, list):
+            for entry in raw_fixed:
+                if not isinstance(entry, dict):
+                    continue
+                try:
+                    rx_f = int(entry.get("rx", -1))
+                    freq_f = float(entry.get("freq_hz", 0))
+                    band_f = str(entry.get("band") or "").strip()
+                    mode_f = str(entry.get("mode") or "FT8").strip()
+                except Exception:
+                    continue
+                if rx_f < 0 or rx_f >= max_total_rx or freq_f <= 0 or not band_f:
+                    continue
+                fixed_rx_slots.add(rx_f)
+                fixed_assignments_list.append({"rx": rx_f, "band": band_f, "mode": mode_f, "freq_hz": freq_f})
+
+        all_rx_slots = [s for s in range(max_total_rx) if s not in fixed_rx_slots]
         ssb_capacity = min(2, len(ssb_tasks), len(all_rx_slots))
         ssb_rx_request_list = all_rx_slots[:ssb_capacity]
         desired_ssb_tasks = ssb_tasks[: len(ssb_rx_request_list)]
@@ -854,6 +940,27 @@ def make_router(
             normalized_assignments[int(rx)] = a
 
         assignments = normalized_assignments
+
+        # Inject fixed assignments — these pin specific RX slots bypassing the task machinery.
+        for entry in fixed_assignments_list:
+            rx_f = int(entry["rx"])
+            band_f = str(entry["band"])
+            mode_f = str(entry["mode"])
+            freq_hz_f = float(entry["freq_hz"])
+            assignments[rx_f] = ReceiverAssignment(
+                rx=rx_f, band=band_f, freq_hz=freq_hz_f, mode_label=mode_f,
+                ignore_slot_check=True,
+            )
+            allowed_bands.add(band_f)
+            assignment_results.append({
+                "rx": rx_f,
+                "rx_request": rx_f,
+                "band": band_f,
+                "mode": mode_f,
+                "freq_hz": freq_hz_f,
+                "ok": True,
+                "fixed": True,
+            })
 
         for row in assignment_results:
             try:

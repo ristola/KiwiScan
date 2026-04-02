@@ -30,7 +30,8 @@ def mount_static(app: FastAPI) -> None:
 
 @router.get("/", response_class=HTMLResponse)
 def root_index() -> HTMLResponse:
-    idx = _static_dir() / "index.html"
+    """Redirect root to the Pro UI."""
+    idx = _static_dir() / "pro.html"
     if idx.exists():
         return HTMLResponse(
             content=idx.read_text(encoding="utf-8"),
