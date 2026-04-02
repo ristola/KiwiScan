@@ -410,8 +410,14 @@ class _ReceiverWorker(threading.Thread):
         return int((int(self._rx) + int(self._rx_chan_adjust)) % 8)
 
     def _wait_for_kiwi_user_connected(self, user_label: str, timeout_s: float = 8.0) -> None:
-        """Poll /users until user label appears, confirming Kiwi connection is established."""
+        """Poll /users until user label appears with a fresh connection, confirming Kiwi connection
+        is established by the newly spawned process (not a stale entry from a previous session)."""
         deadline = time.time() + max(1.0, float(timeout_s))
+        # Only count connections that appeared *after* this call started.  We allow
+        # up to (timeout_s + 2) seconds of age to cover slow Kiwi handshakes while
+        # still rejecting connections from the previous incarnation of the same worker
+        # (which can linger in /users for several seconds after the process exits).
+        max_fresh_age_s = float(timeout_s) + 2.0
         wanted = str(user_label or "").strip()
         if not wanted:
             return
@@ -425,8 +431,24 @@ class _ReceiverWorker(threading.Thread):
                         if not isinstance(row, dict):
                             continue
                         name = urllib.parse.unquote(str(row.get("n") or "")).strip()
-                        if name == wanted or name.startswith(wanted) or wanted.startswith(name):
+                        if not (name == wanted or name.startswith(wanted) or wanted.startswith(name)):
+                            continue
+                        # Parse connected_seconds from the "t" field ("[hh:]mm:ss" format).
+                        age_s: float | None = None
+                        try:
+                            parts = [int(p) for p in str(row.get("t") or "").split(":") if str(p).strip()]
+                            if len(parts) == 3:
+                                age_s = float(parts[0] * 3600 + parts[1] * 60 + parts[2])
+                            elif len(parts) == 2:
+                                age_s = float(parts[0] * 60 + parts[1])
+                            elif len(parts) == 1:
+                                age_s = float(parts[0])
+                        except Exception:
+                            pass
+                        # Accept if age is unknown (field missing) or clearly fresh.
+                        if age_s is None or age_s <= max_fresh_age_s:
                             return
+                        # Otherwise this is a stale entry from a previous session; keep waiting.
             except Exception:
                 pass
             time.sleep(0.3)
@@ -2252,6 +2274,23 @@ class ReceiverManager:
             self._auto_kick_last_result = ""
         return self.metrics_snapshot()
 
+    def active_label_to_rx(self) -> Dict[str, int]:
+        """Return a mapping of active worker user labels → internal rx slot numbers.
+
+        Used by the system-info API to display the KiwiScan internal receiver number
+        rather than the raw Kiwi channel index (which may differ when the Kiwi does not
+        honour our ``--rx-chan`` request and assigns a different channel slot).
+        """
+        with self._lock:
+            result: Dict[str, int] = {}
+            for rx, worker in self._workers.items():
+                if worker is None:
+                    continue
+                label = str(getattr(worker, "_active_user_label", "") or "").strip()
+                if label:
+                    result[label] = int(rx)
+            return result
+
     def health_summary(self) -> Dict[str, object]:
         with self._lock:
             assignments = dict(self._assignments)
@@ -2442,10 +2481,20 @@ class ReceiverManager:
                 if occupant and not self._user_label_matches(expected_label, occupant):
                     kiwi_occupant = occupant
                 mismatch_detected = bool(wrong_slot_stale or displaced_by_stale_auto)
-                # Only act on slot mismatch if the decoder is also not producing output.
+                # When the worker is completely absent from Kiwi AND the expected slot is
+                # occupied by a stale alien AUTO_ process, the worker clearly failed to
+                # connect — treat as actionable even if the decoder has recent output
+                # (output may be stale from before the disconnect).
+                fully_displaced = bool(
+                    displaced_by_stale_auto
+                    and not visible_on_kiwi
+                    and not live_locations
+                )
+                # Only act on slot mismatch if the decoder is also not producing output,
+                # OR if the worker is fully displaced (invisible everywhere on Kiwi).
                 # When a worker adapts to a different KiwiSDR slot but is running fine,
                 # decoder_missing=False means data is flowing — no stall action needed.
-                mismatch_actionable = bool(mismatch_detected and decoder_missing)
+                mismatch_actionable = bool(mismatch_detected and (decoder_missing or fully_displaced))
                 if mismatch_actionable:
                     health_state = "stalled"
                     last_reason = "kiwi_assignment_mismatch"

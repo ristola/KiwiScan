@@ -1389,6 +1389,26 @@
             white-space: nowrap;
         }
 
+        .fixed-rx-lock-col,
+        .fixed-rx-lock-cell {
+            width: 26px;
+            text-align: center;
+            padding-left: 2px !important;
+            padding-right: 2px !important;
+        }
+
+        .fixed-rx-lock-cell {
+            color: color-mix(in srgb, var(--accent) 75%, white 12%);
+            opacity: 0.95;
+        }
+
+        .fixed-rx-lock-icon {
+            width: 13px;
+            height: 13px;
+            display: inline-block;
+            vertical-align: middle;
+        }
+
         .band-sched-hint {
             font-size: 0.72rem;
             color: var(--muted);
@@ -2205,6 +2225,51 @@
             display: block;
         }
 
+        #active-receivers {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .rx-busy-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 10;
+            background: color-mix(in srgb, var(--panel) 82%, transparent);
+            backdrop-filter: blur(3px);
+            -webkit-backdrop-filter: blur(3px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 10px;
+            border-radius: 16px;
+        }
+
+        .rx-busy-overlay[hidden] {
+            display: none;
+        }
+
+        .rx-busy-icon {
+            width: 44px;
+            height: 44px;
+            color: var(--accent);
+            animation: rx-spin 0.75s linear infinite;
+        }
+
+        .rx-busy-label {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--ink);
+            letter-spacing: 0.03em;
+            opacity: 0.7;
+        }
+
+        @keyframes rx-spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
         .panel-collapsible.is-collapsed .panel-hdr {
             margin-bottom: 0;
         }
@@ -2532,6 +2597,36 @@
 
         .system-users-wrap {
             margin-top: 0;
+        }
+
+        .active-rx-name {
+            display: inline-block;
+        }
+
+        .active-rx-lock {
+            width: 13px;
+            height: 13px;
+            display: inline-block;
+            vertical-align: middle;
+            color: color-mix(in srgb, var(--accent) 75%, white 12%);
+            flex: 0 0 auto;
+            opacity: 0.95;
+            margin-right: 6px;
+            position: relative;
+            top: -1px;
+        }
+
+        .active-rx-col {
+            width: 58px;
+            min-width: 58px;
+            max-width: 58px;
+        }
+
+        .active-rx-cell {
+            white-space: nowrap;
+            width: 58px;
+            min-width: 58px;
+            max-width: 58px;
         }
 
         body.theme-dark .system-card {
@@ -4059,11 +4154,6 @@
                             <div class="summary-v" id="summary-fault-load">--</div>
                             <canvas id="spark-fault-load" class="summary-spark" width="280" height="28"></canvas>
                         </article>
-                        <article class="summary-card" data-icon="messages">
-                            <div class="summary-k">Decode Rate</div>
-                            <div class="summary-v" id="summary-decode-rate">--</div>
-                            <canvas id="spark-decode-rate" class="summary-spark" width="280" height="28"></canvas>
-                        </article>
                         <ul id="reasons" class="assign-list"></ul>
                     </article>
                     <article class="panel panel-collapsible panel-full" id="messages" data-panel-card="messages">
@@ -4234,6 +4324,13 @@
                     </article>
                     <article class="panel panel-collapsible panel-full" id="active-receivers"
                         data-panel-card="active-receivers">
+                        <div id="rx-busy-overlay" class="rx-busy-overlay" hidden aria-label="Applying receiver changes">
+                            <svg class="rx-busy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+                                <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+                            </svg>
+                            <span class="rx-busy-label">Applying…</span>
+                        </div>
                         <div class="panel-hdr">
                             <h2 data-icon="users">Active Receivers</h2>
                             <button class="panel-toggle" type="button" aria-expanded="true"
@@ -4406,6 +4503,7 @@
                                                 <tr>
                                                     <th class="band-sched-band-col-hdr">RX</th>
                                                     <th class="band-sched-mode-col-hdr">Band</th>
+                                                    <th class="fixed-rx-lock-col" title="Fixed assignment"></th>
                                                     <th class="band-sched-mode-col-hdr">Mode</th>
                                                     <th style="width:28px;text-align:center"
                                                         title="Live health verified by auto-set loop"></th>
@@ -4415,36 +4513,84 @@
                                                 <tr data-fixed-rx="2">
                                                     <td>RX2</td>
                                                     <td>20m</td>
+                                                    <td class="fixed-rx-lock-cell" title="Fixed assignment"
+                                                        aria-label="Fixed assignment"><svg class="fixed-rx-lock-icon"
+                                                            viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                            stroke-width="2" stroke-linecap="round"
+                                                            stroke-linejoin="round" aria-hidden="true">
+                                                            <rect x="5" y="11" width="14" height="10" rx="2"></rect>
+                                                            <path d="M8 11V8a4 4 0 0 1 8 0v3"></path>
+                                                        </svg></td>
                                                     <td>FT4 / FT8 (IQ)</td>
                                                     <td class="fixed-rx-status" style="text-align:center"></td>
                                                 </tr>
                                                 <tr data-fixed-rx="3">
                                                     <td>RX3</td>
                                                     <td>20m</td>
+                                                    <td class="fixed-rx-lock-cell" title="Fixed assignment"
+                                                        aria-label="Fixed assignment"><svg class="fixed-rx-lock-icon"
+                                                            viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                            stroke-width="2" stroke-linecap="round"
+                                                            stroke-linejoin="round" aria-hidden="true">
+                                                            <rect x="5" y="11" width="14" height="10" rx="2"></rect>
+                                                            <path d="M8 11V8a4 4 0 0 1 8 0v3"></path>
+                                                        </svg></td>
                                                     <td>WSPR</td>
                                                     <td class="fixed-rx-status" style="text-align:center"></td>
                                                 </tr>
                                                 <tr data-fixed-rx="4">
                                                     <td>RX4</td>
                                                     <td>40m</td>
+                                                    <td class="fixed-rx-lock-cell" title="Fixed assignment"
+                                                        aria-label="Fixed assignment"><svg class="fixed-rx-lock-icon"
+                                                            viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                            stroke-width="2" stroke-linecap="round"
+                                                            stroke-linejoin="round" aria-hidden="true">
+                                                            <rect x="5" y="11" width="14" height="10" rx="2"></rect>
+                                                            <path d="M8 11V8a4 4 0 0 1 8 0v3"></path>
+                                                        </svg></td>
                                                     <td>FT8</td>
                                                     <td class="fixed-rx-status" style="text-align:center"></td>
                                                 </tr>
                                                 <tr data-fixed-rx="5">
                                                     <td>RX5</td>
                                                     <td>40m</td>
+                                                    <td class="fixed-rx-lock-cell" title="Fixed assignment"
+                                                        aria-label="Fixed assignment"><svg class="fixed-rx-lock-icon"
+                                                            viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                            stroke-width="2" stroke-linecap="round"
+                                                            stroke-linejoin="round" aria-hidden="true">
+                                                            <rect x="5" y="11" width="14" height="10" rx="2"></rect>
+                                                            <path d="M8 11V8a4 4 0 0 1 8 0v3"></path>
+                                                        </svg></td>
                                                     <td>FT4 / WSPR (IQ)</td>
                                                     <td class="fixed-rx-status" style="text-align:center"></td>
                                                 </tr>
                                                 <tr data-fixed-rx="6">
                                                     <td>RX6</td>
                                                     <td>30m</td>
+                                                    <td class="fixed-rx-lock-cell" title="Fixed assignment"
+                                                        aria-label="Fixed assignment"><svg class="fixed-rx-lock-icon"
+                                                            viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                            stroke-width="2" stroke-linecap="round"
+                                                            stroke-linejoin="round" aria-hidden="true">
+                                                            <rect x="5" y="11" width="14" height="10" rx="2"></rect>
+                                                            <path d="M8 11V8a4 4 0 0 1 8 0v3"></path>
+                                                        </svg></td>
                                                     <td>FT4 / FT8 / WSPR (IQ)</td>
                                                     <td class="fixed-rx-status" style="text-align:center"></td>
                                                 </tr>
                                                 <tr data-fixed-rx="7">
                                                     <td>RX7</td>
                                                     <td>17m</td>
+                                                    <td class="fixed-rx-lock-cell" title="Fixed assignment"
+                                                        aria-label="Fixed assignment"><svg class="fixed-rx-lock-icon"
+                                                            viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                            stroke-width="2" stroke-linecap="round"
+                                                            stroke-linejoin="round" aria-hidden="true">
+                                                            <rect x="5" y="11" width="14" height="10" rx="2"></rect>
+                                                            <path d="M8 11V8a4 4 0 0 1 8 0v3"></path>
+                                                        </svg></td>
                                                     <td>FT4 / FT8 / WSPR (IQ)</td>
                                                     <td class="fixed-rx-status" style="text-align:center"></td>
                                                 </tr>
@@ -5129,6 +5275,20 @@
             }).join("");
         }
 
+        function activeReceiverNameHtml(user) {
+            const rawName = safeText(user && user.name, "--");
+            return `<span class="active-rx-name">${escapeHtml(rawName || "--")}</span>`;
+        }
+
+        function activeReceiverLockHtml(user) {
+            const rawName = safeText(user && user.name, "--");
+            const rxNum = Number(user && user.rx);
+            if (!rawName || rawName === "--") return "";
+            if (!Number.isFinite(rxNum) || rxNum < 2) return "";
+            if (!rawName.startsWith("AUTO_") || rawName.startsWith("(connecting")) return "";
+            return `<svg class="active-rx-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Fixed receiver"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>`;
+        }
+
         function renderSystemPanel(data) {
             latestSystemInfo = data && typeof data === "object" ? data : {};
             const container = latestSystemInfo.container && typeof latestSystemInfo.container === "object"
@@ -5210,8 +5370,8 @@
             }
             const body = users.map((user) => `
                 <tr>
-                    <td class="mono" style="color:${rxColor(user.rx)};font-weight:700">RX${escapeHtml(safeText(user.rx, "--"))}</td>
-                    <td>${escapeHtml(safeText(user.name, "--"))}</td>
+                    <td class="mono active-rx-cell" style="color:${rxColor(user.rx)};font-weight:700">RX${escapeHtml(safeText(user.rx, "--"))}</td>
+                    <td>${activeReceiverLockHtml(user)}${activeReceiverNameHtml(user)}</td>
                     <td class="mono">${escapeHtml(Number.isFinite(Number(user.freq_khz)) ? `${Number(user.freq_khz).toFixed(3)} kHz` : "--")}</td>
                     <td>${escapeHtml(safeText(user.mode, "--"))}</td>
                     <td class="mono">${escapeHtml(Number.isFinite(Number(user.connected_seconds)) ? fmtDurationCompact(user.connected_seconds) : "--")}</td>
@@ -5220,7 +5380,7 @@
             usersEl.innerHTML = `
                 <div class="assign-table-wrap">
                     <table class="assign-table">
-                        <thead><tr><th>RX</th><th>Name</th><th>Freq</th><th>Mode</th><th>Connected</th></tr></thead>
+                        <thead><tr><th class="active-rx-col">RX</th><th>Name</th><th>Freq</th><th>Mode</th><th>Connected</th></tr></thead>
                         <tbody>${body}</tbody>
                     </table>
                 </div>
@@ -6892,6 +7052,11 @@
             if (el) el.textContent = `Automation: ${text}`;
         }
 
+        function setReceiversBusy(busy) {
+            const overlay = byId("rx-busy-overlay");
+            if (overlay) overlay.hidden = !busy;
+        }
+
         function updateAutomationSsbStepVisibility(strategyValue) {
             const el = byId("auto-ssb-step-khz-field");
             if (!el) return;
@@ -7382,20 +7547,23 @@
             const bsGrid = readBandScheduleFromGrid();
             const payload = {
                 ...snapshot,
-                autoScanOnBlock: readSelectBool("auto-scan-on-block", false),
-                autoRefreshSchedule: readSelectBool("auto-refresh-schedule", true),
-                autoScanOnStartup: readSelectBool("auto-scan-on-startup", false),
+                // Preserve auto-scan settings from snapshot when their UI elements
+                // have been removed (fall back to element value only if present).
+                autoScanOnBlock: byId("auto-scan-on-block") ? readSelectBool("auto-scan-on-block", false) : ("autoScanOnBlock" in snapshot ? snapshot.autoScanOnBlock : false),
+                autoRefreshSchedule: byId("auto-refresh-schedule") ? readSelectBool("auto-refresh-schedule", true) : ("autoRefreshSchedule" in snapshot ? snapshot.autoRefreshSchedule : true),
+                autoScanOnStartup: byId("auto-scan-on-startup") ? readSelectBool("auto-scan-on-startup", false) : ("autoScanOnStartup" in snapshot ? snapshot.autoScanOnStartup : false),
                 fixedModeEnabled: readSelectBool("auto-mode-enabled", true),
-                ssbEnabled: readSelectBool("auto-ssb-enabled", true),
-                ssbSideband: readTextInput("auto-ssb-sideband", "USB").toUpperCase(),
-                ssbThresholdDb: readNumberInput("auto-ssb-threshold-db", 20),
-                ssbAdaptiveThreshold: readSelectBool("auto-ssb-adaptive-threshold", true),
-                ssbUseKiwiSnr: readSelectBool("auto-ssb-use-kiwi-snr", true),
-                ssbWaitS: readNumberInput("auto-ssb-wait-s", 1),
-                ssbDwellS: readNumberInput("auto-ssb-dwell-s", 6),
-                ssbTailS: readNumberInput("auto-ssb-tail-s", 1),
-                ssbStepStrategy: readTextInput("auto-ssb-step-strategy", "adaptive").toLowerCase(),
-                ssbStepKHz: readNumberInput("auto-ssb-step-khz", 10),
+                // Preserve SSB settings from snapshot when their UI controls are absent.
+                ssbEnabled: byId("auto-ssb-enabled") ? readSelectBool("auto-ssb-enabled", true) : ("ssbEnabled" in snapshot ? snapshot.ssbEnabled : true),
+                ssbSideband: byId("auto-ssb-sideband") ? readTextInput("auto-ssb-sideband", "USB").toUpperCase() : (snapshot.ssbSideband || "USB"),
+                ssbThresholdDb: byId("auto-ssb-threshold-db") ? readNumberInput("auto-ssb-threshold-db", 20) : ("ssbThresholdDb" in snapshot ? snapshot.ssbThresholdDb : 20),
+                ssbAdaptiveThreshold: byId("auto-ssb-adaptive-threshold") ? readSelectBool("auto-ssb-adaptive-threshold", true) : ("ssbAdaptiveThreshold" in snapshot ? snapshot.ssbAdaptiveThreshold : true),
+                ssbUseKiwiSnr: byId("auto-ssb-use-kiwi-snr") ? readSelectBool("auto-ssb-use-kiwi-snr", true) : ("ssbUseKiwiSnr" in snapshot ? snapshot.ssbUseKiwiSnr : true),
+                ssbWaitS: byId("auto-ssb-wait-s") ? readNumberInput("auto-ssb-wait-s", 1) : ("ssbWaitS" in snapshot ? snapshot.ssbWaitS : 1),
+                ssbDwellS: byId("auto-ssb-dwell-s") ? readNumberInput("auto-ssb-dwell-s", 6) : ("ssbDwellS" in snapshot ? snapshot.ssbDwellS : 6),
+                ssbTailS: byId("auto-ssb-tail-s") ? readNumberInput("auto-ssb-tail-s", 1) : ("ssbTailS" in snapshot ? snapshot.ssbTailS : 1),
+                ssbStepStrategy: byId("auto-ssb-step-strategy") ? readTextInput("auto-ssb-step-strategy", "adaptive").toLowerCase() : (snapshot.ssbStepStrategy || "adaptive"),
+                ssbStepKHz: byId("auto-ssb-step-khz") ? readNumberInput("auto-ssb-step-khz", 10) : ("ssbStepKHz" in snapshot ? snapshot.ssbStepKHz : 10),
                 uiThemeMode: normalizeUiThemeMode(snapshot.uiThemeMode, currentUiThemeMode || "auto"),
                 uiThemeNightHour: authoritativeUiThemeNightHour,
                 uiThemeHourOffset: authoritativeUiThemeHourOffset,
@@ -7716,12 +7884,17 @@
 
         async function applyAutomationNow() {
             setAutomationStatus("applying auto-set...");
+            setReceiversBusy(true);
             try {
                 // When Auto Mode is ON, use force-reassign so the backend builds the
                 // fixed+roaming payload from current settings (day/night roaming etc).
                 const fixedOn = readSelectBool("auto-mode-enabled", true);
                 if (fixedOn) {
                     await postJson("/admin/force-reassign", {});
+                    // force-reassign returns instantly (background thread); keep overlay visible
+                    // while workers stop, reconnect, and the Kiwi assigns new channels (~5 s).
+                    setAutomationStatus("applying — waiting for receivers to reconnect…");
+                    await new Promise(r => setTimeout(r, 5000));
                     setAutomationStatus("applied (fixed+roaming mode)");
                     refresh();
                     return;
@@ -7769,6 +7942,8 @@
                 refresh();
             } catch (err) {
                 setAutomationStatus(`apply failed: ${String((err && err.message) || err)}`);
+            } finally {
+                setReceiversBusy(false);
             }
         }
 
@@ -7785,6 +7960,7 @@
 
         async function applyAutoModeEnabled(enabled) {
             setAutomationStatus(enabled ? "enabling Auto Mode..." : "disabling Auto Mode...");
+            if (!enabled) setReceiversBusy(true);
             try {
                 if (!enabled) {
                     await postJson("/auto_set_receivers", { enabled: false });
@@ -7794,6 +7970,8 @@
                 }
             } catch (err) {
                 setAutomationStatus(`Auto Mode toggle failed: ${String((err && err.message) || err)}`);
+            } finally {
+                if (!enabled) setReceiversBusy(false);
             }
         }
 
@@ -9777,12 +9955,7 @@
             summaryFaultLoadHistory = summaryFaultLoadHistory.slice(-60);
             renderSummarySparkline("spark-fault-load", summaryFaultLoadHistory, severity.color);
 
-            const rate = Math.max(0, Number(ratePerMin || 0));
-            const rateEl = byId("summary-decode-rate");
-            if (rateEl) rateEl.textContent = `${rate.toFixed(1)}/min`;
-            summaryDecodeRateHistory.push(rate);
-            summaryDecodeRateHistory = summaryDecodeRateHistory.slice(-60);
-            renderSummarySparkline("spark-decode-rate", summaryDecodeRateHistory, "#3b82f6");
+
         }
 
         function applyVersion(version) {

@@ -409,9 +409,11 @@ class AutoSetLoop:
             # Even when nothing logically changed, verify fixed receivers are still live.
             # This recovers from unexpected restarts or external kicks without waiting for
             # a schedule change to trigger the normal should_apply path.
+            force_health_recovery = False
             if not should_apply and self._did_startup_apply:
                 if not self._fixed_receivers_healthy():
                     should_apply = True
+                    force_health_recovery = True
 
             if should_apply:
                 with self._state_lock:
@@ -422,7 +424,8 @@ class AutoSetLoop:
                 # If only the time block changed but the resulting band/mode config is
                 # identical to what was last applied, skip the reassign entirely.
                 if (
-                    self._did_startup_apply
+                    not force_health_recovery
+                    and self._did_startup_apply
                     and last_applied_band_config is not None
                     and new_band_config == last_applied_band_config
                 ):

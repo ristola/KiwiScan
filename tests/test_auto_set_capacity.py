@@ -86,15 +86,20 @@ def test_dual_mode_bands_can_fill_all_eight_receivers(monkeypatch):
         key = (str(row["band"]), str(row["mode"]))
         counts_by_band_mode[key] = counts_by_band_mode.get(key, 0) + 1
 
-    assert payload["assigned_other_tasks"] == 8
+    # 20m FT8=14074 / FT4=14080 are only 6 kHz apart — fits the 12 kHz IQ window,
+    # so a single IQ receiver covers both modes.  40m FT8=7074 / FT4=7047.5 are
+    # 26.5 kHz apart — exceeds the IQ window, so two receivers are required.
+    # Expected layout: 1 (20m IQ) + 2 (40m) + 4 (30m/60m/80m/160m) = 7 receivers.
+    assert payload["assigned_other_tasks"] == 7
     assert payload["other_max_receivers"] == 8
-    assert len(ok_assignments) == 8
-    assert counts_by_band_mode[("20m", "FT4")] == 1
-    assert counts_by_band_mode[("20m", "FT8")] == 1
+    assert len(ok_assignments) == 7
+    assert counts_by_band_mode[("20m", "FT4 / FT8")] == 1  # single IQ receiver
+    assert ("20m", "FT4") not in counts_by_band_mode  # no split; IQ covers both
+    assert ("20m", "FT8") not in counts_by_band_mode
     assert counts_by_band_mode[("40m", "FT4")] == 1
     assert counts_by_band_mode[("40m", "FT8")] == 1
     assert counts_by_band_mode[("30m", "FT8")] == 1
     assert counts_by_band_mode[("60m", "FT8")] == 1
     assert counts_by_band_mode[("80m", "FT8")] == 1
     assert counts_by_band_mode[("160m", "FT8")] == 1
-    assert len(receiver_mgr.last_assignments) == 8
+    assert len(receiver_mgr.last_assignments) == 7

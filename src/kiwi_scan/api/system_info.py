@@ -168,12 +168,26 @@ def _build_kiwi_payload(mgr: object) -> dict[str, object]:
         "offline": status.get("offline"),
     }
 
+    # Build label → internal-rx mapping so the display uses KiwiScan's own rx
+    # numbering rather than the raw Kiwi channel index.  This matters when the Kiwi
+    # does not honour our --rx-chan hint and assigns a different slot (e.g. WSPR lands
+    # on Kiwi ch4 while our internal rx=3, or FT8 lands on ch3 while internal rx=4).
+    label_to_rx: dict[str, int] = {}
+    if hasattr(mgr, "active_label_to_rx"):
+        try:
+            label_to_rx = mgr.active_label_to_rx()  # type: ignore[union-attr]
+        except Exception:
+            pass
+
     active_users: list[dict[str, object]] = []
     for row in users:
+        label = urllib.parse.unquote(str(row.get("n") or "")).strip()
+        kiwi_rx = _safe_int(row.get("i"))
+        rx_display = label_to_rx.get(label, kiwi_rx)
         active_users.append(
             {
-                "rx": _safe_int(row.get("i")),
-                "name": urllib.parse.unquote(str(row.get("n") or "")).strip(),
+                "rx": rx_display,
+                "name": label,
                 "location": urllib.parse.unquote(str(row.get("g") or "")).strip(),
                 "freq_khz": round(float(row.get("f")) / 1000.0, 3) if _safe_float(row.get("f")) is not None else None,
                 "mode": str(row.get("m") or "").strip().upper() or None,
@@ -181,6 +195,8 @@ def _build_kiwi_payload(mgr: object) -> dict[str, object]:
                 "connected_seconds": _parse_elapsed_seconds(row.get("t")),
             }
         )
+    # Sort by our internal rx number so the table always appears in assignment order.
+    active_users.sort(key=lambda u: u["rx"] if isinstance(u["rx"], int) else 999)
     out["active_users"] = active_users
     return out
 
