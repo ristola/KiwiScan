@@ -541,39 +541,76 @@
             color: #ef4444;
         }
 
-        .topbar-auto-btn {
+        .rx-mode-group {
             display: inline-flex;
             align-items: center;
-            gap: 7px;
-            height: 36px;
-            padding: 0 14px;
-            border: 1px solid color-mix(in srgb, var(--accent), transparent 55%);
-            border-radius: 10px;
-            background: color-mix(in srgb, var(--accent), transparent 85%);
-            color: var(--accent);
+            background: color-mix(in srgb, var(--panel), white 3%);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 3px;
+            gap: 2px;
+        }
+
+        .topbar-mode-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            height: 30px;
+            padding: 0 12px;
+            border: 1px solid transparent;
+            border-radius: 9px;
+            background: transparent;
+            color: var(--muted);
             font-size: 0.78rem;
+            font-family: inherit;
             font-weight: 700;
             letter-spacing: 0.04em;
             cursor: pointer;
             white-space: nowrap;
-            transition: background 0.15s, border-color 0.15s;
+            transition: background 0.15s, border-color 0.15s, color 0.15s;
         }
 
-        .topbar-auto-btn:hover {
-            background: color-mix(in srgb, var(--accent), transparent 72%);
-            border-color: color-mix(in srgb, var(--accent), transparent 25%);
+        .topbar-mode-btn:hover {
+            background: color-mix(in srgb, var(--ink), transparent 88%);
+            color: var(--ink);
         }
 
-        .topbar-auto-btn[aria-pressed="false"] {
-            border-color: color-mix(in srgb, var(--muted), transparent 40%);
-            background: color-mix(in srgb, var(--panel), white 6%);
-            color: var(--muted);
+        .topbar-mode-label {
+            font-size: 0.78rem;
+            font-weight: 600;
         }
 
-        .topbar-auto-btn .settings-toggle-state {
-            font-size: 0.72rem;
+        .topbar-mode-state {
+            font-size: 0.68rem;
             font-weight: 800;
-            opacity: 0.85;
+            letter-spacing: 0.07em;
+            text-transform: uppercase;
+            opacity: 0.8;
+        }
+
+        /* Auto — green solid fill */
+        .topbar-mode-btn[aria-pressed="true"][data-mode="auto"] {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+        }
+
+        /* Scan — red solid fill */
+        .topbar-mode-btn[aria-pressed="true"][data-mode="scan"] {
+            background: #ef4444;
+            border-color: #ef4444;
+            color: #fff;
+        }
+
+        /* Manual — blue solid fill */
+        .topbar-mode-btn[aria-pressed="true"][data-mode="manual"] {
+            background: #3b82f6;
+            border-color: #3b82f6;
+            color: #fff;
+        }
+
+        .topbar-mode-btn[aria-pressed="true"] .topbar-mode-state {
+            opacity: 0.75;
         }
 
         .topbar-icon-btn svg {
@@ -2250,10 +2287,10 @@
         }
 
         .rx-busy-icon {
-            width: 44px;
-            height: 44px;
+            width: 72px;
+            height: 72px;
             color: var(--accent);
-            animation: rx-spin 0.75s linear infinite;
+            animation: rx-spin 0.9s linear infinite;
         }
 
         .rx-busy-label {
@@ -4037,12 +4074,21 @@
                     </p>
                 </div>
                 <div class="topbar-actions" aria-label="Top bar actions">
-                    <button class="topbar-auto-btn settings-toggle-btn" id="auto-mode-enabled" type="button"
-                        aria-pressed="true" data-icon="spark" data-toggle-on="AUTO" data-toggle-off="MANUAL"
-                        aria-label="Auto Mode toggle">
-                        <span class="settings-toggle-label">Auto</span>
-                        <span class="settings-toggle-state">AUTO</span>
-                    </button>
+                    <div class="rx-mode-group" role="radiogroup" aria-label="Receiver mode">
+                        <button class="topbar-mode-btn" id="auto-mode-enabled" data-mode="auto" type="button"
+                            aria-pressed="true" data-icon="spark" aria-label="Auto Mode">
+                            <span class="topbar-mode-label">AUTO</span>
+                            <span class="topbar-mode-state" style="font-size:0.6rem">Digital</span>
+                        </button>
+                        <button class="topbar-mode-btn" id="scan-mode-btn" data-mode="scan" type="button"
+                            aria-pressed="false" data-icon="crosshair" aria-label="Scan Mode">
+                            <span class="topbar-mode-label">SCAN</span>
+                        </button>
+                        <button class="topbar-mode-btn" id="manual-mode-btn" data-mode="manual" type="button"
+                            aria-pressed="false" data-icon="sliders" aria-label="Manual Mode">
+                            <span class="topbar-mode-label">MANUAL</span>
+                        </button>
+                    </div>
                     <button class="topbar-icon-btn notify" id="topbar-notifications" type="button"
                         aria-label="Open notifications">
                         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -4339,10 +4385,11 @@
                         data-panel-card="active-receivers">
                         <div id="rx-busy-overlay" class="rx-busy-overlay" hidden aria-label="Applying receiver changes">
                             <svg class="rx-busy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
-                                <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                                <path d="M21 3v5h-5" />
                             </svg>
-                            <span class="rx-busy-label">Applying…</span>
+                            <span class="rx-busy-label" id="rx-busy-label">Applying…</span>
                         </div>
                         <div class="panel-hdr">
                             <h2 data-icon="users">Active Receivers</h2>
@@ -4737,8 +4784,9 @@
         let latestAssignments = {};
         let lastRateTickMs = Date.now();
         let refreshTimer = null;
-        let refreshIntervalMs = 3000;
+        let refreshIntervalMs = 2000;
         let refreshPaused = false;
+        let refreshInFlight = false;
         let lastSuccessfulRefreshMs = null;
         let currentUiThemeMode = "auto";
         let currentUiThemeNightHour = 21;
@@ -5184,10 +5232,22 @@
             return "OK";
         }
 
-        async function getJson(url) {
-            const resp = await fetch(url, { cache: "no-store" });
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            return await resp.json();
+        async function getJson(url, timeoutMs) {
+            const opts = { cache: "no-store" };
+            let controller;
+            let tid;
+            if (timeoutMs && timeoutMs > 0) {
+                controller = new AbortController();
+                opts.signal = controller.signal;
+                tid = setTimeout(() => controller.abort(), timeoutMs);
+            }
+            try {
+                const resp = await fetch(url, opts);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                return await resp.json();
+            } finally {
+                if (tid !== undefined) clearTimeout(tid);
+            }
         }
 
         function isDigitalMode(mode) {
@@ -5328,9 +5388,11 @@
             return `<svg class="active-rx-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Fixed receiver"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>`;
         }
         function compactAutoModeLabel(mode) {
-            return String(mode || "")
-                .toUpperCase()
-                .replace(/[^A-Z0-9]+/g, "");
+            const mn = String(mode || "").trim().toUpperCase().replace(/\s+/g, "");
+            if (mn === "FT4/FT8/WSPR") return "FT4/8/WSPR";
+            if (mn === "FT4/FT8") return "FT4-FT8";
+            if (mn === "FT4/WSPR") return "FT4-WSPR";
+            return String(mode || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
         }
 
         function normalizeActiveReceiverBand(value) {
@@ -5411,7 +5473,9 @@
                     );
                     return {
                         rx: rxNum,
-                        name: safeText(systemUser.name, safeText(rawUser.name, populated ? synthesizedName : "Unassigned")),
+                        name: (synthesizedName && synthesizedName.startsWith("AUTO_"))
+                            ? synthesizedName
+                            : safeText(systemUser.name, safeText(rawUser.name, populated ? synthesizedName : "Unassigned")),
                         freq_khz: Number.isFinite(Number(systemUser.freq_khz))
                             ? Number(systemUser.freq_khz)
                             : (Number.isFinite(Number(rawUser.freq_khz))
@@ -5483,7 +5547,7 @@
             ]);
 
             const reachable = !!kiwi.reachable;
-            const users = buildActiveReceiverRows(kiwi.active_users);
+            const users = buildActiveReceiverRows(kiwi.active_users, kiwi.raw_users);
             const activeUserCount = users.filter((user) => !!user.active).length;
             renderInfoRows("system-kiwi-details", [
                 ["Receiver", safeText(kiwiStatus.name, "--")],
@@ -7200,9 +7264,42 @@
             if (el) el.textContent = `Automation: ${text}`;
         }
 
-        function setReceiversBusy(busy) {
+        let _rxBusyManual = false;
+        let _rxBusyAutoKick = false;
+
+        function _updateRxBusyOverlay() {
             const overlay = byId("rx-busy-overlay");
-            if (overlay) overlay.hidden = !busy;
+            if (!overlay) return;
+            overlay.hidden = !(_rxBusyManual || _rxBusyAutoKick);
+        }
+
+        function setReceiversBusy(busy, label) {
+            _rxBusyManual = busy;
+            const labelEl = byId("rx-busy-label");
+            if (labelEl && label) labelEl.textContent = label;
+            else if (labelEl && busy && !label) labelEl.textContent = "Applying\u2026";
+            _updateRxBusyOverlay();
+        }
+
+        function setReceiversMode(mode) {
+            ["auto-mode-enabled", "scan-mode-btn", "manual-mode-btn"].forEach((id) => {
+                const btn = byId(id);
+                if (btn) btn.setAttribute("aria-pressed", btn.dataset.mode === mode ? "true" : "false");
+            });
+        }
+
+        async function applyReceiversScanMode() {
+            setAutomationStatus("entering scan mode...");
+            setReceiversBusy(true, "Entering Scan\u2026");
+            try {
+                await postJson("/auto_set_receivers", { enabled: false });
+                setAutomationStatus("scan mode — receivers released");
+                refresh();
+            } catch (err) {
+                setAutomationStatus(`scan mode failed: ${String((err && err.message) || err)}`);
+            } finally {
+                setReceiversBusy(false);
+            }
         }
 
         function updateAutomationSsbStepVisibility(strategyValue) {
@@ -7662,7 +7759,7 @@
                 byId("auto-ssb-step-khz").value = Number.isFinite(Number(a.ssbStepKHz)) ? String(Number(a.ssbStepKHz)) : "";
                 updateAutomationSsbStepVisibility(byId("auto-ssb-step-strategy").value);
                 const fixedEnabled = a.fixedModeEnabled !== false;
-                setSelectBool("auto-mode-enabled", fixedEnabled);
+                setReceiversMode(fixedEnabled ? "auto" : "manual");
                 applyAutoModeVisibility(fixedEnabled);
                 applyAndPersistUiPreferences(nextThemeMode, nextDensity, nextNightHour, nextHourOffset);
                 applyOverviewTopicPrefs(nextOverviewTopics);
@@ -8304,12 +8401,27 @@
             if (autoApplyNow) autoApplyNow.addEventListener("click", () => { applyAutomationNow(); });
 
             const autoModeBtn = byId("auto-mode-enabled");
+            const scanModeBtn = byId("scan-mode-btn");
+            const manualModeBtn = byId("manual-mode-btn");
             if (autoModeBtn) {
                 autoModeBtn.addEventListener("click", () => {
-                    const next = autoModeBtn.getAttribute("aria-pressed") !== "true";
-                    setSelectBool("auto-mode-enabled", next);
-                    applyAutoModeVisibility(next);
-                    applyAutoModeEnabled(next);
+                    setReceiversMode("auto");
+                    applyAutoModeVisibility(true);
+                    applyAutoModeEnabled(true);
+                });
+            }
+            if (scanModeBtn) {
+                scanModeBtn.addEventListener("click", () => {
+                    setReceiversMode("scan");
+                    applyAutoModeVisibility(false);
+                    applyReceiversScanMode();
+                });
+            }
+            if (manualModeBtn) {
+                manualModeBtn.addEventListener("click", () => {
+                    setReceiversMode("manual");
+                    applyAutoModeVisibility(false);
+                    applyAutoModeEnabled(false);
                 });
             }
             if (autoSsbStepStrategy) {
@@ -9631,6 +9743,16 @@
                 return `<span class="${cls}"><span class="ui-icon kv-icon"${colorAttr} aria-label="${label}" title="${label}">${svg}</span>\u00a0\u00a0<span${colorAttr}>${safeText(value)}</span></span>`;
             };
             const modeColor = (m) => ({ FT8: "#60a5fa", FT4: "#4ade80", SSB: "#f87171", WSPR: "#c084fc" })[String(m).toUpperCase()] || "var(--muted)";
+            const fmtModeHtml = (raw) => {
+                const mn = String(raw || "").trim().toUpperCase().replace(/\s+/g, "");
+                const mu = "var(--muted)";
+                if (mn === "FT4/FT8/WSPR") return `<span style="font-size:0.72rem;font-weight:600"><span style="color:${modeColor("FT4")}">FT4</span><span style="color:${mu}">/</span><span style="color:${modeColor("FT8")}">8</span><span style="color:${mu}">/</span><span style="color:${modeColor("WSPR")}">WSPR</span></span>`;
+                if (mn === "FT4/FT8") return `<span style="font-size:0.72rem;font-weight:600"><span style="color:${modeColor("FT4")}">FT4</span><span style="color:${mu}">-</span><span style="color:${modeColor("FT8")}">FT8</span></span>`;
+                if (mn === "FT4/WSPR") return `<span style="font-size:0.72rem;font-weight:600"><span style="color:${modeColor("FT4")}">FT4</span><span style="color:${mu}">/</span><span style="color:${modeColor("WSPR")}">WSPR</span></span>`;
+                const _ms = String(raw || "").split(" / ").map((m) => m.trim()).filter(Boolean);
+                if (_ms.length === 1) return `<span style="font-size:0.72rem;font-weight:600;color:${modeColor(_ms[0])}">${safeText(_ms[0])}</span>`;
+                return `<span style="font-size:0.72rem;font-weight:600">${_ms.map((m) => `<span style="color:${modeColor(m)}">${safeText(m)}</span>`).join(`<span style="color:${mu}"> / </span>`)}</span>`;
+            };
             cardEl.innerHTML = "";
             for (const band of MAP_BAND_OPTIONS) {
                 const bandRows = list.filter((r) => r.band === band);
@@ -9658,7 +9780,7 @@
                         const modeNorm = String(r.mode || "").trim().toUpperCase().replace(/\s+/g, "");
                         const physRx = kiwiRxByBandMode[`${r.band}:${modeNorm}`];
                         const displayRx = physRx != null ? `RX${physRx}` : r.rxLabel;
-                        const _modes = r.mode.split(" / ").map((m) => m.trim()).filter(Boolean);
+                        const _modes = String(r.mode || "").split(" / ").map((m) => m.trim()).filter(Boolean);
                         let modeLabelHtml;
                         if (_modes.length >= 3) {
                             const _firstLine = _modes.slice(0, _modes.length - 1).map((m) => `<span style="color:${modeColor(m)}">${safeText(m)}</span>`).join(`<span style="color:var(--muted)"> / </span>`);
@@ -9693,14 +9815,22 @@
                             if (rch.decode_total != null) modeAgg[m].tot = (modeAgg[m].tot ?? 0) + Number(rch.decode_total);
                         }
                     }
-                    const decodeRateRows = modeOrder.map((m) => {
-                        const agg = modeAgg[m];
-                        const pm = agg.pm != null ? agg.pm : 0;
-                        const ph = agg.ph != null ? agg.ph : 0;
-                        const tot = agg.tot != null ? agg.tot : 0;
-                        const mc = modeColor(m);
-                        return `<span style="display:inline-flex;align-items:baseline;gap:4px;font-size:0.72rem"><span style="font-weight:700;color:${mc}">${safeText(m)}:</span><span>${pm} min</span><span style="color:var(--muted)">&#8226;</span><span>${ph} hr</span><span style="color:var(--muted)">&#8226;</span><span>${tot} total</span></span>`;
-                    }).join("<br>");
+                    const MODE_SORT_ORDER = ["FT4", "FT8", "WSPR", "SSB"];
+                    const decodeRateRows = modeOrder
+                        .slice()
+                        .sort((a, b) => {
+                            const ia = MODE_SORT_ORDER.indexOf(String(a).toUpperCase());
+                            const ib = MODE_SORT_ORDER.indexOf(String(b).toUpperCase());
+                            return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+                        })
+                        .map((m) => {
+                            const agg = modeAgg[m];
+                            const pm = agg.pm != null ? agg.pm : 0;
+                            const ph = agg.ph != null ? agg.ph : 0;
+                            const tot = agg.tot != null ? agg.tot : 0;
+                            const mc = modeColor(m);
+                            return `<span style="display:inline-flex;align-items:baseline;gap:4px;font-size:0.72rem"><span style="font-weight:700;color:${mc}">${safeText(m)}:</span><span>${pm} min</span><span style="color:var(--muted)">&#8226;</span><span>${ph} hr</span><span style="color:var(--muted)">&#8226;</span><span>${tot} total</span></span>`;
+                        }).join("<br>");
                     card.innerHTML = `<div class="rx-top"><div style="display:flex;flex-direction:column;gap:2px"><span style="display:inline-flex;align-items:baseline"><span class="rx-band-label" style="font-size:1rem;font-weight:800">${band}</span>${(() => { const ct = conditionText(band); return ct !== "--" ? `\u00a0\u00a0<span style="font-size:0.78rem;font-weight:600;color:${conditionColor(band)}">${ct}</span>` : ""; })()}</span>${iconLine("heart", "State/Health", "rx-state-line", safeText(ch.health_state, "-"), heartColor)}</div><div style="display:flex;align-items:flex-start;gap:6px">${rxPills}</div></div><p class="kv">${iconLine("gauge", "SNR(avg)", "rx-snr-line", (() => { const t = snrAvgTextForRx(row.rxLabel); return t !== "--" ? t : (Number.isFinite(Number(ch.snr_avg_db)) ? `${Number(ch.snr_avg_db).toFixed(1)} dB` : "--"); })())}${(() => { const sc = bandScoreText(band); return iconLine("spark", "Score", "rx-score-line", sc === "--" ? "--" : `Score: ${sc}`, bandScoreColor(band)); })()}<span class="rx-decode-rates" style="display:block;margin-top:4px;line-height:1.6">${decodeRateRows}</span></p>`;
                 }
                 cardEl.append(card);
@@ -10104,6 +10234,17 @@
             renderAssignments(latestAssignments);
             renderReasons(h.reason_counts || {});
             renderFixedPlanVerification(latestChannelsMap);
+
+            // Show overlay when background auto-kick/reassignment is in progress
+            const autoKick = h.auto_kick || {};
+            const kickLastUnix = Number(autoKick.last_unix || 0);
+            const wasAutoKickRecent = kickLastUnix > 0 && (Date.now() / 1000 - kickLastUnix) < 25;
+            if (_rxBusyAutoKick !== wasAutoKickRecent) {
+                _rxBusyAutoKick = wasAutoKickRecent;
+                const labelEl = byId("rx-busy-label");
+                if (labelEl && !_rxBusyManual) labelEl.textContent = wasAutoKickRecent ? "Reassigning\u2026" : "Applying\u2026";
+                _updateRxBusyOverlay();
+            }
         }
 
         function renderFixedPlanVerification(channelsMap) {
@@ -10574,17 +10715,31 @@
         // ── End Smart Scheduler ─────────────────────────────────────────────
 
         async function refresh() {
+            if (refreshInFlight) return;
+            refreshInFlight = true;
             try {
+                // First-load uses a short timeout so failures fail fast and the UI shows
+                // "Connecting…" quickly instead of hanging for 4.5 s.  After the first
+                // successful poll, use the full timeout to tolerate slow Kiwi paths.
+                const TIMEOUT = lastSuccessfulRefreshMs === null ? 2000 : 4500;
                 const [healthResult, statusResult, versionResult, deltaInfo, chartData] = await Promise.all([
-                    getJson("/health/rx"),
-                    getJson("/decodes/status"),
-                    getJson("/version").catch(() => null),
-                    pollDecodeDelta(),
-                    getJson("/decodes/chart").catch(() => null),
+                    getJson("/health/rx", TIMEOUT).catch(() => null),
+                    getJson("/decodes/status", TIMEOUT).catch(() => null),
+                    getJson("/version", TIMEOUT).catch(() => null),
+                    pollDecodeDelta().catch(() => null),
+                    getJson("/decodes/chart", TIMEOUT).catch(() => null),
                 ]);
                 const health = healthResult;
                 const status = statusResult;
                 const version = versionResult;
+
+                // Both core endpoints unreachable — server not yet ready.
+                // Show a soft connecting state and let the interval timer retry silently.
+                if (!health && !status) {
+                    setServerChip("Connecting\u2026", "--");
+                    updateRefreshStatus();
+                    return;
+                }
 
                 const now = Date.now();
                 // Use WS burst for rate when WS is connected (avoids double-counting with HTTP delta).
@@ -10627,9 +10782,13 @@
                 updateRefreshCadenceLabel();
                 updateRefreshStatus();
             } catch (err) {
+                // Unexpected JS error in apply logic (not a server timeout — those are
+                // handled above as null results and never reach here).
                 setServerChip("Degraded", "--");
-                byId("subtitle").textContent = `API refresh error: ${String((err && err.message) || err)}`;
+                console.error("refresh error:", err);
                 updateRefreshStatus();
+            } finally {
+                refreshInFlight = false;
             }
         }
 
@@ -10658,6 +10817,7 @@
         }, 60000);
         setInterval(updateDecodeStreamChip, 1000);
         setInterval(updateRefreshStatus, 1000);
+        setInterval(renderTrend, 1000);
 
         (function initHeartChartPopup() {
             const popup = byId("heart-chart-popup");

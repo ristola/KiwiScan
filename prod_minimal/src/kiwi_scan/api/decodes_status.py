@@ -20,16 +20,34 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
     router = APIRouter()
     _last_live_assignments: Dict[int, Dict[str, object]] = {}
     _last_live_ok_unix: float = 0.0
+    _last_live_host: str = ""
+    _last_live_port: int = 0
 
     @router.get("/decodes/status")
     def get_decode_status():
-        nonlocal _last_live_assignments, _last_live_ok_unix
+        nonlocal _last_live_assignments, _last_live_ok_unix, _last_live_host, _last_live_port
         rx_status: Dict[int, Dict[str, object]] = {}
         workers: Dict[int, object] = {}
-        # receiver_mgr is a ReceiverManager instance; access its assignments under lock.
-        with receiver_mgr._lock:  # type: ignore[attr-defined]
+        # Use a timeout so this endpoint never blocks indefinitely while
+        # apply_assignments() holds the lock during startup/eviction (can be minutes).
+        _lock = receiver_mgr._lock  # type: ignore[attr-defined]
+        if not _lock.acquire(timeout=0.5):
+            return {
+                "assignments": {},
+                "assignments_source": "busy",
+                "assignments_host": "",
+                "assignments_port": 0,
+                "assignments_mismatch_rxs": [],
+                "logs": [],
+                "af2udp": str(af2udp_path),
+                "ft8modem": str(ft8modem_path),
+                "_from_cache": True,
+            }
+        try:
             assignments = dict(receiver_mgr._assignments)  # type: ignore[attr-defined]
             workers = dict(getattr(receiver_mgr, "_workers", {}))  # type: ignore[attr-defined]
+        finally:
+            _lock.release()
         for rx, a in assignments.items():
             rx_status[int(rx)] = {
                 "band": a.band,
@@ -130,7 +148,7 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
             for path in ("/users?json=1", "/users?admin=1", "/users"):
                 try:
                     req = urllib.request.Request(f"http://{host}:{port}{path}", method="GET")
-                    with urllib.request.urlopen(req, timeout=2.0) as resp:
+                    with urllib.request.urlopen(req, timeout=0.5) as resp:
                         maybe = json.loads(resp.read().decode("utf-8", errors="ignore"))
                     if isinstance(maybe, list):
                         payload = maybe
@@ -197,6 +215,11 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
 
             if not candidates:
                 return (False, {}, {}, "", 0)
+
+            # Short-circuit: if the last fetch was very recent, reuse it rather than
+            # making blocking Kiwi HTTP calls on every poll tick.
+            if _last_live_ok_unix > 0.0 and (time.time() - _last_live_ok_unix) <= 5.0 and _last_live_assignments:
+                return (True, dict(_last_live_assignments), {}, _last_live_host, _last_live_port)
 
             best_assignments: Dict[int, Dict[str, object]] = {}
             best_details: Dict[int, Dict[str, object]] = {}
@@ -298,6 +321,8 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
         if users_available and not prefer_receiver_manager:
             _last_live_assignments = dict(live_status)
             _last_live_ok_unix = float(now)
+            _last_live_host = str(live_host)
+            _last_live_port = int(live_port)
 
         cache_fresh = (_last_live_ok_unix > 0.0) and ((now - _last_live_ok_unix) <= 30.0)
         if users_available and not prefer_receiver_manager:

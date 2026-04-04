@@ -1593,6 +1593,7 @@ class ReceiverManager:
         self._auto_kick_last_reason = ""
         self._auto_kick_last_result = ""
         self._startup_eviction_active = threading.Event()  # suppresses monitoring autokick during startup eviction
+        self._health_summary_cache: Dict[str, object] = {}  # last known-good result for lock-timeout fallback
         self._manager_stop = threading.Event()
         self._last_dependency_report: Dict[str, object] = {}
         self._cleanup_orphan_processes()
@@ -2357,7 +2358,31 @@ class ReceiverManager:
             return result
 
     def health_summary(self) -> Dict[str, object]:
-        with self._lock:
+        # Use a short timeout on the lock so this method never blocks indefinitely.
+        # apply_assignments() holds self._lock for the entire startup/eviction cycle
+        # (which can last minutes).  Without a timeout, FastAPI threadpool threads
+        # pile up waiting here and the HTTP server becomes completely unresponsive.
+        # On timeout, return the last successfully-computed result (or a minimal
+        # "busy" placeholder on the very first call before any result is cached).
+        lock_acquired = self._lock.acquire(timeout=0.5)
+        if not lock_acquired:
+            cached = dict(self._health_summary_cache) if self._health_summary_cache else None
+            if cached:
+                cached["_from_cache"] = True
+                return cached
+            return {
+                "overall": "busy",
+                "active_receivers": 0,
+                "unstable_receivers": 0,
+                "stalled_receivers": 0,
+                "silent_receivers": 0,
+                "no_decode_warning_receivers": 0,
+                "restart_total": 0,
+                "channels": {},
+                "auto_kick": {"total": 0, "last_unix": None, "last_reason": "", "last_result": "", "mismatch_streak": 0},
+                "_from_cache": True,
+            }
+        try:
             assignments = dict(self._assignments)
             watchdog_by_rx = {int(k): dict(v) for k, v in self._watchdog_state_by_rx.items()}
             restart_by_rx = {int(k): int(v) for k, v in self._restart_by_rx.items()}
@@ -2365,6 +2390,8 @@ class ReceiverManager:
             restart_total = int(self._restart_total)
             active_host = str(getattr(self, "_active_host", "") or "")
             active_port = int(getattr(self, "_active_port", 0) or 0)
+        finally:
+            self._lock.release()
 
         users_by_rx: Dict[int, str] = {}
         user_age_by_rx: Dict[int, int] = {}
@@ -2763,7 +2790,7 @@ class ReceiverManager:
             else:
                 propagation_overall = "poor"
 
-        return {
+        result = {
             "overall": overall,
             "active_receivers": active,
             "unstable_receivers": unstable,
@@ -2788,6 +2815,9 @@ class ReceiverManager:
                 "mismatch_streak": int(self._mismatch_global_streak),
             },
         }
+        # Store as fallback for callers that time out waiting for the lock.
+        self._health_summary_cache = result
+        return result
 
     def _cleanup_orphan_processes(self) -> None:
         try:
