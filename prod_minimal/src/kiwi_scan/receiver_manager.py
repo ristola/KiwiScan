@@ -3403,15 +3403,44 @@ class ReceiverManager:
                         _ = self._run_admin_kick_all(host=str(host), port=int(port), force_all=True)
                         self._wait_for_kiwi_auto_users_clear(host=str(host), port=int(port), timeout_s=12.0)
 
-            # Stable-clear wait: the Kiwi's REST /users clears immediately after kick but
-            # its internal slot counter may take several more seconds to decrement,
-            # especially when connections traverse a VPN (TCP FIN/RST delivery is
-            # delayed).  During that window new connections are rejected with "Too busy"
-            # even though /users shows 0.  Requiring /users to stay at 0 for 5 s
-            # guarantees the internal state has fully settled before workers connect.
-            self._wait_for_kiwi_slots_stable_clear(
-                host=str(host), port=int(port), stable_secs=10.0, timeout_s=60.0
-            )
+                    # Stable-clear wait: the Kiwi's REST /users clears immediately after
+                    # kick but its internal slot counter may take several more seconds to
+                    # decrement (especially over VPN).  Requiring /users to stay at 0 for
+                    # stable_secs guarantees the internal state has settled before workers
+                    # connect.
+                    self._wait_for_kiwi_slots_stable_clear(
+                        host=str(host), port=int(port), stable_secs=10.0, timeout_s=60.0
+                    )
+                else:
+                    # Fixed workers are preserved — /users will never reach 0, so the
+                    # stable-clear wait above would burn the full 60 s timeout without
+                    # benefit.  Instead, kick only the ROAMING workers' target slots (0
+                    # and 1) if anything is occupying them (e.g. a fixed worker stuck at
+                    # the wrong slot from a prior P-pointer misalignment).  This clears
+                    # exactly the slots the roaming workers need without disconnecting the
+                    # healthy fixed receivers.
+                    _roaming_target_slots = sorted(
+                        int(rx) for rx in to_stop if int(rx) in desired_rxs
+                    )
+                    if _roaming_target_slots:
+                        _live_fk = self._fetch_live_auto_users(str(host), int(port))
+                        _blocked_slots = [s for s in _roaming_target_slots if s in _live_fk]
+                        if _blocked_slots:
+                            logger.info(
+                                "Roaming update: target slot(s) %s occupied; kicking before restart",
+                                _blocked_slots,
+                            )
+                            self._run_admin_kick_all(
+                                host=str(host), port=int(port), kick_only_slots=_blocked_slots
+                            )
+                            # Wait for kicked slots to clear in /users before workers start
+                            _fk_deadline = time.time() + 8.0
+                            while time.time() < _fk_deadline:
+                                _lv_fk2 = self._fetch_live_auto_users(str(host), int(port))
+                                if not any(s in _lv_fk2 for s in _blocked_slots):
+                                    break
+                                time.sleep(0.5)
+                            time.sleep(0.5)  # Brief extra pause for Kiwi internal state
 
             # Suppress monitoring-thread autokick for the entire initial connection
             # phase + eviction loop so the two code paths don't fight each other.
@@ -3420,9 +3449,10 @@ class ReceiverManager:
 
             # Start workers SEQUENTIALLY in rx order (rx0, rx1, …, rx7).
             # The KiwiSDR assigns receiver slots in connection-arrival order.
-            # After the stable-clear wait above, all Kiwi slots are free.  Starting
-            # workers one at a time and waiting for each to stably appear in /users
-            # ensures they fill slots 0, 1, 2 … in order.
+            # For full resets (starting_from_empty or no preserved fixed workers), all
+            # Kiwi slots are free after the stable-clear wait above.  For roaming-only
+            # updates (fixed workers preserved), target slots 0/1 have been cleared by
+            # the targeted kick above; fixed workers still hold the other slots.
             #
             # IMPORTANT: Do NOT kick individual slots during this phase.  Rapid-fire
             # kicks create VPN TCP churn that causes the Kiwi to say "Too busy" for
