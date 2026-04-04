@@ -96,7 +96,7 @@ def _fetch_kiwi_users(host: str, port: int) -> list[dict[str, Any]]:
     for path in ("/users?json=1", "/users?admin=1", "/users"):
         try:
             req = urllib.request.Request(f"http://{host}:{int(port)}{path}", method="GET")
-            with urllib.request.urlopen(req, timeout=1.5) as resp:
+            with urllib.request.urlopen(req, timeout=0.5) as resp:
                 payload = json.loads(resp.read().decode("utf-8", errors="ignore"))
             if isinstance(payload, list):
                 return [row for row in payload if isinstance(row, dict)]
@@ -163,7 +163,7 @@ def _build_kiwi_payload(mgr: object, receiver_mgr: object | None = None) -> dict
     if not host or port <= 0:
         return out
 
-    status = read_kiwi_status(host, port, timeout_s=1.2) or {}
+    status = read_kiwi_status(host, port, timeout_s=0.5) or {}
     users = _fetch_kiwi_users(host, port)
     out["reachable"] = bool(status or users)
     out["status"] = {

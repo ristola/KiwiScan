@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import copy
 from datetime import datetime
 import logging
@@ -647,8 +648,9 @@ def make_router(
                     continue
 
         if not enabled:
-            # Stop RX0-RX7 processes.
-            receiver_mgr.apply_assignments(host, port, {})  # type: ignore[attr-defined]
+            # Stop RX0-RX7 processes.  Run in a thread so the event loop is
+            # never blocked by apply_assignments() / _wait_for_kiwi_slots_stable_clear().
+            await asyncio.to_thread(receiver_mgr.apply_assignments, host, port, {})  # type: ignore[attr-defined]
             prune_decode_buffer(set())
             response = {
                 "enabled": False,
@@ -985,14 +987,17 @@ def make_router(
         except Exception:
             pass
 
-        receiver_mgr.apply_assignments(host, port, assignments)  # type: ignore[attr-defined]
+        # Run apply_assignments in a thread — it calls _wait_for_kiwi_slots_stable_clear()
+        # which can block for minutes.  Awaiting to_thread keeps the event loop free.
+        await asyncio.to_thread(receiver_mgr.apply_assignments, host, port, assignments)  # type: ignore[attr-defined]
 
         if wspr_hop_state_to_persist is not None:
-            _ = _verify_wspr_active_band(
+            await asyncio.to_thread(
+                _verify_wspr_active_band,
                 host,
                 port,
                 str(wspr_hop_state_to_persist.get("active_band") or ""),
-                timeout_s=1.8,
+                1.8,
             )
 
         try:

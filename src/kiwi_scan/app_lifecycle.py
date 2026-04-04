@@ -6,6 +6,11 @@ import os
 from pathlib import Path
 from typing import Callable, Optional
 
+try:
+    import anyio
+except ImportError:  # anyio may not be on the path before startup
+    anyio = None  # type: ignore[assignment]
+
 from fastapi import FastAPI
 
 from .kiwi_discovery import discover_kiwis, is_unconfigured_kiwi_host
@@ -88,6 +93,17 @@ def register_lifecycle(
         loop = asyncio.get_event_loop()
         set_loop(loop)
         set_decodes_loop(loop)
+
+        # Increase the anyio thread-pool capacity so that sync route handlers
+        # (health, config, system/info, …) are never starved by a handful of
+        # long-running Kiwi HTTP calls occupying the default ~4-thread pool.
+        try:
+            if anyio is not None:
+                limiter = anyio.to_thread.current_default_thread_limiter()
+                limiter.total_tokens = max(limiter.total_tokens, 40)
+                logger.info("anyio thread pool capacity set to %d", limiter.total_tokens)
+        except Exception:
+            logger.debug("Could not adjust anyio thread pool size", exc_info=True)
 
         discovered_kiwi: dict[str, object] | None = None
 

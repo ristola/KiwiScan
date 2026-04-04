@@ -590,8 +590,8 @@
 
         /* Auto — green solid fill */
         .topbar-mode-btn[aria-pressed="true"][data-mode="auto"] {
-            background: var(--accent);
-            border-color: var(--accent);
+            background: #22c55e;
+            border-color: #22c55e;
             color: #fff;
         }
 
@@ -7266,11 +7266,12 @@
 
         let _rxBusyManual = false;
         let _rxBusyAutoKick = false;
+        let _rxBusyMismatch = false;
 
         function _updateRxBusyOverlay() {
             const overlay = byId("rx-busy-overlay");
             if (!overlay) return;
-            overlay.hidden = !(_rxBusyManual || _rxBusyAutoKick);
+            overlay.hidden = !(_rxBusyManual || _rxBusyAutoKick || _rxBusyMismatch);
         }
 
         function setReceiversBusy(busy, label) {
@@ -9697,20 +9698,24 @@
         function renderAssignments(assignments) {
             const cardEl = byId("assignments-band-cards");
             if (!cardEl) return;
-            const rows = assignments && typeof assignments === "object" ? Object.entries(assignments) : [];
-            const list = rows
+            // Always prefer health channel data: it is keyed by worker RX (0-7) and is
+            // authoritative regardless of which physical Kiwi slot a worker landed on.
+            // decodes/status assignments may be keyed by Kiwi physical slot numbers when
+            // source=kiwi_users, causing RX badge mismatches after startup slot remapping.
+            const healthChannelEntries = Object.entries(latestChannelsMap)
+                .filter(([, ch]) => ch && ch.band && ch.mode);
+            const sourceRows = healthChannelEntries.length
+                ? healthChannelEntries.map(([rx, ch]) => [rx, { band: ch.band, mode: ch.mode }])
+                : (assignments && typeof assignments === "object" ? Object.entries(assignments) : []);
+            const list = sourceRows
                 .filter(([, item]) => item && typeof item === "object")
-                .map(([rx, item]) => {
-                    const healthCh = latestChannelsMap[String(rx)] || {};
-                    const resolvedMode = (healthCh.mode && String(healthCh.mode).trim()) || safeText(item.mode, "?");
-                    return {
-                        rxNum: Number(rx),
-                        rxLabel: `RX${rx}`,
-                        band: String(safeText(item.band, "unknown")).replace(/^(\d+)\s*[mM]$/, "$1m"),
-                        mode: resolvedMode,
-                        snrText: snrAvgTextForRx(`RX${rx}`),
-                    };
-                })
+                .map(([rx, item]) => ({
+                    rxNum: Number(rx),
+                    rxLabel: `RX${rx}`,
+                    band: String(safeText(item.band, "unknown")).replace(/^(\d+)\s*[mM]$/, "$1m"),
+                    mode: String(item.mode || "").trim() || "?",
+                    snrText: snrAvgTextForRx(`RX${rx}`),
+                }))
                 .sort((a, b) => {
                     if (Number.isFinite(a.rxNum) && Number.isFinite(b.rxNum)) return a.rxNum - b.rxNum;
                     return String(a.rxLabel).localeCompare(String(b.rxLabel));
@@ -9767,19 +9772,10 @@
                     const ch = latestChannelsMap[String(row.rxNum)] || {};
                     const level = String(ch.status_level || "healthy").toLowerCase();
                     card.dataset.level = level;
-                    // Build a (band:mode) → kiwi_rx lookup from health summary (physical slot)
-                    const kiwiRxByBandMode = {};
-                    for (const [logKey, lch] of Object.entries(latestChannelsMap)) {
-                        if (!lch || lch.kiwi_rx == null) continue;
-                        const lband = safeText(lch.band, "");
-                        const lmode = String(lch.mode || "").trim().toUpperCase().replace(/\s+/g, "");
-                        if (lband && lmode && !((`${lband}:${lmode}`) in kiwiRxByBandMode))
-                            kiwiRxByBandMode[`${lband}:${lmode}`] = lch.kiwi_rx;
-                    }
+                    // r.rxNum is the worker RX number (0-7) because list is built from
+                    // latestChannelsMap which is always keyed by worker RX.
                     const rxPills = bandRows.map((r) => {
-                        const modeNorm = String(r.mode || "").trim().toUpperCase().replace(/\s+/g, "");
-                        const physRx = kiwiRxByBandMode[`${r.band}:${modeNorm}`];
-                        const displayRx = physRx != null ? `RX${physRx}` : r.rxLabel;
+                        const displayRx = r.rxLabel;
                         const _modes = String(r.mode || "").split(" / ").map((m) => m.trim()).filter(Boolean);
                         let modeLabelHtml;
                         if (_modes.length >= 3) {
@@ -9789,7 +9785,7 @@
                         } else {
                             modeLabelHtml = `<span style="font-size:0.72rem;font-weight:600">${_modes.map((m) => `<span style="color:${modeColor(m)}">${safeText(m)}</span>`).join(`<span style="color:var(--muted)"> / </span>`)}</span>`;
                         }
-                        return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span class="rx-id-pill" style="color:${rxColor(physRx != null ? physRx : r.rxNum)};min-width:52px">${displayRx}</span>${modeLabelHtml}</div>`;
+                        return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span class="rx-id-pill" style="color:${rxColor(r.rxNum)};min-width:52px">${displayRx}</span>${modeLabelHtml}</div>`;
                     }).join("");
                     const heartColor = level === "fault" ? "#f87171" : level === "warning" ? "#f59e0b" : "#4ade80";
                     // Aggregate decode rates by mode across all receivers on this band
@@ -10235,14 +10231,18 @@
             renderReasons(h.reason_counts || {});
             renderFixedPlanVerification(latestChannelsMap);
 
-            // Show overlay when background auto-kick/reassignment is in progress
+            // Show overlay when background auto-kick/reassignment is in progress.
+            // Use a 65 s window (just over the 60 s kick cooldown) so the spinner
+            // stays visible between consecutive kick cycles, not just for 25 s.
             const autoKick = h.auto_kick || {};
             const kickLastUnix = Number(autoKick.last_unix || 0);
-            const wasAutoKickRecent = kickLastUnix > 0 && (Date.now() / 1000 - kickLastUnix) < 25;
+            const wasAutoKickRecent = (kickLastUnix > 0 && (Date.now() / 1000 - kickLastUnix) < 65) || unstable > 0;
             if (_rxBusyAutoKick !== wasAutoKickRecent) {
                 _rxBusyAutoKick = wasAutoKickRecent;
                 const labelEl = byId("rx-busy-label");
-                if (labelEl && !_rxBusyManual) labelEl.textContent = wasAutoKickRecent ? "Reassigning\u2026" : "Applying\u2026";
+                if (labelEl && !_rxBusyManual && !_rxBusyMismatch) {
+                    labelEl.textContent = unstable > 0 ? "Stabilizing\u2026" : (wasAutoKickRecent ? "Reassigning\u2026" : "Applying\u2026");
+                }
                 _updateRxBusyOverlay();
             }
         }
@@ -10287,6 +10287,18 @@
             latestAssignments = s.assignments || {};
             renderAssignments(latestAssignments);
             renderAssignmentBalance(latestAssignments);
+
+            // Show overlay while slot assignments don't match what the Kiwi reports.
+            const mismatchRxs = Array.isArray(s.assignments_mismatch_rxs) ? s.assignments_mismatch_rxs : [];
+            const hasMismatch = mismatchRxs.length > 0 || s.assignments_source === "busy";
+            if (_rxBusyMismatch !== hasMismatch) {
+                _rxBusyMismatch = hasMismatch;
+                const labelEl = byId("rx-busy-label");
+                if (labelEl && !_rxBusyManual && !_rxBusyAutoKick) {
+                    labelEl.textContent = hasMismatch ? "Slots settling\u2026" : "Applying\u2026";
+                }
+                _updateRxBusyOverlay();
+            }
         }
 
         function applyExecutiveSummary(status, health, ratePerMin) {
@@ -10717,27 +10729,39 @@
         async function refresh() {
             if (refreshInFlight) return;
             refreshInFlight = true;
+            const isFirstLoad = lastSuccessfulRefreshMs === null;
             try {
-                // First-load uses a short timeout so failures fail fast and the UI shows
-                // "Connecting…" quickly instead of hanging for 4.5 s.  After the first
-                // successful poll, use the full timeout to tolerate slow Kiwi paths.
-                const TIMEOUT = lastSuccessfulRefreshMs === null ? 2000 : 4500;
-                const [healthResult, statusResult, versionResult, deltaInfo, chartData] = await Promise.all([
-                    getJson("/health/rx", TIMEOUT).catch(() => null),
-                    getJson("/decodes/status", TIMEOUT).catch(() => null),
-                    getJson("/version", TIMEOUT).catch(() => null),
-                    pollDecodeDelta().catch(() => null),
-                    getJson("/decodes/chart", TIMEOUT).catch(() => null),
+                // First-load: short 500 ms timeout so the UI immediately shows
+                // "Connecting…" on a slow/starting server instead of stalling for seconds.
+                // After first success use a generous timeout to tolerate slow Kiwi paths.
+                const TIMEOUT = isFirstLoad ? 500 : 4500;
+
+                // Fire all requests simultaneously but track whether each core endpoint
+                // has already been applied via its own .then() so we don't re-apply below.
+                const healthP = getJson("/health/rx", TIMEOUT).catch(() => null);
+                const statusP = getJson("/decodes/status", TIMEOUT).catch(() => null);
+                const versionP = getJson("/version", TIMEOUT).catch(() => null);
+                const deltaP = pollDecodeDelta().catch(() => null);
+                const chartP = getJson("/decodes/chart", TIMEOUT).catch(() => null);
+
+                // Apply core data the instant each endpoint responds — don't wait for all.
+                let appliedHealth = false, appliedStatus = false;
+                healthP.then(d => { if (d) { appliedHealth = true; applyHealth(d); updateDecodeStreamChip(); } });
+                statusP.then(d => { if (d) { appliedStatus = true; applyStatus(d); } });
+
+                const [health, status, version, deltaInfo, chartData] = await Promise.all([
+                    healthP, statusP, versionP, deltaP, chartP,
                 ]);
-                const health = healthResult;
-                const status = statusResult;
-                const version = versionResult;
 
                 // Both core endpoints unreachable — server not yet ready.
-                // Show a soft connecting state and let the interval timer retry silently.
+                // Show a soft connecting state and schedule a fast retry so the UI
+                // comes alive as soon as the server is ready (not after a full 2 s interval).
                 if (!health && !status) {
                     setServerChip("Connecting\u2026", "--");
                     updateRefreshStatus();
+                    if (lastSuccessfulRefreshMs === null) {
+                        setTimeout(() => { if (lastSuccessfulRefreshMs === null && !refreshInFlight) refresh(); }, 500);
+                    }
                     return;
                 }
 
@@ -10758,14 +10782,17 @@
                 rateHistory.push({ t: now, rate: ratePerMin });
                 rateHistory = rateHistory.slice(-GRAPH_HISTORY_MAX_SAMPLES);
 
-                applyHealth(health);
-                applyStatus(status);
+                // Only call apply* here if the early .then() didn't already do it.
+                if (!appliedHealth) applyHealth(health);
+                if (!appliedStatus) applyStatus(status);
                 if (chartData) applyChartData(chartData);
                 if (version && typeof version === "object") {
                     applyVersion(version);
                 }
                 updateDecodeStreamChip();
-                if (currentSectionNavId === "system" || currentSectionNavId === "active-receivers" || currentSectionNavId === "overview") {
+                // Only fetch /system/info when the System panel is open — it makes
+                // blocking Kiwi HTTP calls and must not run on every 2 s heartbeat.
+                if (currentSectionNavId === "system") {
                     refreshSystemInfo(false).catch(() => { });
                 }
                 getJson('/smart_scheduler/status?mode=' + encodeURIComponent(bcCurrentMode)).then(d => {
@@ -10792,7 +10819,7 @@
             }
         }
 
-        applyUiPreferences(UI_THEME_DEFAULT_MODE, UI_DENSITY_DEFAULT_MODE, UI_THEME_DEFAULT_NIGHT_HOUR);
+        applyUiPreferences(readStoredUiThemeMode(), readStoredUiDensityMode(), readStoredUiThemeNightHour(), readStoredUiThemeHourOffset());
         applyOverviewTopicPrefs(readStoredOverviewTopicPrefs());
         initRefreshControls();
         initAssignmentsBandChartControls();
