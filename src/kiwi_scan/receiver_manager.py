@@ -349,13 +349,10 @@ class _ReceiverWorker(threading.Thread):
     def _terminate_proc(self) -> None:
         for proc in list(self._decoder_procs):
             try:
-                proc.terminate()
+                proc.kill()
                 proc.wait(timeout=2.0)
             except Exception:
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
+                pass
         self._decoder_procs.clear()
         self._decoder_threads.clear()
         for fp in self._decoder_log_fps:
@@ -368,20 +365,49 @@ class _ReceiverWorker(threading.Thread):
         proc = self._proc
         if proc is None:
             return
+        _pid = proc.pid
+        _pgid: Optional[int] = None
         try:
-            try:
-                os.killpg(proc.pid, signal.SIGTERM)
-            except Exception:
-                proc.terminate()
-            proc.wait(timeout=2.0)
+            _pgid = os.getpgid(_pid)
         except Exception:
+            pass
+        try:
+            # Use SIGKILL directly so the OS sends an immediate TCP RST.
             try:
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except Exception:
-                    proc.kill()
+                os.killpg(_pid, signal.SIGKILL)
             except Exception:
                 pass
+            # Fallback: also kill by PGID explicitly (in case PGID ≠ PID)
+            if _pgid is not None and _pgid != _pid:
+                try:
+                    os.killpg(_pgid, signal.SIGKILL)
+                except Exception:
+                    pass
+            # Final fallback: kill just the process
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            # Also try killing all children of this PID directly
+            try:
+                _children = subprocess.run(
+                    ["pgrep", "-P", str(_pid)],
+                    capture_output=True, text=True, timeout=1,
+                )
+                for _cpid in _children.stdout.strip().split():
+                    try:
+                        os.kill(int(_cpid), signal.SIGKILL)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            logger.debug(
+                "_terminate_proc rx=%s pid=%s pgid=%s stop_event=%s",
+                self._rx, _pid, _pgid, self._stop_event.is_set(),
+            )
+            proc.wait(timeout=3.0)
+        except Exception:
+            pass
         self._proc = None
 
     @staticmethod
@@ -390,18 +416,12 @@ class _ReceiverWorker(threading.Thread):
             return
         try:
             try:
-                os.killpg(proc.pid, signal.SIGTERM)
+                os.killpg(proc.pid, signal.SIGKILL)
             except Exception:
-                proc.terminate()
+                proc.kill()
             proc.wait(timeout=2.0)
         except Exception:
-            try:
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except Exception:
-                    proc.kill()
-            except Exception:
-                pass
+            pass
 
     def _kiwi_rx_chan(self) -> int:
         mode_norm = self._mode_label.strip().upper()
@@ -1207,8 +1227,15 @@ class _ReceiverWorker(threading.Thread):
             return None
         freq_khz = self._format_freq_khz(self._freq_hz)
         mode_tag = self._mode_label.strip().upper().replace(" ", "").replace("/", "")
-        user_label = f"AUTO_{self._band}_{mode_tag}"
+        # Use max 12-char label suffix: WSPR→WS keeps labels ≤12 chars so Kiwi
+        # preserves the label unchanged (>12-char labels are replaced by Kiwi firmware).
+        _pm = "FT8" if "FT8" in mode_tag else ("FT4" if "FT4" in mode_tag else ("WS" if "WSPR" in mode_tag else mode_tag[:8]))
+        user_label = f"AUTO_{self._band}_{_pm}"
         self._active_user_label = user_label
+        logger.info(
+            "_spawn START rx=%s label=%s stop_event=%s",
+            self._rx, user_label, self._stop_event.is_set(),
+        )
         if self._stop_event.is_set():
             self._last_spawn_error_reason = "stop_requested"
             return None
@@ -1480,7 +1507,7 @@ class _ReceiverWorker(threading.Thread):
                         self._on_restart(self._rx, self._band, str(self._last_spawn_error_reason or "spawn_failed"), backoff_s, consecutive_failures)
                     except Exception:
                         pass
-                time.sleep(backoff_s)
+                self._stop_event.wait(timeout=backoff_s)  # interruptible sleep
                 continue
             proc_exited = False
             # Wait until Kiwi acknowledges the connection before signalling _slot_ready.
@@ -1528,7 +1555,7 @@ class _ReceiverWorker(threading.Thread):
                         self._on_restart(self._rx, self._band, reason, backoff_s, consecutive_failures)
                     except Exception:
                         pass
-                time.sleep(backoff_s)
+                self._stop_event.wait(timeout=backoff_s)  # interruptible sleep
 
 
 class ReceiverManager:
@@ -1565,6 +1592,7 @@ class ReceiverManager:
         self._auto_kick_last_unix: Optional[float] = None
         self._auto_kick_last_reason = ""
         self._auto_kick_last_result = ""
+        self._startup_eviction_active = threading.Event()  # suppresses monitoring autokick during startup eviction
         self._manager_stop = threading.Event()
         self._last_dependency_report: Dict[str, object] = {}
         self._cleanup_orphan_processes()
@@ -1671,13 +1699,23 @@ class ReceiverManager:
                 return candidate
         return None
 
-    def _run_admin_kick_all(self, *, host: str, port: int, force_all: bool = False) -> bool:
+    def _run_admin_kick_all(
+        self,
+        *,
+        host: str,
+        port: int,
+        force_all: bool = False,
+        kick_only_slots: Optional[list[int]] = None,
+    ) -> bool:
         script = self._find_admin_kick_script()
         if script is None:
             return False
 
-        live_auto_users = self._fetch_live_auto_users(str(host), int(port))
-        kick_targets = sorted({int(rx) for rx in live_auto_users.keys()})
+        if kick_only_slots is not None:
+            kick_targets = sorted(int(s) for s in kick_only_slots)
+        else:
+            live_auto_users = self._fetch_live_auto_users(str(host), int(port))
+            kick_targets = sorted({int(rx) for rx in live_auto_users.keys()})
 
         cmd = [
             sys.executable,
@@ -1959,7 +1997,10 @@ class ReceiverManager:
                 current["snr_samples"] = int(current.get("snr_samples", 0) or 0) + 1
             self._activity_by_rx[int(rx)] = current
 
-    def _make_worker(self, *, host: str, port: int, assignment: ReceiverAssignment, rx_chan_adjust: int = 0) -> _ReceiverWorker:
+    def _make_worker(self, *, host: str, port: int, assignment: ReceiverAssignment, rx_chan_adjust: int = 0, ignore_slot_check: Optional[bool] = None) -> _ReceiverWorker:
+        _isc = bool(getattr(assignment, "ignore_slot_check", False))
+        if ignore_slot_check is not None:
+            _isc = bool(ignore_slot_check)
         return _ReceiverWorker(
             kiwirecorder_path=self._kiwirecorder_path,
             ft8modem_path=self._ft8modem_path,
@@ -1977,7 +2018,7 @@ class ReceiverManager:
             on_restart=self._on_worker_restart,
             on_activity=self._on_worker_activity,
             initial_rx_chan_adjust=rx_chan_adjust,
-            ignore_slot_check=bool(getattr(assignment, "ignore_slot_check", False)),
+            ignore_slot_check=_isc,
         )
 
     @staticmethod
@@ -2097,6 +2138,9 @@ class ReceiverManager:
                     self._stale_watch_state_by_rx[int(rx)] = state
 
             for rx, reason, decoder_age_s in to_restart:
+                if self._startup_eviction_active.is_set():
+                    # Eviction loop is running; don't fight it by recycling workers mid-correction.
+                    break
                 recycle_reason = f"stale_recovery_{reason}"
                 restarted = self._restart_receiver_worker(rx=rx, reason=recycle_reason)
                 if restarted:
@@ -2128,6 +2172,7 @@ class ReceiverManager:
                 self._mismatch_autokick_enabled()
                 and mismatch_streak >= self._mismatch_autokick_required_checks()
                 and (time.time() - last_auto_kick_unix) >= self._mismatch_autokick_cooldown_s()
+                and not self._startup_eviction_active.is_set()
             )
             duplicate_autokick = False
             active_host = str(getattr(self, "_active_host", "") or "")
@@ -2140,6 +2185,7 @@ class ReceiverManager:
                 duplicate_autokick = bool(
                     duplicate_live_labels
                     and (time.time() - last_auto_kick_unix) >= min(30.0, self._mismatch_autokick_cooldown_s())
+                    and not self._startup_eviction_active.is_set()
                 )
 
             if should_autokick:
@@ -2792,6 +2838,43 @@ class ReceiverManager:
                 return
             time.sleep(0.25)
 
+    def _wait_for_kiwi_slots_stable_clear(
+        self, *, host: str, port: int, stable_secs: float = 5.0, timeout_s: float = 30.0
+    ) -> None:
+        """Wait until /users shows 0 AUTO users AND stays at 0 for `stable_secs` seconds.
+
+        The Kiwi's /users REST endpoint drops entries immediately when a session is
+        kicked or when its TCP connection closes, but the internal slot counter may
+        take several more seconds to decrement (especially when connections traverse
+        a VPN tunnel where RST/FIN delivery is delayed).  New connections during that
+        window are rejected with "Too busy", yet /users already shows zero users.
+        Requiring stability for `stable_secs` ensures the internal state has settled.
+        """
+        deadline = time.time() + max(float(stable_secs) + 1.0, float(timeout_s))
+        status_url = f"http://{host}:{int(port)}/users"
+        stable_since: Optional[float] = None
+        while time.time() < deadline:
+            try:
+                with urllib.request.urlopen(status_url, timeout=1.2) as resp:
+                    payload = json.loads(resp.read().decode("utf-8", errors="ignore"))
+                if not isinstance(payload, list):
+                    return
+                auto_count = sum(
+                    1 for row in payload
+                    if isinstance(row, dict)
+                    and urllib.parse.unquote(str(row.get("n") or "")).strip().startswith("AUTO_")
+                )
+                if auto_count == 0:
+                    if stable_since is None:
+                        stable_since = time.time()
+                    elif time.time() - stable_since >= float(stable_secs):
+                        return  # Stable at zero long enough
+                else:
+                    stable_since = None  # Reset stability timer
+            except Exception:
+                return  # Network error — assume clear
+            time.sleep(0.25)
+
     def _wait_for_kiwi_auto_users_missing(
         self,
         *,
@@ -2909,7 +2992,12 @@ class ReceiverManager:
         if bool(assignment.ssb_scan) and cls._is_ssb_assignment(assignment):
             return f"AUTO_{str(assignment.band).upper()}_SSBSCAN"
         mode_tag = str(assignment.mode_label or "FT8").strip().upper().replace(" ", "").replace("/", "")
-        return f"AUTO_{str(assignment.band).upper()}_{mode_tag}"
+        # Kiwi firmware modifies labels > ~12 chars in /users (truncates or regenerates
+        # from the tuned frequency), causing label-matching to fail for IQ multi-mode
+        # workers.  Use short suffixes: WSPR→WS keeps "AUTO_20m_WS" (11 chars) within
+        # the 12-char limit.  Priority: FT8 > FT4 > WS (WSPR).
+        _pm = "FT8" if "FT8" in mode_tag else ("FT4" if "FT4" in mode_tag else ("WS" if "WSPR" in mode_tag else mode_tag[:8]))
+        return f"AUTO_{str(assignment.band).upper()}_{_pm}"
 
     @classmethod
     def _fetch_live_auto_users(cls, host: str, port: int) -> Dict[int, str]:
@@ -2930,6 +3018,42 @@ class ReceiverManager:
                 name = urllib.parse.unquote(str(row.get("n") or "")).strip()
                 if name.startswith("AUTO_"):
                     out[int(rx_i)] = name
+        except Exception:
+            return {}
+        return out
+
+    @classmethod
+    def _fetch_live_auto_users_with_age(cls, host: str, port: int) -> Dict[int, tuple]:
+        """Like _fetch_live_auto_users but returns {slot: (label, age_seconds_or_None)}."""
+        out: Dict[int, tuple] = {}
+        status_url = f"http://{host}:{int(port)}/users?json=1"
+        try:
+            with urllib.request.urlopen(status_url, timeout=1.2) as resp:
+                payload = json.loads(resp.read().decode("utf-8", errors="ignore"))
+            if not isinstance(payload, list):
+                return {}
+            for row in payload:
+                if not isinstance(row, dict):
+                    continue
+                try:
+                    rx_i = int(row.get("i"))
+                except Exception:
+                    continue
+                name = urllib.parse.unquote(str(row.get("n") or "")).strip()
+                if not name.startswith("AUTO_"):
+                    continue
+                age_s: Optional[float] = None
+                try:
+                    parts = [int(p) for p in str(row.get("t") or "").split(":") if str(p).strip()]
+                    if len(parts) == 3:
+                        age_s = float(parts[0] * 3600 + parts[1] * 60 + parts[2])
+                    elif len(parts) == 2:
+                        age_s = float(parts[0] * 60 + parts[1])
+                    elif len(parts) == 1:
+                        age_s = float(parts[0])
+                except Exception:
+                    pass
+                out[int(rx_i)] = (name, age_s)
         except Exception:
             return {}
         return out
@@ -2974,7 +3098,15 @@ class ReceiverManager:
                     out.add(int(rx))
                     continue
                 active_label = str(getattr(worker, "_active_user_label", "") or "").strip()
-                if active_label and not self._user_label_matches(expected_label, active_label):
+                if not active_label:
+                    # Worker exists but has no active Kiwi connection.  If it has
+                    # already attempted to connect (slot_ready set) it lost the slot
+                    # race — flag for reconcile so a fresh kick-all frees a slot.
+                    slot_ready = getattr(worker, "_slot_ready", None)
+                    if slot_ready is not None and slot_ready.is_set():
+                        out.add(int(rx))
+                    continue
+                if not self._user_label_matches(expected_label, active_label):
                     out.add(int(rx))
                 continue
             # For roaming receivers, check if the expected label appears on ANY active Kiwi
@@ -3088,6 +3220,17 @@ class ReceiverManager:
             if equivalent_assignments:
                 reconcile_rxs = self._assignment_slots_needing_reconcile(host=host, port=port, assignments=assignments)
                 if not reconcile_rxs:
+                    if not assignments:
+                        # Manual mode and already clear: still kick any competing AUTO_ users
+                        # that may have reconnected since the last kick.
+                        live_auto = self._fetch_live_auto_users(str(host), int(port))
+                        if live_auto:
+                            logger.info(
+                                "Manual mode re-kick: evicting %d competing AUTO user(s) from Kiwi",
+                                len(live_auto),
+                            )
+                            self._run_admin_kick_all(host=str(host), port=int(port), force_all=True)
+                            time.sleep(1.0)
                     return
                 logger.warning(
                     "Receiver assignment drift detected; restarting workers for RXs %s",
@@ -3122,7 +3265,12 @@ class ReceiverManager:
                 self._force_full_reset_on_band_change_enabled()
                 and self._band_plan_changed(self._assignments, assignments)
             )
+            starting_from_empty = bool(desired_rxs and not current_rxs)
+            if starting_from_empty:
+                logger.info("Starting receiver set from empty state; forcing full Kiwi receiver reset before re-apply")
             did_full_reset = bool(host_changed or force_full_reset or force_reconcile_full_reset)
+            if starting_from_empty:
+                did_full_reset = True
             if force_full_reset:
                 logger.warning("Band-plan change detected; forcing full Kiwi receiver reset before re-apply")
 
@@ -3196,7 +3344,10 @@ class ReceiverManager:
                 self._active_port = int(port)
                 self._cleanup_orphan_processes()
                 self._wait_for_orphan_cleanup(timeout_s=6.0)
-                self._wait_for_kiwi_auto_users_clear(host=host, port=port, timeout_s=10.0)
+                self._run_admin_kick_all(host=str(host), port=int(port), force_all=True)
+                # Brief pause for Kiwi to process the kick; competing devices will
+                # reconnect but the periodic manual-mode kick loop will re-evict them.
+                time.sleep(1.0)
                 return
 
             if stopped_labels:
@@ -3212,21 +3363,38 @@ class ReceiverManager:
             if did_full_reset:
                 self._cleanup_orphan_processes()
                 self._wait_for_orphan_cleanup(timeout_s=6.0)
-                # Only kick ALL Kiwi channels when the host changed or every fixed receiver
-                # is also being stopped. When fixed receivers are preserved (band-plan only
-                # changes for roaming slots) a kick-all would disconnect their Kiwi sessions.
+                # Only kick ALL Kiwi channels when the host changed, starting from empty,
+                # or every fixed receiver is also being stopped. When fixed receivers are
+                # preserved (band-plan only changes for roaming slots) a kick-all would
+                # disconnect their Kiwi sessions.  When starting from empty (e.g. after
+                # Manual mode or a fresh container start) there are no running workers to
+                # protect, so we must always kick to clear any stale sessions left by a
+                # previous container run before our workers try to claim slots.
                 any_fixed_preserved = any(
                     assignments.get(int(rx)) is not None
                     and bool(getattr(assignments[int(rx)], "ignore_slot_check", False))
                     and int(rx) not in to_stop
+                    and self._workers.get(int(rx)) is not None
                     for rx in current_rxs | desired_rxs
                 )
-                if host_changed or not any_fixed_preserved:
-                    # Use force_all=True on initial host connection so ALL Kiwi channels are
-                    # freed (including sessions from a previous container run that are still
-                    # in a TCP-closing state and wouldn't appear as AUTO users).
-                    _ = self._run_admin_kick_all(host=str(host), port=int(port), force_all=bool(host_changed))
-                    self._wait_for_kiwi_auto_users_clear(host=str(host), port=int(port), timeout_s=8.0)
+                if host_changed or starting_from_empty or not any_fixed_preserved:
+                    # When starting from empty (e.g. after Manual mode), always use
+                    # force_all=True so ALL users (including competing controllers) are
+                    # evicted.  Then start workers immediately (2 s sleep) to claim
+                    # slots before the competing device can reconnect.  For other full
+                    # resets (band-plan change, host change) keep the conservative
+                    # wait-for-clear + second-kick behaviour.
+                    _force_all = bool(host_changed) or starting_from_empty
+                    _ = self._run_admin_kick_all(host=str(host), port=int(port), force_all=_force_all)
+                    # For both starting_from_empty and band-plan changes: wait for all
+                    # kicked sessions to fully disconnect before starting workers.  The
+                    # old 0.5 s sleep was not enough — stale sessions from the previous
+                    # container run could still be in a "closing" state, causing Kiwi to
+                    # assign our workers to the next-available slot instead of the
+                    # requested one.  The same double-kick / wait-for-clear pattern used
+                    # by the non-empty path is applied here.
+                    _clear_timeout = 6.0 if starting_from_empty else 8.0
+                    self._wait_for_kiwi_auto_users_clear(host=str(host), port=int(port), timeout_s=_clear_timeout)
                     # If stale AUTO_ users still remain after the first wait (e.g. a previous
                     # container's connection that hadn't fully closed), kick once more with a
                     # longer wait to ensure those ghost slots are freed before workers start.
@@ -3235,24 +3403,569 @@ class ReceiverManager:
                         _ = self._run_admin_kick_all(host=str(host), port=int(port), force_all=True)
                         self._wait_for_kiwi_auto_users_clear(host=str(host), port=int(port), timeout_s=12.0)
 
-            time.sleep(0.2)
+            # Stable-clear wait: the Kiwi's REST /users clears immediately after kick but
+            # its internal slot counter may take several more seconds to decrement,
+            # especially when connections traverse a VPN (TCP FIN/RST delivery is
+            # delayed).  During that window new connections are rejected with "Too busy"
+            # even though /users shows 0.  Requiring /users to stay at 0 for 5 s
+            # guarantees the internal state has fully settled before workers connect.
+            self._wait_for_kiwi_slots_stable_clear(
+                host=str(host), port=int(port), stable_secs=10.0, timeout_s=60.0
+            )
 
-            for rx in sorted(desired_rxs, key=lambda rx: rx if rx >= 2 else rx + 8):
+            # Suppress monitoring-thread autokick for the entire initial connection
+            # phase + eviction loop so the two code paths don't fight each other.
+            # The flag is cleared (and the streak reset) after the eviction loop.
+            self._startup_eviction_active.set()
+
+            # Start workers SEQUENTIALLY in rx order (rx0, rx1, …, rx7).
+            # The KiwiSDR assigns receiver slots in connection-arrival order.
+            # After the stable-clear wait above, all Kiwi slots are free.  Starting
+            # workers one at a time and waiting for each to stably appear in /users
+            # ensures they fill slots 0, 1, 2 … in order.
+            #
+            # IMPORTANT: Do NOT kick individual slots during this phase.  Rapid-fire
+            # kicks create VPN TCP churn that causes the Kiwi to say "Too busy" for
+            # all subsequent connections.  Any wrong-slot placements are handled by
+            # the eviction loop below once all workers are up.
+            for rx in sorted(desired_rxs):
                 if rx in to_reconfigure and rx in self._workers:
                     continue
                 if rx in self._workers and rx in self._assignments and self._assignment_equivalent(self._assignments[rx], assignments[rx]) and not host_changed:
                     continue
                 desired = assignments[rx]
-                worker = self._make_worker(host=host, port=port, assignment=desired, rx_chan_adjust=adjust_cache.get(int(rx), 0))
+                worker = self._make_worker(host=host, port=port, assignment=desired, rx_chan_adjust=0)
                 self._workers[rx] = worker
                 worker.start()
-                worker._slot_ready.wait(timeout=8.0)
+                # Poll /users from the main thread until the expected label is present
+                # and stable for ≥2 s.  This covers kiwirecorder's 15 s "Too busy"
+                # retry cycle without any kicks (which would cause VPN churn).
+                _exp_lbl = self._expected_user_label(desired)
+                _poll_deadline = time.time() + 18.0
+                _stable_slot: Optional[int] = None
+                _stable_since: float = 0.0
+                while time.time() < _poll_deadline:
+                    _live_p = self._fetch_live_auto_users(str(host), int(port))
+                    _cur_slot = next(
+                        (int(_s) for _s, _l in _live_p.items() if self._user_label_matches(_exp_lbl, _l)),
+                        None,
+                    )
+                    if _cur_slot is not None and _cur_slot == _stable_slot:
+                        if time.time() - _stable_since >= 2.0:
+                            break  # Connected and stable for 2+ s
+                    else:
+                        _stable_slot = _cur_slot
+                        _stable_since = time.time()
+                    time.sleep(0.4)
+                if _stable_slot == int(rx):
+                    logger.info("Sequential start rx=%d: correct slot=%d", rx, rx)
+                elif _stable_slot is not None:
+                    logger.info(
+                        "Sequential start rx=%d: in slot=%d (expected %d); eviction loop will correct",
+                        rx, _stable_slot, rx,
+                    )
+                else:
+                    logger.warning("Sequential start rx=%d: not connected within timeout", rx)
 
             self._assignments = {int(rx): assignments[int(rx)] for rx in sorted(desired_rxs)}
             self._active_host = str(host)
             self._active_port = int(port)
 
-            if self._has_duplicate_live_auto_labels(str(host), int(port)):
+            # Post-startup slot correction loop: handles two cases:
+            #   (a) ABSENT workers — ghost blocked their slot entirely (rx not in live_now)
+            #   (b) WRONGLY-PLACED workers — ghost displaced them to a different slot
+            #       (connected, correct label, but Kiwi slot ≠ rx number)
+            # For each attempt: stop affected workers, kick ghost/target slots, restart
+            # all affected workers simultaneously, then re-check.
+            if starting_from_empty:
+                MAX_EVICT_RETRIES = 16
+                for _evict_attempt in range(MAX_EVICT_RETRIES):
+                    # Brief wait on retries so we see the ghost after it reconnects
+                    if _evict_attempt > 0:
+                        time.sleep(0.75)
+                    live_now = self._fetch_live_auto_users(str(host), int(port))
+                    expected_labels = {
+                        self._expected_user_label(assignments[int(rx)])
+                        for rx in desired_rxs
+                    }
+                    # Build rx → actual Kiwi slot mapping
+                    rx_to_actual_slot: Dict[int, int] = {}
+                    for _slot, _lbl in live_now.items():
+                        for _rx in desired_rxs:
+                            if self._user_label_matches(
+                                self._expected_user_label(assignments[int(_rx)]), _lbl
+                            ):
+                                if int(_rx) not in rx_to_actual_slot:
+                                    rx_to_actual_slot[int(_rx)] = int(_slot)
+                                break
+                    # Count how many workers legitimately share each expected label
+                    # (e.g. two 20m FT8 receivers → AUTO_20M_FT8 expected count = 2).
+                    _expected_label_counts: Dict[str, int] = {}
+                    for _rx in desired_rxs:
+                        _el = self._expected_user_label(assignments[int(_rx)])
+                        _expected_label_counts[_el] = _expected_label_counts.get(_el, 0) + 1
+                    # Clone detection: label appears MORE times than expected (true ghost)
+                    live_expected_counts: Dict[str, int] = {}
+                    for _lbl in live_now.values():
+                        for _exp in expected_labels:
+                            if self._user_label_matches(_exp, _lbl):
+                                live_expected_counts[_exp] = live_expected_counts.get(_exp, 0) + 1
+                                break
+                    _cloned_labels = {
+                        exp for exp, cnt in live_expected_counts.items()
+                        if cnt > _expected_label_counts.get(exp, 1)
+                    }
+                    # Ghost slots: label not matching any expected, OR cloned
+                    ghost_slots = [
+                        _slot for _slot, _lbl in live_now.items()
+                        if (not any(self._user_label_matches(exp, _lbl) for exp in expected_labels)
+                            or any(self._user_label_matches(cl, _lbl) for cl in _cloned_labels))
+                    ]
+                    # Absent: our label not found in live_now at all, or cloned
+                    absent = [
+                        int(_rx) for _rx in desired_rxs
+                        if int(_rx) not in rx_to_actual_slot
+                        or self._expected_user_label(assignments[int(_rx)]) in _cloned_labels
+                    ]
+                    # Wrongly placed: connected but Kiwi slot ≠ rx number
+                    wrongly_placed = [
+                        int(_rx) for _rx in desired_rxs
+                        if int(_rx) in rx_to_actual_slot
+                        and rx_to_actual_slot[int(_rx)] != int(_rx)
+                        and int(_rx) not in absent
+                    ]
+                    needs_fix = sorted(set(absent + wrongly_placed))
+                    # Slots to kick: ghosts + the TARGET slots for needs_fix workers
+                    # (if those target slots are occupied by something that won't
+                    # vacate on its own)
+                    target_to_kick = [
+                        int(_rx) for _rx in needs_fix
+                        if int(_rx) in live_now  # Something occupies target slot
+                    ]
+                    all_slots_to_evict = sorted(set(ghost_slots + target_to_kick))
+                    if not all_slots_to_evict and not needs_fix:
+                        break  # All workers at correct slots, no ghosts
+                    if not needs_fix and not wrongly_placed:
+                        # Ghost present but not blocking anyone — no corrective action
+                        break
+
+                    # If all missing workers are simply absent (not connected yet) AND
+                    # nothing blocks their target slots, they are still in the process
+                    # of connecting from the initial simultaneous start.  Killing and
+                    # restarting them would discard in-flight connections; just wait
+                    # for them to establish themselves on the next iteration.
+                    if not ghost_slots and not wrongly_placed and not target_to_kick:
+                        continue
+
+                    logger.info(
+                        "Post-startup slot correction (attempt %d/%d): "
+                        "evicting slot(s) %s  absent=%s  wrongly-placed=%s",
+                        _evict_attempt + 1, MAX_EVICT_RETRIES,
+                        all_slots_to_evict, absent, wrongly_placed,
+                    )
+                    # Only stop workers that have confirmed a wrong placement OR
+                    # whose target slot is currently occupied (blocking them).
+                    # Never stop a worker that is simply "absent" with its target
+                    # slot free — it may still be connecting.
+                    workers_to_restart = sorted(set(
+                        [int(_rx) for _rx in wrongly_placed]
+                        + [int(_rx) for _rx in absent if int(_rx) in live_now]
+                    ))
+                    # For the P-rotation strategy to work correctly, ALL 8 slots must be
+                    # free during restart.  Force a full-8 restart whenever any correction
+                    # is needed; this lets each rx land in its exact target slot.
+                    workers_to_restart = sorted(set(int(_r) for _r in desired_rxs))
+                    all_slots_to_evict = sorted(set(int(_r) for _r in desired_rxs))
+                    # --- PARALLEL STOP (critical for clean nuclear cleanup) ---
+                    # Sequential stop_worker(join=3s) leaves workers N+1..7 running
+                    # with stop_event=False for up to 8×3=24 s while we join each
+                    # worker one-by-one.  Those live workers can spawn fresh
+                    # kiwirecorder connections that race to Kiwi just as they are
+                    # killed, creating zombie entries that appear in /users right at
+                    # probe time (after a ~5–15 s VPNKit propagation delay).
+                    # Fix: set ALL stop_events first (non-blocking) so every thread
+                    # immediately stops retrying, then kill all kiwirecorder processes
+                    # in one pass, then join threads.
+                    _evict_stop_workers = [
+                        self._workers.pop(int(_rx), None) for _rx in workers_to_restart
+                    ]
+                    _evict_stop_workers = [_w2 for _w2 in _evict_stop_workers if _w2 is not None]
+                    for _w2 in _evict_stop_workers:   # 1. signal all threads to stop
+                        _w2._stop_event.set()
+                    for _w2 in _evict_stop_workers:   # 2. kill all processes simultaneously
+                        try:
+                            _w2._terminate_proc()
+                        except Exception:
+                            pass
+                    for _w2 in _evict_stop_workers:   # 3. join (fast: procs dead, stop_events set)
+                        try:
+                            _w2.join(timeout=1.0)
+                        except Exception:
+                            pass
+                    # Give Kiwi a moment to see the disconnections
+                    if workers_to_restart:
+                        time.sleep(0.1)
+                    # Kick ghost slots and occupied target slots
+                    if all_slots_to_evict:
+                        self._run_admin_kick_all(
+                            host=str(host),
+                            port=int(port),
+                            kick_only_slots=all_slots_to_evict,
+                        )
+                    # Continuous nuclear cleanup: repeatedly SIGKILL every
+                    # kiwirecorder/iq_splitter/ft8modem process until /users stays at 0
+                    # for stable_secs seconds.  A single pkill is not enough: kiwirecorder
+                    # reconnects immediately (sub-second) after an admin kick (WebSocket
+                    # close), so brief reconnections advance Kiwi's P pointer between pkill
+                    # cycles.  Polling every 200 ms (instead of 500 ms) and requiring 5 s
+                    # of stable zeros reduces the window for P-advancing ghost reconnects
+                    # to slip through undetected.  A final kill-and-wait pass after the
+                    # stable condition is met clears any last-millisecond reconnects.
+                    if all_slots_to_evict:
+                        _nuke_patterns = ("kiwirecorder.py", "iq_splitter.py", "ft8modem")
+                        # Docker Desktop on macOS uses a user-space NAT (VPNKit/vmnet) that
+                        # can keep defunct container connections alive in Kiwi's /users for
+                        # up to ~15 s for fresh connections (VPNKit state is still active and
+                        # forwards RSTs promptly).  Longer-lived zombie entries (from workers
+                        # that connected minutes ago) may take up to ~90 s to clear.
+                        # With the parallel-stop fix above no workers are left running when
+                        # nuclear cleanup starts, so only the immediate kill-batch zombies
+                        # need to clear.  Require 5 s of stable zeros and allow 60 s total.
+                        _nuke_stable_secs = 5.0
+                        _nuke_timeout_s = 60.0
+                        _nuke_start = time.time()
+                        _zero_since: Optional[float] = None
+                        _last_kick_t: float = 0.0
+                        while True:
+                            for _pat in _nuke_patterns:
+                                try:
+                                    subprocess.run(
+                                        ["pkill", "-9", "-f", _pat],
+                                        check=False, timeout=2,
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                    )
+                                except Exception:
+                                    pass
+                            _lv_nuke = self._fetch_live_auto_users(str(host), int(port))
+                            if not _lv_nuke:
+                                if _zero_since is None:
+                                    _zero_since = time.time()
+                                elif time.time() - _zero_since >= _nuke_stable_secs:
+                                    break  # /users = 0 for stable_secs consecutive seconds
+                            else:
+                                # Admin-kick visible slots so Kiwi closes them from its side:
+                                # this accelerates VPNKit/NAT cleanup by triggering a clean
+                                # WS-close from Kiwi rather than waiting for its keepalive
+                                # probe to time out (~90 s).  Processes are dead so they
+                                # cannot reconnect.  Rate-limit to 1 kick/10 s to avoid
+                                # unnecessary Kiwi admin-API churn.
+                                _now_k = time.time()
+                                if _now_k - _last_kick_t >= 10.0:
+                                    try:
+                                        self._run_admin_kick_all(
+                                            host=str(host), port=int(port),
+                                            kick_only_slots=sorted(_lv_nuke.keys()),
+                                        )
+                                    except Exception:
+                                        pass
+                                    _last_kick_t = _now_k
+                                _zero_since = None  # reset on any user appearing
+                            if time.time() - _nuke_start > _nuke_timeout_s:
+                                break  # safety timeout
+                            time.sleep(0.2)  # 200 ms polling — tighter than 500 ms to catch brief reconnects
+                        # Final kill pass: clear any processes that reconnected in the
+                        # last poll interval before entering the stable window.
+                        for _pat in _nuke_patterns:
+                            try:
+                                subprocess.run(
+                                    ["pkill", "-9", "-f", _pat],
+                                    check=False, timeout=2,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                )
+                            except Exception:
+                                pass
+                        time.sleep(2.0)  # let Docker NAT fully propagate RSTs before probe starts
+                        # Post-sleep verification: if any AUTO connections are still
+                        # visible (e.g., VPNKit zombie that appeared during the 2 s
+                        # sleep window), wait up to 30 s more for them to clear.
+                        _post_sleep_start = time.time()
+                        while time.time() - _post_sleep_start < 30.0:
+                            _lv_post = self._fetch_live_auto_users(str(host), int(port))
+                            if not _lv_post:
+                                break
+                            time.sleep(1.0)
+                        # DIAGNOSTIC: show all kiwirecorder processes just before probe
+                        try:
+                            _pgrep_result = subprocess.run(
+                                ["pgrep", "-a", "-f", "kiwirecorder"],
+                                capture_output=True, text=True, timeout=2,
+                            )
+                            _pgrep_out = _pgrep_result.stdout.strip()
+                            logger.info(
+                                "PRE-PROBE pgrep kiwirecorder (count=%d): %s",
+                                len([l for l in _pgrep_out.splitlines() if l.strip()]) if _pgrep_out else 0,
+                                _pgrep_out[:500] if _pgrep_out else "(none)",
+                            )
+                        except Exception as _e:
+                            logger.info("PRE-PROBE pgrep failed: %s", _e)
+                    # Restart workers sequentially using P-probe rotation.
+                    #
+                    # The KiwiSDR assigns slots from a persistent round-robin pointer P,
+                    # ignoring --rx-chan.  We detect P by starting rx0 as a probe first:
+                    #   - If probe lands in slot 0 (P==0): continue rx1..7 in order.
+                    #   - If probe lands in slot K (K≠0): kick the probe, then start
+                    #     workers in rotation [rx_{K+1}..rx_{K-1}] which fills slots
+                    #     K+1..K-1 and slot 0 in correct associations.  Then wait for
+                    #     the probe's VPN-lag on slot K to clear and start rx_K last.
+                    # Only apply the rotation when ALL 8 workers are being restarted
+                    # (partial restarts fall back to simple sorted order).
+                    def _ev_start_one(the_rx: int, probe: bool = False) -> Optional[int]:
+                        """Start worker for the_rx, poll 30 s for stable slot; return slot or None.
+
+                        For non-probe workers (probe=False) the target slot is the_rx itself
+                        (P-rotation guarantees each rx lands in its matching slot), so we
+                        look only at that specific slot.  This prevents shared-label
+                        workers (e.g. two 20 m FT8 peers) from spoofing each other.
+
+                        The freshness filter (age ≤ elapsed + 5 s) rejects ghost connections
+                        that survived a failed SIGKILL attempt in a prior eviction pass.
+                        """
+                        _r = assignments[int(the_rx)]
+                        _w = self._make_worker(
+                            host=str(host), port=int(port), assignment=_r,
+                            rx_chan_adjust=0, ignore_slot_check=True,
+                        )
+                        self._workers[int(the_rx)] = _w
+                        # For rotation (non-probe) workers: kick the target slot before
+                        # starting so that any zombie connection occupying it is cleared
+                        # from Kiwi's side, making room for this worker at the correct slot.
+                        if not probe:
+                            _pre_kick_slot = int(the_rx)
+                            _pre_lv = self._fetch_live_auto_users(str(host), int(port))
+                            if _pre_kick_slot in _pre_lv:
+                                logger.info(
+                                    "_ev_start_one rx=%d: kicking occupied target slot %d (%s) before connect",
+                                    int(the_rx), _pre_kick_slot, _pre_lv[_pre_kick_slot],
+                                )
+                                try:
+                                    self._run_admin_kick_all(
+                                        host=str(host), port=int(port),
+                                        kick_only_slots=[_pre_kick_slot],
+                                    )
+                                except Exception:
+                                    pass
+                                time.sleep(1.5)  # let Kiwi and VPNKit process the kick
+                        _w.start()
+                        _lbl = self._expected_user_label(_r)
+                        _target_slot = None if probe else int(the_rx)
+                        logger.info(
+                            "_ev_start_one rx=%d probe=%s lbl=%s target_slot=%s",
+                            int(the_rx), probe, _lbl, _target_slot,
+                        )
+                        _poll_start = time.time()
+                        _dl = _poll_start + 30.0
+                        _ss: Optional[int] = None
+                        _st: float = 0.0
+                        while time.time() < _dl:
+                            _lv_raw = self._fetch_live_auto_users_with_age(str(host), int(port))
+                            _elapsed = time.time() - _poll_start
+                            _max_age = _elapsed + 5.0  # allow 5 s grace above elapsed
+                            if _target_slot is not None:
+                                # Slot-targeted: only check our exact target slot
+                                _entry = _lv_raw.get(_target_slot)
+                                _sc: Optional[int] = None
+                                if _entry is not None:
+                                    _el, _ea = _entry
+                                    _lbl_ok = self._user_label_matches(_lbl, _el)
+                                    _age_ok = (_ea is None or _ea <= _max_age)
+                                    if _lbl_ok and _age_ok:
+                                        _sc = _target_slot
+                                    elif not _lbl_ok:
+                                        logger.debug(
+                                            "_ev_start_one rx=%d slot=%d: label mismatch expected=%s got=%s",
+                                            int(the_rx), _target_slot, _lbl, _el,
+                                        )
+                                    elif not _age_ok:
+                                        logger.debug(
+                                            "_ev_start_one rx=%d slot=%d: age rejected ea=%.1fs max=%.1fs",
+                                            int(the_rx), _target_slot, _ea or -1, _max_age,
+                                        )
+                            else:
+                                # Probe: any slot is fine (we are discovering P)
+                                _sc = next(
+                                    (
+                                        int(_s)
+                                        for _s, (_el, _ea) in _lv_raw.items()
+                                        if self._user_label_matches(_lbl, _el)
+                                        and (_ea is None or _ea <= _max_age)
+                                    ),
+                                    None,
+                                )
+                            if _sc is not None and _sc == _ss:
+                                if time.time() - _st >= 2.0:
+                                    break
+                            else:
+                                if _sc is not None and _ss is None:
+                                    # First detection — log full /users state
+                                    logger.info(
+                                        "_ev_start_one rx=%d FIRST_CONNECT slot=%d; /users: %s",
+                                        int(the_rx), _sc,
+                                        {s: f"{lbl}@{age}s" for s, (lbl, age) in _lv_raw.items()},
+                                    )
+                                _ss = _sc
+                                _st = time.time()
+                            time.sleep(0.4)
+                        if _ss is None:
+                            logger.info(
+                                "_ev_start_one rx=%d TIMED OUT after 30s; "
+                                "last /users state: %s",
+                                int(the_rx),
+                                {s: f"{lbl}@{age}s" for s, (lbl, age) in _lv_raw.items()},
+                            )
+                            # Stop the timed-out worker immediately so it no longer
+                            # occupies a Kiwi slot and blocks subsequent rotation workers.
+                            _timed_out_w = self._workers.get(int(the_rx))
+                            if _timed_out_w is not None:
+                                _timed_out_w._stop_event.set()
+                                try:
+                                    _timed_out_w._terminate_proc()
+                                except Exception:
+                                    pass
+                        return _ss
+
+                    _w2r_set = set(int(_r) for _r in workers_to_restart)
+                    _full_restart = (_w2r_set == set(int(_r) for _r in desired_rxs))
+                    _probe_kick_at: Optional[float] = None
+                    _deferred_rx_K: Optional[int] = None
+
+                    if _full_restart and workers_to_restart:
+                        _probe_rx = sorted(workers_to_restart)[0]  # = rx0
+                        _probe_slot = _ev_start_one(_probe_rx, probe=True)
+                        logger.info(
+                            "Eviction loop P-probe rx=%d: got slot=%s (expected %d)",
+                            _probe_rx, _probe_slot, int(_probe_rx),
+                        )
+                        if _probe_slot is not None:
+                            # Post-probe stability wait: VPNKit may complete in-flight TCP
+                            # handshakes after our parallel stop, creating zombie connections
+                            # that appear in Kiwi's /users ~10–15 s after the kill.  These
+                            # block rotation workers since all 8 slots fill up.  Probe stays
+                            # alive (blocking slot K) while we wait for every other AUTO_
+                            # connection to clear.
+                            # • Fresh zombie entries (VPNKit state active) respond to admin
+                            #   kicks and typically clear within 5–30 s.
+                            # • Older VPNKit zombies (~90 s WS keepalive lifetime) require
+                            #   a longer wait; 150 s outlasts all known zombie scenarios.
+                            _ppsw_start = time.time()
+                            _ppsw_stable_since: Optional[float] = None
+                            _ppsw_last_kick_t: float = 0.0
+                            while time.time() - _ppsw_start < 150.0:
+                                _ppsw_lv = self._fetch_live_auto_users(str(host), int(port))
+                                _ppsw_others = {
+                                    s: lbl for s, lbl in _ppsw_lv.items()
+                                    if s != int(_probe_slot)
+                                }
+                                if not _ppsw_others:
+                                    if _ppsw_stable_since is None:
+                                        _ppsw_stable_since = time.time()
+                                        logger.info(
+                                            "Post-probe stability: /users clear (only probe at slot %d)",
+                                            _probe_slot,
+                                        )
+                                    elif time.time() - _ppsw_stable_since >= 10.0:
+                                        break  # probe alone for 10 stable seconds
+                                else:
+                                    if _ppsw_stable_since is not None:
+                                        logger.info(
+                                            "Post-probe stability: extra connections appeared: %s",
+                                            _ppsw_others,
+                                        )
+                                    _ppsw_stable_since = None
+                                    # Kick non-probe slots to accelerate fresh-zombie clearance
+                                    _now_k2 = time.time()
+                                    if _now_k2 - _ppsw_last_kick_t >= 5.0:
+                                        try:
+                                            self._run_admin_kick_all(
+                                                host=str(host), port=int(port),
+                                                kick_only_slots=sorted(_ppsw_others.keys()),
+                                            )
+                                        except Exception:
+                                            pass
+                                        _ppsw_last_kick_t = _now_k2
+                                time.sleep(0.5)
+                            else:
+                                logger.info(
+                                    "Post-probe stability: timed out after 150s; "
+                                    "remaining /users: %s — proceeding anyway",
+                                    {s: lbl for s, lbl in
+                                     self._fetch_live_auto_users(str(host), int(port)).items()
+                                     if s != int(_probe_slot)},
+                                )
+                        if _probe_slot is None:
+                            # Probe timed out; stop probe, restart all in sorted order
+                            logger.warning("Eviction loop P-probe timed out; fallback to sorted restart")
+                            self._stop_worker(self._workers.pop(int(_probe_rx), None), join_timeout_s=0.3)
+                            for _rx2 in sorted(workers_to_restart):
+                                _ev_start_one(_rx2)
+                        elif _probe_slot == int(_probe_rx):
+                            # P == 0, probe landed correctly; continue with the rest
+                            for _rx2 in sorted(set(workers_to_restart) - {_probe_rx}):
+                                _ev_start_one(_rx2)
+                        else:
+                            # P == K ≠ 0: keep probe ALIVE to block slot K, then rotate.
+                            #
+                            # Kiwi may "gap fill" a freshly freed slot (K) before strictly
+                            # following its round-robin pointer P.  If we kick the probe
+                            # before the rotation workers connect, the first new worker often
+                            # lands in slot K (filling the gap) rather than slot K+1 (P).
+                            # Keeping the probe alive at slot K blocks the gap so each
+                            # rotation worker gets the expected sequential slot K+1, K+2…
+                            # After all 7 rotation workers have connected (using up 7 of the
+                            # 7 remaining free slots), stop the probe to free slot K, then
+                            # start rx_K which naturally connects to the now-free slot K.
+                            #
+                            # IMPORTANT: the rotation loop calls _ev_start_one(rx0) which
+                            # overwrites self._workers[0] (the probe) with the new rx0
+                            # rotation worker.  Save the probe reference BEFORE the loop so
+                            # we can stop the probe (not the rotation worker) at the end.
+                            _K = int(_probe_slot)
+                            _probe_worker_ref = self._workers.get(int(_probe_rx))
+                            _rot = [(_K + 1 + j) % 8 for j in range(7)]
+                            for _rx2 in _rot:
+                                _ev_start_one(_rx2)
+                            # All 7 non-K workers placed; now free slot K for rx_K.
+                            # Use the saved reference to stop the PROBE, not the new
+                            # rx0 rotation worker that _ev_start_one(rx0) put in
+                            # self._workers[0].
+                            self._stop_worker(_probe_worker_ref, join_timeout_s=0.3)
+                            _probe_kick_at = time.time()
+                            _deferred_rx_K = _K  # rx_K fills newly freed slot K
+                    else:
+                        # Partial restart or empty: sorted order (best effort)
+                        for _rx2 in sorted(workers_to_restart):
+                            _ev_start_one(_rx2)
+
+                    # Deferred rx_K: probe slot K was freed by SIGKILL→RST in <1s.
+                    # Wait a small safety margin before starting rx_K in case RST
+                    # propagation through the VPN takes a few extra seconds.
+                    if _deferred_rx_K is not None and _probe_kick_at is not None:
+                        _remaining_vlan = max(0.0, 5.0 - (time.time() - _probe_kick_at))
+                        if _remaining_vlan > 0.5:
+                            logger.info(
+                                "Eviction loop: waiting %.1fs for VPN lag on slot %d "
+                                "to clear before starting rx%d",
+                                _remaining_vlan, _deferred_rx_K, _deferred_rx_K,
+                            )
+                            time.sleep(_remaining_vlan)
+                        _ev_start_one(int(_deferred_rx_K))
+
+            self._startup_eviction_active.clear()
+            self._mismatch_global_streak = 0  # reset streak; slots are now correct
+
+            # The duplicate-label check below is only needed for recurring operation
+            # (not starting_from_empty) since the ghost eviction loop above already
+            # handles ghost-label conflicts at startup.
+            if not starting_from_empty and self._has_duplicate_live_auto_labels(str(host), int(port)):
                 logger.warning("Detected duplicate AUTO labels on Kiwi; forcing worker recycle and Kiwi kick-all")
                 dup_adjust_cache = {rx: int(w._rx_chan_adjust) for rx, w in self._workers.items() if w is not None}
                 for worker in list(self._workers.values()):
@@ -3263,7 +3976,7 @@ class ReceiverManager:
                 self._wait_for_orphan_cleanup(timeout_s=6.0)
                 _ = self._run_admin_kick_all(host=str(host), port=int(port))
                 self._wait_for_kiwi_auto_users_clear(host=str(host), port=int(port), timeout_s=8.0)
-                for rx in sorted(desired_rxs, key=lambda rx: rx if rx >= 2 else rx + 8):
+                for rx in sorted(desired_rxs):
                     desired = self._assignments.get(int(rx))
                     if desired is None:
                         continue

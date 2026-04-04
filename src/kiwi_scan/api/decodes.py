@@ -17,6 +17,7 @@ from urllib import request as urllib_request
 from fastapi import APIRouter, WebSocket
 from fastapi.websockets import WebSocketDisconnect
 
+from ..maidenhead import distance_from_grid as _grid_distance
 from ..scheduler import block_for_hour, expected_schedule_by_season, season_for_date
 from ..udp4010_server import publish_udp4010
 
@@ -50,6 +51,29 @@ _ws4010_debug_events: deque[Dict[str, Any]] = deque(maxlen=200)
 
 _automation_lock = threading.Lock()
 _valid_bands = ("10m", "12m", "15m", "17m", "20m", "30m", "40m", "60m", "80m", "160m")
+
+# Station coordinates for distance-to-decode calculations.
+# Loaded once from outputs/config.json; False means unavailable / load failed.
+_station_coords: tuple[float, float] | None | bool = None  # None=not loaded yet
+
+
+def _get_station_coords() -> Optional[tuple[float, float]]:
+    """Return (lat, lon) from config.json, cached after first successful load."""
+    global _station_coords
+    if _station_coords is False:
+        return None
+    if _station_coords is not None:
+        return _station_coords  # type: ignore[return-value]
+    try:
+        cfg_path = Path(__file__).resolve().parents[3] / "outputs" / "config.json"
+        d = json.loads(cfg_path.read_text(encoding="utf-8"))
+        lat, lon = float(d["latitude"]), float(d["longitude"])
+        _station_coords = (lat, lon)
+        return _station_coords  # type: ignore[return-value]
+    except Exception:
+        logger.debug("Could not load station coordinates for distance calculation", exc_info=True)
+        _station_coords = False
+        return None
 _valid_band_modes = {"FT4", "FT4 / FT8", "FT8", "WSPR", "SSB"}
 
 
@@ -1083,6 +1107,16 @@ def decode_callback(event: Dict) -> None:
             "band": event.get("band"),
             "rx": event.get("rx"),
         }
+
+        grid = parsed.get("grid")
+        if grid:
+            coords = _get_station_coords()
+            if coords:
+                dist = _grid_distance(coords[0], coords[1], grid)
+                if dist is not None:
+                    payload["dist_km"] = dist[0]
+                    payload["dist_mi"] = dist[1]
+
         publish_decode(payload)
     except Exception:
         logger.debug("decode_callback failed", exc_info=True)

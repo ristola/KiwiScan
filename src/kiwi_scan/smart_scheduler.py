@@ -57,6 +57,65 @@ _FT8_BLOCK_STARTS: tuple[int, ...] = (0, 4, 8, 10, 16, 20)
 _PHONE_BLOCK_STARTS: tuple[int, ...] = (0, 6, 10, 16, 20)
 
 
+# ---------------------------------------------------------------------------
+# Band scoring
+# ---------------------------------------------------------------------------
+
+_SCORE_WEIGHT: Dict[str, float] = {"OPEN": 3.0, "MARGINAL": 1.0, "CLOSED": 0.0}
+
+
+def _compute_band_score(
+    band: str,
+    merged_val: str,
+    season: str,
+    mode: str,
+    local_dt: datetime,
+) -> int:
+    """Return a 0-100 integer band score for display.
+
+    Uses *merged_val* (empirical > seasonal) for the current weight and
+    the seasonal schedule for the adjacent-block carry factor so the score
+    reflects both live conditions and near-future trajectory.
+
+    Scale reference:  OPEN=91-100  MARGINAL=30-39  CLOSED=0-9
+    """
+    curr_w = _SCORE_WEIGHT.get(str(merged_val or "").upper(), 0.0)
+    try:
+        tbl = get_table(season, mode)
+        block_key = block_for_hour(local_dt.hour, mode=mode)
+        ordered = sorted(
+            tbl.blocks.keys(),
+            key=lambda k: int(k.split("-")[0]) if "-" in k else 0,
+        )
+        if not ordered:
+            raise ValueError("empty blocks")
+        idx = ordered.index(block_key) if block_key in ordered else 0
+        prev_key = ordered[idx - 1]
+        next_key = ordered[(idx + 1) % len(ordered)]
+        prev_w = _SCORE_WEIGHT.get(
+            str((tbl.blocks.get(prev_key) or {}).get(band, "")).upper(), 0.0
+        )
+        next_w = _SCORE_WEIGHT.get(
+            str((tbl.blocks.get(next_key) or {}).get(band, "")).upper(), 0.0
+        )
+        if "-" in block_key:
+            s, e = (float(x) for x in block_key.split("-", 1))
+            dur = max(1.0, e - s)
+            cur_h = float(local_dt.hour) + float(local_dt.minute) / 60.0
+            if cur_h < s:
+                cur_h += 24.0
+            progress = max(0.0, min(1.0, (cur_h - s) / dur))
+        else:
+            progress = 0.5
+        carry = (1.0 - progress) * prev_w + progress * next_w
+        raw = curr_w * 100.0 + carry * 10.0
+        return min(100, max(0, round(raw / 3.3)))
+    except Exception:
+        return {"OPEN": 91, "MARGINAL": 30, "CLOSED": 0}.get(
+            str(merged_val or "").upper(), 0
+        )
+
+
 def _next_seasonal_change_for_band(
     band: str,
     current_seasonal: str,
@@ -458,6 +517,7 @@ class SmartScheduler:
         overrides = self._load_overrides()
         allowed = self._allowed_bands()
         local_dt = datetime.now().astimezone()
+        season = season_for_date(local_dt)
 
         merged = self._compute_merged(empirical, mode, local_dt)
         try:
@@ -487,6 +547,7 @@ class SmartScheduler:
                 "source": source,
                 "next_seasonal_change_in_s": int(next_chg[0]) if next_chg else None,
                 "next_seasonal_condition": next_chg[1] if next_chg else None,
+                "score": _compute_band_score(band, merged_val, season, mode, local_dt),
             }
 
         return {

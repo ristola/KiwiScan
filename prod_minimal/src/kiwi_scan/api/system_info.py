@@ -74,6 +74,24 @@ def _parse_elapsed_seconds(value: object) -> int | None:
     return None
 
 
+def _resolve_managed_label(label: str, label_to_rx: dict[str, int]) -> tuple[str | None, int | None]:
+    clean = str(label or "").strip()
+    if not clean:
+        return (None, None)
+    if clean in label_to_rx:
+        return (clean, label_to_rx.get(clean))
+
+    candidates = [
+        managed_label
+        for managed_label in label_to_rx.keys()
+        if managed_label.startswith(clean) or clean.startswith(managed_label)
+    ]
+    if len(candidates) == 1:
+        managed_label = str(candidates[0])
+        return (managed_label, label_to_rx.get(managed_label))
+    return (None, None)
+
+
 def _fetch_kiwi_users(host: str, port: int) -> list[dict[str, Any]]:
     for path in ("/users?json=1", "/users?admin=1", "/users"):
         try:
@@ -129,7 +147,7 @@ def _build_container_payload() -> dict[str, object]:
     }
 
 
-def _build_kiwi_payload(mgr: object) -> dict[str, object]:
+def _build_kiwi_payload(mgr: object, receiver_mgr: object | None = None) -> dict[str, object]:
     with mgr.lock:  # type: ignore[attr-defined]
         host = str(getattr(mgr, "host", "") or "").strip()
         port = int(getattr(mgr, "port", 0) or 0)
@@ -140,6 +158,7 @@ def _build_kiwi_payload(mgr: object) -> dict[str, object]:
         "reachable": False,
         "status": {},
         "active_users": [],
+        "raw_users": [],
     }
     if not host or port <= 0:
         return out
@@ -173,21 +192,37 @@ def _build_kiwi_payload(mgr: object) -> dict[str, object]:
     # does not honour our --rx-chan hint and assigns a different slot (e.g. WSPR lands
     # on Kiwi ch4 while our internal rx=3, or FT8 lands on ch3 while internal rx=4).
     label_to_rx: dict[str, int] = {}
-    if hasattr(mgr, "active_label_to_rx"):
+    label_source = receiver_mgr if receiver_mgr is not None else mgr
+    if hasattr(label_source, "active_label_to_rx"):
         try:
-            label_to_rx = mgr.active_label_to_rx()  # type: ignore[union-attr]
+            label_to_rx = label_source.active_label_to_rx()  # type: ignore[union-attr]
         except Exception:
             pass
 
     active_users: list[dict[str, object]] = []
+    raw_users: list[dict[str, object]] = []
     for row in users:
         label = urllib.parse.unquote(str(row.get("n") or "")).strip()
         kiwi_rx = _safe_int(row.get("i"))
-        rx_display = label_to_rx.get(label, kiwi_rx)
+        raw_users.append(
+            {
+                "rx": kiwi_rx,
+                "name": label or None,
+                "location": urllib.parse.unquote(str(row.get("g") or "")).strip(),
+                "freq_khz": round(float(row.get("f")) / 1000.0, 3) if _safe_float(row.get("f")) is not None else None,
+                "mode": str(row.get("m") or "").strip().upper() or None,
+                "ip": str(row.get("a") or "").strip() or None,
+                "connected_seconds": _parse_elapsed_seconds(row.get("t")),
+            }
+        )
+        resolved_label, resolved_rx = _resolve_managed_label(label, label_to_rx)
+        if not resolved_label:
+            continue
+        rx_display = resolved_rx if resolved_rx is not None else kiwi_rx
         active_users.append(
             {
                 "rx": rx_display,
-                "name": label,
+                "name": resolved_label,
                 "location": urllib.parse.unquote(str(row.get("g") or "")).strip(),
                 "freq_khz": round(float(row.get("f")) / 1000.0, 3) if _safe_float(row.get("f")) is not None else None,
                 "mode": str(row.get("m") or "").strip().upper() or None,
@@ -197,18 +232,20 @@ def _build_kiwi_payload(mgr: object) -> dict[str, object]:
         )
     # Sort by our internal rx number so the table always appears in assignment order.
     active_users.sort(key=lambda u: u["rx"] if isinstance(u["rx"], int) else 999)
+    raw_users.sort(key=lambda u: u["rx"] if isinstance(u["rx"], int) else 999)
     out["active_users"] = active_users
+    out["raw_users"] = raw_users
     return out
 
 
-def make_router(*, mgr: object) -> APIRouter:
+def make_router(*, mgr: object, receiver_mgr: object | None = None) -> APIRouter:
     router = APIRouter()
 
     @router.get("/system/info")
     def get_system_info() -> Dict[str, object]:
         return {
             "container": _build_container_payload(),
-            "kiwi": _build_kiwi_payload(mgr),
+            "kiwi": _build_kiwi_payload(mgr, receiver_mgr=receiver_mgr),
         }
 
     return router

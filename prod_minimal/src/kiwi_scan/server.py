@@ -262,7 +262,7 @@ app.include_router(make_admin_router(auto_set_loop=auto_set_loop))
 app.include_router(make_automation_router())
 app.include_router(make_metrics_router(receiver_mgr=receiver_mgr, get_api_metrics=_get_api_metrics))
 app.include_router(make_health_router(receiver_mgr=receiver_mgr))
-app.include_router(make_system_info_router(mgr=mgr))
+app.include_router(make_system_info_router(mgr=mgr, receiver_mgr=receiver_mgr))
 app.include_router(make_smart_scheduler_router(smart_scheduler=smart_scheduler))
 app.include_router(
     make_ws_status_router(

@@ -231,10 +231,46 @@ class AutoSetLoop:
         return payload
 
     def _build_fixed_roaming_payload(self, settings: Dict[str, Any], day_night: str) -> Dict[str, Any]:
-        """Build a payload with pinned RX2-7 fixed assignments and roaming RX0-1."""
+        """Build a payload with pinned RX2-6 fixed assignments and roaming RX0-1.
+
+        Roaming receivers follow the day/night schedule but skip closed bands
+        (per SmartScheduler) and substitute the best available open bands so
+        that each of the two roaming slots stays active.
+        """
         roaming = _ROAMING_DAY if day_night == "day" else _ROAMING_NIGHT
-        selected_bands = [r["band"] for r in roaming]
-        band_modes = {r["band"]: r["mode"] for r in roaming}
+        primary_bands = [r["band"] for r in roaming]
+        band_modes: Dict[str, str] = {r["band"]: r["mode"] for r in roaming}
+        num_roaming_slots = len(primary_bands)  # always 2
+
+        closed: list[str] = []
+        if self._smart_scheduler is not None:
+            try:
+                closed = list(self._smart_scheduler.get_closed_bands("ft8"))
+                fixed_bands = {a["band"] for a in _FIXED_ASSIGNMENTS}
+                primary_set = set(primary_bands)
+                allowed = self._smart_scheduler._allowed_bands()
+                conds = self._smart_scheduler.merged_conditions("ft8")
+                _rank = {"OPEN": 2, "MARGINAL": 1, "CLOSED": 0}
+                # Ranked fallbacks: open/marginal bands that aren't already fixed or primary.
+                fallbacks = sorted(
+                    [
+                        b for b in allowed
+                        if b not in primary_set
+                        and b not in fixed_bands
+                        and b not in closed
+                    ],
+                    key=lambda b: -_rank.get(conds.get(b, "CLOSED"), 0),
+                )
+                # Keep the open primaries and top up with fallbacks to fill exactly
+                # num_roaming_slots slots, so RX0/RX1 are never left idle.
+                open_primaries = [b for b in primary_bands if b not in closed]
+                needed = num_roaming_slots - len(open_primaries)
+                selected_bands = open_primaries + fallbacks[:needed]
+            except Exception:
+                selected_bands = primary_bands
+        else:
+            selected_bands = primary_bands
+
         payload: Dict[str, Any] = {
             "enabled": True,
             "mode": "ft8",
@@ -257,6 +293,8 @@ class AutoSetLoop:
             "selected_bands": selected_bands,
             "band_modes": band_modes,
         }
+        if closed:
+            payload["closed_bands"] = closed
         return payload
 
     @staticmethod
@@ -391,7 +429,14 @@ class AutoSetLoop:
 
             fixed_mode_enabled = self._safe_bool(settings.get("fixedModeEnabled"), default=True)
             if not fixed_mode_enabled:
-                # Auto Mode is OFF — reset loop state but don't post (UI already sent stop-all).
+                # Auto Mode is OFF — kick Kiwi every loop interval to stop KiwiScan
+                # workers and evict any competing AUTO_ users that may have reconnected
+                # (e.g. another controller on the LAN).  force=True bypasses the 15-s
+                # endpoint dedup so the kick actually fires on every iteration.
+                try:
+                    self._post_auto_set({"enabled": False, "force": True})
+                except Exception:
+                    pass
                 self._did_startup_apply = False
                 self._last_schedule_key = None
                 self._last_apply_signature = None
@@ -414,12 +459,18 @@ class AutoSetLoop:
                 if not self._fixed_receivers_healthy():
                     should_apply = True
                     force_health_recovery = True
+                    logger.info("Auto-set loop: fixed receiver health check failed; forcing re-apply")
 
             if should_apply:
                 with self._state_lock:
                     self._last_run_ts = time.time()
                     last_applied_band_config = self._last_applied_band_config
                 payload = self._build_payload(settings, schedule_key=schedule_key)
+                # Force-flag health-recovery applies so the endpoint's dedup cache
+                # doesn't suppress the re-kick when an identical payload was recently
+                # used but failed to connect all workers.
+                if force_health_recovery:
+                    payload["force"] = True
                 new_band_config = self._band_config_signature(payload)
                 # If only the time block changed but the resulting band/mode config is
                 # identical to what was last applied, skip the reassign entirely.
@@ -505,8 +556,14 @@ class AutoSetLoop:
         and posts it to /auto_set_receivers with ``force=True`` so the endpoint skips its
         15-second deduplication window.  The loop's own signature cache is also cleared so
         the next scheduled cycle re-evaluates from a clean state.
+
+        No-ops when Auto Mode (fixedModeEnabled) is OFF so that SmartScheduler
+        condition-change callbacks don't undo the user's Manual selection.
         """
         settings = self._load_settings()
+        if not self._safe_bool(settings.get("fixedModeEnabled"), default=True):
+            logger.debug("force_reassign skipped — Auto Mode is OFF")
+            return
         payload = self._build_payload(settings, schedule_key=self._current_schedule_key(settings))
         payload["force"] = True
         self._post_auto_set(payload)

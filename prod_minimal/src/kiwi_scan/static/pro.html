@@ -2606,14 +2606,27 @@
         .active-rx-lock {
             width: 13px;
             height: 13px;
-            display: inline-block;
-            vertical-align: middle;
+            display: block;
+            margin: 0 auto;
             color: color-mix(in srgb, var(--accent) 75%, white 12%);
-            flex: 0 0 auto;
             opacity: 0.95;
-            margin-right: 6px;
-            position: relative;
-            top: -1px;
+        }
+
+        .active-rx-lock-cell {
+            width: 22px;
+            min-width: 22px;
+            max-width: 22px;
+            text-align: center;
+            padding: 0 !important;
+            vertical-align: middle;
+        }
+
+        .active-rx-lock-col {
+            width: 22px;
+            min-width: 22px;
+            max-width: 22px;
+            text-align: center;
+            padding: 0 !important;
         }
 
         .active-rx-col {
@@ -5228,6 +5241,32 @@
             return (t.includes("open") && t.includes("live")) ? "#4ade80" : "";
         }
 
+        function bandScoreText(band) {
+            const entry = _bcEntryForBand(band);
+            const score = (entry != null && entry.score != null) ? entry.score : null;
+            return score != null ? String(score) : "--";
+        }
+
+        function bandScoreColor(band) {
+            const entry = _bcEntryForBand(band);
+            const score = (entry != null && entry.score != null) ? Number(entry.score) : -1;
+            if (score < 0) return "";
+            return score >= 70 ? "#4ade80" : score >= 25 ? "#f59e0b" : "#f87171";
+        }
+
+        function conditionText(band) {
+            const entry = _bcEntryForBand(band);
+            const bc = entry ? entry.merged : null;
+            if (!bc || bc === "UNKNOWN") return "--";
+            return bc.charAt(0) + bc.slice(1).toLowerCase();
+        }
+
+        function conditionColor(band) {
+            const entry = _bcEntryForBand(band);
+            const bc = (entry ? (entry.merged || "") : "").toUpperCase();
+            return bc === "OPEN" ? "#4ade80" : bc === "MARGINAL" ? "#f59e0b" : bc === "CLOSED" ? "#f87171" : "";
+        }
+
         function propagationCellHtml(band, channel) {
             const bcEntry = _bcEntryForBand(band);
             const bc = bcEntry ? bcEntry.merged : null;
@@ -5288,6 +5327,113 @@
             if (!rawName.startsWith("AUTO_") || rawName.startsWith("(connecting")) return "";
             return `<svg class="active-rx-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Fixed receiver"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>`;
         }
+        function compactAutoModeLabel(mode) {
+            return String(mode || "")
+                .toUpperCase()
+                .replace(/[^A-Z0-9]+/g, "");
+        }
+
+        function normalizeActiveReceiverBand(value) {
+            return String(safeText(value, ""))
+                .trim()
+                .replace(/^(\d+)\s*[mM]$/, "$1m");
+        }
+
+        function buildExpectedActiveReceiverName(rx, assignment, channel) {
+            const channelBand = normalizeActiveReceiverBand(channel && channel.band);
+            const assignmentBand = normalizeActiveReceiverBand(assignment && assignment.band);
+            const band = channelBand || assignmentBand;
+            const mode = safeText((channel && channel.mode) || (assignment && assignment.mode), "").trim();
+            if (!band || !mode) return `(connecting RX${safeText(rx, "--")})`;
+            return `AUTO_${band}_${compactAutoModeLabel(mode)}`;
+        }
+
+        function buildActiveReceiverRows(kiwiUsers, rawKiwiUsers) {
+            const users = Array.isArray(kiwiUsers) ? kiwiUsers : [];
+            const rawUsers = Array.isArray(rawKiwiUsers) ? rawKiwiUsers : [];
+            const usersByRx = new Map();
+            const rawUsersByRx = new Map();
+            users.forEach((user) => {
+                const rxNum = Number(user && user.rx);
+                if (Number.isFinite(rxNum) && rxNum >= 0 && !usersByRx.has(rxNum)) {
+                    usersByRx.set(rxNum, user);
+                }
+            });
+            rawUsers.forEach((user) => {
+                const rxNum = Number(user && user.rx);
+                if (Number.isFinite(rxNum) && rxNum >= 0 && !rawUsersByRx.has(rxNum)) {
+                    rawUsersByRx.set(rxNum, user);
+                }
+            });
+
+            const managedRxSet = new Set();
+            Object.entries(latestAssignments || {}).forEach(([rx, assignment]) => {
+                if (!assignment || typeof assignment !== "object") return;
+                const rxNum = Number(rx);
+                if (Number.isFinite(rxNum) && rxNum >= 0) managedRxSet.add(rxNum);
+            });
+            Object.entries(latestChannelsMap || {}).forEach(([rx, channel]) => {
+                if (!channel || typeof channel !== "object") return;
+                const rxNum = Number(rx);
+                if (!Number.isFinite(rxNum) || rxNum < 0) return;
+                if (channel.active || channel.band || channel.mode) managedRxSet.add(rxNum);
+            });
+
+            const highestObservedRx = Math.max(
+                7,
+                ...Array.from(managedRxSet),
+                ...Array.from(usersByRx.keys()).filter((rxNum) => Number.isFinite(rxNum) && rxNum >= 0),
+                ...Array.from(rawUsersByRx.keys()).filter((rxNum) => Number.isFinite(rxNum) && rxNum >= 0),
+            );
+            for (let rxNum = 0; rxNum <= highestObservedRx; rxNum += 1) {
+                managedRxSet.add(rxNum);
+            }
+
+            const merged = Array.from(managedRxSet)
+                .sort((a, b) => a - b)
+                .map((rxNum) => {
+                    const systemUser = usersByRx.get(rxNum) || {};
+                    const rawUser = rawUsersByRx.get(rxNum) || {};
+                    const assignment = latestAssignments && latestAssignments[String(rxNum)]
+                        ? latestAssignments[String(rxNum)]
+                        : {};
+                    const channel = latestChannelsMap && latestChannelsMap[String(rxNum)]
+                        ? latestChannelsMap[String(rxNum)]
+                        : {};
+                    const synthesizedName = buildExpectedActiveReceiverName(rxNum, assignment, channel);
+                    const freqHz = Number((assignment && assignment.freq_hz) || NaN);
+                    const populated = Boolean(
+                        safeText(systemUser.name, "")
+                        || safeText(channel.band, "")
+                        || safeText(channel.mode, "")
+                        || safeText(assignment.band, "")
+                        || safeText(assignment.mode, ""),
+                    );
+                    return {
+                        rx: rxNum,
+                        name: safeText(systemUser.name, safeText(rawUser.name, populated ? synthesizedName : "Unassigned")),
+                        freq_khz: Number.isFinite(Number(systemUser.freq_khz))
+                            ? Number(systemUser.freq_khz)
+                            : (Number.isFinite(Number(rawUser.freq_khz))
+                                ? Number(rawUser.freq_khz)
+                                : (Number.isFinite(freqHz) ? freqHz / 1000.0 : null)),
+                        mode: safeText(systemUser.mode, safeText(rawUser.mode, safeText(channel.mode, safeText(assignment.mode, "--")))),
+                        connected_seconds: Number.isFinite(Number(systemUser.connected_seconds))
+                            ? Number(systemUser.connected_seconds)
+                            : (Number.isFinite(Number(rawUser.connected_seconds)) ? Number(rawUser.connected_seconds) : null),
+                        active: populated || Boolean(safeText(rawUser.name, "")),
+                    };
+                });
+
+            const extras = rawUsers
+                .filter((user) => {
+                    const rxNum = Number(user && user.rx);
+                    return !(Number.isFinite(rxNum) && managedRxSet.has(rxNum));
+                })
+                .sort((a, b) => Number(a && a.rx) - Number(b && b.rx));
+
+            return merged.concat(extras);
+        }
 
         function renderSystemPanel(data) {
             latestSystemInfo = data && typeof data === "object" ? data : {};
@@ -5337,6 +5483,8 @@
             ]);
 
             const reachable = !!kiwi.reachable;
+            const users = buildActiveReceiverRows(kiwi.active_users);
+            const activeUserCount = users.filter((user) => !!user.active).length;
             renderInfoRows("system-kiwi-details", [
                 ["Receiver", safeText(kiwiStatus.name, "--")],
                 ["Hardware", safeText(kiwiStatus.sdr_hw, "--")],
@@ -5356,14 +5504,13 @@
                 ["Users", kiwiStatus.users !== undefined && kiwiStatus.users_max !== undefined
                     ? `${safeText(kiwiStatus.users, "0")} / ${safeText(kiwiStatus.users_max, "0")}`
                     : safeText(kiwiStatus.users, "--")],
-                ["Active Users", Array.isArray(kiwi.active_users) ? String(kiwi.active_users.length) : "0"],
+                ["Active Users", String(activeUserCount)],
                 ["Uptime", Number.isFinite(Number(kiwiStatus.uptime_seconds)) ? fmtDurationCompact(kiwiStatus.uptime_seconds) : "--"],
                 ["Time", safeText(kiwiStatus.date, "--")],
             ]);
 
             const usersEl = byId("active-receivers-table");
             if (!usersEl) return;
-            const users = Array.isArray(kiwi.active_users) ? kiwi.active_users : [];
             if (!users.length) {
                 usersEl.innerHTML = `<div class="control-status">No active receivers reported.</div>`;
                 return;
@@ -5371,7 +5518,8 @@
             const body = users.map((user) => `
                 <tr>
                     <td class="mono active-rx-cell" style="color:${rxColor(user.rx)};font-weight:700">RX${escapeHtml(safeText(user.rx, "--"))}</td>
-                    <td>${activeReceiverLockHtml(user)}${activeReceiverNameHtml(user)}</td>
+                    <td class="active-rx-lock-cell">${activeReceiverLockHtml(user)}</td>
+                    <td>${activeReceiverNameHtml(user)}</td>
                     <td class="mono">${escapeHtml(Number.isFinite(Number(user.freq_khz)) ? `${Number(user.freq_khz).toFixed(3)} kHz` : "--")}</td>
                     <td>${escapeHtml(safeText(user.mode, "--"))}</td>
                     <td class="mono">${escapeHtml(Number.isFinite(Number(user.connected_seconds)) ? fmtDurationCompact(user.connected_seconds) : "--")}</td>
@@ -5380,7 +5528,7 @@
             usersEl.innerHTML = `
                 <div class="assign-table-wrap">
                     <table class="assign-table">
-                        <thead><tr><th class="active-rx-col">RX</th><th>Name</th><th>Freq</th><th>Mode</th><th>Connected</th></tr></thead>
+                        <thead><tr><th class="active-rx-col">RX</th><th class="active-rx-lock-col"></th><th>Name</th><th>Freq</th><th>Mode</th><th>Connected</th></tr></thead>
                         <tbody>${body}</tbody>
                     </table>
                 </div>
@@ -7958,20 +8106,81 @@
             }
         }
 
+        async function waitForAutoModeTransition(enabled, timeoutMs = 45000) {
+            const deadline = Date.now() + Math.max(1000, Number(timeoutMs) || 45000);
+            while (Date.now() < deadline) {
+                try {
+                    const [health, system] = await Promise.all([
+                        getJson("/health/rx"),
+                        getJson("/system/info"),
+                    ]);
+                    const activeReceivers = Number(health && health.active_receivers);
+                    const managedUsers = Array.isArray(system && system.kiwi && system.kiwi.active_users)
+                        ? system.kiwi.active_users
+                        : [];
+                    const rawUsers = Array.isArray(system && system.kiwi && system.kiwi.raw_users)
+                        ? system.kiwi.raw_users
+                        : [];
+                    const rawAutoUsers = rawUsers.filter((user) => {
+                        const name = String((user && user.name) || "").trim();
+                        return name.startsWith("AUTO_") || name.startsWith("(connecting");
+                    });
+                    if (!enabled) {
+                        if (activeReceivers === 0 && rawAutoUsers.length === 0) {
+                            return { ok: true, conflict: false, message: "" };
+                        }
+                        if (activeReceivers === 0 && managedUsers.length === 0 && rawAutoUsers.length > 0) {
+                            return {
+                                ok: false,
+                                conflict: true,
+                                message: "Manual Mode engaged, but Kiwi still has AUTO users from another controller.",
+                            };
+                        }
+                    } else {
+                        if (activeReceivers >= 8 && managedUsers.length >= 8) {
+                            return { ok: true, conflict: false, message: "" };
+                        }
+                        if (activeReceivers >= 8 && rawAutoUsers.length >= 8 && managedUsers.length < 8) {
+                            return {
+                                ok: false,
+                                conflict: true,
+                                message: "Auto Mode conflict: Kiwi slots are occupied by another AUTO controller.",
+                            };
+                        }
+                    }
+                } catch (_) {
+                    // Keep polling until timeout; transient failures are expected mid-transition.
+                }
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+            return { ok: false, conflict: false, message: "Timed out waiting for Kiwi receiver transition." };
+        }
+
         async function applyAutoModeEnabled(enabled) {
             setAutomationStatus(enabled ? "enabling Auto Mode..." : "disabling Auto Mode...");
-            if (!enabled) setReceiversBusy(true);
+            setReceiversBusy(true);
             try {
+                // Persist the mode selection first so backend loops and force-reassign
+                // read the same fixed/manual state the user just selected.
+                await saveAutomationSection({ autosave: true });
                 if (!enabled) {
                     await postJson("/auto_set_receivers", { enabled: false });
-                    setAutomationStatus("Auto Mode OFF — all receivers stopped");
+                    setAutomationStatus("Auto Mode OFF — waiting for receivers to stop...");
+                    const result = await waitForAutoModeTransition(false);
+                    setAutomationStatus(result.ok ? "Auto Mode OFF — all receivers stopped" : result.message);
+                    refresh();
                 } else {
-                    await applyAutomationNow();
+                    // Apply fixed (5) + roaming (2) immediately via the headless path.
+                    await postJson("/admin/force-reassign", {});
+                    setAutomationStatus("Auto Mode ON — waiting for receivers to reconnect...");
+                    const result = await waitForAutoModeTransition(true);
+                    setAutomationStatus(result.ok ? "Auto Mode ON — fixed + roaming receivers applied" : result.message);
+                    refresh();
                 }
             } catch (err) {
                 setAutomationStatus(`Auto Mode toggle failed: ${String((err && err.message) || err)}`);
             } finally {
-                if (!enabled) setReceiversBusy(false);
+                setReceiversBusy(false);
             }
         }
 
@@ -8100,7 +8309,6 @@
                     const next = autoModeBtn.getAttribute("aria-pressed") !== "true";
                     setSelectBool("auto-mode-enabled", next);
                     applyAutoModeVisibility(next);
-                    scheduleAutomationAutosave();
                     applyAutoModeEnabled(next);
                 });
             }
@@ -9431,7 +9639,7 @@
                 card.className = "rx-card";
                 if (!bandRows.length) {
                     card.dataset.level = "healthy";
-                    card.innerHTML = `<div class="rx-top"><span class="rx-band-label" style="font-size:1rem;font-weight:800">${band}</span><span style="color:var(--muted);font-size:0.82rem">&mdash;</span></div><p class="kv" style="color:var(--muted);font-style:italic;font-size:0.8rem">Unassigned</p>`;
+                    card.innerHTML = `<div class="rx-top"><span style="display:inline-flex;align-items:baseline"><span class="rx-band-label" style="font-size:1rem;font-weight:800">${band}</span>${(() => { const ct = conditionText(band); return ct !== "--" ? `\u00a0\u00a0<span style="font-size:0.78rem;font-weight:600;color:${conditionColor(band)}">${ct}</span>` : ""; })()}</span><span style="color:var(--muted);font-size:0.82rem">&mdash;</span></div><p class="kv">${iconLine("heart", "State/Health", "rx-state-line", "--", "var(--muted)")}${iconLine("gauge", "SNR(avg)", "rx-snr-line", "--")}${(() => { const sc = bandScoreText(band); return sc === "--" ? "" : iconLine("spark", "Score", "rx-score-line", `Score: ${sc}`, bandScoreColor(band)); })()}</p>`;
                 } else {
                     const row = bandRows[0];
                     const ch = latestChannelsMap[String(row.rxNum)] || {};
@@ -9450,8 +9658,16 @@
                         const modeNorm = String(r.mode || "").trim().toUpperCase().replace(/\s+/g, "");
                         const physRx = kiwiRxByBandMode[`${r.band}:${modeNorm}`];
                         const displayRx = physRx != null ? `RX${physRx}` : r.rxLabel;
-                        const modeLabel = r.mode.split(" / ").map((m) => `<span style="color:${modeColor(m.trim())}">${safeText(m.trim())}</span>`).join(`<span style="color:var(--muted)"> / </span>`);
-                        return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span class="rx-id-pill" style="color:${rxColor(physRx != null ? physRx : r.rxNum)};min-width:52px">${displayRx}</span><span style="font-size:0.72rem;font-weight:600">${modeLabel}</span></div>`;
+                        const _modes = r.mode.split(" / ").map((m) => m.trim()).filter(Boolean);
+                        let modeLabelHtml;
+                        if (_modes.length >= 3) {
+                            const _firstLine = _modes.slice(0, _modes.length - 1).map((m) => `<span style="color:${modeColor(m)}">${safeText(m)}</span>`).join(`<span style="color:var(--muted)"> / </span>`);
+                            const _lastMode = _modes[_modes.length - 1];
+                            modeLabelHtml = `<div style="font-size:0.72rem;font-weight:600;text-align:center"><div>${_firstLine}</div><div style="color:${modeColor(_lastMode)}">${safeText(_lastMode)}</div></div>`;
+                        } else {
+                            modeLabelHtml = `<span style="font-size:0.72rem;font-weight:600">${_modes.map((m) => `<span style="color:${modeColor(m)}">${safeText(m)}</span>`).join(`<span style="color:var(--muted)"> / </span>`)}</span>`;
+                        }
+                        return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span class="rx-id-pill" style="color:${rxColor(physRx != null ? physRx : r.rxNum)};min-width:52px">${displayRx}</span>${modeLabelHtml}</div>`;
                     }).join("");
                     const heartColor = level === "fault" ? "#f87171" : level === "warning" ? "#f59e0b" : "#4ade80";
                     // Aggregate decode rates by mode across all receivers on this band
@@ -9485,7 +9701,7 @@
                         const mc = modeColor(m);
                         return `<span style="display:inline-flex;align-items:baseline;gap:4px;font-size:0.72rem"><span style="font-weight:700;color:${mc}">${safeText(m)}:</span><span>${pm} min</span><span style="color:var(--muted)">&#8226;</span><span>${ph} hr</span><span style="color:var(--muted)">&#8226;</span><span>${tot} total</span></span>`;
                     }).join("<br>");
-                    card.innerHTML = `<div class="rx-top"><div style="display:flex;flex-direction:column;gap:2px"><span class="rx-band-label" style="font-size:1rem;font-weight:800">${band}</span>${iconLine("heart", "State/Health", "rx-state-line", safeText(ch.health_state, "-"), heartColor)}</div><div style="display:flex;align-items:flex-start;gap:6px">${rxPills}</div></div><p class="kv">${iconLine("gauge", "SNR(avg)", "rx-snr-line", (() => { const t = snrAvgTextForRx(row.rxLabel); return t !== "--" ? t : (Number.isFinite(Number(ch.snr_avg_db)) ? `${Number(ch.snr_avg_db).toFixed(1)} dB` : "--"); })())}${(() => { const pt = propagationDisplayText(ch); return iconLine("trend", "Propagation", "rx-prop-line", pt, propagationColor(pt)); })()}<span class="rx-decode-rates" style="display:block;margin-top:4px;line-height:1.6">${decodeRateRows}</span></p>`;
+                    card.innerHTML = `<div class="rx-top"><div style="display:flex;flex-direction:column;gap:2px"><span style="display:inline-flex;align-items:baseline"><span class="rx-band-label" style="font-size:1rem;font-weight:800">${band}</span>${(() => { const ct = conditionText(band); return ct !== "--" ? `\u00a0\u00a0<span style="font-size:0.78rem;font-weight:600;color:${conditionColor(band)}">${ct}</span>` : ""; })()}</span>${iconLine("heart", "State/Health", "rx-state-line", safeText(ch.health_state, "-"), heartColor)}</div><div style="display:flex;align-items:flex-start;gap:6px">${rxPills}</div></div><p class="kv">${iconLine("gauge", "SNR(avg)", "rx-snr-line", (() => { const t = snrAvgTextForRx(row.rxLabel); return t !== "--" ? t : (Number.isFinite(Number(ch.snr_avg_db)) ? `${Number(ch.snr_avg_db).toFixed(1)} dB` : "--"); })())}${(() => { const sc = bandScoreText(band); return iconLine("spark", "Score", "rx-score-line", sc === "--" ? "--" : `Score: ${sc}`, bandScoreColor(band)); })()}<span class="rx-decode-rates" style="display:block;margin-top:4px;line-height:1.6">${decodeRateRows}</span></p>`;
                 }
                 cardEl.append(card);
             }
@@ -9706,7 +9922,11 @@
                 bandLabel.className = "rx-band-label";
                 bandLabel.dataset.field = "band-label";
 
-                name.append(rxId, bandLabel);
+                const bcInline = document.createElement("span");
+                bcInline.dataset.field = "bc-inline";
+                bcInline.style.cssText = "margin-left:0.5em;font-size:0.78rem;font-weight:600";
+
+                name.append(rxId, bandLabel, bcInline);
 
                 const pill = document.createElement("span");
                 pill.className = "pill";
@@ -9725,7 +9945,7 @@
                 ages.dataset.field = "ages";
                 const snr = makeIconLine("gauge", "SNR(avg)", "rx-snr-line");
                 snr.dataset.field = "snr";
-                const prop = makeIconLine("trend", "Propagation", "rx-prop-line");
+                const prop = makeIconLine("spark", "Score", "rx-prop-line");
                 prop.dataset.field = "prop";
 
                 kv.append(mode, state, ages, snr, prop);
@@ -9765,7 +9985,8 @@
                 const state = safeText(ch.health_state, "-");
                 const rawSnr = snrAvgTextForRx(`RX${key}`);
                 const snrText = rawSnr !== "--" ? rawSnr : (Number.isFinite(Number(ch.snr_avg_db)) ? `${Number(ch.snr_avg_db).toFixed(1)} dB` : "--");
-                const prop = propagationDisplayText(ch);
+                const prop = bandScoreText(ch.band);
+                const bc = conditionText(ch.band);
                 return JSON.stringify({
                     rx: `RX${safeText(ch.kiwi_rx != null ? ch.kiwi_rx : ch.rx, key)}`,
                     level,
@@ -9774,6 +9995,7 @@
                     state,
                     snrText,
                     prop,
+                    bc,
                 });
             };
 
@@ -9789,8 +10011,10 @@
                 const nextAgeSig = `${decAge}|${hbAge}`;
                 const rawSnr = snrAvgTextForRx(`RX${key}`);
                 const snrText = rawSnr !== "--" ? rawSnr : (Number.isFinite(Number(ch.snr_avg_db)) ? `${Number(ch.snr_avg_db).toFixed(1)} dB` : "--");
-                const prop = propagationDisplayText(ch);
-                const propColor = propagationColor(prop);
+                const prop = bandScoreText(ch.band);
+                const propColor = bandScoreColor(ch.band);
+                const bc = conditionText(ch.band);
+                const bcColor = conditionColor(ch.band);
                 const nextSig = receiverCardSignature(key);
 
                 card.dataset.rxKey = String(key);
@@ -9835,7 +10059,13 @@
                 setLineValue(card, "state", state);
                 setLineValue(card, "ages", `${decAge} / ${hbAge}`);
                 setLineValue(card, "snr", snrText);
-                setLineValue(card, "prop", prop, propColor);
+                setLineValue(card, "prop", prop === "--" ? "--" : `Score: ${prop}`, propColor);
+
+                const bcInlineEl = card.querySelector('[data-field="bc-inline"]');
+                if (bcInlineEl) {
+                    bcInlineEl.textContent = bc !== "--" ? bc : "";
+                    bcInlineEl.style.color = bc !== "--" ? bcColor : "";
+                }
 
                 card.style.order = String(idx);
                 card.style.display = "";
