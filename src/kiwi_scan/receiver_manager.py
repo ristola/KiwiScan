@@ -2200,12 +2200,22 @@ class ReceiverManager:
                             self._auto_kick_total += 1
                             self._mismatch_global_streak = 0
                     if kicked:
+                        # Stop all workers and CLEAR assignments instead of restarting them
+                        # individually.  Individual restarts after a kick-all ignore the
+                        # Kiwi's P-pointer and reproduce the same slot rotation.  Clearing
+                        # assignments here ensures the next apply_assignments call detects
+                        # starting_from_empty=True and runs the P-probe eviction loop.
                         with self._lock:
-                            reclaim_rxs = sorted(int(rx) for rx in self._assignments.keys())
-                        for rx in reclaim_rxs:
-                            self._restart_receiver_worker(rx=rx, reason="auto_kick_reclaim")
+                            workers_to_stop = list(self._workers.values())
+                            self._workers.clear()
+                            self._activity_by_rx.clear()
+                            self._assignments.clear()
+                        for w in workers_to_stop:
+                            self._stop_worker(w)
+                        self._cleanup_orphan_processes()
                         logger.warning(
-                            "Mismatch auto-kick: reclaimed receivers after widespread mismatch (%s/%s)",
+                            "Mismatch auto-kick: stopped all workers and cleared assignments "
+                            "(%s/%s stalled); next apply cycle will P-probe correct slots",
                             mismatch_stalled,
                             active_receivers,
                         )
@@ -2226,11 +2236,20 @@ class ReceiverManager:
                     if kicked:
                         self._auto_kick_total += 1
                 if kicked:
+                    # Stop all workers and clear assignments — same reason as should_autokick
+                    # above: individual restarts after a kick ignore P-pointer rotation.
                     with self._lock:
-                        reclaim_rxs = sorted(int(rx) for rx in self._assignments.keys())
-                    for rx in reclaim_rxs:
-                        self._restart_receiver_worker(rx=rx, reason="duplicate_label_reclaim")
-                    logger.warning("Duplicate-label auto-kick: reclaimed receivers after duplicate AUTO labels")
+                        workers_to_stop = list(self._workers.values())
+                        self._workers.clear()
+                        self._activity_by_rx.clear()
+                        self._assignments.clear()
+                    for w in workers_to_stop:
+                        self._stop_worker(w)
+                    self._cleanup_orphan_processes()
+                    logger.warning(
+                        "Duplicate-label auto-kick: stopped all workers and cleared assignments; "
+                        "next apply cycle will P-probe correct slots"
+                    )
                 else:
                     logger.warning("Duplicate-label auto-kick: command failed")
 
@@ -3759,97 +3778,118 @@ class ReceiverManager:
 
                         The freshness filter (age ≤ elapsed + 5 s) rejects ghost connections
                         that survived a failed SIGKILL attempt in a prior eviction pass.
+
+                        Non-probe workers get up to 3 attempts: on each timeout the target
+                        slot is re-kicked and we wait for it to actually clear before
+                        connecting again.  This handles VPNKit/Docker NAT zombie connections
+                        that grab the target slot immediately after a single kick.
                         """
                         _r = assignments[int(the_rx)]
-                        _w = self._make_worker(
-                            host=str(host), port=int(port), assignment=_r,
-                            rx_chan_adjust=0, ignore_slot_check=True,
-                        )
-                        self._workers[int(the_rx)] = _w
-                        # For rotation (non-probe) workers: kick the target slot before
-                        # starting so that any zombie connection occupying it is cleared
-                        # from Kiwi's side, making room for this worker at the correct slot.
-                        if not probe:
-                            _pre_kick_slot = int(the_rx)
-                            _pre_lv = self._fetch_live_auto_users(str(host), int(port))
-                            if _pre_kick_slot in _pre_lv:
-                                logger.info(
-                                    "_ev_start_one rx=%d: kicking occupied target slot %d (%s) before connect",
-                                    int(the_rx), _pre_kick_slot, _pre_lv[_pre_kick_slot],
-                                )
-                                try:
-                                    self._run_admin_kick_all(
-                                        host=str(host), port=int(port),
-                                        kick_only_slots=[_pre_kick_slot],
-                                    )
-                                except Exception:
-                                    pass
-                                time.sleep(1.5)  # let Kiwi and VPNKit process the kick
-                        _w.start()
-                        _lbl = self._expected_user_label(_r)
-                        _target_slot = None if probe else int(the_rx)
-                        logger.info(
-                            "_ev_start_one rx=%d probe=%s lbl=%s target_slot=%s",
-                            int(the_rx), probe, _lbl, _target_slot,
-                        )
-                        _poll_start = time.time()
-                        _dl = _poll_start + 30.0
-                        _ss: Optional[int] = None
-                        _st: float = 0.0
-                        while time.time() < _dl:
-                            _lv_raw = self._fetch_live_auto_users_with_age(str(host), int(port))
-                            _elapsed = time.time() - _poll_start
-                            _max_age = _elapsed + 5.0  # allow 5 s grace above elapsed
-                            if _target_slot is not None:
-                                # Slot-targeted: only check our exact target slot
-                                _entry = _lv_raw.get(_target_slot)
-                                _sc: Optional[int] = None
-                                if _entry is not None:
-                                    _el, _ea = _entry
-                                    _lbl_ok = self._user_label_matches(_lbl, _el)
-                                    _age_ok = (_ea is None or _ea <= _max_age)
-                                    if _lbl_ok and _age_ok:
-                                        _sc = _target_slot
-                                    elif not _lbl_ok:
-                                        logger.debug(
-                                            "_ev_start_one rx=%d slot=%d: label mismatch expected=%s got=%s",
-                                            int(the_rx), _target_slot, _lbl, _el,
+                        _MAX_TRIES = 1 if probe else 3
+                        _lv_raw: dict = {}
+                        for _try_n in range(_MAX_TRIES):
+                            _w = self._make_worker(
+                                host=str(host), port=int(port), assignment=_r,
+                                rx_chan_adjust=0, ignore_slot_check=True,
+                            )
+                            self._workers[int(the_rx)] = _w
+                            # For rotation (non-probe) workers: kick the target slot and
+                            # wait until it actually disappears from /users before connecting.
+                            # Re-kick every 3 s if the slot remains occupied; give up after
+                            # 8 s and proceed anyway to avoid stalling indefinitely on a
+                            # truly persistent VPNKit zombie.
+                            if not probe:
+                                _pre_kick_slot = int(the_rx)
+                                _clear_deadline = time.time() + 8.0
+                                _last_rekick_t: float = 0.0
+                                while True:
+                                    _pre_lv = self._fetch_live_auto_users(str(host), int(port))
+                                    if _pre_kick_slot not in _pre_lv:
+                                        break  # slot is free — connect immediately
+                                    if time.time() - _last_rekick_t >= 3.0:
+                                        logger.info(
+                                            "_ev_start_one rx=%d (try %d/%d): kicking occupied"
+                                            " target slot %d (%s) before connect",
+                                            int(the_rx), _try_n + 1, _MAX_TRIES,
+                                            _pre_kick_slot, _pre_lv[_pre_kick_slot],
                                         )
-                                    elif not _age_ok:
-                                        logger.debug(
-                                            "_ev_start_one rx=%d slot=%d: age rejected ea=%.1fs max=%.1fs",
-                                            int(the_rx), _target_slot, _ea or -1, _max_age,
-                                        )
-                            else:
-                                # Probe: any slot is fine (we are discovering P)
-                                _sc = next(
-                                    (
-                                        int(_s)
-                                        for _s, (_el, _ea) in _lv_raw.items()
-                                        if self._user_label_matches(_lbl, _el)
-                                        and (_ea is None or _ea <= _max_age)
-                                    ),
-                                    None,
-                                )
-                            if _sc is not None and _sc == _ss:
-                                if time.time() - _st >= 2.0:
-                                    break
-                            else:
-                                if _sc is not None and _ss is None:
-                                    # First detection — log full /users state
-                                    logger.info(
-                                        "_ev_start_one rx=%d FIRST_CONNECT slot=%d; /users: %s",
-                                        int(the_rx), _sc,
-                                        {s: f"{lbl}@{age}s" for s, (lbl, age) in _lv_raw.items()},
-                                    )
-                                _ss = _sc
-                                _st = time.time()
-                            time.sleep(0.4)
-                        if _ss is None:
+                                        try:
+                                            self._run_admin_kick_all(
+                                                host=str(host), port=int(port),
+                                                kick_only_slots=[_pre_kick_slot],
+                                            )
+                                        except Exception:
+                                            pass
+                                        _last_rekick_t = time.time()
+                                    if time.time() >= _clear_deadline:
+                                        break  # gave up waiting; start anyway
+                                    time.sleep(0.3)
+                            _w.start()
+                            _lbl = self._expected_user_label(_r)
+                            _target_slot = None if probe else int(the_rx)
                             logger.info(
-                                "_ev_start_one rx=%d TIMED OUT after 30s; "
+                                "_ev_start_one rx=%d probe=%s lbl=%s target_slot=%s",
+                                int(the_rx), probe, _lbl, _target_slot,
+                            )
+                            _poll_start = time.time()
+                            _dl = _poll_start + 30.0
+                            _ss: Optional[int] = None
+                            _st: float = 0.0
+                            while time.time() < _dl:
+                                _lv_raw = self._fetch_live_auto_users_with_age(str(host), int(port))
+                                _elapsed = time.time() - _poll_start
+                                _max_age = _elapsed + 5.0  # allow 5 s grace above elapsed
+                                if _target_slot is not None:
+                                    # Slot-targeted: only check our exact target slot
+                                    _entry = _lv_raw.get(_target_slot)
+                                    _sc: Optional[int] = None
+                                    if _entry is not None:
+                                        _el, _ea = _entry
+                                        _lbl_ok = self._user_label_matches(_lbl, _el)
+                                        _age_ok = (_ea is None or _ea <= _max_age)
+                                        if _lbl_ok and _age_ok:
+                                            _sc = _target_slot
+                                        elif not _lbl_ok:
+                                            logger.debug(
+                                                "_ev_start_one rx=%d slot=%d: label mismatch expected=%s got=%s",
+                                                int(the_rx), _target_slot, _lbl, _el,
+                                            )
+                                        elif not _age_ok:
+                                            logger.debug(
+                                                "_ev_start_one rx=%d slot=%d: age rejected ea=%.1fs max=%.1fs",
+                                                int(the_rx), _target_slot, _ea or -1, _max_age,
+                                            )
+                                else:
+                                    # Probe: any slot is fine (we are discovering P)
+                                    _sc = next(
+                                        (
+                                            int(_s)
+                                            for _s, (_el, _ea) in _lv_raw.items()
+                                            if self._user_label_matches(_lbl, _el)
+                                            and (_ea is None or _ea <= _max_age)
+                                        ),
+                                        None,
+                                    )
+                                if _sc is not None and _sc == _ss:
+                                    if time.time() - _st >= 2.0:
+                                        break
+                                else:
+                                    if _sc is not None and _ss is None:
+                                        # First detection — log full /users state
+                                        logger.info(
+                                            "_ev_start_one rx=%d FIRST_CONNECT slot=%d; /users: %s",
+                                            int(the_rx), _sc,
+                                            {s: f"{lbl}@{age}s" for s, (lbl, age) in _lv_raw.items()},
+                                        )
+                                    _ss = _sc
+                                    _st = time.time()
+                                time.sleep(0.4)
+                            if _ss is not None:
+                                return _ss
+                            logger.info(
+                                "_ev_start_one rx=%d TIMED OUT after 30s (try %d/%d); "
                                 "last /users state: %s",
-                                int(the_rx),
+                                int(the_rx), _try_n + 1, _MAX_TRIES,
                                 {s: f"{lbl}@{age}s" for s, (lbl, age) in _lv_raw.items()},
                             )
                             # Stop the timed-out worker immediately so it no longer
@@ -3861,7 +3901,9 @@ class ReceiverManager:
                                     _timed_out_w._terminate_proc()
                                 except Exception:
                                     pass
-                        return _ss
+                            if _try_n < _MAX_TRIES - 1:
+                                time.sleep(1.0)  # brief pause before retry
+                        return None
 
                     _w2r_set = set(int(_r) for _r in workers_to_restart)
                     _full_restart = (_w2r_set == set(int(_r) for _r in desired_rxs))
@@ -3878,18 +3920,15 @@ class ReceiverManager:
                         if _probe_slot is not None:
                             # Post-probe stability wait: VPNKit may complete in-flight TCP
                             # handshakes after our parallel stop, creating zombie connections
-                            # that appear in Kiwi's /users ~10–15 s after the kill.  These
-                            # block rotation workers since all 8 slots fill up.  Probe stays
-                            # alive (blocking slot K) while we wait for every other AUTO_
-                            # connection to clear.
-                            # • Fresh zombie entries (VPNKit state active) respond to admin
-                            #   kicks and typically clear within 5–30 s.
-                            # • Older VPNKit zombies (~90 s WS keepalive lifetime) require
-                            #   a longer wait; 150 s outlasts all known zombie scenarios.
+                            # that appear in Kiwi's /users ~10–15 s after the kill.  Probe
+                            # stays alive (blocking slot K) while we kick non-probe slots.
+                            # 20 s is enough to clear fresh VPNKit zombies; persistent older
+                            # zombies are handled by the per-worker retry in _ev_start_one
+                            # (up to 3 attempts with individual re-kicks per target slot).
                             _ppsw_start = time.time()
                             _ppsw_stable_since: Optional[float] = None
                             _ppsw_last_kick_t: float = 0.0
-                            while time.time() - _ppsw_start < 150.0:
+                            while time.time() - _ppsw_start < 20.0:
                                 _ppsw_lv = self._fetch_live_auto_users(str(host), int(port))
                                 _ppsw_others = {
                                     s: lbl for s, lbl in _ppsw_lv.items()
@@ -3902,8 +3941,8 @@ class ReceiverManager:
                                             "Post-probe stability: /users clear (only probe at slot %d)",
                                             _probe_slot,
                                         )
-                                    elif time.time() - _ppsw_stable_since >= 10.0:
-                                        break  # probe alone for 10 stable seconds
+                                    elif time.time() - _ppsw_stable_since >= 5.0:
+                                        break  # probe alone for 5 stable seconds
                                 else:
                                     if _ppsw_stable_since is not None:
                                         logger.info(
@@ -3925,8 +3964,8 @@ class ReceiverManager:
                                 time.sleep(0.5)
                             else:
                                 logger.info(
-                                    "Post-probe stability: timed out after 150s; "
-                                    "remaining /users: %s — proceeding anyway",
+                                    "Post-probe stability: timed out after 20s; "
+                                    "remaining /users: %s — proceeding anyway (per-worker retry active)",
                                     {s: lbl for s, lbl in
                                      self._fetch_live_auto_users(str(host), int(port)).items()
                                      if s != int(_probe_slot)},
@@ -3996,24 +4035,24 @@ class ReceiverManager:
             # (not starting_from_empty) since the ghost eviction loop above already
             # handles ghost-label conflicts at startup.
             if not starting_from_empty and self._has_duplicate_live_auto_labels(str(host), int(port)):
-                logger.warning("Detected duplicate AUTO labels on Kiwi; forcing worker recycle and Kiwi kick-all")
-                dup_adjust_cache = {rx: int(w._rx_chan_adjust) for rx, w in self._workers.items() if w is not None}
+                # Stop all workers and CLEAR assignments rather than restarting them
+                # simultaneously here.  A simultaneous restart (the old behaviour) ignores
+                # the Kiwi's round-robin P-pointer, so all workers reconnect at rotated
+                # slots and the mismatch persists.  By clearing assignments we ensure the
+                # next apply_assignments call sees starting_from_empty=True and runs the
+                # full P-probe eviction loop which correctly corrects the P-rotation.
+                logger.warning(
+                    "Detected duplicate AUTO labels on Kiwi; stopping all workers and "
+                    "clearing assignments — next apply cycle will perform P-probe slot correction"
+                )
                 for worker in list(self._workers.values()):
                     self._stop_worker(worker)
                 self._workers.clear()
                 self._activity_by_rx.clear()
                 self._cleanup_orphan_processes()
                 self._wait_for_orphan_cleanup(timeout_s=6.0)
-                _ = self._run_admin_kick_all(host=str(host), port=int(port))
-                self._wait_for_kiwi_auto_users_clear(host=str(host), port=int(port), timeout_s=8.0)
-                for rx in sorted(desired_rxs):
-                    desired = self._assignments.get(int(rx))
-                    if desired is None:
-                        continue
-                    worker = self._make_worker(host=str(host), port=int(port), assignment=desired, rx_chan_adjust=dup_adjust_cache.get(int(rx), 0))
-                    self._workers[int(rx)] = worker
-                    worker.start()
-                    worker._slot_ready.wait(timeout=8.0)
+                _ = self._run_admin_kick_all(host=str(host), port=int(port), force_all=True)
+                self._assignments.clear()  # triggers starting_from_empty on next apply_assignments
 
     def stop_all(self) -> None:
         self._manager_stop.set()
