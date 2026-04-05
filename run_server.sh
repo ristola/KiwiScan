@@ -155,10 +155,10 @@ while true; do
 
   set +e
   if [ "$AUTO_RELOAD" = "1" ]; then
-    "$VENV_PY" -m uvicorn --app-dir "$APP_DIR" kiwi_scan.server:app --host 0.0.0.0 --port "$PORT" --reload --reload-dir "$APP_DIR"
+    "$VENV_PY" -m uvicorn --app-dir "$APP_DIR" kiwi_scan.server:app --host 0.0.0.0 --port "$PORT" --ws-ping-interval 20.0 --ws-ping-timeout 120.0 --reload --reload-dir "$APP_DIR"
     code=$?
   else
-    "$VENV_PY" -m uvicorn --app-dir "$APP_DIR" kiwi_scan.server:app --host 0.0.0.0 --port "$PORT"
+    "$VENV_PY" -m uvicorn --app-dir "$APP_DIR" kiwi_scan.server:app --host 0.0.0.0 --port "$PORT" --ws-ping-interval 20.0 --ws-ping-timeout 120.0
     code=$?
   fi
   set -e

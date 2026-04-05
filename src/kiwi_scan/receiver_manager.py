@@ -1262,7 +1262,7 @@ class _ReceiverWorker(threading.Thread):
                         self._rx, self._band, iq_centre_khz, ft8_off, ft4_off, wspr_off,
                     )
                     pipeline_cmd = (
-                        f"{self._python_cmd} {self._kiwirecorder_path} "
+                        f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
                         f"-s {self._host} -p {self._port} -f {iq_centre_khz} -m iq "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._python_cmd} -u {iq_splitter_path} "
@@ -1282,7 +1282,7 @@ class _ReceiverWorker(threading.Thread):
                             self._band,
                         )
                         pipeline_cmd = (
-                            f"{self._python_cmd} {self._kiwirecorder_path} "
+                            f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
                             f"-s {self._host} -p {self._port} -f {iq_centre_khz} -m iq "
                             f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                             f"{self._python_cmd} -u {iq_splitter_path} "
@@ -1297,7 +1297,7 @@ class _ReceiverWorker(threading.Thread):
                             udp_port=udp_port_ft8, af2udp_path=af2udp_path
                         )
                         pipeline_cmd = (
-                            f"{self._python_cmd} {self._kiwirecorder_path} "
+                            f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
                             f"-s {self._host} -p {self._port} -f {freq_khz} -m usb "
                             f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                             f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
@@ -1321,7 +1321,7 @@ class _ReceiverWorker(threading.Thread):
                         self._rx, self._band, iq_centre_khz, ft8_off_hz, ft4_off_hz,
                     )
                     pipeline_cmd = (
-                        f"{self._python_cmd} {self._kiwirecorder_path} "
+                        f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
                         f"-s {self._host} -p {self._port} -f {iq_centre_khz} -m iq "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._python_cmd} -u {iq_splitter_path} "
@@ -1336,7 +1336,7 @@ class _ReceiverWorker(threading.Thread):
                         self._rx, self._band,
                     )
                     pipeline_cmd = (
-                        f"{self._python_cmd} {self._kiwirecorder_path} "
+                        f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
                         f"-s {self._host} -p {self._port} -f {freq_khz} -m usb "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
@@ -1358,7 +1358,7 @@ class _ReceiverWorker(threading.Thread):
                         self._rx, self._band, iq_centre_khz, ft4_off_hz, wspr_off_hz,
                     )
                     pipeline_cmd = (
-                        f"{self._python_cmd} {self._kiwirecorder_path} "
+                        f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
                         f"-s {self._host} -p {self._port} -f {iq_centre_khz} -m iq "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._python_cmd} -u {iq_splitter_path} "
@@ -1379,7 +1379,7 @@ class _ReceiverWorker(threading.Thread):
                         udp_port=udp_port_wspr, af2udp_path=af2udp_path
                     )
                     pipeline_cmd = (
-                        f"{self._python_cmd} {self._kiwirecorder_path} "
+                        f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
                         f"-s {self._host} -p {self._port} -f {wspr_freq_khz} -m usb "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
@@ -1391,7 +1391,7 @@ class _ReceiverWorker(threading.Thread):
                 self._start_decoder(udp_port, self._decoder_mode())
                 udp_sender_cmd = self._udp_audio_sender_cmd(udp_port=udp_port, af2udp_path=af2udp_path)
                 pipeline_cmd = (
-                    f"{self._python_cmd} {self._kiwirecorder_path} "
+                    f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
                     f"-s {self._host} -p {self._port} -f {freq_khz} -m usb "
                     f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                     f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
@@ -3520,7 +3520,7 @@ class ReceiverManager:
                 # and stable for ≥2 s.  This covers kiwirecorder's 15 s "Too busy"
                 # retry cycle without any kicks (which would cause VPN churn).
                 _exp_lbl = self._expected_user_label(desired)
-                _poll_deadline = time.time() + 18.0
+                _poll_deadline = time.time() + 8.0
                 _stable_slot: Optional[int] = None
                 _stable_since: float = 0.0
                 while time.time() < _poll_deadline:
@@ -3799,7 +3799,7 @@ class ReceiverManager:
                     # Only apply the rotation when ALL 8 workers are being restarted
                     # (partial restarts fall back to simple sorted order).
                     def _ev_start_one(the_rx: int, probe: bool = False) -> Optional[int]:
-                        """Start worker for the_rx, poll 30 s for stable slot; return slot or None.
+                        """Start worker for the_rx, poll 15 s for stable slot; return slot or None.
 
                         For non-probe workers (probe=False) the target slot is the_rx itself
                         (P-rotation guarantees each rx lands in its matching slot), so we
@@ -3862,7 +3862,7 @@ class ReceiverManager:
                                 int(the_rx), probe, _lbl, _target_slot,
                             )
                             _poll_start = time.time()
-                            _dl = _poll_start + 30.0
+                            _dl = _poll_start + 15.0
                             _ss: Optional[int] = None
                             _st: float = 0.0
                             while time.time() < _dl:
@@ -3917,7 +3917,7 @@ class ReceiverManager:
                             if _ss is not None:
                                 return _ss
                             logger.info(
-                                "_ev_start_one rx=%d TIMED OUT after 30s (try %d/%d); "
+                                "_ev_start_one rx=%d TIMED OUT after 15s (try %d/%d); "
                                 "last /users state: %s",
                                 int(the_rx), _try_n + 1, _MAX_TRIES,
                                 {s: f"{lbl}@{age}s" for s, (lbl, age) in _lv_raw.items()},

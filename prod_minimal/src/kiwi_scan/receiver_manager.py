@@ -1588,6 +1588,7 @@ class ReceiverManager:
         self._activity_by_rx: Dict[int, Dict[str, object]] = {}
         self._stale_watch_state_by_rx: Dict[int, Dict[str, object]] = {}
         self._mismatch_global_streak = 0
+        self._duplicate_global_streak = 0
         self._auto_kick_total = 0
         self._auto_kick_last_unix: Optional[float] = None
         self._auto_kick_last_reason = ""
@@ -2183,8 +2184,16 @@ class ReceiverManager:
                     duplicate_live_labels = self._has_duplicate_live_auto_labels(active_host, active_port)
                 except Exception:
                     duplicate_live_labels = False
+                    
+                with self._lock:
+                    if duplicate_live_labels:
+                        self._duplicate_global_streak += 1
+                    else:
+                        self._duplicate_global_streak = 0
+                    dup_streak = self._duplicate_global_streak
+
                 duplicate_autokick = bool(
-                    duplicate_live_labels
+                    dup_streak >= 12
                     and (time.time() - last_auto_kick_unix) >= min(30.0, self._mismatch_autokick_cooldown_s())
                     and not self._startup_eviction_active.is_set()
                 )
@@ -2200,6 +2209,7 @@ class ReceiverManager:
                         if kicked:
                             self._auto_kick_total += 1
                             self._mismatch_global_streak = 0
+                            self._duplicate_global_streak = 0
                     if kicked:
                         # Stop all workers and CLEAR assignments instead of restarting them
                         # individually.  Individual restarts after a kick-all ignore the
@@ -2334,6 +2344,7 @@ class ReceiverManager:
             self._watchdog_state_by_rx.clear()
             self._activity_by_rx.clear()
             self._mismatch_global_streak = 0
+            self._duplicate_global_streak = 0
             self._auto_kick_total = 0
             self._auto_kick_last_unix = None
             self._auto_kick_last_reason = ""
@@ -4060,29 +4071,7 @@ class ReceiverManager:
 
             self._startup_eviction_active.clear()
             self._mismatch_global_streak = 0  # reset streak; slots are now correct
-
-            # The duplicate-label check below is only needed for recurring operation
-            # (not starting_from_empty) since the ghost eviction loop above already
-            # handles ghost-label conflicts at startup.
-            if not starting_from_empty and self._has_duplicate_live_auto_labels(str(host), int(port)):
-                # Stop all workers and CLEAR assignments rather than restarting them
-                # simultaneously here.  A simultaneous restart (the old behaviour) ignores
-                # the Kiwi's round-robin P-pointer, so all workers reconnect at rotated
-                # slots and the mismatch persists.  By clearing assignments we ensure the
-                # next apply_assignments call sees starting_from_empty=True and runs the
-                # full P-probe eviction loop which correctly corrects the P-rotation.
-                logger.warning(
-                    "Detected duplicate AUTO labels on Kiwi; stopping all workers and "
-                    "clearing assignments — next apply cycle will perform P-probe slot correction"
-                )
-                for worker in list(self._workers.values()):
-                    self._stop_worker(worker)
-                self._workers.clear()
-                self._activity_by_rx.clear()
-                self._cleanup_orphan_processes()
-                self._wait_for_orphan_cleanup(timeout_s=6.0)
-                _ = self._run_admin_kick_all(host=str(host), port=int(port), force_all=True)
-                self._assignments.clear()  # triggers starting_from_empty on next apply_assignments
+            self._duplicate_global_streak = 0
 
     def stop_all(self) -> None:
         self._manager_stop.set()

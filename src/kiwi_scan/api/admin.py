@@ -293,7 +293,7 @@ def _set_launchd_enabled(enabled: bool) -> dict[str, object]:
     }
 
 
-def make_router(*, auto_set_loop: object | None = None) -> APIRouter:
+def make_router(*, auto_set_loop: object | None = None, receiver_mgr: object | None = None) -> APIRouter:
     """Create router for admin endpoints."""
 
     router = APIRouter()
@@ -378,5 +378,44 @@ def make_router(*, auto_set_loop: object | None = None) -> APIRouter:
 
         threading.Thread(target=_bg, daemon=True, name="force-reassign-bg").start()
         return {"ok": True, "status": "reassigning"}
+
+    @router.post("/admin/restart-receivers")
+    async def restart_receivers_endpoint(request: Request) -> dict:
+        """Restart specific receiver workers by RX number without disturbing others.
+
+        Accepts ``{"rx_list": [2, 5]}`` and calls ``_restart_receiver_worker`` for
+        each listed RX.  Used by the auto_set_loop for surgical single-receiver
+        recovery instead of a full reassign.
+        """
+        if receiver_mgr is None:
+            raise HTTPException(status_code=503, detail="receiver_mgr unavailable")
+        try:
+            payload = await request.json()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}")
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Payload must be an object")
+        rx_list_raw = payload.get("rx_list", [])
+        if not isinstance(rx_list_raw, list):
+            raise HTTPException(status_code=400, detail="rx_list must be an array")
+        rx_list: list[int] = []
+        for item in rx_list_raw:
+            try:
+                rx_list.append(int(item))
+            except Exception:
+                raise HTTPException(status_code=400, detail=f"Invalid rx value: {item!r}")
+        results: list[dict] = []
+        import threading
+        import asyncio
+        for rx in rx_list:
+            try:
+                ok = await asyncio.to_thread(
+                    receiver_mgr._restart_receiver_worker,  # type: ignore[attr-defined]
+                    rx, "admin_restart",
+                )
+                results.append({"rx": rx, "ok": bool(ok)})
+            except Exception as exc:
+                results.append({"rx": rx, "ok": False, "error": str(exc)})
+        return {"ok": True, "results": results}
 
     return router

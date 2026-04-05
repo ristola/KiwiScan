@@ -4221,6 +4221,10 @@
                             <div class="panel-hdr-actions">
                                 <div class="decode-feed-meta" id="decode-panel-meta">Waiting for decode activity...
                                 </div>
+                                <button class="action-btn-sm" id="clear-decodes-btn" type="button"
+                                    title="Clear Messages"
+                                    style="margin-right: 12px; font-size: 0.85rem; padding: 2px 8px;">Clear
+                                    Messages</button>
                                 <button class="panel-toggle" type="button" aria-expanded="true"
                                     aria-label="Collapse Decoded Messages">
                                     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -4858,8 +4862,8 @@
         const BAND_COLOR_OVERRIDES = { "160m": "#f472b6" };
         const RX_COLORS = ["#ef4444", "#22c55e", "#eab308", "#f97316", "#60a5fa", "#4ade80", "#f472b6", "#a855f7"];
         function rxColor(rxNum) { const n = Number(rxNum); return (Number.isFinite(n) && n >= 0 && n < RX_COLORS.length) ? RX_COLORS[n] : "#94a3b8"; }
-        const RECENT_DECODE_LIMIT = 120;
-        const RECENT_DECODE_RENDER_LIMIT = 80;
+        const RECENT_DECODE_LIMIT = 5000;
+        const RECENT_DECODE_RENDER_LIMIT = 5000;
         const MAP_POINT_TTL_MS = 24 * 60 * 60 * 1000;
         const SYSTEM_INFO_CACHE_MS = 15000;
         const MAP_MODE_COLORS = {
@@ -6224,6 +6228,17 @@
             const cqOnly = byId("decode-cq-only");
             const dxOnly = byId("decode-dx-only");
             const uniqueCalls = byId("decode-unique-calls");
+            const clearBtn = byId("clear-decodes-btn");
+
+            if (clearBtn && clearBtn.dataset.bound !== "1") {
+                clearBtn.addEventListener("click", () => {
+                    recentDecodeItems = [];
+                    recentDecodeMap.clear();
+                    renderRecentDecodePanel();
+                });
+                clearBtn.dataset.bound = "1";
+            }
+
             if (cqOnly && cqOnly.dataset.bound !== "1") {
                 cqOnly.addEventListener("change", () => {
                     decodeCqOnly = !!cqOnly.checked;

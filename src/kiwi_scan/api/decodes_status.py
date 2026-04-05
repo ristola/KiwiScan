@@ -257,24 +257,21 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
             live_assignments: Dict[int, Dict[str, object]],
             live_details: Dict[int, Dict[str, object]],
         ) -> tuple[bool, list[int]]:
-            compared = 0
-            mismatch_rxs: list[int] = []
-            for rx, expected in expected_assignments.items():
-                live_row = live_assignments.get(int(rx))
-                if not isinstance(live_row, dict):
-                    continue
-                compared += 1
-                if _assignment_matches(expected, live_row):
-                    continue
-                mismatch_rxs.append(int(rx))
-            mismatch_count = len(mismatch_rxs)
-            # Only fall back to internal state when every compared slot mismatches,
-            # which suggests a completely different KiwiSDR session.
-            # Partial mismatches are normal during band-hop / mode-change transitions
-            # and should still show the live state so Receiver Stats matches Active Receivers.
-            if compared < 2 or mismatch_count < compared:
-                return (False, [])
-            return (True, mismatch_rxs)
+            unmatched_expected = list(expected_assignments.keys())
+            unmatched_live = list(live_assignments.keys())
+            for rx in list(unmatched_expected):
+                expected = expected_assignments[rx]
+                for lr in list(unmatched_live):
+                    live_row = live_assignments.get(lr)
+                    if not isinstance(live_row, dict):
+                        continue
+                    if _assignment_matches(expected, live_row):
+                        unmatched_expected.remove(rx)
+                        unmatched_live.remove(lr)
+                        break
+            if len(unmatched_expected) > 0:
+                return (True, unmatched_expected)
+            return (False, [])
 
         def _health_summary_prefers_receiver_manager(
             expected_assignments: Dict[int, Dict[str, object]],
@@ -302,7 +299,7 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
                 reason = str(channel.get("last_reason") or "").strip().lower()
                 state = str(channel.get("health_state") or "").strip().lower()
                 # Reason may be "kiwi_assignment_mismatch" or "kiwi_assignment_mismatch_observed"
-                if "kiwi_assignment_mismatch" in reason or state == "stalled":
+                if state == "stalled":
                     mismatch_rxs.append(rx)
 
             mismatch_rxs = sorted(set(mismatch_rxs))

@@ -678,7 +678,7 @@ app.include_router(
     )
 )
 app.include_router(make_rx_monitor_router(monitor=rx_monitor))
-app.include_router(make_admin_router(auto_set_loop=auto_set_loop))
+app.include_router(make_admin_router(auto_set_loop=auto_set_loop, receiver_mgr=receiver_mgr))
 app.include_router(make_automation_router())
 app.include_router(
     make_metrics_router(
@@ -720,4 +720,11 @@ register_lifecycle(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("kiwi_scan.server:app", host="0.0.0.0", port=4020, reload=False)
+    uvicorn.run(
+        "kiwi_scan.server:app",
+        host="0.0.0.0",
+        port=4020,
+        reload=False,
+        ws_ping_interval=20.0,
+        ws_ping_timeout=120.0,
+    )

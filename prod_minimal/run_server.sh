@@ -9,6 +9,7 @@ VENV_PY=""
 APP_DIR="$ROOT_DIR/src"
 REQ_FILE="$ROOT_DIR/requirements.txt"
 AUTO_SETUP="${AUTO_SETUP:-1}"
+AUTO_SYSTEM_DEPS="${AUTO_SYSTEM_DEPS:-1}"
 LOCK_DIR="/tmp/kiwi_scan_run_server.lock"
 
 acquire_single_instance_lock() {
@@ -89,8 +90,33 @@ install_requirements_if_needed() {
   fi
 }
 
+bootstrap_runtime_tools_if_needed() {
+  if [ "$AUTO_SETUP" != "1" ] || [ "$AUTO_SYSTEM_DEPS" != "1" ]; then
+    return 0
+  fi
+
+  if [ -x "$ROOT_DIR/tools/check_runtime_deps.sh" ]; then
+    echo "[setup] Checking/building runtime tools (ft8modem/af2udp)" >&2
+    "$ROOT_DIR/tools/check_runtime_deps.sh" --build-missing --quiet >/dev/null 2>&1 || true
+  fi
+
+  if command -v sox >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [ "$(uname -s)" = "Darwin" ]; then
+    if command -v brew >/dev/null 2>&1; then
+      echo "[setup] sox missing; installing via Homebrew" >&2
+      brew list sox >/dev/null 2>&1 || brew install sox || true
+    else
+      echo "[setup] sox missing and Homebrew not found; install Homebrew or run: brew install sox" >&2
+    fi
+  fi
+}
+
 ensure_venv
 install_requirements_if_needed
+bootstrap_runtime_tools_if_needed
 acquire_single_instance_lock
 trap release_single_instance_lock EXIT INT TERM
 
@@ -98,13 +124,18 @@ PORT="${PORT:-4020}"
 RESTART_DELAY_S="${RESTART_DELAY_S:-2}"
 ALWAYS_RESTART="${ALWAYS_RESTART:-0}"
 NO_RESTART="${NO_RESTART:-0}"
-AUTO_RELOAD="${AUTO_RELOAD:-1}"
+AUTO_RELOAD="${AUTO_RELOAD:-0}"
+DOCS_URL="https://github.com/ristola/KiwiScan#docker"
+INSTALL_URL="https://github.com/ristola/KiwiScan/blob/main/INSTALL.md"
 
 echo "Starting uvicorn using: $VENV_PY (app-dir=$APP_DIR, port=$PORT)"
 echo "Tip: see $ROOT_DIR/.env.example for preferred .venv-py3 activation and common run/test commands."
+echo "Docs: $DOCS_URL"
+echo "Install guide: $INSTALL_URL"
+echo "Web UI: http://localhost:$PORT"
 
 while true; do
-  if lsof -ti tcp:"$PORT" >/dev/null 2>&1; then
+  if false && lsof -ti tcp:"$PORT" >/dev/null 2>&1; then
     echo "Port $PORT is in use; stopping existing server..." >&2
     pids=$(lsof -ti tcp:"$PORT" 2>/dev/null || true)
     if [ -n "$pids" ]; then
@@ -115,21 +146,21 @@ while true; do
         fi
         sleep 0.4
       done
-      if lsof -ti tcp:"$PORT" >/dev/null 2>&1; then
+      if false && lsof -ti tcp:"$PORT" >/dev/null 2>&1; then
         echo "Port $PORT still busy; forcing stop." >&2
         kill -9 $pids >/dev/null 2>&1 || true
       fi
     fi
   fi
 
-  RELOAD_ARGS=()
-  if [ "$AUTO_RELOAD" = "1" ]; then
-    RELOAD_ARGS=(--reload --reload-dir "$APP_DIR")
-  fi
-
   set +e
-  "$VENV_PY" -m uvicorn --app-dir "$APP_DIR" kiwi_scan.server:app --host 0.0.0.0 --port "$PORT" "${RELOAD_ARGS[@]}"
-  code=$?
+  if [ "$AUTO_RELOAD" = "1" ]; then
+    "$VENV_PY" -m uvicorn --app-dir "$APP_DIR" kiwi_scan.server:app --host 0.0.0.0 --port "$PORT" --ws-ping-interval 20.0 --ws-ping-timeout 120.0 --reload --reload-dir "$APP_DIR"
+    code=$?
+  else
+    "$VENV_PY" -m uvicorn --app-dir "$APP_DIR" kiwi_scan.server:app --host 0.0.0.0 --port "$PORT" --ws-ping-interval 20.0 --ws-ping-timeout 120.0
+    code=$?
+  fi
   set -e
   if [ "${NO_RESTART}" = "1" ]; then
     exit "$code"

@@ -30,7 +30,7 @@ _decode_ws_clients: set[WebSocket] = set()
 
 _decode_lock = threading.Lock()
 _decode_seq = 0
-_decode_buffer: deque[Dict] = deque(maxlen=500)
+_decode_buffer: deque[Dict] = deque(maxlen=5000)
 _decode_times: deque[float] = deque(maxlen=5000)
 
 # Server-side band activity chart buckets: fixed 15-second wall-clock intervals so the

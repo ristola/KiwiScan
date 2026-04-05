@@ -51,6 +51,8 @@ def ensure_ws4010_started() -> None:
             reload=False,
             log_level=os.environ.get("KIWI_SCAN_WS4010_LOG_LEVEL", "info"),
             access_log=False,
+            ws_ping_interval=20.0,
+            ws_ping_timeout=120.0,
         )
         server = uvicorn.Server(config)
         _server = server
