@@ -19,6 +19,7 @@ from fastapi.websockets import WebSocketDisconnect
 
 from ..maidenhead import distance_from_grid as _grid_distance
 from ..scheduler import block_for_hour, expected_schedule_by_season, season_for_date
+from ..auto_set_loop import _FIXED_ASSIGNMENTS
 from ..udp4010_server import publish_udp4010
 
 logger = logging.getLogger(__name__)
@@ -228,6 +229,8 @@ def _trigger_auto_set_apply(settings: Dict[str, Any], mode: str) -> Dict[str, An
             "band_hop_seconds": int(settings.get("bandHopSeconds", 105) or 105),
             "wspr_start_band": str(settings.get("wsprStartBand") or "10m"),
         }
+        if isinstance(settings, dict) and bool(settings.get("fixedModeEnabled", False)):
+            payload["fixed_assignments"] = list(_FIXED_ASSIGNMENTS)
 
         req = urllib_request.Request(
             "http://127.0.0.1:4020/auto_set_receivers",
@@ -1034,6 +1037,7 @@ def publish_decode(payload: Dict) -> None:
         now = time.time()
         _decode_seq += 1
         payload["id"] = _decode_seq
+        payload["epoch_ts"] = now
         _decode_buffer.append(payload)
         _decode_times.append(now)
         cutoff = now - 300.0
@@ -1339,3 +1343,10 @@ async def websocket_decodes_4010(websocket: WebSocket) -> None:
         with _decode_ws4010_lock:
             _decode_ws4010_dashboard_clients.discard(websocket)
             _decode_ws4010_clients.discard(websocket)
+
+def get_recent_decodes(age_seconds: int = 900) -> list[Dict[str, Any]]:
+    """Return decodes from the last age_seconds using epoch_ts."""
+    with _decode_lock:
+        now = time.time()
+        cutoff = now - age_seconds
+        return [d for d in _decode_buffer if d.get("epoch_ts", 0) >= cutoff]

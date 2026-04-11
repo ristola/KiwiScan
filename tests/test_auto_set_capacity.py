@@ -30,6 +30,8 @@ class _ReceiverMgrStub:
 
 def test_dual_mode_bands_can_fill_all_eight_receivers(monkeypatch):
     monkeypatch.delenv("KIWISCAN_AUTOSET_MAX_RX", raising=False)
+    from kiwi_scan.api import auto_set as _auto_set_mod
+    monkeypatch.setattr(_auto_set_mod, "_load_automation_settings", lambda: {"fixedModeEnabled": False})
 
     mgr = _MgrStub()
     receiver_mgr = _ReceiverMgrStub()

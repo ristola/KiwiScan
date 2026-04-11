@@ -5,6 +5,7 @@ import os
 import platform
 import shutil
 import socket
+import threading
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -13,6 +14,9 @@ from typing import Any, Dict
 from fastapi import APIRouter
 
 from ..kiwi_discovery import read_kiwi_status
+
+_SYSTEM_INFO_CACHE_LOCK: threading.Lock = threading.Lock()
+_SYSTEM_INFO_CACHE: dict[str, Any] = {"payload": None, "timestamp": 0.0, "future": None}
 
 
 def _read_proc_uptime_seconds() -> float | None:
@@ -74,21 +78,26 @@ def _parse_elapsed_seconds(value: object) -> int | None:
     return None
 
 
-def _resolve_managed_label(label: str, label_to_rx: dict[str, int]) -> tuple[str | None, int | None]:
+def _resolve_managed_label(label: str, label_to_rx: dict[str, Any]) -> tuple[str | None, int | None]:
     clean = str(label or "").strip()
     if not clean:
         return (None, None)
+    
     if clean in label_to_rx:
-        return (clean, label_to_rx.get(clean))
-
-    candidates = [
-        managed_label
-        for managed_label in label_to_rx.keys()
-        if managed_label.startswith(clean) or clean.startswith(managed_label)
-    ]
-    if len(candidates) == 1:
-        managed_label = str(candidates[0])
-        return (managed_label, label_to_rx.get(managed_label))
+        val = label_to_rx[clean]
+        if isinstance(val, list) and val:
+            return (clean, val.pop(0))
+        elif isinstance(val, int):
+            return (clean, val)
+        
+    # Fallback substring checks for label truncation
+    for managed_label, rx_val in list(label_to_rx.items()):
+        if clean.startswith(managed_label) or managed_label.startswith(clean):
+            if isinstance(rx_val, list) and rx_val:
+                return (managed_label, rx_val.pop(0))
+            elif isinstance(rx_val, int):
+                return (managed_label, rx_val)
+            
     return (None, None)
 
 
@@ -191,9 +200,21 @@ def _build_kiwi_payload(mgr: object, receiver_mgr: object | None = None) -> dict
     # numbering rather than the raw Kiwi channel index.  This matters when the Kiwi
     # does not honour our --rx-chan hint and assigns a different slot (e.g. WSPR lands
     # on Kiwi ch4 while our internal rx=3, or FT8 lands on ch3 while internal rx=4).
-    label_to_rx: dict[str, int] = {}
+    # Try to acquire receiver_mgr's lock non-blockingly; if it's held (e.g. during
+    # apply_assignments), skip label resolution rather than blocking the HTTP handler.
+    label_to_rx: dict[str, Any] = {}
     label_source = receiver_mgr if receiver_mgr is not None else mgr
-    if hasattr(label_source, "active_label_to_rx"):
+    if hasattr(label_source, "_lock") and hasattr(label_source, "active_label_to_rx"):
+        rx_lock = getattr(label_source, "_lock")
+        lock_acquired = rx_lock.acquire(timeout=0)
+        if lock_acquired:
+            try:
+                label_to_rx = label_source.active_label_to_rx()  # type: ignore[union-attr]
+            except Exception:
+                pass
+            finally:
+                rx_lock.release()
+    elif hasattr(label_source, "active_label_to_rx"):
         try:
             label_to_rx = label_source.active_label_to_rx()  # type: ignore[union-attr]
         except Exception:

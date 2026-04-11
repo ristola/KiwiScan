@@ -30,5 +30,6 @@ services:
         max-size: "10m"
         max-file: "5"
     volumes:
+      - ./src:/opt/kiwiscan/src
       - ./config:/opt/kiwiscan/config
       - ./outputs:/opt/kiwiscan/outputs

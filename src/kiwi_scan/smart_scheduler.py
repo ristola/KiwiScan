@@ -23,6 +23,9 @@ import os
 import threading
 import time
 from datetime import datetime
+import math
+from kiwi_scan.api.decodes import get_recent_decodes
+
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Set
 
@@ -562,3 +565,114 @@ class SmartScheduler:
             "marginal_bands": sorted(b for b, c in merged.items() if c == "MARGINAL" and b in allowed),
             "allowed_bands": sorted(allowed),
         }
+    def _compute_smart_score(self, band: str, recent_decodes: list[Dict[str, Any]], current_roaming: list[str]) -> float:
+        import math
+        from datetime import datetime, timezone
+        
+        band_decodes = [d for d in recent_decodes if d.get("band") == band]
+        
+        # 1. live_activity_score
+        count = len(band_decodes)
+        live_activity_score = min(count * 2.0, 50.0)
+        
+        # 2. unique_station_score
+        callsigns = {d.get("callsign") for d in band_decodes if d.get("callsign")}
+        unique_station_score = min(len(callsigns) * 1.5, 30.0)
+        
+        # 3. snr_score
+        snrs = [float(d["snr"]) for d in band_decodes if d.get("snr") is not None]
+        if snrs:
+            avg_snr = sum(snrs) / len(snrs)
+            # Map -24 to +10 roughly to 0-10
+            snr_score = max(0.0, min((avg_snr + 24) * (10.0 / 34.0), 10.0))
+        else:
+            snr_score = 0.0
+            
+        # 4. distance_score
+        dists = [float(d["dist_km"]) for d in band_decodes if d.get("dist_km") is not None]
+        if dists:
+            max_dist = max(dists)
+            # 1 point per 1000km, up to 10 points
+            distance_score = min(max_dist / 1000.0, 10.0)
+        else:
+            distance_score = 0.0
+            
+        # 5. persistence_score
+        if band_decodes:
+            times = [d.get("epoch_ts", 0) for d in band_decodes]
+            time_spread = max(times) - min(times)
+            # Max 5 points for a full 15-minute spread
+            persistence_score = min((time_spread / 900.0) * 5.0, 5.0)
+        else:
+            persistence_score = 0.0
+            
+        # 6. mode_diversity_score
+        modes = {str(d.get("mode") or "").upper() for d in band_decodes}
+        if len(modes) > 1:
+            mode_diversity_score = 5.0
+        elif len(modes) == 1:
+            mode_diversity_score = 2.0
+        else:
+            mode_diversity_score = 0.0
+
+        # 7. time_of_day_bonus (baseline logic)
+        now_utc = datetime.now(timezone.utc)
+        hour = now_utc.hour
+        is_day = 6 <= hour < 18
+        time_of_day_bonus = 0.0
+        day_bands = {"10m", "12m", "15m", "17m", "20m"}
+        night_bands = {"30m", "40m", "60m", "80m", "160m"}
+        if is_day and band in day_bands:
+            time_of_day_bonus = 10.0
+        elif not is_day and band in night_bands:
+            time_of_day_bonus = 10.0
+            
+        # 8. solar_bonus
+        # Placeholder - maybe we can query an API later
+        solar_bonus = 0.0
+        
+        # 9. grayline_bonus
+        # Normally sunrise is ~06:00 UTC and sunset is ~18:00 UTC in a generic model, add a +/- 1 hr window.
+        grayline_bonus = 0.0
+        if band in {"30m", "40m"}:
+            if (5 <= hour <= 7) or (17 <= hour <= 19):
+                grayline_bonus = 5.0
+
+        smart_score = (
+            live_activity_score +
+            unique_station_score +
+            snr_score +
+            distance_score +
+            persistence_score +
+            mode_diversity_score +
+            time_of_day_bonus +
+            solar_bonus +
+            grayline_bonus
+        )
+        
+        # Avoid flapping: add hysteresis memory if already roaming here
+        if band in current_roaming:
+            smart_score += 15.0
+            
+        return max(0.0, smart_score)
+
+    def rank_roaming_bands(self, available_bands: list[str], current_roaming: list[str]) -> list[str]:
+        """Rank available bands using the smart score.
+        Calculates all variables: live_activity, unique calls, snr, distance, setup, etc.
+        """
+        # Fetch decodes from the last 15 minutes
+        try:
+            from kiwi_scan.api.decodes import get_recent_decodes
+            recent_decodes = get_recent_decodes(900)
+        except Exception:
+            recent_decodes = []
+            
+        ranked = []
+        for band in available_bands:
+            score = self._compute_smart_score(band, recent_decodes, current_roaming)
+            # Add a tiny tie-breaker
+            ranked.append((score, band))
+            
+        # Sort descending by score
+        ranked.sort(key=lambda x: x[0], reverse=True)
+        return [band for score, band in ranked]

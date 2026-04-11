@@ -59,6 +59,14 @@ _BAND_WSPR_FREQS: dict[str, float] = {
 _IQ_MAX_SEPARATION_HZ = 10_000  # ±5 kHz fits safely within 12 kHz IQ bandwidth
 
 
+def _compact_user_label(prefix: str, band: str, mode_tag: str) -> str:
+    prefix_text = str(prefix or "").strip().upper().replace("_", "")
+    band_text = str(band or "").strip().upper().replace("_", "")
+    mode_text = str(mode_tag or "").strip().upper().replace(" ", "").replace("/", "").replace("_", "")
+    label = f"{prefix_text}{band_text}{mode_text}"
+    return label[:12]
+
+
 def _ft4_wspr_iq_params(band: str) -> "tuple[str, float, float] | None":
     """Return (iq_centre_khz_str, ft4_offset_hz, wspr_offset_hz) for FT4+WSPR IQ dual-mode."""
     pair = _BAND_FT4_WSPR_PAIRS.get(band)
@@ -423,6 +431,25 @@ class _ReceiverWorker(threading.Thread):
         except Exception:
             pass
 
+    @property
+    def _user_prefix(self) -> str:
+        return "FIXED" if int(self._rx) >= 2 else f"ROAM{int(self._rx) + 1}"
+
+    @staticmethod
+    def _kill_local_kiwi_user_processes(user_label: str) -> None:
+        label = str(user_label or "").strip()
+        if not label:
+            return
+        try:
+            subprocess.run(
+                ["pkill", "-9", "-f", f"kiwirecorder.py.*{re.escape(label)}"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+
     def _kiwi_rx_chan(self) -> int:
         mode_norm = self._mode_label.strip().upper()
         if ("SSB" in mode_norm) or ("PHONE" in mode_norm):
@@ -781,14 +808,15 @@ class _ReceiverWorker(threading.Thread):
                 "--rx-chan",
                 str(self._kiwi_rx_chan()),
                 "--user",
-                f"AUTO_{self._band}_SSBSCAN",
+                _compact_user_label(self._user_prefix, self._band, "SSB"),
                 "--scan-yaml",
                 str(yaml_path),
                 "--squelch-tail",
                 str(tail_s),
                 "--log_level=info",
             ]
-            self._active_user_label = f"AUTO_{self._band}_SSBSCAN"
+            self._active_user_label = _compact_user_label(self._user_prefix, self._band, "SSB")
+            self._kill_local_kiwi_user_processes(self._active_user_label)
 
             try:
                 proc = subprocess.Popen(
@@ -804,7 +832,7 @@ class _ReceiverWorker(threading.Thread):
                 continue
 
             if not self._verify_kiwi_rx_channel(
-                user_label=f"AUTO_{self._band}_SSBSCAN",
+                user_label=self._active_user_label,
                 expected_rx=self._kiwi_rx_chan(),
                 timeout_s=6.0,
                 strict=True,
@@ -938,7 +966,7 @@ class _ReceiverWorker(threading.Thread):
                 if time.time() >= next_channel_check:
                     next_channel_check = time.time() + self._watchdog_channel_check_s()
                     if not self._verify_kiwi_rx_channel(
-                        user_label=f"AUTO_{self._band}_SSBSCAN",
+                        user_label=f"{self._user_prefix}_{self._band}_SSBSCAN",
                         expected_rx=self._kiwi_rx_chan(),
                         timeout_s=0.9,
                         strict=True,
@@ -1230,8 +1258,9 @@ class _ReceiverWorker(threading.Thread):
         # Use max 12-char label suffix: WSPR→WS keeps labels ≤12 chars so Kiwi
         # preserves the label unchanged (>12-char labels are replaced by Kiwi firmware).
         _pm = "FT8" if "FT8" in mode_tag else ("FT4" if "FT4" in mode_tag else ("WS" if "WSPR" in mode_tag else mode_tag[:8]))
-        user_label = f"AUTO_{self._band}_{_pm}"
+        user_label = _compact_user_label(self._user_prefix, self._band, _pm)
         self._active_user_label = user_label
+        self._kill_local_kiwi_user_processes(user_label)
         logger.info(
             "_spawn START rx=%s label=%s stop_event=%s",
             self._rx, user_label, self._stop_event.is_set(),
@@ -1262,7 +1291,7 @@ class _ReceiverWorker(threading.Thread):
                         self._rx, self._band, iq_centre_khz, ft8_off, ft4_off, wspr_off,
                     )
                     pipeline_cmd = (
-                        f"{self._python_cmd} {self._kiwirecorder_path} "
+                        f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
                         f"-s {self._host} -p {self._port} -f {iq_centre_khz} -m iq "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._python_cmd} -u {iq_splitter_path} "
@@ -1282,7 +1311,7 @@ class _ReceiverWorker(threading.Thread):
                             self._band,
                         )
                         pipeline_cmd = (
-                            f"{self._python_cmd} {self._kiwirecorder_path} "
+                            f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
                             f"-s {self._host} -p {self._port} -f {iq_centre_khz} -m iq "
                             f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                             f"{self._python_cmd} -u {iq_splitter_path} "
@@ -1297,7 +1326,7 @@ class _ReceiverWorker(threading.Thread):
                             udp_port=udp_port_ft8, af2udp_path=af2udp_path
                         )
                         pipeline_cmd = (
-                            f"{self._python_cmd} {self._kiwirecorder_path} "
+                            f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
                             f"-s {self._host} -p {self._port} -f {freq_khz} -m usb "
                             f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                             f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
@@ -1321,7 +1350,7 @@ class _ReceiverWorker(threading.Thread):
                         self._rx, self._band, iq_centre_khz, ft8_off_hz, ft4_off_hz,
                     )
                     pipeline_cmd = (
-                        f"{self._python_cmd} {self._kiwirecorder_path} "
+                        f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
                         f"-s {self._host} -p {self._port} -f {iq_centre_khz} -m iq "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._python_cmd} -u {iq_splitter_path} "
@@ -1336,7 +1365,7 @@ class _ReceiverWorker(threading.Thread):
                         self._rx, self._band,
                     )
                     pipeline_cmd = (
-                        f"{self._python_cmd} {self._kiwirecorder_path} "
+                        f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
                         f"-s {self._host} -p {self._port} -f {freq_khz} -m usb "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
@@ -1358,7 +1387,7 @@ class _ReceiverWorker(threading.Thread):
                         self._rx, self._band, iq_centre_khz, ft4_off_hz, wspr_off_hz,
                     )
                     pipeline_cmd = (
-                        f"{self._python_cmd} {self._kiwirecorder_path} "
+                        f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
                         f"-s {self._host} -p {self._port} -f {iq_centre_khz} -m iq "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._python_cmd} -u {iq_splitter_path} "
@@ -1379,7 +1408,7 @@ class _ReceiverWorker(threading.Thread):
                         udp_port=udp_port_wspr, af2udp_path=af2udp_path
                     )
                     pipeline_cmd = (
-                        f"{self._python_cmd} {self._kiwirecorder_path} "
+                        f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
                         f"-s {self._host} -p {self._port} -f {wspr_freq_khz} -m usb "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
@@ -1391,7 +1420,7 @@ class _ReceiverWorker(threading.Thread):
                 self._start_decoder(udp_port, self._decoder_mode())
                 udp_sender_cmd = self._udp_audio_sender_cmd(udp_port=udp_port, af2udp_path=af2udp_path)
                 pipeline_cmd = (
-                    f"{self._python_cmd} {self._kiwirecorder_path} "
+                    f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
                     f"-s {self._host} -p {self._port} -f {freq_khz} -m usb "
                     f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                     f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
@@ -1559,6 +1588,11 @@ class _ReceiverWorker(threading.Thread):
 
 
 class ReceiverManager:
+    @staticmethod
+    def _is_auto_label(label: str) -> bool:
+        v = str(label or "").strip().upper()
+        return v.startswith("AUTO") or v.startswith("FIXED") or v.startswith("ROAM")
+
     def __init__(
         self,
         *,
@@ -1588,7 +1622,6 @@ class ReceiverManager:
         self._activity_by_rx: Dict[int, Dict[str, object]] = {}
         self._stale_watch_state_by_rx: Dict[int, Dict[str, object]] = {}
         self._mismatch_global_streak = 0
-        self._duplicate_global_streak = 0
         self._auto_kick_total = 0
         self._auto_kick_last_unix: Optional[float] = None
         self._auto_kick_last_reason = ""
@@ -2044,9 +2077,68 @@ class ReceiverManager:
                 self._stop_worker(old_worker)
             return False
 
+        stale_labels: set[str] = set()
+        expected_label = self._expected_user_label(assignment)
+        if expected_label:
+            stale_labels.add(expected_label)
+        active_label = str(getattr(old_worker, "_active_user_label", "") or "").strip() if old_worker is not None else ""
+        if active_label:
+            stale_labels.add(active_label)
+
         old_adjust = int(old_worker._rx_chan_adjust) if old_worker is not None else 0
         if old_worker is not None:
             self._stop_worker(old_worker)
+
+        if stale_labels:
+            self._wait_for_kiwi_auto_users_missing(
+                host=host,
+                port=port,
+                labels=stale_labels,
+                timeout_s=4.0,
+            )
+            live_labels = self._fetch_live_auto_users(host, port)
+            if any(
+                self._user_label_matches(expected, live)
+                for expected in stale_labels
+                for live in live_labels.values()
+            ):
+                self._cleanup_orphan_processes_for_labels(stale_labels)
+                self._wait_for_kiwi_auto_users_missing(
+                    host=host,
+                    port=port,
+                    labels=stale_labels,
+                    timeout_s=4.0,
+                )
+
+        if "kiwi_assignment_mismatch" in str(reason or ""):
+            mismatch_slots = {int(rx)}
+            live_users = self._fetch_live_users(host, port)
+            for live_slot, live_label in live_users.items():
+                if self._user_label_matches(expected_label, live_label):
+                    mismatch_slots.add(int(live_slot))
+            for _kick_attempt in range(2):
+                try:
+                    self._run_admin_kick_all(
+                        host=host,
+                        port=port,
+                        kick_only_slots=sorted(mismatch_slots),
+                    )
+                except Exception:
+                    pass
+                if self._wait_for_kiwi_slots_clear(
+                    host=host,
+                    port=port,
+                    slots=mismatch_slots,
+                    stable_secs=2.0,
+                    timeout_s=6.0,
+                ):
+                    break
+            else:
+                logger.warning(
+                    "Mismatch restart rx=%d: slot(s) %s still occupied before respawn",
+                    int(rx),
+                    sorted(mismatch_slots),
+                )
 
         new_worker = self._make_worker(host=host, port=port, assignment=assignment, rx_chan_adjust=old_adjust)
         with self._lock:
@@ -2184,16 +2276,8 @@ class ReceiverManager:
                     duplicate_live_labels = self._has_duplicate_live_auto_labels(active_host, active_port)
                 except Exception:
                     duplicate_live_labels = False
-                    
-                with self._lock:
-                    if duplicate_live_labels:
-                        self._duplicate_global_streak += 1
-                    else:
-                        self._duplicate_global_streak = 0
-                    dup_streak = self._duplicate_global_streak
-
                 duplicate_autokick = bool(
-                    dup_streak >= 12
+                    duplicate_live_labels
                     and (time.time() - last_auto_kick_unix) >= min(30.0, self._mismatch_autokick_cooldown_s())
                     and not self._startup_eviction_active.is_set()
                 )
@@ -2209,7 +2293,6 @@ class ReceiverManager:
                         if kicked:
                             self._auto_kick_total += 1
                             self._mismatch_global_streak = 0
-                            self._duplicate_global_streak = 0
                     if kicked:
                         # Stop all workers and CLEAR assignments instead of restarting them
                         # individually.  Individual restarts after a kick-all ignore the
@@ -2344,7 +2427,6 @@ class ReceiverManager:
             self._watchdog_state_by_rx.clear()
             self._activity_by_rx.clear()
             self._mismatch_global_streak = 0
-            self._duplicate_global_streak = 0
             self._auto_kick_total = 0
             self._auto_kick_last_unix = None
             self._auto_kick_last_reason = ""
@@ -2441,7 +2523,7 @@ class ReceiverManager:
         live_auto_locations: Dict[str, list[tuple[int, int | None]]] = {}
         for rx_i, name in users_by_rx.items():
             label = str(name or "").strip().upper()
-            if not label.startswith("AUTO_"):
+            if not self._is_auto_label(label):
                 continue
             live_auto_locations.setdefault(label, []).append((int(rx_i), user_age_by_rx.get(int(rx_i))))
 
@@ -2480,12 +2562,13 @@ class ReceiverManager:
             visible_on_kiwi = False
             kiwi_user_age_s = None
             visible_slot: int | None = None
+            expected_label = self._expected_user_label(assignment) if assignment is not None else ""
             if is_ssb and assignment is not None:
-                expected_prefix = f"AUTO_{str(assignment.band).upper()}_SSB"
                 # Search all kiwi slots — workers may land on any slot index at connect time.
-                # Use _user_label_matches to handle KiwiSDR username truncation (e.g. 16-char limit).
+                # Use the same compact label builder as the worker so health checks stay
+                # aligned with Kiwi's truncated /users labels.
                 visible_slot = next(
-                    (slot for slot, name in users_by_rx.items() if self._user_label_matches(expected_prefix, name)),
+                    (slot for slot, name in users_by_rx.items() if self._user_label_matches(expected_label, name)),
                     None,
                 )
                 is_active = visible_slot is not None
@@ -2494,12 +2577,11 @@ class ReceiverManager:
                 if not is_active:
                     last_reason = last_reason or "kiwi_not_visible"
             elif assignment is not None:
-                _mode_tag = str(assignment.mode_label or "FT8").strip().upper().replace(" ", "").replace("/", "")
-                expected_prefix = f"AUTO_{str(assignment.band).upper()}_{_mode_tag}"
                 # Search all kiwi slots — workers may land on any slot index at connect time.
-                # Use _user_label_matches to handle KiwiSDR username truncation (e.g. 16-char limit).
+                # Use the same compact label builder as the worker so health checks stay
+                # aligned with Kiwi's truncated /users labels.
                 visible_slot = next(
-                    (slot for slot, name in users_by_rx.items() if self._user_label_matches(expected_prefix, name)),
+                    (slot for slot, name in users_by_rx.items() if self._user_label_matches(expected_label, name)),
                     None,
                 )
                 visible_on_kiwi = visible_slot is not None
@@ -2585,7 +2667,7 @@ class ReceiverManager:
                 occupant = str(users_by_rx.get(int(rx), "") or "").strip()
                 occupant_age_s = user_age_by_rx.get(int(rx))
                 displaced_by_stale_auto = bool(
-                    occupant.startswith("AUTO_")
+                    self._is_auto_label(occupant)
                     and not self._user_label_matches(expected_label, occupant)
                     and (occupant_age_s is None or occupant_age_s >= remap_grace_s)
                 )
@@ -2833,7 +2915,7 @@ class ReceiverManager:
     def _cleanup_orphan_processes(self) -> None:
         try:
             subprocess.run(
-                ["pkill", "-f", "kiwirecorder.py.*AUTO_"],
+                ["pkill", "-9", "-f", "kiwirecorder.py.*(AUTO_|FIXED_|ROAM)"],
                 check=False,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -2841,12 +2923,24 @@ class ReceiverManager:
         except Exception:
             pass
 
+    def _cleanup_orphan_processes_for_labels(self, labels: set[str]) -> None:
+        for label in {str(v or "").strip() for v in labels if str(v or "").strip()}:
+            try:
+                subprocess.run(
+                    ["pkill", "-9", "-f", f"kiwirecorder.py.*{re.escape(label)}"],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception:
+                pass
+
     def _wait_for_orphan_cleanup(self, timeout_s: float = 6.0) -> None:
         deadline = time.time() + max(0.5, float(timeout_s))
         while time.time() < deadline:
             try:
                 r1 = subprocess.run(
-                    ["pgrep", "-f", "kiwirecorder.py.*AUTO_"],
+                    ["pgrep", "-f", "kiwirecorder.py.*(AUTO_|FIXED_|ROAM)"],
                     check=False,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL,
@@ -2890,7 +2984,7 @@ class ReceiverManager:
                     if not isinstance(row, dict):
                         continue
                     name = urllib.parse.unquote(str(row.get("n") or "")).strip()
-                    if name.startswith("AUTO_"):
+                    if self._is_auto_label(name):
                         auto_count += 1
                 if auto_count == 0:
                     return
@@ -2922,7 +3016,7 @@ class ReceiverManager:
                 auto_count = sum(
                     1 for row in payload
                     if isinstance(row, dict)
-                    and urllib.parse.unquote(str(row.get("n") or "")).strip().startswith("AUTO_")
+                    and urllib.parse.unquote(str(row.get("n") or "")).strip().startswith(("AUTO_", "FIXED_", "ROAM"))
                 )
                 if auto_count == 0:
                     if stable_since is None:
@@ -2948,7 +3042,7 @@ class ReceiverManager:
             return
         deadline = time.time() + max(1.0, float(timeout_s))
         while time.time() < deadline:
-            live_users = self._fetch_live_auto_users(host, port)
+            live_users = self._fetch_live_users(host, port)
             if not live_users:
                 return
             live_labels = [str(label or "").strip() for label in live_users.values()]
@@ -2960,6 +3054,32 @@ class ReceiverManager:
             if not still_present:
                 return
             time.sleep(0.25)
+
+    def _wait_for_kiwi_slots_clear(
+        self,
+        *,
+        host: str,
+        port: int,
+        slots: set[int] | list[int],
+        stable_secs: float = 2.0,
+        timeout_s: float = 8.0,
+    ) -> bool:
+        target_slots = sorted({int(slot) for slot in slots})
+        if not target_slots:
+            return True
+        deadline = time.time() + max(float(timeout_s), float(stable_secs) + 0.5)
+        stable_since: Optional[float] = None
+        while time.time() < deadline:
+            live_users = self._fetch_live_users(host, port)
+            if not any(int(slot) in live_users for slot in target_slots):
+                if stable_since is None:
+                    stable_since = time.time()
+                elif time.time() - stable_since >= float(stable_secs):
+                    return True
+            else:
+                stable_since = None
+            time.sleep(0.25)
+        return False
 
     @staticmethod
     def _is_ssb_mode_label(mode_label: str) -> bool:
@@ -3017,9 +3137,21 @@ class ReceiverManager:
         raw = str(os.environ.get("KIWISCAN_RESET_ALL_ON_RECONCILE", "1")).strip().lower()
         return raw not in {"0", "false", "no", "off"}
 
-    @staticmethod
-    def _band_plan_changed(current: Dict[int, ReceiverAssignment], desired: Dict[int, ReceiverAssignment]) -> bool:
+    @classmethod
+    def _band_plan_changed(cls, current: Dict[int, ReceiverAssignment], desired: Dict[int, ReceiverAssignment]) -> bool:
         if not current or not desired:
+            return False
+        fixed_rxs = {int(rx) for rx in (set(current.keys()) | set(desired.keys())) if int(rx) >= 2}
+        if fixed_rxs:
+            for rx in fixed_rxs:
+                cur_assignment = current.get(int(rx))
+                new_assignment = desired.get(int(rx))
+                if cur_assignment is None or new_assignment is None:
+                    return True
+                if not cls._assignment_equivalent(cur_assignment, new_assignment):
+                    return True
+            # In fixed mode, adding or rotating RX0/RX1 roaming should not force a
+            # full reset of the already-stable fixed receivers.
             return False
         if set(current.keys()) != set(desired.keys()):
             return True
@@ -3035,7 +3167,7 @@ class ReceiverManager:
         def _canon(value: str) -> str:
             # Kiwi user names can vary in casing (e.g. AUTO_20m_FT8);
             # compare canonicalized text to avoid false mismatches.
-            return str(value or "").strip().upper()
+            return str(value or "").strip().upper().replace("_", "")
 
         expected_text = _canon(expected)
         actual_text = _canon(urllib.parse.unquote(str(actual or "").strip()))
@@ -3049,18 +3181,19 @@ class ReceiverManager:
 
     @classmethod
     def _expected_user_label(cls, assignment: ReceiverAssignment) -> str:
+        prefix = "FIXED" if int(assignment.rx) >= 2 else f"ROAM{int(assignment.rx) + 1}"
         if bool(assignment.ssb_scan) and cls._is_ssb_assignment(assignment):
-            return f"AUTO_{str(assignment.band).upper()}_SSBSCAN"
+            return _compact_user_label(prefix, str(assignment.band).upper(), "SSB")
         mode_tag = str(assignment.mode_label or "FT8").strip().upper().replace(" ", "").replace("/", "")
         # Kiwi firmware modifies labels > ~12 chars in /users (truncates or regenerates
         # from the tuned frequency), causing label-matching to fail for IQ multi-mode
         # workers.  Use short suffixes: WSPR→WS keeps "AUTO_20m_WS" (11 chars) within
         # the 12-char limit.  Priority: FT8 > FT4 > WS (WSPR).
         _pm = "FT8" if "FT8" in mode_tag else ("FT4" if "FT4" in mode_tag else ("WS" if "WSPR" in mode_tag else mode_tag[:8]))
-        return f"AUTO_{str(assignment.band).upper()}_{_pm}"
+        return _compact_user_label(prefix, str(assignment.band).upper(), _pm)
 
     @classmethod
-    def _fetch_live_auto_users(cls, host: str, port: int) -> Dict[int, str]:
+    def _fetch_live_users(cls, host: str, port: int) -> Dict[int, str]:
         out: Dict[int, str] = {}
         status_url = f"http://{host}:{int(port)}/users?json=1"
         try:
@@ -3076,15 +3209,40 @@ class ReceiverManager:
                 except Exception:
                     continue
                 name = urllib.parse.unquote(str(row.get("n") or "")).strip()
-                if name.startswith("AUTO_"):
+                if name:
                     out[int(rx_i)] = name
         except Exception:
             return {}
         return out
 
     @classmethod
-    def _fetch_live_auto_users_with_age(cls, host: str, port: int) -> Dict[int, tuple]:
-        """Like _fetch_live_auto_users but returns {slot: (label, age_seconds_or_None)}."""
+    def _fetch_live_auto_users(cls, host: str, port: int) -> Dict[int, str]:
+        return {
+            int(slot): label
+            for slot, label in cls._fetch_live_users(host, port).items()
+            if cls._is_auto_label(label)
+        }
+
+    @classmethod
+    def _slots_with_unexpected_auto_labels(
+        cls,
+        live_users: Dict[int, str],
+        expected_labels: set[str],
+    ) -> set[int]:
+        expected = {str(label or "").strip() for label in expected_labels if str(label or "").strip()}
+        out: set[int] = set()
+        for slot, label in live_users.items():
+            live_label = str(label or "").strip()
+            if not cls._is_auto_label(live_label):
+                continue
+            if any(cls._user_label_matches(expected_label, live_label) for expected_label in expected):
+                continue
+            out.add(int(slot))
+        return out
+
+    @classmethod
+    def _fetch_live_users_with_age(cls, host: str, port: int) -> Dict[int, tuple]:
+        """Return {slot: (label, age_seconds_or_None)} for all visible Kiwi users."""
         out: Dict[int, tuple] = {}
         status_url = f"http://{host}:{int(port)}/users?json=1"
         try:
@@ -3100,7 +3258,7 @@ class ReceiverManager:
                 except Exception:
                     continue
                 name = urllib.parse.unquote(str(row.get("n") or "")).strip()
-                if not name.startswith("AUTO_"):
+                if not name:
                     continue
                 age_s: Optional[float] = None
                 try:
@@ -3117,6 +3275,15 @@ class ReceiverManager:
         except Exception:
             return {}
         return out
+
+    @classmethod
+    def _fetch_live_auto_users_with_age(cls, host: str, port: int) -> Dict[int, tuple]:
+        """Like _fetch_live_users_with_age but keeps only AUTO-labelled users."""
+        return {
+            int(slot): entry
+            for slot, entry in cls._fetch_live_users_with_age(host, port).items()
+            if cls._is_auto_label(str(entry[0] if isinstance(entry, tuple) and entry else ""))
+        }
 
     @classmethod
     def _has_duplicate_live_auto_labels(cls, host: str, port: int) -> bool:
@@ -3138,7 +3305,7 @@ class ReceiverManager:
         port: int,
         assignments: Dict[int, ReceiverAssignment],
     ) -> set[int]:
-        live_users = self._fetch_live_auto_users(host, port)
+        live_users = self._fetch_live_users(host, port)
         if not live_users:
             return set()
 
@@ -3152,7 +3319,16 @@ class ReceiverManager:
             ignore_slot = bool(getattr(assignment, "ignore_slot_check", False))
             if ignore_slot:
                 # For fixed receivers (ignore_slot_check=True), the Kiwi slot won't
-                # match the app rx number — only check if the worker is alive and correct.
+                # match the app rx number. Still require the expected FIXED_* label to
+                # be visible somewhere on the Kiwi, otherwise stale AUTO users can keep
+                # the worker blocked indefinitely while the local thread looks healthy.
+                label_found = any(
+                    self._user_label_matches(expected_label, lbl)
+                    for lbl in live_users.values()
+                )
+                if not label_found:
+                    out.add(int(rx))
+                    continue
                 worker = self._workers.get(int(rx))
                 if worker is None:
                     out.add(int(rx))
@@ -3321,6 +3497,11 @@ class ReceiverManager:
 
             current_rxs = set(int(rx) for rx in self._assignments.keys())
             desired_rxs = set(int(rx) for rx in assignments.keys())
+            desired_fixed_rxs = sorted(
+                int(rx)
+                for rx in desired_rxs
+                if bool(getattr(assignments[int(rx)], "ignore_slot_check", False))
+            )
             force_full_reset = (
                 self._force_full_reset_on_band_change_enabled()
                 and self._band_plan_changed(self._assignments, assignments)
@@ -3463,14 +3644,20 @@ class ReceiverManager:
                         _ = self._run_admin_kick_all(host=str(host), port=int(port), force_all=True)
                         self._wait_for_kiwi_auto_users_clear(host=str(host), port=int(port), timeout_s=12.0)
 
-                    # Stable-clear wait: the Kiwi's REST /users clears immediately after
-                    # kick but its internal slot counter may take several more seconds to
-                    # decrement (especially over VPN).  Requiring /users to stay at 0 for
-                    # stable_secs guarantees the internal state has settled before workers
-                    # connect.
-                    self._wait_for_kiwi_slots_stable_clear(
-                        host=str(host), port=int(port), stable_secs=10.0, timeout_s=60.0
-                    )
+                    if starting_from_empty and desired_fixed_rxs:
+                        logger.info(
+                            "Starting from empty with fixed receivers configured; skipping global stable-clear wait and claiming fixed slots immediately"
+                        )
+                        time.sleep(1.0)
+                    else:
+                        # Stable-clear wait: the Kiwi's REST /users clears immediately after
+                        # kick but its internal slot counter may take several more seconds to
+                        # decrement (especially over VPN).  Requiring /users to stay at 0 for
+                        # stable_secs guarantees the internal state has settled before workers
+                        # connect.
+                        self._wait_for_kiwi_slots_stable_clear(
+                            host=str(host), port=int(port), stable_secs=10.0, timeout_s=60.0
+                        )
                 else:
                     # Fixed workers are preserved — /users will never reach 0, so the
                     # stable-clear wait above would burn the full 60 s timeout without
@@ -3518,31 +3705,34 @@ class ReceiverManager:
             # kicks create VPN TCP churn that causes the Kiwi to say "Too busy" for
             # all subsequent connections.  Any wrong-slot placements are handled by
             # the eviction loop below once all workers are up.
-            for rx in sorted(desired_rxs):
+            def _start_worker_sequential(rx: int) -> None:
                 if rx in to_reconfigure and rx in self._workers:
-                    continue
+                    return
                 if rx in self._workers and rx in self._assignments and self._assignment_equivalent(self._assignments[rx], assignments[rx]) and not host_changed:
-                    continue
+                    return
                 desired = assignments[rx]
                 worker = self._make_worker(host=host, port=port, assignment=desired, rx_chan_adjust=0)
                 self._workers[rx] = worker
                 worker.start()
                 # Poll /users from the main thread until the expected label is present
-                # and stable for ≥2 s.  This covers kiwirecorder's 15 s "Too busy"
-                # retry cycle without any kicks (which would cause VPN churn).
+                # and stable for >=2 s. This covers kiwirecorder's 15 s "Too busy"
+                # retry cycle without any kicks.
                 _exp_lbl = self._expected_user_label(desired)
-                _poll_deadline = time.time() + 18.0
+                _poll_timeout_s = 15.0 if int(rx) >= 2 else 8.0
+                _poll_deadline = time.time() + _poll_timeout_s
                 _stable_slot: Optional[int] = None
                 _stable_since: float = 0.0
+                _last_live_p: Dict[int, str] = {}
                 while time.time() < _poll_deadline:
-                    _live_p = self._fetch_live_auto_users(str(host), int(port))
+                    _live_p = self._fetch_live_users(str(host), int(port))
+                    _last_live_p = dict(_live_p)
                     _cur_slot = next(
                         (int(_s) for _s, _l in _live_p.items() if self._user_label_matches(_exp_lbl, _l)),
                         None,
                     )
                     if _cur_slot is not None and _cur_slot == _stable_slot:
                         if time.time() - _stable_since >= 2.0:
-                            break  # Connected and stable for 2+ s
+                            break
                     else:
                         _stable_slot = _cur_slot
                         _stable_since = time.time()
@@ -3555,7 +3745,133 @@ class ReceiverManager:
                         rx, _stable_slot, rx,
                     )
                 else:
-                    logger.warning("Sequential start rx=%d: not connected within timeout", rx)
+                    logger.warning(
+                        "Sequential start rx=%d: not connected within %.1fs timeout",
+                        rx,
+                        _poll_timeout_s,
+                    )
+                    _timed_out_worker = self._workers.pop(int(rx), None)
+                    if _timed_out_worker is not None:
+                        self._stop_worker(_timed_out_worker, join_timeout_s=0.5)
+                    self._activity_by_rx.pop(int(rx), None)
+                    _expected_live_labels = {
+                        self._expected_user_label(assignments[int(_rx)])
+                        for _rx in desired_rxs
+                    }
+                    _stale_slots = sorted(
+                        {
+                            int(_slot)
+                            for _slot, _label in _last_live_p.items()
+                            if self._user_label_matches(_exp_lbl, _label)
+                            or int(_slot) == int(rx)
+                        }
+                        | self._slots_with_unexpected_auto_labels(_last_live_p, _expected_live_labels)
+                    )
+                    if _stale_slots:
+                        try:
+                            self._run_admin_kick_all(
+                                host=str(host),
+                                port=int(port),
+                                kick_only_slots=_stale_slots,
+                            )
+                        except Exception:
+                            pass
+                        self._wait_for_kiwi_auto_users_missing(
+                            host=str(host),
+                            port=int(port),
+                            labels={_exp_lbl},
+                            timeout_s=3.0,
+                        )
+
+            _startup_order = sorted(desired_rxs)
+            if starting_from_empty and desired_fixed_rxs:
+                _startup_order = desired_fixed_rxs + [int(rx) for rx in sorted(desired_rxs) if int(rx) not in desired_fixed_rxs]
+            for rx in _startup_order:
+                _start_worker_sequential(int(rx))
+
+            roaming_rxs_to_verify = sorted(
+                int(rx)
+                for rx in desired_rxs
+                if int(rx) < 2 and (int(rx) not in current_rxs or int(rx) in to_stop or int(rx) in reconcile_rxs)
+            )
+            if not starting_from_empty and roaming_rxs_to_verify:
+                MAX_ROAMING_CORRECTION_RETRIES = 3
+                for _roam_attempt in range(MAX_ROAMING_CORRECTION_RETRIES):
+                    if _roam_attempt > 0:
+                        time.sleep(0.75)
+                    _live_roam = self._fetch_live_users(str(host), int(port))
+                    _expected_roam = {
+                        int(rx): self._expected_user_label(assignments[int(rx)])
+                        for rx in roaming_rxs_to_verify
+                    }
+                    _actual_slots: Dict[int, int] = {}
+                    for _slot, _label in _live_roam.items():
+                        for _rx, _expected_label in _expected_roam.items():
+                            if self._user_label_matches(_expected_label, _label):
+                                _actual_slots.setdefault(int(_rx), int(_slot))
+                                break
+                    _needs_fix = [
+                        int(_rx)
+                        for _rx in roaming_rxs_to_verify
+                        if _actual_slots.get(int(_rx)) != int(_rx)
+                    ]
+                    _blocked_targets = [
+                        int(_slot)
+                        for _slot in roaming_rxs_to_verify
+                        if int(_slot) in _live_roam
+                        and not self._user_label_matches(_expected_roam[int(_slot)], _live_roam[int(_slot)])
+                    ]
+                    if not _needs_fix and not _blocked_targets:
+                        break
+
+                    _rxs_to_restart = sorted(set(_needs_fix) | set(_blocked_targets))
+                    _slots_to_kick = sorted(
+                        set(int(_rx) for _rx in _rxs_to_restart)
+                        | {
+                            int(_slot)
+                            for _rx, _slot in _actual_slots.items()
+                            if int(_rx) in _rxs_to_restart
+                        }
+                    )
+                    logger.info(
+                        "Roaming slot correction (attempt %d/%d): restart roaming RXs %s kick slots %s actual=%s",
+                        _roam_attempt + 1,
+                        MAX_ROAMING_CORRECTION_RETRIES,
+                        _rxs_to_restart,
+                        _slots_to_kick,
+                        _actual_slots,
+                    )
+                    for _rx in _rxs_to_restart:
+                        _worker = self._workers.pop(int(_rx), None)
+                        if _worker is not None:
+                            self._stop_worker(_worker, join_timeout_s=0.5)
+                        self._activity_by_rx.pop(int(_rx), None)
+
+                    if _slots_to_kick:
+                        try:
+                            self._run_admin_kick_all(
+                                host=str(host),
+                                port=int(port),
+                                kick_only_slots=_slots_to_kick,
+                            )
+                        except Exception:
+                            pass
+                        _clear_deadline = time.time() + 20.0
+                        _clear_stable_since: Optional[float] = None
+                        while time.time() < _clear_deadline:
+                            _live_after_kick = self._fetch_live_users(str(host), int(port))
+                            if not any(int(_slot) in _live_after_kick for _slot in _slots_to_kick):
+                                if _clear_stable_since is None:
+                                    _clear_stable_since = time.time()
+                                elif time.time() - _clear_stable_since >= 4.0:
+                                    break
+                            else:
+                                _clear_stable_since = None
+                            time.sleep(0.4)
+                        time.sleep(0.5)
+
+                    for _rx in _rxs_to_restart:
+                        _start_worker_sequential(int(_rx))
 
             self._assignments = {int(rx): assignments[int(rx)] for rx in sorted(desired_rxs)}
             self._active_host = str(host)
@@ -3573,7 +3889,7 @@ class ReceiverManager:
                     # Brief wait on retries so we see the ghost after it reconnects
                     if _evict_attempt > 0:
                         time.sleep(0.75)
-                    live_now = self._fetch_live_auto_users(str(host), int(port))
+                    live_now = self._fetch_live_users(str(host), int(port))
                     expected_labels = {
                         self._expected_user_label(assignments[int(rx)])
                         for rx in desired_rxs
@@ -3810,7 +4126,7 @@ class ReceiverManager:
                     # Only apply the rotation when ALL 8 workers are being restarted
                     # (partial restarts fall back to simple sorted order).
                     def _ev_start_one(the_rx: int, probe: bool = False) -> Optional[int]:
-                        """Start worker for the_rx, poll 30 s for stable slot; return slot or None.
+                        """Start worker for the_rx, poll 15 s for stable slot; return slot or None.
 
                         For non-probe workers (probe=False) the target slot is the_rx itself
                         (P-rotation guarantees each rx lands in its matching slot), so we
@@ -3873,11 +4189,11 @@ class ReceiverManager:
                                 int(the_rx), probe, _lbl, _target_slot,
                             )
                             _poll_start = time.time()
-                            _dl = _poll_start + 30.0
+                            _dl = _poll_start + 15.0
                             _ss: Optional[int] = None
                             _st: float = 0.0
                             while time.time() < _dl:
-                                _lv_raw = self._fetch_live_auto_users_with_age(str(host), int(port))
+                                _lv_raw = self._fetch_live_users_with_age(str(host), int(port))
                                 _elapsed = time.time() - _poll_start
                                 _max_age = _elapsed + 5.0  # allow 5 s grace above elapsed
                                 if _target_slot is not None:
@@ -3928,26 +4244,57 @@ class ReceiverManager:
                             if _ss is not None:
                                 return _ss
                             logger.info(
-                                "_ev_start_one rx=%d TIMED OUT after 30s (try %d/%d); "
+                                "_ev_start_one rx=%d TIMED OUT after 15s (try %d/%d); "
                                 "last /users state: %s",
                                 int(the_rx), _try_n + 1, _MAX_TRIES,
                                 {s: f"{lbl}@{age}s" for s, (lbl, age) in _lv_raw.items()},
                             )
                             # Stop the timed-out worker immediately so it no longer
-                            # occupies a Kiwi slot and blocks subsequent rotation workers.
-                            _timed_out_w = self._workers.get(int(the_rx))
+                            # retries in the background and recreates ghost AUTO users.
+                            _timed_out_w = self._workers.pop(int(the_rx), None)
                             if _timed_out_w is not None:
-                                _timed_out_w._stop_event.set()
+                                self._stop_worker(_timed_out_w, join_timeout_s=0.5)
+                            self._activity_by_rx.pop(int(the_rx), None)
+                            _expected_live_labels = {
+                                self._expected_user_label(assignments[int(_rx)])
+                                for _rx in desired_rxs
+                            }
+                            _lv_labels = {
+                                int(_slot): str(_entry[0] or "")
+                                for _slot, _entry in _lv_raw.items()
+                                if isinstance(_entry, tuple) and _entry
+                            }
+                            _stale_slots = sorted(
+                                {
+                                    int(_slot)
+                                    for _slot, (_label, _age) in _lv_raw.items()
+                                    if self._user_label_matches(_lbl, _label)
+                                    or int(_slot) == int(the_rx)
+                                }
+                                | self._slots_with_unexpected_auto_labels(_lv_labels, _expected_live_labels)
+                            )
+                            if _stale_slots:
                                 try:
-                                    _timed_out_w._terminate_proc()
+                                    self._run_admin_kick_all(
+                                        host=str(host),
+                                        port=int(port),
+                                        kick_only_slots=_stale_slots,
+                                    )
                                 except Exception:
                                     pass
+                                self._wait_for_kiwi_auto_users_missing(
+                                    host=str(host),
+                                    port=int(port),
+                                    labels={_lbl},
+                                    timeout_s=3.0,
+                                )
                             if _try_n < _MAX_TRIES - 1:
                                 time.sleep(1.0)  # brief pause before retry
                         return None
 
                     _w2r_set = set(int(_r) for _r in workers_to_restart)
-                    _full_restart = (_w2r_set == set(int(_r) for _r in desired_rxs))
+                    _desired_set = set(int(_r) for _r in desired_rxs)
+                    _full_restart = (_w2r_set == _desired_set == set(range(8)))
                     _probe_kick_at: Optional[float] = None
                     _deferred_rx_K: Optional[int] = None
 
@@ -4071,7 +4418,29 @@ class ReceiverManager:
 
             self._startup_eviction_active.clear()
             self._mismatch_global_streak = 0  # reset streak; slots are now correct
-            self._duplicate_global_streak = 0
+
+            # The duplicate-label check below is only needed for recurring operation
+            # (not starting_from_empty) since the ghost eviction loop above already
+            # handles ghost-label conflicts at startup.
+            if not starting_from_empty and self._has_duplicate_live_auto_labels(str(host), int(port)):
+                # Stop all workers and CLEAR assignments rather than restarting them
+                # simultaneously here.  A simultaneous restart (the old behaviour) ignores
+                # the Kiwi's round-robin P-pointer, so all workers reconnect at rotated
+                # slots and the mismatch persists.  By clearing assignments we ensure the
+                # next apply_assignments call sees starting_from_empty=True and runs the
+                # full P-probe eviction loop which correctly corrects the P-rotation.
+                logger.warning(
+                    "Detected duplicate AUTO labels on Kiwi; stopping all workers and "
+                    "clearing assignments — next apply cycle will perform P-probe slot correction"
+                )
+                for worker in list(self._workers.values()):
+                    self._stop_worker(worker)
+                self._workers.clear()
+                self._activity_by_rx.clear()
+                self._cleanup_orphan_processes()
+                self._wait_for_orphan_cleanup(timeout_s=6.0)
+                _ = self._run_admin_kick_all(host=str(host), port=int(port), force_all=True)
+                self._assignments.clear()  # triggers starting_from_empty on next apply_assignments
 
     def stop_all(self) -> None:
         self._manager_stop.set()

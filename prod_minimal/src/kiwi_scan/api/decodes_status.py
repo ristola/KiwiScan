@@ -22,16 +22,21 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
     _last_live_ok_unix: float = 0.0
     _last_live_host: str = ""
     _last_live_port: int = 0
+    _last_status_payload: Dict[str, object] | None = None
 
     @router.get("/decodes/status")
     def get_decode_status():
-        nonlocal _last_live_assignments, _last_live_ok_unix, _last_live_host, _last_live_port
+        nonlocal _last_live_assignments, _last_live_ok_unix, _last_live_host, _last_live_port, _last_status_payload
         rx_status: Dict[int, Dict[str, object]] = {}
         workers: Dict[int, object] = {}
         # Use a timeout so this endpoint never blocks indefinitely while
         # apply_assignments() holds the lock during startup/eviction (can be minutes).
         _lock = receiver_mgr._lock  # type: ignore[attr-defined]
         if not _lock.acquire(timeout=0.5):
+            if isinstance(_last_status_payload, dict):
+                cached = dict(_last_status_payload)
+                cached["_from_cache"] = True
+                return cached
             return {
                 "assignments": {},
                 "assignments_source": "busy",
@@ -55,23 +60,31 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
                 "freq_hz": a.freq_hz,
             }
 
-        def _normalize_mode_label(value: object) -> str:
+        def _mode_token_set(value: object) -> set[str]:
             raw = str(value or "").strip().upper().replace("_", " ").replace("-", " ")
             if not raw:
-                return ""
-            if "WSPR" in raw:
-                return "WSPR"
-            has_ft4 = "FT4" in raw
-            has_ft8 = "FT8" in raw
-            if has_ft4 and has_ft8:
-                return "FT4 / FT8"
-            if has_ft4:
-                return "FT4"
-            if has_ft8:
-                return "FT8"
+                return set()
+            tokens: set[str] = set()
+            if "FT4" in raw:
+                tokens.add("FT4")
+            if "FT8" in raw:
+                tokens.add("FT8")
+            if "WSPR" in raw or re.search(r"\bWS\b", raw):
+                tokens.add("WSPR")
             if raw in {"SSB", "PHONE", "USB", "LSB", "AM"} or "SSB" in raw:
-                return "SSB"
-            return raw
+                tokens.add("SSB")
+            if tokens:
+                return tokens
+            return {raw}
+
+        def _normalize_mode_label(value: object) -> str:
+            tokens = _mode_token_set(value)
+            if not tokens:
+                return ""
+            order = ["FT4", "FT8", "WSPR", "SSB"]
+            ordered = [token for token in order if token in tokens]
+            ordered.extend(sorted(token for token in tokens if token not in order))
+            return " / ".join(ordered)
 
         def _fetch_live_users_assignments(host: str, port: int) -> tuple[bool, Dict[int, Dict[str, object]]]:
             return _fetch_live_users_assignments_with_details(host, port)[0:2]  # pragma: no cover
@@ -97,7 +110,9 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
             name = str(label or "").strip().strip('"\'')
             if not name:
                 return None
-            match = re.search(r"AUTO_([^_]+)_(.+)", name, flags=re.IGNORECASE)
+            match = re.search(r"^(?:AUTO|FIXED|ROAM\d+)_([^_]+)_(.+)$", name, flags=re.IGNORECASE)
+            if not match:
+                match = re.search(r"^(?:AUTO|FIXED|ROAM\d)(\d+[mM])([A-Z0-9/\-]+)$", name, flags=re.IGNORECASE)
             if not match:
                 return None
             freq_hz = None
@@ -115,11 +130,13 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
         def _assignment_matches(left: Dict[str, object], right: Dict[str, object]) -> bool:
             left_band = str(left.get("band") or "").strip().lower()
             right_band = str(right.get("band") or "").strip().lower()
-            left_mode = _normalize_mode_label(left.get("mode"))
-            right_mode = _normalize_mode_label(right.get("mode"))
+            left_mode = _mode_token_set(left.get("mode"))
+            right_mode = _mode_token_set(right.get("mode"))
             if not left_band or not right_band or left_band != right_band:
                 return False
-            if not left_mode or not right_mode or left_mode != right_mode:
+            if not left_mode or not right_mode:
+                return False
+            if not (left_mode.issubset(right_mode) or right_mode.issubset(left_mode)):
                 return False
             try:
                 left_freq_hz = float(left.get("freq_hz"))
@@ -380,7 +397,7 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
                 }
             )
 
-        return {
+        payload = {
             "assignments": assignments_out,
             "assignments_source": source,
             "assignments_host": live_host,
@@ -390,5 +407,7 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
             "af2udp": str(af2udp_path),
             "ft8modem": str(ft8modem_path),
         }
+        _last_status_payload = dict(payload)
+        return payload
 
     return router

@@ -4786,6 +4786,7 @@
         let decodeRateWarmupCycles = 2;
         let latestChannelsMap = {};
         let latestAssignments = {};
+        let latestAssignmentsSource = "";
         let lastRateTickMs = Date.now();
         let refreshTimer = null;
         let refreshIntervalMs = 2000;
@@ -5380,16 +5381,27 @@
 
         function activeReceiverNameHtml(user) {
             const rawName = safeText(user && user.name, "--");
-            return `<span class="active-rx-name">${escapeHtml(rawName || "--")}</span>`;
+            return `<span class="active-rx-name">${escapeHtml(formatManagedReceiverLabel(rawName) || "--")}</span>`;
+        }
+
+        const FIXED_PLAN_RX_NUMS = new Set([2, 3, 4, 5, 6, 7]);
+        const FIXED_PLAN_BANDS = new Set(["17m", "20m", "30m", "40m"]);
+
+        function isFixedPlanRx(rx) {
+            return FIXED_PLAN_RX_NUMS.has(Number(rx));
+        }
+
+        function isFixedPlanBand(band) {
+            return FIXED_PLAN_BANDS.has(normalizeActiveReceiverBand(band));
+        }
+
+        function fixedLockSvgHtml(cssClass = "active-rx-lock") {
+            return `<svg class="${cssClass}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Fixed receiver"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>`;
         }
 
         function activeReceiverLockHtml(user) {
-            const rawName = safeText(user && user.name, "--");
-            const rxNum = Number(user && user.rx);
-            if (!rawName || rawName === "--") return "";
-            if (!Number.isFinite(rxNum) || rxNum < 2) return "";
-            if (!rawName.startsWith("AUTO_") || rawName.startsWith("(connecting")) return "";
-            return `<svg class="active-rx-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="Fixed receiver"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>`;
+            if (!user || !user.fixed) return "";
+            return fixedLockSvgHtml("active-rx-lock");
         }
         function compactAutoModeLabel(mode) {
             const mn = String(mode || "").trim().toUpperCase().replace(/\s+/g, "");
@@ -5405,13 +5417,58 @@
                 .replace(/^(\d+)\s*[mM]$/, "$1m");
         }
 
+        function readableReceiverModeLabel(mode) {
+            const raw = String(mode || "").trim().toUpperCase();
+            if (!raw) return "";
+            const normalized = raw.replace(/\s+/g, "").replace(/-/g, "/");
+            if (normalized === "FT4/FT8/WSPR") return "FT4_FT8_WSPR";
+            if (normalized === "FT4/FT8") return "FT4_FT8";
+            if (normalized === "FT4/WSPR") return "FT4_WSPR";
+            if (normalized === "WS") return "WSPR";
+            return raw.replace(/\s*\/\s*/g, "_").replace(/\s+/g, "_");
+        }
+
+        function formatManagedReceiverLabel(value) {
+            const raw = String(safeText(value, "")).trim();
+            if (!raw) return "";
+            if (raw.startsWith("(connecting")) return raw;
+            const compactMatch = raw.match(/^(AUTO|FIXED|ROAM\d)(\d+[mM])([A-Z0-9]+)$/i);
+            if (compactMatch) {
+                const prefix = compactMatch[1].toUpperCase();
+                const band = normalizeActiveReceiverBand(compactMatch[2]);
+                const mode = readableReceiverModeLabel(compactMatch[3]);
+                return `${prefix}_${band}_${mode}`;
+            }
+            const readableMatch = raw.match(/^(AUTO|FIXED|ROAM\d+)_([^_]+)_(.+)$/i);
+            if (readableMatch) {
+                const prefix = readableMatch[1].toUpperCase();
+                const band = normalizeActiveReceiverBand(readableMatch[2]);
+                const mode = readableReceiverModeLabel(readableMatch[3]);
+                return `${prefix}_${band}_${mode}`;
+            }
+            return raw;
+        }
+
+        function isManagedReceiverLabel(value) {
+            const raw = String(safeText(value, "")).trim();
+            if (!raw) return false;
+            if (raw.startsWith("(connecting")) return true;
+            return /^(AUTO|FIXED|ROAM\d)(\d+[mM])([A-Z0-9]+)$/i.test(raw)
+                || /^(AUTO|FIXED|ROAM\d+)_([^_]+)_(.+)$/i.test(raw);
+        }
+
         function buildExpectedActiveReceiverName(rx, assignment, channel) {
             const channelBand = normalizeActiveReceiverBand(channel && channel.band);
             const assignmentBand = normalizeActiveReceiverBand(assignment && assignment.band);
             const band = channelBand || assignmentBand;
             const mode = safeText((channel && channel.mode) || (assignment && assignment.mode), "").trim();
             if (!band || !mode) return `(connecting RX${safeText(rx, "--")})`;
-            return `AUTO_${band}_${compactAutoModeLabel(mode)}`;
+            let prefix = "AUTO";
+            let rxNum = Number(rx);
+            if (Number.isFinite(rxNum)) {
+                prefix = rxNum >= 2 ? "FIXED" : `ROAM${rxNum + 1}`;
+            }
+            return `${prefix}_${band}_${readableReceiverModeLabel(mode)}`;
         }
 
         function buildActiveReceiverRows(kiwiUsers, rawKiwiUsers) {
@@ -5433,74 +5490,67 @@
             });
 
             const managedRxSet = new Set();
-            Object.entries(latestAssignments || {}).forEach(([rx, assignment]) => {
-                if (!assignment || typeof assignment !== "object") return;
-                const rxNum = Number(rx);
-                if (Number.isFinite(rxNum) && rxNum >= 0) managedRxSet.add(rxNum);
-            });
             Object.entries(latestChannelsMap || {}).forEach(([rx, channel]) => {
                 if (!channel || typeof channel !== "object") return;
                 const rxNum = Number(rx);
                 if (!Number.isFinite(rxNum) || rxNum < 0) return;
-                if (channel.active || channel.band || channel.mode) managedRxSet.add(rxNum);
+                if (channel.active || channel.visible_on_kiwi) managedRxSet.add(rxNum);
             });
 
-            const highestObservedRx = Math.max(
-                7,
-                ...Array.from(managedRxSet),
-                ...Array.from(usersByRx.keys()).filter((rxNum) => Number.isFinite(rxNum) && rxNum >= 0),
-                ...Array.from(rawUsersByRx.keys()).filter((rxNum) => Number.isFinite(rxNum) && rxNum >= 0),
-            );
-            for (let rxNum = 0; rxNum <= highestObservedRx; rxNum += 1) {
-                managedRxSet.add(rxNum);
-            }
+            usersByRx.forEach((_, rxNum) => {
+                if (Number.isFinite(rxNum) && rxNum >= 0) managedRxSet.add(rxNum);
+            });
 
-            const merged = Array.from(managedRxSet)
+            return Array.from(managedRxSet)
                 .sort((a, b) => a - b)
                 .map((rxNum) => {
-                    const systemUser = usersByRx.get(rxNum) || {};
-                    const rawUser = rawUsersByRx.get(rxNum) || {};
-                    const assignment = latestAssignments && latestAssignments[String(rxNum)]
+                    const assignment = latestAssignmentsSource !== "kiwi_users" && latestAssignments && latestAssignments[String(rxNum)]
                         ? latestAssignments[String(rxNum)]
                         : {};
                     const channel = latestChannelsMap && latestChannelsMap[String(rxNum)]
                         ? latestChannelsMap[String(rxNum)]
                         : {};
+                    const liveKiwiRx = Number.isFinite(Number(channel.kiwi_actual_rx))
+                        ? Number(channel.kiwi_actual_rx)
+                        : (Number.isFinite(Number(channel.kiwi_rx)) ? Number(channel.kiwi_rx) : NaN);
+                    const systemUser = usersByRx.get(rxNum) || {};
+                    const rawUser = Number.isFinite(liveKiwiRx) ? (rawUsersByRx.get(liveKiwiRx) || {}) : {};
                     const synthesizedName = buildExpectedActiveReceiverName(rxNum, assignment, channel);
+                    const managedName = safeText(systemUser.name, "");
                     const freqHz = Number((assignment && assignment.freq_hz) || NaN);
+                    const connected = Boolean(
+                        channel.active
+                        || channel.visible_on_kiwi
+                        || safeText(systemUser.name, "")
+                    );
                     const populated = Boolean(
-                        safeText(systemUser.name, "")
-                        || safeText(channel.band, "")
+                        safeText(channel.band, "")
                         || safeText(channel.mode, "")
                         || safeText(assignment.band, "")
-                        || safeText(assignment.mode, ""),
+                        || safeText(assignment.mode, "")
+                        || managedName
                     );
                     return {
                         rx: rxNum,
-                        name: (synthesizedName && synthesizedName.startsWith("AUTO_"))
-                            ? synthesizedName
-                            : safeText(systemUser.name, safeText(rawUser.name, populated ? synthesizedName : "Unassigned")),
-                        freq_khz: Number.isFinite(Number(systemUser.freq_khz))
-                            ? Number(systemUser.freq_khz)
-                            : (Number.isFinite(Number(rawUser.freq_khz))
-                                ? Number(rawUser.freq_khz)
-                                : (Number.isFinite(freqHz) ? freqHz / 1000.0 : null)),
-                        mode: safeText(systemUser.mode, safeText(rawUser.mode, safeText(channel.mode, safeText(assignment.mode, "--")))),
-                        connected_seconds: Number.isFinite(Number(systemUser.connected_seconds))
-                            ? Number(systemUser.connected_seconds)
-                            : (Number.isFinite(Number(rawUser.connected_seconds)) ? Number(rawUser.connected_seconds) : null),
-                        active: populated || Boolean(safeText(rawUser.name, "")),
+                        name: managedName || (populated ? synthesizedName : "Unassigned"),
+                        freq_khz: Number.isFinite(Number(channel.freq_hz))
+                            ? Number(channel.freq_hz) / 1000.0
+                            : (Number.isFinite(Number(systemUser.freq_khz))
+                                ? Number(systemUser.freq_khz)
+                                : (Number.isFinite(Number(rawUser.freq_khz))
+                                    ? Number(rawUser.freq_khz)
+                                    : (Number.isFinite(freqHz) ? freqHz / 1000.0 : null))),
+                        mode: safeText(channel.mode, safeText(assignment.mode, safeText(systemUser.mode, safeText(rawUser.mode, "--")))),
+                        connected_seconds: Number.isFinite(Number(channel.kiwi_user_age_s))
+                            ? Number(channel.kiwi_user_age_s)
+                            : (Number.isFinite(Number(systemUser.connected_seconds))
+                                ? Number(systemUser.connected_seconds)
+                                : (Number.isFinite(Number(rawUser.connected_seconds)) ? Number(rawUser.connected_seconds) : null)),
+                        active: connected,
+                        fixed: isFixedPlanRx(rxNum),
                     };
-                });
-
-            const extras = rawUsers
-                .filter((user) => {
-                    const rxNum = Number(user && user.rx);
-                    return !(Number.isFinite(rxNum) && managedRxSet.has(rxNum));
                 })
-                .sort((a, b) => Number(a && a.rx) - Number(b && b.rx));
-
-            return merged.concat(extras);
+                .filter((user) => !!user.active);
         }
 
         function renderSystemPanel(data) {
@@ -5601,6 +5651,7 @@
                     </table>
                 </div>
             `;
+            _updateRxBusyOverlay();
         }
 
         async function refreshSystemInfo(force = false) {
@@ -7283,10 +7334,18 @@
         let _rxBusyAutoKick = false;
         let _rxBusyMismatch = false;
 
+        function _hasRenderableActiveReceiverRows() {
+            const kiwi = latestSystemInfo && latestSystemInfo.kiwi && typeof latestSystemInfo.kiwi === "object"
+                ? latestSystemInfo.kiwi
+                : {};
+            return buildActiveReceiverRows(kiwi.active_users, kiwi.raw_users).length > 0;
+        }
+
         function _updateRxBusyOverlay() {
             const overlay = byId("rx-busy-overlay");
             if (!overlay) return;
-            overlay.hidden = !(_rxBusyManual || _rxBusyAutoKick || _rxBusyMismatch);
+            const backgroundBusy = (_rxBusyAutoKick || _rxBusyMismatch) && !_hasRenderableActiveReceiverRows();
+            overlay.hidden = !(_rxBusyManual || backgroundBusy);
         }
 
         function setReceiversBusy(busy, label) {
@@ -8234,10 +8293,7 @@
                     const rawUsers = Array.isArray(system && system.kiwi && system.kiwi.raw_users)
                         ? system.kiwi.raw_users
                         : [];
-                    const rawAutoUsers = rawUsers.filter((user) => {
-                        const name = String((user && user.name) || "").trim();
-                        return name.startsWith("AUTO_") || name.startsWith("(connecting");
-                    });
+                    const rawAutoUsers = rawUsers.filter((user) => isManagedReceiverLabel(user && user.name));
                     if (!enabled) {
                         if (activeReceivers === 0 && rawAutoUsers.length === 0) {
                             return { ok: true, conflict: false, message: "" };
@@ -9781,7 +9837,7 @@
                 card.className = "rx-card";
                 if (!bandRows.length) {
                     card.dataset.level = "healthy";
-                    card.innerHTML = `<div class="rx-top"><span style="display:inline-flex;align-items:baseline"><span class="rx-band-label" style="font-size:1rem;font-weight:800">${band}</span>${(() => { const ct = conditionText(band); return ct !== "--" ? `\u00a0\u00a0<span style="font-size:0.78rem;font-weight:600;color:${conditionColor(band)}">${ct}</span>` : ""; })()}</span><span style="color:var(--muted);font-size:0.82rem">&mdash;</span></div><p class="kv">${iconLine("heart", "State/Health", "rx-state-line", "--", "var(--muted)")}${iconLine("gauge", "SNR(avg)", "rx-snr-line", "--")}${(() => { const sc = bandScoreText(band); return sc === "--" ? "" : iconLine("spark", "Score", "rx-score-line", `Score: ${sc}`, bandScoreColor(band)); })()}</p>`;
+                    card.innerHTML = `<div class="rx-top"><span style="display:inline-flex;align-items:center;gap:6px"><span class="rx-band-label" style="font-size:1rem;font-weight:800">${band}</span>${isFixedPlanBand(band) ? fixedLockSvgHtml("fixed-rx-lock-icon") : ""}${(() => { const ct = conditionText(band); return ct !== "--" ? `\u00a0\u00a0<span style="font-size:0.78rem;font-weight:600;color:${conditionColor(band)}">${ct}</span>` : ""; })()}</span><span style="color:var(--muted);font-size:0.82rem">&mdash;</span></div><p class="kv">${iconLine("heart", "State/Health", "rx-state-line", "--", "var(--muted)")}${iconLine("gauge", "SNR(avg)", "rx-snr-line", "--")}${(() => { const sc = bandScoreText(band); return sc === "--" ? "" : iconLine("spark", "Score", "rx-score-line", `Score: ${sc}`, bandScoreColor(band)); })()}</p>`;
                 } else {
                     const row = bandRows[0];
                     const ch = latestChannelsMap[String(row.rxNum)] || {};
@@ -9842,7 +9898,7 @@
                             const mc = modeColor(m);
                             return `<span style="display:inline-flex;align-items:baseline;gap:4px;font-size:0.72rem"><span style="font-weight:700;color:${mc}">${safeText(m)}:</span><span>${pm} min</span><span style="color:var(--muted)">&#8226;</span><span>${ph} hr</span><span style="color:var(--muted)">&#8226;</span><span>${tot} total</span></span>`;
                         }).join("<br>");
-                    card.innerHTML = `<div class="rx-top"><div style="display:flex;flex-direction:column;gap:2px"><span style="display:inline-flex;align-items:baseline"><span class="rx-band-label" style="font-size:1rem;font-weight:800">${band}</span>${(() => { const ct = conditionText(band); return ct !== "--" ? `\u00a0\u00a0<span style="font-size:0.78rem;font-weight:600;color:${conditionColor(band)}">${ct}</span>` : ""; })()}</span>${iconLine("heart", "State/Health", "rx-state-line", safeText(ch.health_state, "-"), heartColor)}</div><div style="display:flex;align-items:flex-start;gap:6px">${rxPills}</div></div><p class="kv">${iconLine("gauge", "SNR(avg)", "rx-snr-line", (() => { const t = snrAvgTextForRx(row.rxLabel); return t !== "--" ? t : (Number.isFinite(Number(ch.snr_avg_db)) ? `${Number(ch.snr_avg_db).toFixed(1)} dB` : "--"); })())}${(() => { const sc = bandScoreText(band); return iconLine("spark", "Score", "rx-score-line", sc === "--" ? "--" : `Score: ${sc}`, bandScoreColor(band)); })()}<span class="rx-decode-rates" style="display:block;margin-top:4px;line-height:1.6">${decodeRateRows}</span></p>`;
+                    card.innerHTML = `<div class="rx-top"><div style="display:flex;flex-direction:column;gap:2px"><span style="display:inline-flex;align-items:center;gap:6px"><span class="rx-band-label" style="font-size:1rem;font-weight:800">${band}</span>${isFixedPlanBand(band) ? fixedLockSvgHtml("fixed-rx-lock-icon") : ""}${(() => { const ct = conditionText(band); return ct !== "--" ? `\u00a0\u00a0<span style="font-size:0.78rem;font-weight:600;color:${conditionColor(band)}">${ct}</span>` : ""; })()}</span>${iconLine("heart", "State/Health", "rx-state-line", safeText(ch.health_state, "-"), heartColor)}</div><div style="display:flex;align-items:flex-start;gap:6px">${rxPills}</div></div><p class="kv">${iconLine("gauge", "SNR(avg)", "rx-snr-line", (() => { const t = snrAvgTextForRx(row.rxLabel); return t !== "--" ? t : (Number.isFinite(Number(ch.snr_avg_db)) ? `${Number(ch.snr_avg_db).toFixed(1)} dB` : "--"); })())}${(() => { const sc = bandScoreText(band); return iconLine("spark", "Score", "rx-score-line", sc === "--" ? "--" : `Score: ${sc}`, bandScoreColor(band)); })()}<span class="rx-decode-rates" style="display:block;margin-top:4px;line-height:1.6">${decodeRateRows}</span></p>`;
                 }
                 cardEl.append(card);
             }
@@ -10245,6 +10301,7 @@
             renderAssignments(latestAssignments);
             renderReasons(h.reason_counts || {});
             renderFixedPlanVerification(latestChannelsMap);
+            if (latestSystemInfo) renderSystemPanel(latestSystemInfo);
 
             // Show overlay when background auto-kick/reassignment is in progress.
             // Use a 65 s window (just over the 60 s kick cooldown) so the spinner
@@ -10299,9 +10356,11 @@
             const port = Number(s.assignments_port || 0);
             const endpoint = host && Number.isFinite(port) && port > 0 ? `${host}:${port}` : "--";
             setServerChip("Online", endpoint);
+            latestAssignmentsSource = safeText(s.assignments_source, "");
             latestAssignments = s.assignments || {};
             renderAssignments(latestAssignments);
             renderAssignmentBalance(latestAssignments);
+            if (latestSystemInfo) renderSystemPanel(latestSystemInfo);
 
             // Show overlay while slot assignments don't match what the Kiwi reports.
             const mismatchRxs = Array.isArray(s.assignments_mismatch_rxs) ? s.assignments_mismatch_rxs : [];

@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from ..receiver_manager import ReceiverAssignment
 from ..scheduler import block_for_hour, get_table, season_for_date
+from ..auto_set_loop import _FIXED_ASSIGNMENTS
 from .decodes import prune_decode_buffer
 
 
@@ -399,7 +400,7 @@ def make_router(
                     if not isinstance(row, dict):
                         continue
                     name = str(row.get("n") or "").strip()
-                    m = re.search(r"AUTO_([^_]+)_(.+)", name, flags=re.IGNORECASE)
+                    m = re.search(r"(?:AUTO|FIXED|ROAM\d+)_([^_]+)_(.+)", name, flags=re.IGNORECASE)
                     if not m:
                         continue
                     band = str(m.group(1) or "").strip().lower()
@@ -431,8 +432,12 @@ def make_router(
 
     @router.post("/auto_set_receivers")
     async def auto_set_receivers(request: Request):
+        import logging
+        import json
+        logger = logging.getLogger(__name__)
         nonlocal _last_apply_signature, _last_apply_response, _last_apply_ts
         payload = await request.json()
+        logger.info(f"auto_set_receivers invoked with payload: {json.dumps(payload)}")
         enabled = bool(payload.get("enabled", False))
         mode = str(payload.get("mode", "ft8")).strip().lower()
         if mode not in {"ft8", "phone"}:
@@ -536,10 +541,39 @@ def make_router(
         if isinstance(closed_bands_raw, list):
             empirical_closed = {str(b) for b in closed_bands_raw if b}
 
+        fixed_rx_slots: set[int] = set()
+        fixed_assignments_list: List[Dict[str, object]] = []
+        fixed_band_set: set[str] = set()
+        raw_fixed = payload.get("fixed_assignments")
+        # When fixedModeEnabled is active in automation settings, inject the
+        # canonical fixed-RX assignments regardless of what the caller sent.
+        if isinstance(settings, dict) and bool(settings.get("fixedModeEnabled", False)):
+            raw_fixed = list(_FIXED_ASSIGNMENTS)
+        max_total_rx = _max_auto_receivers()
+
+        if isinstance(raw_fixed, list):
+            for entry in raw_fixed:
+                if not isinstance(entry, dict):
+                    continue
+                try:
+                    rx_f = int(entry.get("rx", -1))
+                    freq_f = float(entry.get("freq_hz", 0))
+                    band_f = str(entry.get("band") or "").strip()
+                    mode_f = str(entry.get("mode") or "FT8").strip()
+                except Exception:
+                    continue
+                if rx_f < 0 or rx_f >= max_total_rx or freq_f <= 0 or not band_f:
+                    continue
+                fixed_rx_slots.add(rx_f)
+                fixed_band_set.add(str(band_f).strip().lower())
+                fixed_assignments_list.append({"rx": rx_f, "band": band_f, "mode": mode_f, "freq_hz": freq_f})
+
         if selected_set is not None:
             desired_bands = [b for b in band_order if b in selected_set and b not in empirical_closed]
         else:
             desired_bands = [b for b in open_bands if b not in empirical_closed]
+        if fixed_band_set:
+            desired_bands = [b for b in desired_bands if str(b).strip().lower() not in fixed_band_set]
 
         has_selected_ssb_band = False
         if desired_bands:
@@ -783,6 +817,12 @@ def make_router(
                 norm = _normalize_mode(mode_label)
                 tasks.append({"band": str(band), "mode": norm.upper()})
 
+        if fixed_band_set:
+            tasks = [
+                task for task in tasks
+                if str(task.get("band") or "").strip().lower() not in fixed_band_set
+            ]
+
         ssb_tasks = [t for t in tasks if str(t.get("mode") or "").strip().upper() == "SSB"]
         other_tasks = [t for t in tasks if str(t.get("mode") or "").strip().upper() != "SSB"]
         other_tasks = _sort_other_tasks_by_activity(
@@ -800,26 +840,6 @@ def make_router(
         )
 
         # Fixed assignments: pin specified RX slots directly, leaving remaining slots for roaming tasks.
-        fixed_rx_slots: set[int] = set()
-        fixed_assignments_list: List[Dict[str, object]] = []
-        raw_fixed = payload.get("fixed_assignments")
-        max_total_rx = _max_auto_receivers()
-
-        if isinstance(raw_fixed, list):
-            for entry in raw_fixed:
-                if not isinstance(entry, dict):
-                    continue
-                try:
-                    rx_f = int(entry.get("rx", -1))
-                    freq_f = float(entry.get("freq_hz", 0))
-                    band_f = str(entry.get("band") or "").strip()
-                    mode_f = str(entry.get("mode") or "FT8").strip()
-                except Exception:
-                    continue
-                if rx_f < 0 or rx_f >= max_total_rx or freq_f <= 0 or not band_f:
-                    continue
-                fixed_rx_slots.add(rx_f)
-                fixed_assignments_list.append({"rx": rx_f, "band": band_f, "mode": mode_f, "freq_hz": freq_f})
 
         all_rx_slots = [s for s in range(max_total_rx) if s not in fixed_rx_slots]
         ssb_capacity = min(2, len(ssb_tasks), len(all_rx_slots))
@@ -887,6 +907,9 @@ def make_router(
                 mode_label=mode_task,
                 ssb_scan=scan_cfg,
                 sideband=None,
+                # All non-SSB workers float to any Kiwi slot — the user only cares
+                # that the band/mode label appears somewhere in /users, not which slot.
+                ignore_slot_check=True if (scan_cfg is None) else False,
             )
             allowed_bands.add(band)
             assignment_results.append({

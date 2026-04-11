@@ -42,6 +42,7 @@ _ROAMING_DAY = [
     {"band": "15m", "mode": "FT8"},
 ]
 _ROAMING_NIGHT = [
+    {"band": "60m", "mode": "FT8"},
     {"band": "80m", "mode": "FT4 / FT8"},
     {"band": "160m", "mode": "WSPR"},
 ]
@@ -63,9 +64,9 @@ class AutoSetLoop:
         # After a force_health_recovery re-apply, back off for this many seconds
         # before checking health again.  This prevents thundering-herd restarts while
         # workers are still settling into their correct Kiwi slots (eviction loop can
-        # take up to ~2 min for 8 receivers over VPN).
-        self._recovery_backoff_until_ts: float = 0.0
-        self._RECOVERY_BACKOFF_S: float = 60.0
+        # take up to ~3 min for 8 receivers over VPN).
+        self._recovery_backoff_until_ts: float = time.time() + 180.0
+        self._RECOVERY_BACKOFF_S: float = 180.0
 
     def set_smart_scheduler(self, smart_scheduler: Any) -> None:
         """Bind a SmartScheduler instance so closed bands are filtered each cycle."""
@@ -145,7 +146,28 @@ class AutoSetLoop:
             return None, None
         entry = by_mode.get(str(block))
         if not isinstance(entry, dict):
-            return None, None
+            # Fall back to the nearest prior block (by start hour).
+            try:
+                target_start = int(str(block).split("-")[0])
+            except Exception:
+                return None, None
+            candidates: list[tuple[int, dict]] = []
+            for k, v in by_mode.items():
+                if not isinstance(v, dict):
+                    continue
+                try:
+                    cand_start = int(str(k).split("-")[0])
+                except Exception:
+                    continue
+                candidates.append((cand_start, v))
+            candidates.sort(key=lambda x: x[0])
+            prior = [(s, e) for s, e in candidates if s <= target_start]
+            if prior:
+                entry = prior[-1][1]
+            elif candidates:
+                entry = candidates[-1][1]
+            else:
+                return None, None
 
         selected: list[str] | None = None
         selected_raw = entry.get("selectedBands")
@@ -187,10 +209,14 @@ class AutoSetLoop:
         if str(active_mode).strip().lower() in {"ft8", "phone"}:
             mode = str(active_mode).strip().lower()
 
+        # Always use the current time's block for band selection regardless of the
+        # passed schedule_key.  The loop passes the current key for mode-routing, but
+        # callers should not be able to select bands from a different time window.
+        current_block = block_for_hour(datetime.now().astimezone().hour, mode=mode)
         selected_bands, band_modes = self._profile_selection_for_block(
             settings,
             mode=mode,
-            block=str(active_block),
+            block=current_block,
         )
 
         payload: Dict[str, Any] = {
@@ -238,45 +264,32 @@ class AutoSetLoop:
         return payload
 
     def _build_fixed_roaming_payload(self, settings: Dict[str, Any], day_night: str) -> Dict[str, Any]:
-        """Build a payload with pinned RX2-6 fixed assignments and roaming RX0-1.
+        """Build a payload with fixed RX2-RX7 plus scored RX0/RX1 roaming.
 
-        Roaming receivers follow the day/night schedule but skip closed bands
-        (per SmartScheduler) and substitute the best available open bands so
-        that each of the two roaming slots stays active.
+        RX0/RX1 stay empty until all 6 mandatory fixed receivers are healthy. Once
+        healthy, SmartScheduler ranks only the configured day/night roaming pool and
+        fills the 2 spare receivers with the top-scored bands.
         """
         roaming = _ROAMING_DAY if day_night == "day" else _ROAMING_NIGHT
-        primary_bands = [r["band"] for r in roaming]
-        band_modes: Dict[str, str] = {r["band"]: r["mode"] for r in roaming}
-        num_roaming_slots = 2  # Hardcoded since we only have RX0 and RX1 for roaming
+        roaming_pool = [str(r["band"]) for r in roaming]
+        band_modes: Dict[str, str] = {str(r["band"]): str(r["mode"]) for r in roaming}
+        selected_bands: list[str] = []
+        num_roaming_slots = 2
 
-        closed: list[str] = []
-        if self._smart_scheduler is not None:
-            try:
-                closed = list(self._smart_scheduler.get_closed_bands("ft8"))
-                fixed_bands = {a["band"] for a in _FIXED_ASSIGNMENTS}
-                primary_set = set(primary_bands)
-                allowed = self._smart_scheduler._allowed_bands()
-                conds = self._smart_scheduler.merged_conditions("ft8")
-                _rank = {"OPEN": 2, "MARGINAL": 1, "CLOSED": 0}
-                # Ranked fallbacks: open/marginal bands that aren't already fixed or primary.
-                fallbacks = sorted(
-                    [
-                        b for b in allowed
-                        if b not in primary_set
-                        and b not in fixed_bands
-                        and b not in closed
-                    ],
-                    key=lambda b: -_rank.get(conds.get(b, "CLOSED"), 0),
-                )
-                # Keep the open primaries and top up with fallbacks to fill exactly
-                # num_roaming_slots slots, so RX0/RX1 are never left idle.
-                open_primaries = [b for b in primary_bands if b not in closed]
-                needed = max(0, num_roaming_slots - len(open_primaries))
-                selected_bands = open_primaries[:num_roaming_slots] + fallbacks[:needed]
-            except Exception:
-                selected_bands = primary_bands[:num_roaming_slots]
-        else:
-            selected_bands = primary_bands[:num_roaming_slots]
+        fixed_health_state, sick_fixed = self._fixed_health_state()
+        if fixed_health_state == "healthy":
+            if self._smart_scheduler is not None:
+                try:
+                    ranked_bands = self._smart_scheduler.rank_roaming_bands(
+                        available_bands=list(roaming_pool),
+                        current_roaming=[],
+                    )
+                    selected_bands = [b for b in ranked_bands if b in band_modes][:num_roaming_slots]
+                except Exception:
+                    selected_bands = []
+                if len(selected_bands) < num_roaming_slots:
+                    fallback = [b for b in roaming_pool if b not in selected_bands]
+                    selected_bands.extend(fallback[:(num_roaming_slots - len(selected_bands))])
 
         payload: Dict[str, Any] = {
             "enabled": True,
@@ -300,8 +313,6 @@ class AutoSetLoop:
             "selected_bands": selected_bands,
             "band_modes": band_modes,
         }
-        if closed:
-            payload["closed_bands"] = closed
         return payload
 
     @staticmethod
@@ -400,11 +411,12 @@ class AutoSetLoop:
             else:
                 logger.debug("POST /auto_set_receivers error (processing in background): %s", e)
 
-    def _sick_fixed_receivers(self) -> list[dict]:
-        """Return list of fixed assignment entries that are inactive, faulted, or missing.
+    def _fixed_health_state(self) -> tuple[str, list[dict]]:
+        """Return fixed receiver health as ``("healthy"|"sick"|"unknown", sick_list)``.
 
-        Returns an empty list when all fixed receivers are healthy, or when the
-        health endpoint is unreachable (to avoid spurious re-applies).
+        Cached or lock-timeout health snapshots are treated as unknown so the
+        auto-set loop does not force recovery or enable roaming while the
+        receiver manager is still in the middle of a long startup/eviction pass.
         """
         port_raw = str(os.environ.get("PORT", "4020") or "4020").strip()
         try:
@@ -416,10 +428,12 @@ class AutoSetLoop:
             with urllib.request.urlopen(url, timeout=2.0) as resp:
                 data = json.loads(resp.read(1024 * 1024).decode("utf-8", errors="ignore"))
         except Exception:
-            return []  # Can't reach health endpoint — don't trigger spurious re-apply
+            return "unknown", list(_FIXED_ASSIGNMENTS)
+        if isinstance(data, dict) and (data.get("overall") == "busy" or bool(data.get("_from_cache"))):
+            return "unknown", list(_FIXED_ASSIGNMENTS)
         channels = data.get("channels") if isinstance(data, dict) else None
         if not isinstance(channels, dict):
-            return []
+            return "sick", list(_FIXED_ASSIGNMENTS)
         sick: list[dict] = []
         for entry in _FIXED_ASSIGNMENTS:
             rx_key = str(entry["rx"])
@@ -433,7 +447,68 @@ class AutoSetLoop:
             elif ch.get("status_level") == "fault":
                 logger.info("Fixed receiver RX%s is faulted (%s)", rx_key, ch.get("last_reason"))
                 sick.append(entry)
+        if sick:
+            return "sick", sick
+        return "healthy", []
+
+    def _sick_fixed_receivers(self) -> list[dict]:
+        """Return only authoritative sick fixed receivers."""
+        state, sick = self._fixed_health_state()
+        if state == "unknown":
+            return []
         return sick
+
+    def _fixed_receivers_healthy(self) -> bool:
+        """Return True only if all fixed receivers are at their expected Kiwi slots
+        and the correct band is occupying each slot.
+
+        Stricter than _fixed_health_state(): also verifies exact Kiwi slot alignment
+        and Kiwi occupant band labels to confirm roaming can be safely activated.
+        """
+        port_raw = str(os.environ.get("PORT", "4020") or "4020").strip()
+        try:
+            port = int(port_raw)
+        except Exception:
+            port = 4020
+        try:
+            url = f"http://127.0.0.1:{port}/health/rx"
+            with urllib.request.urlopen(url, timeout=2.0) as resp:
+                health_data = json.loads(resp.read(1024 * 1024).decode("utf-8", errors="ignore"))
+        except Exception:
+            return False
+        if isinstance(health_data, dict) and bool(health_data.get("_from_cache")):
+            return False
+        channels = health_data.get("channels") if isinstance(health_data, dict) else None
+        if not isinstance(channels, dict):
+            return False
+        for entry in _FIXED_ASSIGNMENTS:
+            rx = int(entry["rx"])
+            ch = channels.get(str(rx))
+            if not isinstance(ch, dict) or not ch.get("active"):
+                return False
+            if ch.get("kiwi_rx") != rx:
+                return False
+        try:
+            url = f"http://127.0.0.1:{port}/system/info"
+            with urllib.request.urlopen(url, timeout=2.0) as resp:
+                sysinfo = json.loads(resp.read(1024 * 1024).decode("utf-8", errors="ignore"))
+        except Exception:
+            return False
+        raw_users: dict[int, str] = {}
+        if isinstance(sysinfo, dict):
+            kiwi_data = sysinfo.get("kiwi") or {}
+            for user in (kiwi_data.get("raw_users") or []):
+                if isinstance(user, dict) and user.get("rx") is not None:
+                    try:
+                        raw_users[int(user["rx"])] = str(user.get("name") or "")
+                    except Exception:
+                        pass
+        for entry in _FIXED_ASSIGNMENTS:
+            rx = int(entry["rx"])
+            band = str(entry["band"])
+            if band.lower() not in raw_users.get(rx, "").lower():
+                return False
+        return True
 
     def _restart_sick_receivers(self, sick: list[dict]) -> None:
         """Restart only the listed stuck fixed receivers via the targeted admin endpoint."""
@@ -504,17 +579,40 @@ class AutoSetLoop:
             force_health_recovery = False
             _in_recovery_backoff = time.time() < self._recovery_backoff_until_ts
             if not should_apply and self._did_startup_apply and not _in_recovery_backoff:
-                sick = self._sick_fixed_receivers()
-                if sick:
+                fixed_health_state, sick = self._fixed_health_state()
+                if fixed_health_state == "unknown":
+                    logger.debug("Auto-set loop: fixed receiver health unknown — skipping recovery check")
+                elif sick:
                     rx_nums = [int(e["rx"]) for e in sick]
-                    logger.info(
-                        "Auto-set loop: fixed receiver(s) RX%s unhealthy — restarting targeted "
-                        "(next health check suppressed for %.0fs)",
-                        "/".join(str(r) for r in rx_nums),
-                        self._RECOVERY_BACKOFF_S,
-                    )
                     self._recovery_backoff_until_ts = time.time() + self._RECOVERY_BACKOFF_S
-                    self._restart_sick_receivers(sick)
+                    if len(sick) == len(_FIXED_ASSIGNMENTS):
+                        # All fixed receivers missing — targeted restart fails silently when
+                        # assignments have been cleared (e.g. by a duplicate-label auto-kick).
+                        # Skip the targeted restart and force a full re-apply instead.
+                        logger.info(
+                            "Auto-set loop: all fixed receivers missing — triggering full re-apply "
+                            "(next health check suppressed for %.0fs)",
+                            self._RECOVERY_BACKOFF_S,
+                        )
+                        force_health_recovery = True
+                        should_apply = True
+                    else:
+                        logger.info(
+                            "Auto-set loop: fixed receiver(s) RX%s unhealthy — restarting targeted "
+                            "(next health check suppressed for %.0fs)",
+                            "/".join(str(r) for r in rx_nums),
+                            self._RECOVERY_BACKOFF_S,
+                        )
+                        self._restart_sick_receivers(sick)
+                else:
+                    with self._state_lock:
+                        last_band_config = self._last_applied_band_config
+                    if last_band_config is not None and '"bands":[]' in last_band_config:
+                        logger.info(
+                            "Auto-set loop: fixed receivers now healthy — re-applying to fill scored roaming slots"
+                        )
+                        force_health_recovery = True
+                        should_apply = True
             elif _in_recovery_backoff:
                 logger.debug(
                     "Auto-set loop: skipping health check — recovery backoff active for %.0fs more",

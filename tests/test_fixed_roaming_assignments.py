@@ -63,8 +63,9 @@ def test_fixed_roaming_payload_pins_rx2_to_rx7() -> None:
         {"rx": 6, "band": "30m", "mode": "FT4 / FT8 / WSPR", "freq_hz": 10_138_000.0},
         {"rx": 7, "band": "17m", "mode": "FT4 / FT8 / WSPR", "freq_hz": 18_102_000.0},
     ]
-    assert payload.get("selected_bands") == ["15m", "10m"]
-    assert payload.get("band_modes") == {"15m": "FT8", "10m": "FT8"}
+    assert payload.get("selected_bands") == []
+    # band_modes covers the full roaming pool for the block (all 3 day bands).
+    assert payload.get("band_modes") == {"10m": "FT8", "12m": "FT8", "15m": "FT8"}
 
 
 def test_fixed_mode_only_uses_rx0_rx1_for_roaming(monkeypatch) -> None:
@@ -144,7 +145,68 @@ def test_fixed_mode_only_uses_rx0_rx1_for_roaming(monkeypatch) -> None:
         assignment = receiver_mgr.last_assignments[rx]
         assert assignment.band == band
         assert assignment.mode_label == mode_label
-        assert assignment.ignore_slot_check is False
+        assert assignment.ignore_slot_check is True  # fixed workers float to any Kiwi slot
+
+
+def test_fixed_mode_roaming_drops_bands_reserved_by_fixed_assignments(monkeypatch) -> None:
+    monkeypatch.delenv("KIWISCAN_AUTOSET_MAX_RX", raising=False)
+
+    mgr = _MgrStub()
+    receiver_mgr = _ReceiverMgrStub()
+    app = FastAPI()
+    app.include_router(
+        make_router(
+            mgr=mgr,
+            receiver_mgr=receiver_mgr,
+            band_order=["17m", "20m", "30m", "40m", "60m", "80m"],
+            band_freqs_hz={
+                "17m": 18_100_000.0,
+                "40m": 7_074_000.0,
+                "60m": 5_357_000.0,
+                "80m": 3_573_000.0,
+            },
+            band_ft4_freqs_hz={
+                "80m": 3_575_000.0,
+            },
+            band_ssb_freqs_hz={},
+            band_wspr_freqs_hz={},
+        )
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/auto_set_receivers",
+        json={
+            "enabled": True,
+            "force": True,
+            "mode": "ft8",
+            "block": "night",
+            "selected_bands": ["17m", "40m", "60m", "80m"],
+            "band_modes": {
+                "17m": "FT8",
+                "40m": "FT8",
+                "60m": "FT8",
+                "80m": "FT4 / FT8",
+            },
+            "fixed_assignments": [
+                {"rx": 2, "band": "40m", "mode": "FT8", "freq_hz": 7_074_000.0},
+                {"rx": 7, "band": "17m", "mode": "FT4 / FT8 / WSPR", "freq_hz": 18_102_000.0},
+            ],
+            "wspr_scan_enabled": False,
+            "ssb_scan": {"use_kiwi_snr": False},
+        },
+    )
+
+    assert response.status_code == 200
+    roaming_assignments = {
+        int(rx): receiver_mgr.last_assignments[rx].band
+        for rx in receiver_mgr.last_assignments
+        if int(rx) < 2
+    }
+
+    assert set(roaming_assignments.keys()) == {0, 1}
+    assert set(roaming_assignments.values()) == {"60m", "80m"}
+    assert all(band not in {"17m", "40m"} for band in roaming_assignments.values())
 
 
 def test_fixed_receivers_healthy_requires_correct_kiwi_slots(monkeypatch) -> None:
@@ -222,6 +284,63 @@ def test_fixed_receivers_healthy_requires_correct_kiwi_occupants(monkeypatch) ->
     assert loop._fixed_receivers_healthy() is False
 
 
+def test_sick_fixed_receivers_ignores_cached_empty_health_snapshot(monkeypatch) -> None:
+    loop = AutoSetLoop()
+
+    def _fake_urlopen(request, timeout=0.0):
+        del timeout
+        url = request.full_url if hasattr(request, "full_url") else str(request)
+        assert url.endswith("/health/rx")
+        return _LoopResponse({"overall": "idle", "channels": {}, "_from_cache": True})
+
+    monkeypatch.setattr("kiwi_scan.auto_set_loop.urllib.request.urlopen", _fake_urlopen)
+
+    assert loop._sick_fixed_receivers() == []
+
+
+def test_fixed_health_state_treats_cached_nonempty_snapshot_as_unknown(monkeypatch) -> None:
+    loop = AutoSetLoop()
+
+    def _fake_urlopen(request, timeout=0.0):
+        del timeout
+        url = request.full_url if hasattr(request, "full_url") else str(request)
+        assert url.endswith("/health/rx")
+        return _LoopResponse(
+            {
+                "overall": "healthy",
+                "_from_cache": True,
+                "channels": {
+                    str(rx): {"active": True, "status_level": "healthy"}
+                    for rx in range(2, 8)
+                },
+            }
+        )
+
+    monkeypatch.setattr("kiwi_scan.auto_set_loop.urllib.request.urlopen", _fake_urlopen)
+
+    state, sick = loop._fixed_health_state()
+
+    assert state == "unknown"
+    assert sick == [
+        {"rx": 2, "band": "20m", "mode": "FT4 / FT8", "freq_hz": 14_077_000.0},
+        {"rx": 3, "band": "20m", "mode": "WSPR", "freq_hz": 14_095_600.0},
+        {"rx": 4, "band": "40m", "mode": "FT8", "freq_hz": 7_074_000.0},
+        {"rx": 5, "band": "40m", "mode": "FT4 / WSPR", "freq_hz": 7_043_050.0},
+        {"rx": 6, "band": "30m", "mode": "FT4 / FT8 / WSPR", "freq_hz": 10_138_000.0},
+        {"rx": 7, "band": "17m", "mode": "FT4 / FT8 / WSPR", "freq_hz": 18_102_000.0},
+    ]
+
+
+def test_fixed_roaming_payload_keeps_roaming_empty_when_health_is_unknown(monkeypatch) -> None:
+    loop = AutoSetLoop()
+
+    monkeypatch.setattr(loop, "_fixed_health_state", lambda: ("unknown", []))
+
+    payload = loop._build_fixed_roaming_payload({}, "night")
+
+    assert payload.get("selected_bands") == []
+
+
 def test_ws4010_apply_preserves_fixed_assignments_in_fixed_mode(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
@@ -259,7 +378,18 @@ def test_ws4010_apply_preserves_fixed_assignments_in_fixed_mode(monkeypatch) -> 
     assert payload.get("enabled") is True
 
 
-def test_non_fixed_payload_ignores_schedule_block_for_assignments() -> None:
+def test_non_fixed_payload_ignores_schedule_block_for_assignments(monkeypatch) -> None:
+    # Freeze time to 14:00 so block_for_hour returns "10-16", which is not defined
+    # in the test profile → fallback lands on the nearest prior block "00-04".
+    # Without this the test is time-sensitive and fails between 20:00 and 24:00.
+    import kiwi_scan.auto_set_loop as _asl_mod
+    from datetime import datetime as _real_dt, timezone as _tz
+    class _FakeDT(_real_dt):
+        @classmethod
+        def now(cls, tz=None):
+            return _real_dt(2026, 4, 10, 14, 0, 0, tzinfo=_tz.utc).astimezone()
+    monkeypatch.setattr(_asl_mod, "datetime", _FakeDT)
+
     loop = AutoSetLoop()
     settings = {
         "fixedModeEnabled": False,
