@@ -2755,9 +2755,10 @@
         .rx-top {
             display: flex;
             justify-content: space-between;
-            align-items: center;
+            align-items: flex-start;
             margin-bottom: 8px;
-            gap: 8px;
+            gap: 6px;
+            flex-wrap: wrap;
         }
 
         .rx-name {
@@ -2772,12 +2773,12 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            min-width: 74px;
-            padding: 4px 12px;
+            min-width: 40px;
+            padding: 3px 8px;
             border-radius: 999px;
             border: 1px solid currentColor;
             background: color-mix(in srgb, currentColor, transparent 88%);
-            font-size: 0.9rem;
+            font-size: 0.78rem;
             font-weight: 800;
             letter-spacing: 0.02em;
             line-height: 1;
@@ -9856,7 +9857,7 @@
                         } else {
                             modeLabelHtml = `<span style="font-size:0.72rem;font-weight:600">${_modes.map((m) => `<span style="color:${modeColor(m)}">${safeText(m)}</span>`).join(`<span style="color:var(--muted)"> / </span>`)}</span>`;
                         }
-                        return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span class="rx-id-pill" style="color:${rxColor(r.rxNum)};min-width:52px">${displayRx}</span>${modeLabelHtml}</div>`;
+                        return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span class="rx-id-pill" style="color:${rxColor(r.rxNum)}">${displayRx}</span>${modeLabelHtml}</div>`;
                     }).join("");
                     const heartColor = level === "fault" ? "#f87171" : level === "warning" ? "#f59e0b" : "#4ade80";
                     // Aggregate decode rates by mode across all receivers on this band
@@ -9898,7 +9899,7 @@
                             const mc = modeColor(m);
                             return `<span style="display:inline-flex;align-items:baseline;gap:4px;font-size:0.72rem"><span style="font-weight:700;color:${mc}">${safeText(m)}:</span><span>${pm} min</span><span style="color:var(--muted)">&#8226;</span><span>${ph} hr</span><span style="color:var(--muted)">&#8226;</span><span>${tot} total</span></span>`;
                         }).join("<br>");
-                    card.innerHTML = `<div class="rx-top"><div style="display:flex;flex-direction:column;gap:2px"><span style="display:inline-flex;align-items:center;gap:6px"><span class="rx-band-label" style="font-size:1rem;font-weight:800">${band}</span>${isFixedPlanBand(band) ? fixedLockSvgHtml("fixed-rx-lock-icon") : ""}${(() => { const ct = conditionText(band); return ct !== "--" ? `\u00a0\u00a0<span style="font-size:0.78rem;font-weight:600;color:${conditionColor(band)}">${ct}</span>` : ""; })()}</span>${iconLine("heart", "State/Health", "rx-state-line", safeText(ch.health_state, "-"), heartColor)}</div><div style="display:flex;align-items:flex-start;gap:6px">${rxPills}</div></div><p class="kv">${iconLine("gauge", "SNR(avg)", "rx-snr-line", (() => { const t = snrAvgTextForRx(row.rxLabel); return t !== "--" ? t : (Number.isFinite(Number(ch.snr_avg_db)) ? `${Number(ch.snr_avg_db).toFixed(1)} dB` : "--"); })())}${(() => { const sc = bandScoreText(band); return iconLine("spark", "Score", "rx-score-line", sc === "--" ? "--" : `Score: ${sc}`, bandScoreColor(band)); })()}<span class="rx-decode-rates" style="display:block;margin-top:4px;line-height:1.6">${decodeRateRows}</span></p>`;
+                    card.innerHTML = `<div class="rx-top"><div style="display:flex;flex-direction:column;gap:2px"><span style="display:inline-flex;align-items:center;gap:6px"><span class="rx-band-label" style="font-size:1rem;font-weight:800">${band}</span>${isFixedPlanBand(band) ? fixedLockSvgHtml("fixed-rx-lock-icon") : ""}${(() => { const ct = conditionText(band); return ct !== "--" ? `\u00a0\u00a0<span style="font-size:0.78rem;font-weight:600;color:${conditionColor(band)}">${ct}</span>` : ""; })()}</span>${iconLine("heart", "State/Health", "rx-state-line", safeText(ch.health_state, "-"), heartColor)}</div><div style="display:flex;align-items:flex-start;gap:4px;flex-wrap:wrap">${rxPills}</div></div><p class="kv">${iconLine("gauge", "SNR(avg)", "rx-snr-line", (() => { const t = snrAvgTextForRx(row.rxLabel); return t !== "--" ? t : (Number.isFinite(Number(ch.snr_avg_db)) ? `${Number(ch.snr_avg_db).toFixed(1)} dB` : "--"); })())}${(() => { const sc = bandScoreText(band); return iconLine("spark", "Score", "rx-score-line", sc === "--" ? "--" : `Score: ${sc}`, bandScoreColor(band)); })()}<span class="rx-decode-rates" style="display:block;margin-top:4px;line-height:1.6">${decodeRateRows}</span></p>`;
                 }
                 cardEl.append(card);
             }

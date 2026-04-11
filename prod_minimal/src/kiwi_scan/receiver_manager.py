@@ -2439,8 +2439,12 @@ class ReceiverManager:
         Used by the system-info API to display the KiwiScan internal receiver number
         rather than the raw Kiwi channel index (which may differ when the Kiwi does not
         honour our ``--rx-chan`` request and assigns a different channel slot).
+        Uses a short acquire timeout so HTTP handlers never block indefinitely.
         """
-        with self._lock:
+        acquired = self._lock.acquire(timeout=1.0)
+        if not acquired:
+            return {}
+        try:
             result: Dict[str, int] = {}
             for rx, worker in self._workers.items():
                 if worker is None:
@@ -2449,6 +2453,8 @@ class ReceiverManager:
                 if label:
                     result[label] = int(rx)
             return result
+        finally:
+            self._lock.release()
 
     def health_summary(self) -> Dict[str, object]:
         # Use a short timeout on the lock so this method never blocks indefinitely.
@@ -2744,6 +2750,7 @@ class ReceiverManager:
             channels[str(rx)] = {
                 "rx": int(rx),
                 "kiwi_rx": visible_slot if visible_slot is not None else int(rx),
+                "freq_hz": float(assignment.freq_hz) if assignment is not None else None,
                 "band": assignment.band if assignment else wd.get("band"),
                 "mode": assignment.mode_label if assignment else None,
                 "active": bool(is_active),

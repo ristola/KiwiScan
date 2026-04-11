@@ -206,21 +206,10 @@ def _build_kiwi_payload(mgr: object, receiver_mgr: object | None = None) -> dict
     # numbering rather than the raw Kiwi channel index.  This matters when the Kiwi
     # does not honour our --rx-chan hint and assigns a different slot (e.g. WSPR lands
     # on Kiwi ch4 while our internal rx=3, or FT8 lands on ch3 while internal rx=4).
-    # Try to acquire receiver_mgr's lock non-blockingly; if it's held (e.g. during
-    # apply_assignments), skip label resolution rather than blocking the HTTP handler.
+    # active_label_to_rx() uses its own short-timeout lock internally; call it directly.
     label_to_rx: dict[str, int] = {}
     label_source = receiver_mgr if receiver_mgr is not None else mgr
-    if hasattr(label_source, "_lock") and hasattr(label_source, "active_label_to_rx"):
-        rx_lock = getattr(label_source, "_lock")
-        lock_acquired = rx_lock.acquire(timeout=0)
-        if lock_acquired:
-            try:
-                label_to_rx = label_source.active_label_to_rx()  # type: ignore[union-attr]
-            except Exception:
-                pass
-            finally:
-                rx_lock.release()
-    elif hasattr(label_source, "active_label_to_rx"):
+    if hasattr(label_source, "active_label_to_rx"):
         try:
             label_to_rx = label_source.active_label_to_rx()  # type: ignore[union-attr]
         except Exception:

@@ -20,7 +20,14 @@ class _ReceiverMgrStub:
         self._lock = threading.Lock()
 
     def active_label_to_rx(self) -> dict[str, int]:
-        return {"AUTO_20M_FT8": 2}
+        # Mimic the real implementation: use a short timeout so tests don't hang.
+        acquired = self._lock.acquire(timeout=0.05)
+        if not acquired:
+            return {}
+        try:
+            return {"AUTO_20M_FT8": 2}
+        finally:
+            self._lock.release()
 
 
 def test_system_info_returns_raw_users_when_receiver_manager_lock_is_busy(monkeypatch) -> None:
