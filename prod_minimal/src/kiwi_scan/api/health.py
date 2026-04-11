@@ -22,4 +22,16 @@ def make_router(*, receiver_mgr: object) -> APIRouter:
             "channels": {},
         }
 
+    @router.get("/health/rx/truth")
+    def get_receiver_truth() -> dict:
+        if hasattr(receiver_mgr, "truth_snapshot"):
+            return receiver_mgr.truth_snapshot()
+        return {
+            "overall": "unknown",
+            "host": "",
+            "port": 0,
+            "channels": {},
+            "_from_cache": False,
+        }
+
     return router

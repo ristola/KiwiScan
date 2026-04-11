@@ -271,25 +271,33 @@ class AutoSetLoop:
         fills the 2 spare receivers with the top-scored bands.
         """
         roaming = _ROAMING_DAY if day_night == "day" else _ROAMING_NIGHT
-        roaming_pool = [str(r["band"]) for r in roaming]
-        band_modes: Dict[str, str] = {str(r["band"]): str(r["mode"]) for r in roaming}
+        _fixed_bands = {str(a["band"]).strip().lower() for a in _FIXED_ASSIGNMENTS}
+        roaming_pool = [str(r["band"]) for r in roaming if str(r["band"]).strip().lower() not in _fixed_bands]
+        band_modes: Dict[str, str] = {str(r["band"]): str(r["mode"]) for r in roaming if str(r["band"]).strip().lower() not in _fixed_bands}
         selected_bands: list[str] = []
         num_roaming_slots = 2
 
-        fixed_health_state, sick_fixed = self._fixed_health_state()
-        if fixed_health_state == "healthy":
-            if self._smart_scheduler is not None:
-                try:
-                    ranked_bands = self._smart_scheduler.rank_roaming_bands(
-                        available_bands=list(roaming_pool),
-                        current_roaming=[],
-                    )
-                    selected_bands = [b for b in ranked_bands if b in band_modes][:num_roaming_slots]
-                except Exception:
-                    selected_bands = []
-                if len(selected_bands) < num_roaming_slots:
-                    fallback = [b for b in roaming_pool if b not in selected_bands]
-                    selected_bands.extend(fallback[:(num_roaming_slots - len(selected_bands))])
+        fixed_health_state, _sick_fixed = self._fixed_health_state()
+        if self._smart_scheduler is not None:
+            try:
+                ranked_bands = self._smart_scheduler.rank_roaming_bands(
+                    available_bands=list(roaming_pool),
+                    current_roaming=[],
+                )
+                selected_bands = [b for b in ranked_bands if b in band_modes][:num_roaming_slots]
+            except Exception:
+                selected_bands = []
+
+        if len(selected_bands) < num_roaming_slots:
+            fallback = [b for b in roaming_pool if b not in selected_bands]
+            selected_bands.extend(fallback[:(num_roaming_slots - len(selected_bands))])
+
+        if fixed_health_state != "healthy":
+            logger.info(
+                "Fixed receiver health=%s; keeping fallback roaming bands active: %s",
+                fixed_health_state,
+                selected_bands,
+            )
 
         payload: Dict[str, Any] = {
             "enabled": True,
@@ -510,6 +518,43 @@ class AutoSetLoop:
                 return False
         return True
 
+    def _roaming_health_state(self) -> tuple[str, list[int]]:
+        """Return roaming RX0/RX1 health as (healthy|sick|unknown, sick_rxs)."""
+        port_raw = str(os.environ.get("PORT", "4020") or "4020").strip()
+        try:
+            port = int(port_raw)
+        except Exception:
+            port = 4020
+        try:
+            url = f"http://127.0.0.1:{port}/health/rx"
+            with urllib.request.urlopen(url, timeout=2.0) as resp:
+                data = json.loads(resp.read(1024 * 1024).decode("utf-8", errors="ignore"))
+        except Exception:
+            return "unknown", [0, 1]
+
+        if not isinstance(data, dict):
+            return "unknown", [0, 1]
+        if data.get("overall") == "busy" or bool(data.get("_from_cache")):
+            return "unknown", [0, 1]
+
+        channels = data.get("channels")
+        if not isinstance(channels, dict):
+            return "unknown", [0, 1]
+
+        sick: list[int] = []
+        for rx in (0, 1):
+            ch = channels.get(str(rx))
+            if not isinstance(ch, dict):
+                sick.append(int(rx))
+                continue
+            if not bool(ch.get("active")) or not bool(ch.get("visible_on_kiwi")):
+                sick.append(int(rx))
+                continue
+            if str(ch.get("status_level") or "").strip().lower() == "fault":
+                sick.append(int(rx))
+
+        return ("healthy", []) if not sick else ("sick", sick)
+
     def _restart_sick_receivers(self, sick: list[dict]) -> None:
         """Restart only the listed stuck fixed receivers via the targeted admin endpoint."""
         rx_list = [int(e["rx"]) for e in sick]
@@ -610,6 +655,18 @@ class AutoSetLoop:
                     if last_band_config is not None and '"bands":[]' in last_band_config:
                         logger.info(
                             "Auto-set loop: fixed receivers now healthy — re-applying to fill scored roaming slots"
+                        )
+                        force_health_recovery = True
+                        should_apply = True
+                if not should_apply:
+                    roaming_state, sick_roaming = self._roaming_health_state()
+                    if roaming_state == "sick" and sick_roaming:
+                        self._recovery_backoff_until_ts = time.time() + self._RECOVERY_BACKOFF_S
+                        logger.info(
+                            "Auto-set loop: roaming receiver(s) RX%s unhealthy — forcing re-apply "
+                            "(next health check suppressed for %.0fs)",
+                            "/".join(str(r) for r in sick_roaming),
+                            self._RECOVERY_BACKOFF_S,
                         )
                         force_health_recovery = True
                         should_apply = True

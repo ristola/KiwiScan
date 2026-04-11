@@ -63,9 +63,20 @@ def test_fixed_roaming_payload_pins_rx2_to_rx7() -> None:
         {"rx": 6, "band": "30m", "mode": "FT4 / FT8 / WSPR", "freq_hz": 10_138_000.0},
         {"rx": 7, "band": "17m", "mode": "FT4 / FT8 / WSPR", "freq_hz": 18_102_000.0},
     ]
-    assert payload.get("selected_bands") == []
+    assert payload.get("selected_bands") == ["10m", "12m"]
     # band_modes covers the full roaming pool for the block (all 3 day bands).
     assert payload.get("band_modes") == {"10m": "FT8", "12m": "FT8", "15m": "FT8"}
+    assert set(payload.get("selected_bands", [])) <= {"10m", "12m", "15m"}
+
+
+def test_fixed_roaming_payload_night_uses_only_night_roaming_pool() -> None:
+    loop = AutoSetLoop()
+
+    payload = loop._build_fixed_roaming_payload({}, "night")
+
+    assert payload.get("selected_bands") == ["60m", "80m"]
+    assert payload.get("band_modes") == {"60m": "FT8", "80m": "FT4 / FT8", "160m": "WSPR"}
+    assert set(payload.get("selected_bands", [])) <= {"60m", "80m", "160m"}
 
 
 def test_fixed_mode_only_uses_rx0_rx1_for_roaming(monkeypatch) -> None:
@@ -132,6 +143,8 @@ def test_fixed_mode_only_uses_rx0_rx1_for_roaming(monkeypatch) -> None:
     }
     assert set(roaming_assignments.keys()) == {0, 1}
     assert set(roaming_assignments.values()) == {("10m", "FT8"), ("15m", "FT8")}
+    assert receiver_mgr.last_assignments[0].ignore_slot_check is False
+    assert receiver_mgr.last_assignments[1].ignore_slot_check is False
 
     expected_fixed = {
         2: ("20m", "FT4 / FT8"),
@@ -207,6 +220,8 @@ def test_fixed_mode_roaming_drops_bands_reserved_by_fixed_assignments(monkeypatc
     assert set(roaming_assignments.keys()) == {0, 1}
     assert set(roaming_assignments.values()) == {"60m", "80m"}
     assert all(band not in {"17m", "40m"} for band in roaming_assignments.values())
+    assert receiver_mgr.last_assignments[0].ignore_slot_check is False
+    assert receiver_mgr.last_assignments[1].ignore_slot_check is False
 
 
 def test_fixed_receivers_healthy_requires_correct_kiwi_slots(monkeypatch) -> None:
@@ -331,14 +346,56 @@ def test_fixed_health_state_treats_cached_nonempty_snapshot_as_unknown(monkeypat
     ]
 
 
-def test_fixed_roaming_payload_keeps_roaming_empty_when_health_is_unknown(monkeypatch) -> None:
+def test_fixed_roaming_payload_keeps_fallback_roaming_when_health_is_unknown(monkeypatch) -> None:
     loop = AutoSetLoop()
 
     monkeypatch.setattr(loop, "_fixed_health_state", lambda: ("unknown", []))
 
     payload = loop._build_fixed_roaming_payload({}, "night")
 
-    assert payload.get("selected_bands") == []
+    assert payload.get("selected_bands") == ["60m", "80m"]
+
+
+def test_roaming_health_state_reports_sick_missing_roam(monkeypatch) -> None:
+    loop = AutoSetLoop()
+
+    def _fake_urlopen(request, timeout=0.0):
+        del timeout
+        url = request.full_url if hasattr(request, "full_url") else str(request)
+        assert url.endswith("/health/rx")
+        return _LoopResponse(
+            {
+                "overall": "degraded",
+                "channels": {
+                    "0": {"active": False, "visible_on_kiwi": False, "status_level": "fault"},
+                    "1": {"active": True, "visible_on_kiwi": True, "status_level": "healthy"},
+                },
+            }
+        )
+
+    monkeypatch.setattr("kiwi_scan.auto_set_loop.urllib.request.urlopen", _fake_urlopen)
+
+    state, sick = loop._roaming_health_state()
+
+    assert state == "sick"
+    assert sick == [0]
+
+
+def test_roaming_health_state_treats_cached_health_as_unknown(monkeypatch) -> None:
+    loop = AutoSetLoop()
+
+    def _fake_urlopen(request, timeout=0.0):
+        del timeout
+        url = request.full_url if hasattr(request, "full_url") else str(request)
+        assert url.endswith("/health/rx")
+        return _LoopResponse({"overall": "healthy", "_from_cache": True, "channels": {}})
+
+    monkeypatch.setattr("kiwi_scan.auto_set_loop.urllib.request.urlopen", _fake_urlopen)
+
+    state, sick = loop._roaming_health_state()
+
+    assert state == "unknown"
+    assert sick == [0, 1]
 
 
 def test_ws4010_apply_preserves_fixed_assignments_in_fixed_mode(monkeypatch) -> None:

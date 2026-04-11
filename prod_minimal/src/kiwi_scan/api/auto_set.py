@@ -907,9 +907,8 @@ def make_router(
                 mode_label=mode_task,
                 ssb_scan=scan_cfg,
                 sideband=None,
-                # All non-SSB workers float to any Kiwi slot — the user only cares
-                # that the band/mode label appears somewhere in /users, not which slot.
-                ignore_slot_check=True if (scan_cfg is None) else False,
+                # Keep RX0/RX1 as strict roaming slots; only fixed RX2+ should float.
+                ignore_slot_check=True if (scan_cfg is None and int(rx_request) >= 2) else False,
             )
             allowed_bands.add(band)
             assignment_results.append({

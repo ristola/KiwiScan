@@ -3770,16 +3770,16 @@
 
         .pro-map-legend {
             position: absolute;
-            left: 12px;
-            bottom: 12px;
+            left: 10px;
+            bottom: 10px;
             z-index: 700;
             display: flex;
             flex-wrap: wrap;
-            gap: 8px;
+            gap: 6px;
             align-items: center;
-            max-width: calc(100% - 24px);
-            padding: 6px 8px;
-            border-radius: 10px;
+            max-width: calc(100% - 20px);
+            padding: 4px 6px;
+            border-radius: 9px;
             border: 1px solid rgba(111, 135, 160, 0.55);
             background: rgba(19, 41, 61, 0.86);
             box-shadow: 0 12px 24px rgba(2, 12, 27, 0.28);
@@ -3789,17 +3789,18 @@
         .pro-map-legend-btn {
             display: inline-flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             border: 1px solid #5fb9ff;
             border-radius: 999px;
             background: rgba(35, 65, 112, 0.82);
             color: #f8fafc;
             -webkit-text-fill-color: #f8fafc;
             font: inherit;
-            font-size: 0.72rem;
+            font-size: 0.66rem;
             font-weight: 700;
             letter-spacing: 0.01em;
-            padding: 6px 12px;
+            line-height: 1;
+            padding: 5px 10px;
             cursor: pointer;
             box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
         }
@@ -3816,10 +3817,10 @@
         }
 
         .pro-map-legend-dot {
-            width: 14px;
-            height: 14px;
+                        width: 11px;
+                        height: 11px;
             border-radius: 50%;
-            flex: 0 0 14px;
+                        flex: 0 0 11px;
             box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
         }
 
@@ -3844,14 +3845,14 @@
                 left: 10px;
                 right: 10px;
                 bottom: 10px;
-                gap: 6px;
-                padding: 6px;
+                gap: 5px;
+                padding: 5px;
             }
 
             .pro-map-legend-btn {
                 flex: 1 1 calc(50% - 8px);
                 justify-content: center;
-                padding: 6px 10px;
+                padding: 5px 8px;
             }
         }
 
@@ -4868,6 +4869,7 @@
         const RECENT_DECODE_RENDER_LIMIT = 5000;
         const MAP_POINT_TTL_MS = 24 * 60 * 60 * 1000;
         const SYSTEM_INFO_CACHE_MS = 15000;
+        const SYSTEM_INFO_TIMEOUT_MS = 4000;
         const MAP_MODE_COLORS = {
             WSPR: "#a855f7",
             FT8: "#3b82f6",
@@ -5501,6 +5503,12 @@
             usersByRx.forEach((_, rxNum) => {
                 if (Number.isFinite(rxNum) && rxNum >= 0) managedRxSet.add(rxNum);
             });
+            rawUsersByRx.forEach((rawUser, rxNum) => {
+                const rawName = safeText(rawUser && rawUser.name, "");
+                if (Number.isFinite(rxNum) && rxNum >= 0 && isManagedReceiverLabel(rawName)) {
+                    managedRxSet.add(rxNum);
+                }
+            });
 
             return Array.from(managedRxSet)
                 .sort((a, b) => a - b)
@@ -5515,14 +5523,19 @@
                         ? Number(channel.kiwi_actual_rx)
                         : (Number.isFinite(Number(channel.kiwi_rx)) ? Number(channel.kiwi_rx) : NaN);
                     const systemUser = usersByRx.get(rxNum) || {};
-                    const rawUser = Number.isFinite(liveKiwiRx) ? (rawUsersByRx.get(liveKiwiRx) || {}) : {};
+                    const rawUserBySlot = rawUsersByRx.get(rxNum) || {};
+                    const rawUser = Number.isFinite(liveKiwiRx)
+                        ? (rawUsersByRx.get(liveKiwiRx) || rawUserBySlot)
+                        : rawUserBySlot;
                     const synthesizedName = buildExpectedActiveReceiverName(rxNum, assignment, channel);
                     const managedName = safeText(systemUser.name, "");
+                    const rawName = safeText(rawUser.name, "");
                     const freqHz = Number((assignment && assignment.freq_hz) || NaN);
                     const connected = Boolean(
                         channel.active
                         || channel.visible_on_kiwi
                         || safeText(systemUser.name, "")
+                        || rawName
                     );
                     const populated = Boolean(
                         safeText(channel.band, "")
@@ -5530,10 +5543,11 @@
                         || safeText(assignment.band, "")
                         || safeText(assignment.mode, "")
                         || managedName
+                        || rawName
                     );
                     return {
                         rx: rxNum,
-                        name: managedName || (populated ? synthesizedName : "Unassigned"),
+                        name: managedName || rawName || (populated ? synthesizedName : "Unassigned"),
                         freq_khz: Number.isFinite(Number(channel.freq_hz))
                             ? Number(channel.freq_hz) / 1000.0
                             : (Number.isFinite(Number(systemUser.freq_khz))
@@ -5663,7 +5677,7 @@
             }
             if (systemInfoRequest) return systemInfoRequest;
             setSystemStatus("loading...");
-            systemInfoRequest = getJson("/system/info")
+            systemInfoRequest = getJson("/system/info", SYSTEM_INFO_TIMEOUT_MS)
                 .then((data) => {
                     lastSystemInfoRefreshMs = Date.now();
                     renderSystemPanel(data);
@@ -5671,7 +5685,10 @@
                     return data;
                 })
                 .catch((err) => {
-                    setSystemStatus(`load failed: ${String((err && err.message) || err)}`);
+                    const msg = (err && err.name === "AbortError")
+                        ? `timeout after ${Math.round(SYSTEM_INFO_TIMEOUT_MS / 1000)}s`
+                        : String((err && err.message) || err);
+                    setSystemStatus(`load failed: ${msg}`);
                     throw err;
                 })
                 .finally(() => {
@@ -7865,6 +7882,24 @@
             const snapshot = latestAutomationSettings && typeof latestAutomationSettings === "object"
                 ? latestAutomationSettings
                 : {};
+            const uiThemeMode = normalizeUiThemeMode(
+                byId("cfg-ui-theme-mode")
+                    ? readTextInput("cfg-ui-theme-mode", currentUiThemeMode || UI_THEME_DEFAULT_MODE)
+                    : (snapshot.uiThemeMode ?? currentUiThemeMode ?? UI_THEME_DEFAULT_MODE),
+                currentUiThemeMode || UI_THEME_DEFAULT_MODE,
+            );
+            const uiThemeNightHour = byId("cfg-ui-theme-night-hour")
+                ? readNumberInput("cfg-ui-theme-night-hour", authoritativeUiThemeNightHour)
+                : authoritativeUiThemeNightHour;
+            const uiThemeHourOffset = byId("cfg-ui-theme-hour-offset")
+                ? readNumberInput("cfg-ui-theme-hour-offset", authoritativeUiThemeHourOffset)
+                : authoritativeUiThemeHourOffset;
+            const uiDensity = normalizeUiDensityMode(
+                byId("cfg-ui-density")
+                    ? readTextInput("cfg-ui-density", currentUiDensity || UI_DENSITY_DEFAULT_MODE)
+                    : (snapshot.uiDensity ?? currentUiDensity ?? UI_DENSITY_DEFAULT_MODE),
+                currentUiDensity || UI_DENSITY_DEFAULT_MODE,
+            );
             const bsGrid = readBandScheduleFromGrid();
             const payload = {
                 ...snapshot,
@@ -7885,10 +7920,10 @@
                 ssbTailS: byId("auto-ssb-tail-s") ? readNumberInput("auto-ssb-tail-s", 1) : ("ssbTailS" in snapshot ? snapshot.ssbTailS : 1),
                 ssbStepStrategy: byId("auto-ssb-step-strategy") ? readTextInput("auto-ssb-step-strategy", "adaptive").toLowerCase() : (snapshot.ssbStepStrategy || "adaptive"),
                 ssbStepKHz: byId("auto-ssb-step-khz") ? readNumberInput("auto-ssb-step-khz", 10) : ("ssbStepKHz" in snapshot ? snapshot.ssbStepKHz : 10),
-                uiThemeMode: normalizeUiThemeMode(snapshot.uiThemeMode, currentUiThemeMode || "auto"),
-                uiThemeNightHour: authoritativeUiThemeNightHour,
-                uiThemeHourOffset: authoritativeUiThemeHourOffset,
-                uiDensity: normalizeUiDensityMode(snapshot.uiDensity, currentUiDensity || "normal"),
+                uiThemeMode,
+                uiThemeNightHour,
+                uiThemeHourOffset,
+                uiDensity,
                 overviewTopics: overviewTopicPrefs,
                 ...(bsGrid !== null ? { scheduleProfiles: bsGrid } : {}),
             };
