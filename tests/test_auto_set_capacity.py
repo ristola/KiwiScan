@@ -75,7 +75,6 @@ def test_dual_mode_bands_can_fill_all_eight_receivers(monkeypatch):
                 "80m": "FT8",
                 "160m": "FT8",
             },
-            "wspr_scan_enabled": False,
             "ssb_scan": {"use_kiwi_snr": False},
         },
     )

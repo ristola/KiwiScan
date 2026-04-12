@@ -225,9 +225,6 @@ def _trigger_auto_set_apply(settings: Dict[str, Any], mode: str) -> Dict[str, An
             "block": selected_block,
             "selected_bands": selected_bands if isinstance(selected_bands, list) else [],
             "band_modes": band_modes if isinstance(band_modes, dict) else {},
-            "wspr_scan_enabled": bool(settings.get("autoScanWspr", False)),
-            "band_hop_seconds": int(settings.get("bandHopSeconds", 105) or 105),
-            "wspr_start_band": str(settings.get("wsprStartBand") or "10m"),
         }
         if isinstance(settings, dict) and bool(settings.get("fixedModeEnabled", False)):
             payload["fixed_assignments"] = list(_FIXED_ASSIGNMENTS)
@@ -348,47 +345,6 @@ def _apply_ws4010_band_command(payload: Dict[str, Any]) -> Dict[str, Any]:
         "enabled": enabled,
         "band_mode": band_mode if has_band_mode else "UNCHANGED",
         "blocks": target_blocks,
-        "apply": apply_result,
-    }
-
-
-def _coerce_bool(value: object, *, field_name: str = "enabled") -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    text = str(value or "").strip().lower()
-    if text in {"1", "true", "yes", "on", "enable", "enabled"}:
-        return True
-    if text in {"0", "false", "no", "off", "disable", "disabled"}:
-        return False
-    raise ValueError(f"{field_name} must be true/false")
-
-
-def _apply_ws4010_wspr_scan_command(payload: Dict[str, Any]) -> Dict[str, Any]:
-    raw = payload.get("enabled")
-    if raw is None:
-        raw = payload.get("auto_scan_wspr")
-    if raw is None:
-        raw = payload.get("value")
-    if raw is None:
-        raise ValueError("enabled is required")
-
-    enabled = _coerce_bool(raw, field_name="enabled")
-    mode_raw = str(payload.get("mode") or payload.get("profile") or "ft8").strip().lower()
-    mode = mode_raw if mode_raw in {"ft8", "phone"} else "ft8"
-
-    with _automation_lock:
-        settings = _load_automation_settings()
-        settings["autoScanWspr"] = enabled
-        _save_automation_settings(settings)
-
-    apply_result = _trigger_auto_set_apply(settings, mode)
-    return {
-        "ok": True,
-        "action": "set_wspr_scan",
-        "wspr_scan_enabled": enabled,
-        "mode": mode,
         "apply": apply_result,
     }
 
@@ -543,9 +499,6 @@ def _apply_ws4010_status_command(payload: Dict[str, Any]) -> Dict[str, Any]:
         "block": selected_block,
         "verbose": verbose,
         "auto_scan_mode": str(settings.get("autoScanMode") or mode),
-        "wspr_scan_enabled": bool(settings.get("autoScanWspr", False)),
-        "wspr_start_band": str(settings.get("wsprStartBand") or "10m"),
-        "band_hop_seconds": int(settings.get("bandHopSeconds", 105) or 105),
         "selected_bands": [b for b in _valid_bands if b in selected_set],
         "open_bands": active_conditions,
         "assignment_count": total_assignments,
@@ -575,11 +528,17 @@ def _handle_ws4010_command(raw: str) -> Optional[Dict[str, Any]]:
         token = m.group(1)
         return token in {"true", "on", "enable", "enabled"}
 
+    def _removed_wspr_scan_response() -> Dict[str, Any]:
+        return {
+            "ok": False,
+            "type": "command_ack",
+            "error": "wspr scan control is no longer supported",
+        }
+
     def _help_response() -> Dict[str, Any]:
-        commands = ["set_band", "set_wspr_scan", "discover_kiwi", "status"]
+        commands = ["set_band", "discover_kiwi", "status"]
         examples = [
             {"command": "set_band", "enabled": True, "band": "20m", "mode": "FT8"},
-            {"command": "set_wspr_scan", "enabled": True},
             {"command": "discover_kiwi"},
             {"command": "status"},
             {"command": "status", "verbose": True},
@@ -623,20 +582,7 @@ def _handle_ws4010_command(raw: str) -> Optional[Dict[str, Any]]:
                 logger.exception("ws4010 discover text command failed")
                 return {"ok": False, "type": "command_ack", "error": str(exc)}
         if ("wspr" in lowered) and ("scan" in lowered):
-            enabled = _bool_from_text(lowered)
-            if enabled is None:
-                return {
-                    "ok": False,
-                    "type": "command_ack",
-                    "error": "wspr scan command requires true/false",
-                }
-            try:
-                result = _apply_ws4010_wspr_scan_command({"enabled": enabled})
-                result["type"] = "command_ack"
-                return result
-            except Exception as exc:
-                logger.exception("ws4010 wspr text command failed")
-                return {"ok": False, "type": "command_ack", "error": str(exc)}
+            return _removed_wspr_scan_response()
 
     if not text.startswith("{"):
         return None
@@ -698,49 +644,10 @@ def _handle_ws4010_command(raw: str) -> Optional[Dict[str, Any]]:
             return {"ok": False, "type": "command_ack", "error": str(exc)}
 
     if ("wspr" in action) and ("scan" in action):
-        enabled: Optional[bool]
-        if "enabled" in payload or "auto_scan_wspr" in payload or "value" in payload:
-            raw_enabled = payload.get("enabled")
-            if raw_enabled is None:
-                raw_enabled = payload.get("auto_scan_wspr")
-            if raw_enabled is None:
-                raw_enabled = payload.get("value")
-            try:
-                enabled = _coerce_bool(raw_enabled, field_name="enabled")
-            except Exception:
-                enabled = None
-        else:
-            enabled = _bool_from_text(action)
-        if enabled is None:
-            return {
-                "ok": False,
-                "type": "command_ack",
-                "error": "wspr scan command requires true/false",
-            }
-        try:
-            result = _apply_ws4010_wspr_scan_command({"enabled": enabled, **payload})
-            result["type"] = "command_ack"
-            return result
-        except ValueError as exc:
-            return {"ok": False, "type": "command_ack", "error": str(exc)}
-        except urllib_error.URLError as exc:
-            return {"ok": False, "type": "command_ack", "error": f"apply_failed: {exc}"}
-        except Exception as exc:
-            logger.exception("ws4010 wspr-scan command failed")
-            return {"ok": False, "type": "command_ack", "error": str(exc)}
+        return _removed_wspr_scan_response()
 
     if action in {"set_wspr_scan", "wspr_scan", "auto_scan_wspr", "run wspr band scan", "run_wspr_band_scan"}:
-        try:
-            result = _apply_ws4010_wspr_scan_command(payload)
-            result["type"] = "command_ack"
-            return result
-        except ValueError as exc:
-            return {"ok": False, "type": "command_ack", "error": str(exc)}
-        except urllib_error.URLError as exc:
-            return {"ok": False, "type": "command_ack", "error": f"apply_failed: {exc}"}
-        except Exception as exc:
-            logger.exception("ws4010 wspr-scan command failed")
-            return {"ok": False, "type": "command_ack", "error": str(exc)}
+        return _removed_wspr_scan_response()
 
     if action in {"discover_kiwi", "discover-kiwi", "config_discover", "discover kiwi", "discover"}:
         try:

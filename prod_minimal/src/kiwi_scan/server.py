@@ -679,7 +679,7 @@ app.include_router(
 )
 app.include_router(make_rx_monitor_router(monitor=rx_monitor))
 app.include_router(make_admin_router(auto_set_loop=auto_set_loop, receiver_mgr=receiver_mgr))
-app.include_router(make_automation_router())
+app.include_router(make_automation_router(auto_set_loop=auto_set_loop))
 app.include_router(
     make_metrics_router(
         receiver_mgr=receiver_mgr,

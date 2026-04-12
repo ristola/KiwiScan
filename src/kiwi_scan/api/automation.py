@@ -9,13 +9,18 @@ from fastapi import APIRouter, HTTPException, Request
 
 _lock = threading.Lock()
 
+_DEPRECATED_SETTINGS_KEYS = {
+    "autoScanWspr",
+    "bandHopMinutes",
+    "bandHopSeconds",
+    "wsprHopState",
+    "wsprStartBand",
+}
+
 _DEFAULT_SETTINGS: Dict[str, Any] = {
     "autoScanOnBlock": False,
-    "autoScanWspr": False,
     "autoScanOnStartup": False,
     "autoRefreshSchedule": True,
-    "bandHopSeconds": 105,
-    "wsprStartBand": "10m",
     "quietStart": "22:00",
     "quietEnd": "06:00",
     "alertsEnabled": True,
@@ -52,7 +57,7 @@ def _load_settings() -> Dict[str, Any]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(data, dict):
-            return data
+            return _sanitize_settings(data)
     except Exception:
         return {}
     return {}
@@ -64,13 +69,19 @@ def _save_settings(payload: Dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _sanitize_settings(payload: Dict[str, Any] | None) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    return {key: value for key, value in payload.items() if key not in _DEPRECATED_SETTINGS_KEYS}
+
+
 def _with_defaults(payload: Dict[str, Any]) -> Dict[str, Any]:
     merged = dict(_DEFAULT_SETTINGS)
-    merged.update(payload or {})
+    merged.update(_sanitize_settings(payload))
     return merged
 
 
-def make_router() -> APIRouter:
+def make_router(*, auto_set_loop: object | None = None) -> APIRouter:
     """Create router for automation settings endpoints."""
 
     router = APIRouter()
@@ -92,11 +103,17 @@ def make_router() -> APIRouter:
             raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}")
         if not isinstance(payload, dict):
             raise HTTPException(status_code=400, detail="Settings must be a JSON object")
+        clean_payload = _sanitize_settings(payload)
         with _lock:
             current = _load_settings()
             merged = _with_defaults(current)
-            merged.update(payload)
+            merged.update(clean_payload)
             _save_settings(_with_defaults(merged))
+        if auto_set_loop is not None:
+            try:
+                auto_set_loop.notify_settings_changed()  # type: ignore[attr-defined]
+            except Exception:
+                pass
         return {"status": "ok"}
 
     return router

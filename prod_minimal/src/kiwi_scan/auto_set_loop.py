@@ -8,11 +8,6 @@ import threading
 import time
 import urllib.error
 import urllib.request
-        if isinstance(data, dict) and bool(data.get("_from_cache")) and (not isinstance(channels, dict) or not channels):
-            # Startup and long eviction cycles can leave health_summary serving a cached
-            # empty placeholder while receiver_manager still owns the lock. Treat that as
-            # "unknown yet" instead of immediately forcing a full re-apply mid-startup.
-            return []
 from pathlib import Path
 from typing import Any, Dict
 
@@ -56,10 +51,12 @@ _ROAMING_NIGHT = [
 class AutoSetLoop:
     def __init__(self) -> None:
         self._stop = threading.Event()
+        self._wake = threading.Event()
         self._thread: threading.Thread | None = None
         self._did_startup_apply = False
         self._last_schedule_key: tuple[str, str] | None = None
         self._last_apply_signature: str | None = None
+        self._manual_mode_cleared = False
         self._state_lock = threading.Lock()
         self._last_run_ts: float | None = None
         self._last_success_ts: float | None = None
@@ -95,7 +92,8 @@ class AutoSetLoop:
     @staticmethod
     def _safe_num(value: object, default: float, min_v: float, max_v: float) -> float:
         try:
-            v = float(value)
+            numeric_value = value if isinstance(value, (int, float, str)) else default
+            v = float(numeric_value)
         except Exception:
             v = float(default)
         v = max(min_v, min(max_v, v))
@@ -112,6 +110,13 @@ class AutoSetLoop:
         except Exception:
             return {}
         return {}
+
+    def notify_settings_changed(self) -> None:
+        self._wake.set()
+
+    def _wait_for_notification(self, timeout_s: float | None = None) -> None:
+        self._wake.wait(timeout=timeout_s)
+        self._wake.clear()
 
     @staticmethod
     def _auto_set_url() -> str:
@@ -130,6 +135,15 @@ class AutoSetLoop:
         except Exception:
             value = 30.0
         return max(5.0, min(600.0, value))
+
+    @staticmethod
+    def _manual_enforce_interval_s() -> float:
+        raw = str(os.environ.get("KIWISCAN_MANUAL_ENFORCE_S", "5") or "5").strip()
+        try:
+            value = float(raw)
+        except Exception:
+            value = 5.0
+        return max(0.1, min(60.0, value))
 
     @staticmethod
     def _enabled_by_env() -> bool:
@@ -228,9 +242,6 @@ class AutoSetLoop:
             "enabled": True,
             "mode": mode,
             "block": str(active_block),
-            "wspr_scan_enabled": self._safe_bool(settings.get("autoScanWspr"), default=False),
-            "band_hop_seconds": self._safe_num(settings.get("bandHopSeconds"), 105.0, 10.0, 600.0),
-            "wspr_start_band": str(settings.get("wsprStartBand") or "10m"),
             "ssb_scan": {
                 "enabled": self._safe_bool(settings.get("ssbEnabled"), default=True),
                 "threshold_db": self._safe_num(settings.get("ssbThresholdDb"), 20.0, 1.0, 60.0),
@@ -308,8 +319,6 @@ class AutoSetLoop:
             "enabled": True,
             "mode": "ft8",
             "block": day_night,
-            "wspr_scan_enabled": False,
-            "band_hop_seconds": self._safe_num(settings.get("bandHopSeconds"), 105.0, 10.0, 600.0),
             "ssb_scan": {
                 "enabled": self._safe_bool(settings.get("ssbEnabled"), default=False),
                 "threshold_db": self._safe_num(settings.get("ssbThresholdDb"), 20.0, 1.0, 60.0),
@@ -345,9 +354,6 @@ class AutoSetLoop:
         relevant = {
             "schedule_key": [str(schedule_key[0]), str(schedule_key[1])],
             "autoScanMode": settings.get("autoScanMode"),
-            "autoScanWspr": settings.get("autoScanWspr"),
-            "bandHopSeconds": settings.get("bandHopSeconds"),
-            "wsprStartBand": settings.get("wsprStartBand"),
             "ssbEnabled": settings.get("ssbEnabled"),
             "ssbThresholdDb": settings.get("ssbThresholdDb"),
             "ssbAdaptiveThreshold": settings.get("ssbAdaptiveThreshold"),
@@ -387,19 +393,6 @@ class AutoSetLoop:
             return json.dumps({"block": block, "modes": modes, "closed": closed}, separators=(",", ":"))
         return json.dumps({"bands": bands, "modes": modes, "closed": closed}, separators=(",", ":"))
 
-    @staticmethod
-    def _wspr_hop_due(settings: Dict[str, Any]) -> bool:
-        if not AutoSetLoop._safe_bool(settings.get("autoScanWspr"), default=False):
-            return False
-        state = settings.get("wsprHopState")
-        if not isinstance(state, dict):
-            return False
-        try:
-            next_hop_unix = float(state.get("next_hop_unix") or 0.0)
-        except Exception:
-            return False
-        return next_hop_unix > 0.0 and time.time() >= next_hop_unix
-
     def _post_auto_set(self, payload: Dict[str, Any]) -> None:
         body = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
@@ -425,12 +418,7 @@ class AutoSetLoop:
                 logger.debug("POST /auto_set_receivers error (processing in background): %s", e)
 
     def _fixed_health_state(self) -> tuple[str, list[dict]]:
-        """Return fixed receiver health as ``("healthy"|"sick"|"unknown", sick_list)``.
-
-        Cached or lock-timeout health snapshots are treated as unknown so the
-        auto-set loop does not force recovery or enable roaming while the
-        receiver manager is still in the middle of a long startup/eviction pass.
-        """
+        """Return fixed receiver health as (healthy|sick|unknown, sick_entries)."""
         port_raw = str(os.environ.get("PORT", "4020") or "4020").strip()
         try:
             port = int(port_raw)
@@ -587,35 +575,36 @@ class AutoSetLoop:
             apply_signature = self._apply_signature(settings, schedule_key)
 
             if not headless_enabled:
+                self._manual_mode_cleared = False
                 self._did_startup_apply = False
                 self._last_schedule_key = None
                 self._last_apply_signature = None
                 self._last_applied_band_config = None
-                self._stop.wait(interval_s)
+                self._wait_for_notification(timeout_s=interval_s)
                 continue
 
             fixed_mode_enabled = self._safe_bool(settings.get("fixedModeEnabled"), default=True)
             if not fixed_mode_enabled:
-                # Auto Mode is OFF — kick Kiwi every loop interval to stop KiwiScan
-                # workers and evict any competing AUTO_ users that may have reconnected
-                # (e.g. another controller on the LAN).  force=True bypasses the 15-s
-                # endpoint dedup so the kick actually fires on every iteration.
-                try:
-                    self._post_auto_set({"enabled": False, "force": True})
-                except Exception:
-                    pass
+                if not self._manual_mode_cleared:
+                    logger.info("Auto-set loop: Manual Mode detected — clearing receivers and parking loop")
+                    try:
+                        self._post_auto_set({"enabled": False, "force": True})
+                    except Exception:
+                        pass
+                    self._manual_mode_cleared = True
                 self._did_startup_apply = False
                 self._last_schedule_key = None
                 self._last_apply_signature = None
                 self._last_applied_band_config = None
-                self._stop.wait(interval_s)
+                self._wait_for_notification()
                 continue
+
+            self._manual_mode_cleared = False
 
             should_apply = bool(
                 (not self._did_startup_apply)
                 or self._last_schedule_key != schedule_key
                 or self._last_apply_signature != apply_signature
-                or self._wspr_hop_due(settings)
             )
 
             # Even when nothing logically changed, verify fixed receivers are still live.
@@ -731,7 +720,7 @@ class AutoSetLoop:
                             self._last_error = "request failed"
                         logger.debug("Auto-set loop request failed", exc_info=True)
 
-            self._stop.wait(interval_s)
+            self._wait_for_notification(timeout_s=interval_s)
 
     def start(self) -> None:
         if not self._enabled_by_env():
@@ -740,11 +729,13 @@ class AutoSetLoop:
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop.clear()
+        self._wake.clear()
         self._thread = threading.Thread(target=self._run, name="kiwi-scan-auto-set-loop", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
         self._stop.set()
+        self._wake.set()
         if self._thread is not None:
             self._thread.join(timeout=2.0)
             if not self._thread.is_alive():
@@ -763,10 +754,10 @@ class AutoSetLoop:
             "did_startup_apply": bool(self._did_startup_apply),
             "headless_enabled": bool(self._safe_bool(settings.get("headlessEnabled"), default=True)),
             "fixed_mode_enabled": bool(self._safe_bool(settings.get("fixedModeEnabled"), default=True)),
+            "manual_mode_parked": bool(self._manual_mode_cleared and not self._safe_bool(settings.get("fixedModeEnabled"), default=True)),
             "launchd_preferred": bool(self._safe_bool(settings.get("useLaunchd"), default=False)),
             "auto_scan_on_block": bool(self._safe_bool(settings.get("autoScanOnBlock"), default=False)),
             "auto_scan_on_startup": bool(self._safe_bool(settings.get("autoScanOnStartup"), default=False)),
-            "auto_scan_wspr": bool(self._safe_bool(settings.get("autoScanWspr"), default=False)),
             "last_run_ts": last_run_ts,
             "last_success_ts": last_success_ts,
             "last_error": last_error,

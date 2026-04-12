@@ -344,9 +344,15 @@ class _ReceiverWorker(threading.Thread):
                 return f"{shlex.quote(self._python_cmd)} -u {shlex.quote(str(udpaf_path))} {int(udp_port)}"
         return f"{shlex.quote(str(af2udp_path))} {int(udp_port)} 256 48000"
 
-    def stop(self, join_timeout_s: float = 3.0) -> None:
+    def stop(
+        self,
+        join_timeout_s: float = 3.0,
+        *,
+        graceful: bool = False,
+        graceful_timeout_s: float = 5.0,
+    ) -> None:
         self._stop_event.set()
-        self._terminate_proc()
+        self._terminate_proc(graceful=graceful, graceful_timeout_s=graceful_timeout_s)
         if threading.current_thread() is self:
             return
         try:
@@ -354,11 +360,21 @@ class _ReceiverWorker(threading.Thread):
         except Exception:
             pass
 
-    def _terminate_proc(self) -> None:
+    def _terminate_proc(self, *, graceful: bool = False, graceful_timeout_s: float = 5.0) -> None:
         for proc in list(self._decoder_procs):
             try:
-                proc.kill()
-                proc.wait(timeout=2.0)
+                if graceful:
+                    proc.terminate()
+                    proc.wait(timeout=max(0.1, min(2.0, float(graceful_timeout_s))))
+                else:
+                    proc.kill()
+                    proc.wait(timeout=2.0)
+            except subprocess.TimeoutExpired:
+                try:
+                    proc.kill()
+                    proc.wait(timeout=2.0)
+                except Exception:
+                    pass
             except Exception:
                 pass
         self._decoder_procs.clear()
@@ -379,6 +395,28 @@ class _ReceiverWorker(threading.Thread):
             _pgid = os.getpgid(_pid)
         except Exception:
             pass
+        if graceful:
+            try:
+                try:
+                    os.killpg(_pid, signal.SIGTERM)
+                except Exception:
+                    pass
+                if _pgid is not None and _pgid != _pid:
+                    try:
+                        os.killpg(_pgid, signal.SIGTERM)
+                    except Exception:
+                        pass
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+                proc.wait(timeout=max(0.1, float(graceful_timeout_s)))
+                self._proc = None
+                return
+            except subprocess.TimeoutExpired:
+                pass
+            except Exception:
+                pass
         try:
             # Use SIGKILL directly so the OS sends an immediate TCP RST.
             try:
@@ -1635,6 +1673,7 @@ class ReceiverManager:
         self._health_summary_cache: Dict[str, object] = {}  # last known-good result for lock-timeout fallback
         self._truth_snapshot_cache: Dict[str, object] = {}  # last known-good truth snapshot for lock-timeout fallback
         self._manager_stop = threading.Event()
+        self._apply_cancel = threading.Event()
         self._last_dependency_report: Dict[str, object] = {}
         self._cleanup_orphan_processes()
         self._last_dependency_report = self.dependency_report()
@@ -1676,6 +1715,26 @@ class ReceiverManager:
     def _stale_recovery_enabled(self) -> bool:
         return self._env_bool("KIWISCAN_STALE_RECOVERY_ENABLED", True)
 
+    def request_apply_cancel(self) -> None:
+        self._apply_cancel.set()
+        workers: list[_ReceiverWorker] = []
+        try:
+            if self._lock.acquire(blocking=False):
+                try:
+                    workers = list(self._workers.values())
+                finally:
+                    self._lock.release()
+        except Exception:
+            workers = []
+        for worker in workers:
+            try:
+                worker._stop_event.set()
+            except Exception:
+                pass
+
+    def clear_apply_cancel(self) -> None:
+        self._apply_cancel.clear()
+
     def _stale_recovery_check_s(self) -> float:
         return self._env_float("KIWISCAN_STALE_RECOVERY_CHECK_S", 5.0, min_v=1.0, max_v=30.0)
 
@@ -1708,6 +1767,9 @@ class ReceiverManager:
 
     def _mismatch_autokick_timeout_s(self) -> float:
         return self._env_float("KIWISCAN_MISMATCH_AUTOKICK_TIMEOUT_S", 12.0, min_v=2.0, max_v=60.0)
+
+    def _manual_enforce_interval_s(self) -> float:
+        return self._env_float("KIWISCAN_MANUAL_ENFORCE_S", 5.0, min_v=0.1, max_v=60.0)
 
     def _mismatch_require_decoder_gap(self) -> bool:
         return self._env_bool("KIWISCAN_MISMATCH_REQUIRE_DECODER_GAP", True)
@@ -2063,13 +2125,26 @@ class ReceiverManager:
         )
 
     @staticmethod
-    def _stop_worker(worker: Optional[_ReceiverWorker], *, join_timeout_s: float = 3.0) -> None:
+    def _stop_worker(
+        worker: Optional[_ReceiverWorker],
+        *,
+        join_timeout_s: float = 3.0,
+        graceful: bool = False,
+        graceful_timeout_s: float = 5.0,
+    ) -> None:
         if worker is None:
             return
         try:
-            worker.stop(join_timeout_s=join_timeout_s)
+            worker.stop(
+                join_timeout_s=join_timeout_s,
+                graceful=graceful,
+                graceful_timeout_s=graceful_timeout_s,
+            )
         except TypeError:
-            worker.stop()
+            try:
+                worker.stop(join_timeout_s=join_timeout_s)
+            except TypeError:
+                worker.stop()
 
     def _restart_receiver_worker(self, rx: int, reason: str) -> bool:
         with self._lock:
@@ -2159,6 +2234,12 @@ class ReceiverManager:
     def _stale_recovery_loop(self) -> None:
         while not self._manager_stop.is_set():
             sleep_s = self._stale_recovery_check_s()
+            with self._lock:
+                manual_enforce_active = not bool(self._assignments) and bool(
+                    str(getattr(self, "_active_host", "") or "")
+                ) and int(getattr(self, "_active_port", 0) or 0) > 0
+            if manual_enforce_active:
+                sleep_s = min(float(sleep_s), self._manual_enforce_interval_s())
             if not self._stale_recovery_enabled():
                 self._manager_stop.wait(timeout=sleep_s)
                 continue
@@ -2281,32 +2362,38 @@ class ReceiverManager:
             duplicate_autokick = False
             unexpected_autokick = False
             unexpected_slots: list[int] = []
+            unexpected_live_users: Dict[int, str] = {}
             active_host = str(getattr(self, "_active_host", "") or "")
             active_port = int(getattr(self, "_active_port", 0) or 0)
             if active_host and active_port > 0:
                 try:
-                    duplicate_live_labels = self._has_duplicate_live_auto_labels(active_host, active_port)
+                    unexpected_live_users = self._fetch_live_users(active_host, active_port)
                 except Exception:
-                    duplicate_live_labels = False
-                duplicate_autokick = bool(
-                    duplicate_live_labels
-                    and (time.time() - last_auto_kick_unix) >= min(30.0, self._mismatch_autokick_cooldown_s())
-                    and not self._startup_eviction_active.is_set()
-                )
+                    unexpected_live_users = {}
                 if expected_labels:
                     try:
-                        live_users = self._fetch_live_users(active_host, active_port)
-                        unexpected_slots = sorted(
-                            int(s)
-                            for s in self._slots_with_unexpected_auto_labels(live_users, expected_labels)
-                        )
+                        duplicate_live_labels = self._has_duplicate_live_auto_labels(active_host, active_port)
                     except Exception:
-                        unexpected_slots = []
-                    unexpected_autokick = bool(
-                        unexpected_slots
-                        and (time.time() - last_auto_kick_unix) >= min(15.0, self._mismatch_autokick_cooldown_s())
+                        duplicate_live_labels = False
+                    duplicate_autokick = bool(
+                        duplicate_live_labels
+                        and (time.time() - last_auto_kick_unix) >= min(30.0, self._mismatch_autokick_cooldown_s())
                         and not self._startup_eviction_active.is_set()
                     )
+                unexpected_slots = sorted(
+                    int(s)
+                    for s in self._slots_with_unexpected_auto_labels(unexpected_live_users, expected_labels)
+                )
+                unexpected_cooldown_s = (
+                    self._manual_enforce_interval_s()
+                    if not expected_labels
+                    else min(15.0, self._mismatch_autokick_cooldown_s())
+                )
+                unexpected_autokick = bool(
+                    unexpected_slots
+                    and (time.time() - last_auto_kick_unix) >= unexpected_cooldown_s
+                    and not self._startup_eviction_active.is_set()
+                )
 
             if should_autokick:
                 if active_host and active_port > 0:
@@ -2374,45 +2461,74 @@ class ReceiverManager:
                     logger.warning("Duplicate-label auto-kick: command failed")
 
             if unexpected_autokick:
+                manual_mode_enforcement = not expected_labels
                 kicked, remaining_slots, remaining_labels = self._evict_unexpected_auto_labels(
                     host=active_host,
                     port=active_port,
                     expected_labels=expected_labels,
-                    timeout_s=12.0,
-                    stable_secs=2.0,
+                    timeout_s=max(2.0, self._manual_enforce_interval_s() * 2.0) if manual_mode_enforcement else 12.0,
+                    stable_secs=0.0 if manual_mode_enforcement else 2.0,
+                    repoll_s=0.1 if manual_mode_enforcement else 0.5,
                 )
                 result = "ok" if kicked and not remaining_slots else ("partial" if kicked else "failed")
                 with self._lock:
                     self._auto_kick_last_unix = float(time.time())
-                    self._auto_kick_last_reason = "unexpected_auto_labels"
+                    self._auto_kick_last_reason = (
+                        "manual_mode_unexpected_auto_labels"
+                        if not expected_labels
+                        else "unexpected_auto_labels"
+                    )
                     self._auto_kick_last_result = result
                     self._auto_kick_last_slots = [int(v) for v in (remaining_slots or unexpected_slots)]
                     self._auto_kick_last_labels = dict(remaining_labels) if remaining_labels else {
-                        str(int(slot)): str(live_users.get(int(slot), "") or "")
+                        str(int(slot)): str(unexpected_live_users.get(int(slot), "") or "")
                         for slot in unexpected_slots
                     }
                     if kicked:
                         self._auto_kick_total += 1
                 if kicked and not remaining_slots:
-                    logger.warning(
-                        "Unexpected-label auto-kick: evicted slot(s) %s",
-                        unexpected_slots,
-                    )
+                    if expected_labels:
+                        logger.warning(
+                            "Unexpected-label auto-kick: evicted slot(s) %s",
+                            unexpected_slots,
+                        )
+                    else:
+                        logger.warning(
+                            "Manual mode enforcement: evicted competing AUTO/FIXED/ROAM slot(s) %s",
+                            unexpected_slots,
+                        )
                 elif kicked:
-                    logger.warning(
-                        "Unexpected-label auto-kick partially cleared slots; remaining=%s labels=%s",
-                        remaining_slots,
-                        remaining_labels,
-                    )
+                    if expected_labels:
+                        logger.warning(
+                            "Unexpected-label auto-kick partially cleared slots; remaining=%s labels=%s",
+                            remaining_slots,
+                            remaining_labels,
+                        )
+                    else:
+                        logger.warning(
+                            "Manual mode enforcement partially cleared competing AUTO/FIXED/ROAM users; remaining=%s labels=%s",
+                            remaining_slots,
+                            remaining_labels,
+                        )
                 else:
-                    logger.warning(
-                        "Unexpected-label auto-kick failed for slot(s) %s labels=%s",
-                        unexpected_slots,
-                        remaining_labels or {
-                            str(int(slot)): str(live_users.get(int(slot), "") or "")
-                            for slot in unexpected_slots
-                        },
-                    )
+                    if expected_labels:
+                        logger.warning(
+                            "Unexpected-label auto-kick failed for slot(s) %s labels=%s",
+                            unexpected_slots,
+                            remaining_labels or {
+                                str(int(slot)): str(unexpected_live_users.get(int(slot), "") or "")
+                                for slot in unexpected_slots
+                            },
+                        )
+                    else:
+                        logger.warning(
+                            "Manual mode enforcement failed for slot(s) %s labels=%s",
+                            unexpected_slots,
+                            remaining_labels or {
+                                str(int(slot)): str(unexpected_live_users.get(int(slot), "") or "")
+                                for slot in unexpected_slots
+                            },
+                        )
 
             self._manager_stop.wait(timeout=sleep_s)
 
@@ -3913,9 +4029,7 @@ class ReceiverManager:
         repoll_s: float = 0.5,
     ) -> tuple[bool, list[int], Dict[str, str]]:
         """Kick only unexpected AUTO/FIXED/ROAM labels until they stay gone briefly."""
-        if not expected_labels:
-            return True, [], {}
-
+        manual_mode_enforcement = not expected_labels
         deadline = time.time() + max(float(timeout_s), float(stable_secs) + 0.5)
         stable_since: float | None = None
         kicked_any = False
@@ -3926,6 +4040,8 @@ class ReceiverManager:
             live_users = self._fetch_live_users(host, port)
             last_slots, last_labels = self._unexpected_auto_label_details(live_users, expected_labels)
             if not last_slots:
+                if manual_mode_enforcement:
+                    return True, [], {}
                 if stable_since is None:
                     stable_since = time.time()
                 elif time.time() - stable_since >= float(stable_secs):
@@ -3933,11 +4049,14 @@ class ReceiverManager:
             else:
                 stable_since = None
                 kicked_any = True
-                if not self._run_admin_kick_all(
-                    host=host,
-                    port=port,
-                    kick_only_slots=last_slots,
-                ):
+                kick_kwargs = {
+                    "host": host,
+                    "port": port,
+                    "force_all": manual_mode_enforcement,
+                }
+                if not manual_mode_enforcement:
+                    kick_kwargs["kick_only_slots"] = last_slots
+                if not self._run_admin_kick_all(**kick_kwargs):
                     return False, last_slots, last_labels
             time.sleep(max(0.1, float(repoll_s)))
 
@@ -4153,6 +4272,30 @@ class ReceiverManager:
             prior_host = str(getattr(self, "_active_host", "") or "")
             prior_port = int(getattr(self, "_active_port", 0) or 0)
             assignments = self._normalize_ssb_receivers(assignments)
+            if not assignments:
+                self._apply_cancel.clear()
+
+            def _abort_if_cancelled() -> bool:
+                if not assignments or not self._apply_cancel.is_set():
+                    return False
+                logger.info(
+                    "Receiver assignment apply superseded; stopping %d active worker(s)",
+                    len(self._workers),
+                )
+                for _abort_rx, _abort_worker in list(self._workers.items()):
+                    self._stop_worker(
+                        _abort_worker,
+                        join_timeout_s=1.0,
+                        graceful=True,
+                        graceful_timeout_s=2.0,
+                    )
+                    self._activity_by_rx.pop(int(_abort_rx), None)
+                self._workers.clear()
+                self._assignments.clear()
+                self._active_host = str(host)
+                self._active_port = int(port)
+                return True
+
             self._seed_health_summary_cache(assignments)
             self._seed_truth_snapshot_cache(host=str(host), port=int(port), assignments=assignments)
             equivalent_assignments = self._assignment_maps_equivalent(self._assignments, assignments)
@@ -4190,6 +4333,8 @@ class ReceiverManager:
                         )
                 if not reconcile_rxs:
                     if not assignments:
+                        self._active_host = str(host)
+                        self._active_port = int(port)
                         # Manual mode and already clear: still kick any competing AUTO_ users
                         # that may have reconnected since the last kick.
                         live_auto = self._fetch_live_auto_users(str(host), int(port))
@@ -4305,7 +4450,12 @@ class ReceiverManager:
             for rx in sorted(to_stop):
                 worker = self._workers.pop(rx, None)
                 if worker is not None:
-                    self._stop_worker(worker)
+                    self._stop_worker(
+                        worker,
+                        join_timeout_s=6.0 if not assignments else 3.0,
+                        graceful=not assignments,
+                        graceful_timeout_s=6.0,
+                    )
                 self._activity_by_rx.pop(int(rx), None)
 
             for rx in sorted(to_reconfigure):
@@ -4326,12 +4476,22 @@ class ReceiverManager:
                 self._assignments.clear()
                 self._active_host = str(host)
                 self._active_port = int(port)
+                if stopped_labels:
+                    wait_host = prior_host if prior_host else str(host)
+                    wait_port = prior_port if prior_port > 0 else int(port)
+                    self._wait_for_kiwi_auto_users_missing(
+                        host=wait_host,
+                        port=wait_port,
+                        labels=stopped_labels,
+                        timeout_s=12.0,
+                    )
                 self._cleanup_orphan_processes()
                 self._wait_for_orphan_cleanup(timeout_s=6.0)
-                self._run_admin_kick_all(host=str(host), port=int(port), force_all=True)
-                # Brief pause for Kiwi to process the kick; competing devices will
-                # reconnect but the periodic manual-mode kick loop will re-evict them.
-                time.sleep(1.0)
+                if self._fetch_live_auto_users(str(host), int(port)):
+                    self._run_admin_kick_all(host=str(host), port=int(port), force_all=True)
+                    # Brief pause for Kiwi to process the kick; competing devices will
+                    # reconnect but the periodic manual-mode kick loop will re-evict them.
+                    time.sleep(1.0)
                 return
 
             if stopped_labels:
@@ -4435,6 +4595,8 @@ class ReceiverManager:
             # Suppress monitoring-thread autokick for the entire initial connection
             # phase + eviction loop so the two code paths don't fight each other.
             # The flag is cleared (and the streak reset) after the eviction loop.
+            if _abort_if_cancelled():
+                return
             self._startup_eviction_active.set()
 
             # Start workers SEQUENTIALLY in rx order (rx0, rx1, …, rx7).
@@ -4449,6 +4611,8 @@ class ReceiverManager:
             # all subsequent connections.  Any wrong-slot placements are handled by
             # the eviction loop below once all workers are up.
             def _start_worker_sequential(rx: int) -> None:
+                if _abort_if_cancelled():
+                    return
                 if rx in to_reconfigure and rx in self._workers:
                     return
                 if rx in self._workers and rx in self._assignments and self._assignment_equivalent(self._assignments[rx], assignments[rx]) and not host_changed:
@@ -4471,6 +4635,8 @@ class ReceiverManager:
                 _stable_since: float = 0.0
                 _last_live_p: Dict[int, str] = {}
                 while time.time() < _poll_deadline:
+                    if _abort_if_cancelled():
+                        return
                     _live_p = self._fetch_live_users(str(host), int(port))
                     _last_live_p = dict(_live_p)
                     _cur_slot = next(
@@ -4553,6 +4719,8 @@ class ReceiverManager:
                 _startup_order = desired_fixed_rxs + [int(rx) for rx in sorted(desired_rxs) if int(rx) not in desired_fixed_rxs]
             for rx in _startup_order:
                 _start_worker_sequential(int(rx))
+                if _abort_if_cancelled():
+                    return
 
             _deferred_roaming_rxs = sorted(
                 int(rx)
@@ -4567,6 +4735,8 @@ class ReceiverManager:
                 time.sleep(0.5)
                 for rx in _deferred_roaming_rxs:
                     _start_worker_sequential(int(rx))
+                    if _abort_if_cancelled():
+                        return
 
             roaming_rxs_to_verify = sorted(
                 int(rx)
@@ -4578,6 +4748,8 @@ class ReceiverManager:
             if roaming_rxs_to_verify and (not starting_from_empty or _defer_roaming_start):
                 MAX_ROAMING_CORRECTION_RETRIES = 3
                 for _roam_attempt in range(MAX_ROAMING_CORRECTION_RETRIES):
+                    if _abort_if_cancelled():
+                        return
                     if _roam_attempt > 0:
                         time.sleep(0.75)
                     _live_roam = self._fetch_live_users(str(host), int(port))
@@ -4857,6 +5029,8 @@ class ReceiverManager:
                         _MAX_TRIES = 1 if probe else 3
                         _lv_raw: dict = {}
                         for _try_n in range(_MAX_TRIES):
+                            if _abort_if_cancelled():
+                                return None
                             _w = self._make_worker(
                                 host=str(host), port=int(port), assignment=_r,
                                 rx_chan_adjust=0, ignore_slot_check=True,
@@ -4905,6 +5079,8 @@ class ReceiverManager:
                             _ss: Optional[int] = None
                             _st: float = 0.0
                             while time.time() < _dl:
+                                if _abort_if_cancelled():
+                                    return None
                                 _lv_raw = self._fetch_live_users_with_age(str(host), int(port))
                                 _elapsed = time.time() - _poll_start
                                 _max_age = _elapsed + 5.0  # allow 5 s grace above elapsed
@@ -5076,10 +5252,14 @@ class ReceiverManager:
                             self._stop_worker(self._workers.pop(int(_probe_rx), None), join_timeout_s=0.3)
                             for _rx2 in sorted(workers_to_restart):
                                 _ev_start_one(_rx2)
+                                if _abort_if_cancelled():
+                                    return
                         elif _probe_slot == int(_probe_rx):
                             # P == 0, probe landed correctly; continue with the rest
                             for _rx2 in sorted(set(workers_to_restart) - {_probe_rx}):
                                 _ev_start_one(_rx2)
+                                if _abort_if_cancelled():
+                                    return
                         else:
                             # P == K ≠ 0: keep probe ALIVE to block slot K, then rotate.
                             #
@@ -5102,6 +5282,8 @@ class ReceiverManager:
                             _rot = [(_K + 1 + j) % 8 for j in range(7)]
                             for _rx2 in _rot:
                                 _ev_start_one(_rx2)
+                                if _abort_if_cancelled():
+                                    return
                             # All 7 non-K workers placed; now free slot K for rx_K.
                             # Use the saved reference to stop the PROBE, not the new
                             # rx0 rotation worker that _ev_start_one(rx0) put in
@@ -5113,6 +5295,8 @@ class ReceiverManager:
                         # Partial restart or empty: sorted order (best effort)
                         for _rx2 in sorted(workers_to_restart):
                             _ev_start_one(_rx2)
+                            if _abort_if_cancelled():
+                                return
 
                     # Deferred rx_K: probe slot K was freed by SIGKILL→RST in <1s.
                     # Wait a small safety margin before starting rx_K in case RST

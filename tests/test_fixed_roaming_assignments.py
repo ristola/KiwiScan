@@ -129,7 +129,6 @@ def test_fixed_mode_only_uses_rx0_rx1_for_roaming(monkeypatch) -> None:
                 {"rx": 6, "band": "30m", "mode": "FT4 / FT8 / WSPR", "freq_hz": 10_138_000.0},
                 {"rx": 7, "band": "17m", "mode": "FT4 / FT8 / WSPR", "freq_hz": 18_102_000.0},
             ],
-            "wspr_scan_enabled": False,
             "ssb_scan": {"use_kiwi_snr": False},
         },
     )
@@ -205,7 +204,6 @@ def test_fixed_mode_roaming_drops_bands_reserved_by_fixed_assignments(monkeypatc
                 {"rx": 2, "band": "40m", "mode": "FT8", "freq_hz": 7_074_000.0},
                 {"rx": 7, "band": "17m", "mode": "FT4 / FT8 / WSPR", "freq_hz": 18_102_000.0},
             ],
-            "wspr_scan_enabled": False,
             "ssb_scan": {"use_kiwi_snr": False},
         },
     )
@@ -533,7 +531,6 @@ def test_fixed_mode_endpoint_overrides_nonfixed_caller_payload(monkeypatch) -> N
             "block": "ignored",
             "selected_bands": ["10m"],
             "band_modes": {"10m": "FT8"},
-            "wspr_scan_enabled": False,
         },
     )
 
