@@ -5464,51 +5464,6 @@
                 || /^(AUTO|FIXED|ROAM\d+)_([^_]+)_(.+)$/i.test(raw);
         }
 
-        function unexpectedManagedReceiverRows(kiwiUsers, rawKiwiUsers, explicitUnexpectedUsers) {
-            const users = Array.isArray(kiwiUsers) ? kiwiUsers : [];
-            const rawUsers = Array.isArray(rawKiwiUsers) ? rawKiwiUsers : [];
-            const explicitRows = Array.isArray(explicitUnexpectedUsers) ? explicitUnexpectedUsers : [];
-            const matchedLabels = new Set(
-                users
-                    .map((user) => formatManagedReceiverLabel(safeText(user && user.name, "")))
-                    .filter(Boolean)
-            );
-            const seen = new Set();
-            const sourceRows = explicitRows.length ? explicitRows : rawUsers;
-
-            return sourceRows
-                .map((user) => {
-                    const rawName = safeText(user && user.name, "");
-                    const normalizedName = formatManagedReceiverLabel(rawName);
-                    const rxNum = Number(user && user.rx);
-                    if (!normalizedName || !isManagedReceiverLabel(rawName) || !Number.isFinite(rxNum) || rxNum < 0) {
-                        return null;
-                    }
-                    if (matchedLabels.has(normalizedName)) {
-                        return null;
-                    }
-                    const dedupeKey = `${rxNum}|${normalizedName}|${safeText(user && user.location, "")}|${safeText(user && user.mode, "")}`;
-                    if (seen.has(dedupeKey)) {
-                        return null;
-                    }
-                    seen.add(dedupeKey);
-                    return {
-                        rx: rxNum,
-                        name: rawName,
-                        freq_khz: Number.isFinite(Number(user && user.freq_khz)) ? Number(user.freq_khz) : null,
-                        mode: safeText(user && user.mode, "--"),
-                        connected_seconds: Number.isFinite(Number(user && user.connected_seconds))
-                            ? Number(user && user.connected_seconds)
-                            : null,
-                        active: true,
-                        fixed: false,
-                        unexpected: true,
-                    };
-                })
-                .filter((user) => !!user)
-                .sort((a, b) => Number(a.rx) - Number(b.rx));
-        }
-
         function buildExpectedActiveReceiverName(rx, assignment, channel) {
             const channelBand = normalizeActiveReceiverBand(channel && channel.band);
             const assignmentBand = normalizeActiveReceiverBand(assignment && assignment.band);
@@ -5523,16 +5478,13 @@
             return `${prefix}_${band}_${readableReceiverModeLabel(mode)}`;
         }
 
-        function buildActiveReceiverRows(kiwiUsers, rawKiwiUsers, explicitUnexpectedUsers) {
+        function buildActiveReceiverRows(kiwiUsers, rawKiwiUsers) {
             const autoModeEnabled = readSelectBool(
                 "auto-mode-enabled",
                 latestAutomationSettings && latestAutomationSettings.fixedModeEnabled !== false,
             );
             const users = Array.isArray(kiwiUsers) ? kiwiUsers : [];
             const rawUsers = Array.isArray(rawKiwiUsers) ? rawKiwiUsers : [];
-            const unexpectedUsers = autoModeEnabled
-                ? []
-                : unexpectedManagedReceiverRows(users, rawUsers, explicitUnexpectedUsers);
             const usersByRx = new Map();
             const rawUsersByRx = new Map();
             users.forEach((user) => {
@@ -5625,21 +5577,7 @@
                 })
                 .filter((user) => !!user.active);
 
-            if (autoModeEnabled || !unexpectedUsers.length) {
-                return managedRows;
-            }
-
-            const mergedRows = managedRows.slice();
-            const seenRows = new Set(
-                mergedRows.map((user) => `${Number(user.rx)}|${formatManagedReceiverLabel(safeText(user && user.name, ""))}`)
-            );
-            unexpectedUsers.forEach((user) => {
-                const rowKey = `${Number(user.rx)}|${formatManagedReceiverLabel(safeText(user && user.name, ""))}`;
-                if (seenRows.has(rowKey)) return;
-                seenRows.add(rowKey);
-                mergedRows.push(user);
-            });
-            return mergedRows.sort((a, b) => Number(a.rx) - Number(b.rx));
+            return managedRows;
         }
 
         function renderSystemPanel(data) {
@@ -5690,7 +5628,7 @@
             ]);
 
             const reachable = !!kiwi.reachable;
-            const users = buildActiveReceiverRows(kiwi.active_users, kiwi.raw_users, kiwi.unexpected_managed_users);
+            const users = buildActiveReceiverRows(kiwi.active_users, kiwi.raw_users);
             const activeUserCount = users.filter((user) => !!user.active).length;
             renderInfoRows("system-kiwi-details", [
                 ["Receiver", safeText(kiwiStatus.name, "--")],
@@ -7430,7 +7368,7 @@
             const kiwi = latestSystemInfo && latestSystemInfo.kiwi && typeof latestSystemInfo.kiwi === "object"
                 ? latestSystemInfo.kiwi
                 : {};
-            return buildActiveReceiverRows(kiwi.active_users, kiwi.raw_users, kiwi.unexpected_managed_users).length > 0;
+            return buildActiveReceiverRows(kiwi.active_users, kiwi.raw_users).length > 0;
         }
 
         function _updateRxBusyOverlay() {
@@ -9930,25 +9868,11 @@
             const kiwi = latestSystemInfo && latestSystemInfo.kiwi && typeof latestSystemInfo.kiwi === "object"
                 ? latestSystemInfo.kiwi
                 : {};
-            const unexpectedKiwiUsers = autoModeEnabled
-                ? []
-                : unexpectedManagedReceiverRows(kiwi.active_users, kiwi.raw_users, kiwi.unexpected_managed_users);
             if (!autoModeEnabled) {
                 currentBandAssignments = {};
                 _bandChartLiveBands = [];
                 _bandChartLiveColorMap = {};
-                if (unexpectedKiwiUsers.length) {
-                    const modeLabel = currentMode === "scan" ? "Scan Mode" : "Manual Mode";
-                    const labels = unexpectedKiwiUsers
-                        .slice(0, 3)
-                        .map((user) => formatManagedReceiverLabel(safeText(user && user.name, "")) || "AUTO")
-                        .join(", ");
-                    const extraCount = Math.max(0, unexpectedKiwiUsers.length - 3);
-                    const extraText = extraCount > 0 ? ` +${extraCount} more` : "";
-                    cardEl.innerHTML = `<div class="assign-empty">${escapeHtml(modeLabel)} - Kiwi still has ${unexpectedKiwiUsers.length} AUTO/FIXED/ROAM user(s) connected${labels ? `: ${escapeHtml(labels)}${escapeHtml(extraText)}` : ""}</div>`;
-                } else {
-                    cardEl.innerHTML = `<div class="assign-empty">${currentMode === "scan" ? "Scan Mode" : "Manual Mode"} - no runtime assignments</div>`;
-                }
+                cardEl.innerHTML = `<div class="assign-empty">${currentMode === "scan" ? "Scan Mode" : "Manual Mode"} - no runtime assignments</div>`;
                 if (!assignmentsBandChartPaused) renderAssignmentsBandChart([]);
                 return;
             }

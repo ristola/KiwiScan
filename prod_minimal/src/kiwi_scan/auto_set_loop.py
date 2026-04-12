@@ -137,15 +137,6 @@ class AutoSetLoop:
         return max(5.0, min(600.0, value))
 
     @staticmethod
-    def _manual_enforce_interval_s() -> float:
-        raw = str(os.environ.get("KIWISCAN_MANUAL_ENFORCE_S", "5") or "5").strip()
-        try:
-            value = float(raw)
-        except Exception:
-            value = 5.0
-        return max(0.1, min(60.0, value))
-
-    @staticmethod
     def _enabled_by_env() -> bool:
         raw = str(os.environ.get("KIWISCAN_AUTOSET_LOOP", "1") or "1").strip().lower()
         return raw not in {"0", "false", "no", "off"}
@@ -625,8 +616,8 @@ class AutoSetLoop:
                     rx_nums = [int(e["rx"]) for e in sick]
                     self._recovery_backoff_until_ts = time.time() + self._RECOVERY_BACKOFF_S
                     if len(sick) == len(_FIXED_ASSIGNMENTS):
-                        # All fixed receivers missing — targeted restart fails silently when
-                        # assignments have been cleared (e.g. by a duplicate-label auto-kick).
+                        # All fixed receivers missing — targeted restart can fail silently
+                        # when assignments were cleared by an earlier recovery or reset.
                         # Skip the targeted restart and force a full re-apply instead.
                         logger.info(
                             "Auto-set loop: all fixed receivers missing — triggering full re-apply "

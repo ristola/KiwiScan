@@ -24,3 +24,18 @@ jt9_wisdom.dat
 
 # Local backups
 _backups/
+*.bak
+
+# Local scratch helpers / debug artifacts
+/add_*.py
+/fix_*.py
+/patch_*.py
+/clean.py
+/parse_traceback.py
+/smart_score_inject.py
+/update_smart_scheduler_p*.py
+/fulllogs.txt
+/kt.txt
+/tmp_logs.txt
+/tools/fix_*.py
+/tools/patch_*.py

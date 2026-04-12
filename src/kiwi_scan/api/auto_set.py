@@ -580,10 +580,6 @@ def make_router(
         if not enabled:
             # Stop RX0-RX7 processes.  Run in a thread so the event loop is
             # never blocked by apply_assignments() / _wait_for_kiwi_slots_stable_clear().
-            try:
-                receiver_mgr.request_apply_cancel()  # type: ignore[attr-defined]
-            except Exception:
-                pass
             await asyncio.to_thread(receiver_mgr.apply_assignments, host, port, {})  # type: ignore[attr-defined]
             prune_decode_buffer(set())
             response = {
@@ -899,10 +895,6 @@ def make_router(
 
         # Run apply_assignments in a thread — it calls _wait_for_kiwi_slots_stable_clear()
         # which can block for minutes.  Awaiting to_thread keeps the event loop free.
-        try:
-            receiver_mgr.clear_apply_cancel()  # type: ignore[attr-defined]
-        except Exception:
-            pass
         await asyncio.to_thread(receiver_mgr.apply_assignments, host, port, assignments)  # type: ignore[attr-defined]
 
         try:

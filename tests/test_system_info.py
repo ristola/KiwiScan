@@ -76,16 +76,5 @@ def test_system_info_returns_raw_users_when_receiver_manager_lock_is_busy(monkey
             }
         ]
         assert kiwi["active_users"] == []
-        assert kiwi["unexpected_managed_users"] == [
-            {
-                "rx": 5,
-                "name": "AUTO_20M_FT8",
-                "location": "Test Location",
-                "freq_khz": 14074.0,
-                "mode": "USB",
-                "ip": "127.0.0.1",
-                "connected_seconds": 5,
-            }
-        ]
     finally:
         receiver_mgr._lock.release()

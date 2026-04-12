@@ -272,22 +272,6 @@ def test_wait_for_kiwi_auto_users_clear_retries_until_managed_labels_are_gone(mo
     assert fake_now["value"] == 0.5
 
 
-def test_slots_with_unexpected_auto_labels_excludes_expected_compact_labels() -> None:
-    live_users = {
-        0: "ROAM110MFT8",
-        1: "FIXED20MFT8",
-        4: "AUTO_30m_FT8",
-        7: "listener",
-    }
-
-    stale_slots = ReceiverManager._slots_with_unexpected_auto_labels(
-        live_users,
-        {"ROAM110MFT8", "FIXED20MFT8", "FIXED30MFT8"},
-    )
-
-    assert stale_slots == {4}
-
-
 def test_expected_user_label_uses_compact_kiwi_safe_format() -> None:
     fixed = ReceiverAssignment(rx=2, band="20m", freq_hz=14_077_000.0, mode_label="FT4 / FT8")
     roam = ReceiverAssignment(rx=0, band="10m", freq_hz=28_074_000.0, mode_label="FT8")
@@ -315,113 +299,6 @@ def test_health_summary_lock_timeout_returns_seeded_channels() -> None:
     assert set(summary["channels"].keys()) == {"0", "2"}
     assert summary["channels"]["0"]["band"] == "10m"
     assert summary["channels"]["2"]["band"] == "20m"
-
-
-def test_evict_unexpected_auto_labels_kicks_all_auto_users_in_manual_mode(monkeypatch) -> None:
-    manager = _make_manager()
-
-    polls = [
-        {0: "AUTO_40M_FT8", 3: "AUTO_20M_FT8"},
-        {},
-    ]
-    kicks: list[dict[str, object]] = []
-
-    monkeypatch.setattr(
-        manager,
-        "_fetch_live_users",
-        lambda _host, _port: polls.pop(0) if polls else {},
-    )
-    monkeypatch.setattr(
-        manager,
-        "_run_admin_kick_all",
-        lambda **kwargs: kicks.append(dict(kwargs)) or True,
-    )
-
-    ok, remaining_slots, remaining_labels = manager._evict_unexpected_auto_labels(
-        host="kiwi.local",
-        port=8073,
-        expected_labels=set(),
-        timeout_s=1.0,
-        stable_secs=0.0,
-        repoll_s=0.0,
-    )
-
-    assert ok is True
-    assert remaining_slots == []
-    assert remaining_labels == {}
-    assert len(kicks) == 1
-    assert kicks[0]["force_all"] is True
-    assert "kick_only_slots" not in kicks[0]
-
-
-def test_stale_recovery_loop_enforces_manual_mode_against_auto_users(monkeypatch) -> None:
-    manager = _make_manager()
-    manager._manager_stop.set()
-    manager._stale_recovery_thread.join(timeout=1.0)
-    manager._manager_stop.clear()
-    manager._active_host = "kiwi.local"
-    manager._active_port = 8073
-    manager._assignments.clear()
-    manager._auto_kick_last_unix = None
-
-    monkeypatch.setattr(manager, "_stale_recovery_check_s", lambda: 0.01)
-    monkeypatch.setattr(manager, "health_summary", lambda: {"channels": {}, "active_receivers": 0, "reason_counts": {}})
-    monkeypatch.setattr(manager, "_has_duplicate_live_auto_labels", lambda _host, _port: False)
-    monkeypatch.setattr(manager, "_fetch_live_users", lambda _host, _port: {0: "AUTO_40M_FT8", 4: "AUTO_20M_FT8"})
-
-    calls: list[dict[str, object]] = []
-
-    def _fake_evict(*, host: str, port: int, expected_labels: set[str], timeout_s: float = 12.0, stable_secs: float = 2.0, repoll_s: float = 0.5):
-        calls.append(
-            {
-                "host": host,
-                "port": port,
-                "expected_labels": set(expected_labels),
-                "timeout_s": timeout_s,
-                "stable_secs": stable_secs,
-                "repoll_s": repoll_s,
-            }
-        )
-        manager._manager_stop.set()
-        return True, [], {}
-
-    monkeypatch.setattr(manager, "_evict_unexpected_auto_labels", _fake_evict)
-
-    manager._stale_recovery_loop()
-
-    assert len(calls) == 1
-    assert calls[0]["host"] == "kiwi.local"
-    assert calls[0]["port"] == 8073
-    assert calls[0]["expected_labels"] == set()
-    assert manager._auto_kick_last_reason == "manual_mode_unexpected_auto_labels"
-    assert manager._auto_kick_last_result == "ok"
-    assert manager._auto_kick_total == 1
-
-
-def test_apply_assignments_empty_manual_mode_records_active_host_for_future_enforcement(monkeypatch) -> None:
-    manager = _make_manager()
-
-    monkeypatch.setattr(manager, "_normalize_ssb_receivers", lambda assignments: assignments)
-    monkeypatch.setattr(manager, "_seed_health_summary_cache", lambda assignments: None)
-    monkeypatch.setattr(manager, "_seed_truth_snapshot_cache", lambda **kwargs: None)
-    monkeypatch.setattr(manager, "_assignment_maps_equivalent", lambda current, incoming: True)
-    monkeypatch.setattr(manager, "_assignment_slots_needing_reconcile", lambda **kwargs: set())
-    monkeypatch.setattr(manager, "_fetch_live_users", lambda _host, _port: {0: "AUTO_40M_FT8"})
-
-    evict_calls: list[dict[str, object]] = []
-
-    def _fake_evict(**kwargs):
-        evict_calls.append(dict(kwargs))
-        return True, [], {}
-
-    monkeypatch.setattr(manager, "_evict_unexpected_auto_labels", _fake_evict)
-    monkeypatch.setattr(manager, "_fetch_live_auto_users", lambda _host, _port: {})
-
-    manager.apply_assignments("kiwi.local", 8073, {})
-
-    assert manager._active_host == "kiwi.local"
-    assert manager._active_port == 8073
-    assert len(evict_calls) == 1
 
 
 def test_apply_assignments_empty_manual_mode_prefers_graceful_stop_before_kick(monkeypatch) -> None:
@@ -488,37 +365,6 @@ def test_apply_assignments_empty_manual_mode_prefers_graceful_stop_before_kick(m
     assert ("cleanup", None) in events
     assert ("wait_orphans", 6.0) in events
     assert not any(event[0] == "kick" for event in events)
-
-
-def test_apply_assignments_aborts_when_cancel_requested(monkeypatch) -> None:
-    manager = _make_manager()
-    assignment = ReceiverAssignment(rx=2, band="20m", freq_hz=14_074_000.0, mode_label="FT8")
-
-    make_worker_calls: list[int] = []
-
-    monkeypatch.setattr(manager, "_normalize_ssb_receivers", lambda assignments: assignments)
-    monkeypatch.setattr(manager, "_seed_health_summary_cache", lambda assignments: None)
-    monkeypatch.setattr(manager, "_seed_truth_snapshot_cache", lambda **kwargs: None)
-    monkeypatch.setattr(manager, "_required_dependency_errors", lambda assignments: [])
-    monkeypatch.setattr(manager, "_run_admin_kick_all", lambda **kwargs: True)
-    monkeypatch.setattr(manager, "_wait_for_kiwi_auto_users_clear", lambda **kwargs: None)
-    monkeypatch.setattr(manager, "_wait_for_kiwi_slots_stable_clear", lambda **kwargs: None)
-    monkeypatch.setattr(manager, "_fetch_live_auto_users", lambda host, port: {})
-    monkeypatch.setattr(manager, "_fetch_live_users", lambda host, port: {})
-    monkeypatch.setattr(manager, "_cleanup_orphan_processes", lambda: None)
-    monkeypatch.setattr(manager, "_wait_for_orphan_cleanup", lambda timeout_s=6.0: None)
-    monkeypatch.setattr(
-        manager,
-        "_make_worker",
-        lambda **kwargs: make_worker_calls.append(int(kwargs["assignment"].rx)) or SimpleNamespace(start=lambda: None),
-    )
-
-    manager.request_apply_cancel()
-    manager.apply_assignments("kiwi.local", 8073, {2: assignment})
-
-    assert make_worker_calls == []
-    assert manager._workers == {}
-    assert manager._assignments == {}
 
 
 def test_apply_assignments_empty_start_bootstraps_fixed_receivers_first(monkeypatch) -> None:

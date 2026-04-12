@@ -78,11 +78,6 @@ def _parse_elapsed_seconds(value: object) -> int | None:
     return None
 
 
-def _is_managed_receiver_label(label: str) -> bool:
-    clean = str(label or "").strip().upper()
-    return clean.startswith("AUTO") or clean.startswith("FIXED") or clean.startswith("ROAM")
-
-
 def _resolve_managed_label(label: str, label_to_rx: dict[str, int]) -> tuple[str | None, int | None]:
     clean = str(label or "").strip()
     if not clean:
@@ -179,7 +174,6 @@ def _build_kiwi_payload(mgr: object, receiver_mgr: object | None = None) -> dict
         "status": {},
         "active_users": [],
         "raw_users": [],
-        "unexpected_managed_users": [],
     }
     if not host or port <= 0:
         return out
@@ -223,7 +217,6 @@ def _build_kiwi_payload(mgr: object, receiver_mgr: object | None = None) -> dict
 
     active_users: list[dict[str, object]] = []
     raw_users: list[dict[str, object]] = []
-    unexpected_managed_users: list[dict[str, object]] = []
     for row in users:
         label = urllib.parse.unquote(str(row.get("n") or "")).strip()
         kiwi_rx = _safe_int(row.get("i"))
@@ -239,8 +232,6 @@ def _build_kiwi_payload(mgr: object, receiver_mgr: object | None = None) -> dict
         raw_users.append(dict(row_payload))
         resolved_label, resolved_rx = _resolve_managed_label(label, label_to_rx)
         if not resolved_label:
-            if _is_managed_receiver_label(label):
-                unexpected_managed_users.append(dict(row_payload))
             continue
         rx_display = resolved_rx if resolved_rx is not None else kiwi_rx
         active_users.append(
@@ -257,10 +248,8 @@ def _build_kiwi_payload(mgr: object, receiver_mgr: object | None = None) -> dict
     # Sort by our internal rx number so the table always appears in assignment order.
     active_users.sort(key=lambda u: u["rx"] if isinstance(u["rx"], int) else 999)
     raw_users.sort(key=lambda u: u["rx"] if isinstance(u["rx"], int) else 999)
-    unexpected_managed_users.sort(key=lambda u: u["rx"] if isinstance(u["rx"], int) else 999)
     out["active_users"] = active_users
     out["raw_users"] = raw_users
-    out["unexpected_managed_users"] = unexpected_managed_users
     return out
 
 
