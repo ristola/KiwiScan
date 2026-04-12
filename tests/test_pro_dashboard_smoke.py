@@ -47,6 +47,27 @@ def test_pro_dashboard_serves_fault_summary_and_receiver_health_hooks() -> None:
         'el.innerHTML = "<li>No active faults</li>";',
         'faultEl.textContent = `fault:${unstable} warn:${warns} reasons:${totalFaultReasons}`;',
         'renderReasons(h.reason_counts || {});',
+        'class="status-chip status-chip-stream" data-icon="stream">',
+        'id="chip-stream">Connecting...</div>',
+        'class="status-chip status-chip-rx-summary" data-icon="shield">',
+        'class="status-chip-head">',
+        'class="chip-label chip-label-secondary" data-icon="signal">Busiest Band</div>',
+        'class="chip-side-value" id="chip-busiest-band">...</div>',
+        'class="chip-side-label" data-icon="signal">All Decodes</div>',
+        'class="chip-side-value" id="chip-all-decodes">...</div>',
+        'class="status-chip status-chip-empty" aria-hidden="true"></article>',
+        'function displayManagedReceiverPrefix(value)',
+        'return prefix.startsWith("ROAM") ? "ROAM" : prefix;',
+        'const readableMatch = raw.match(/^(AUTO|FIXED|ROAM(?:\\d+)?)_([^_]+)_(.+)$/i);',
+        '|| /^(AUTO|FIXED|ROAM(?:\\d+)?)_([^_]+)_(.+)$/i.test(raw);',
+        'if (digitalModes.length >= 3) return "ALL";',
+        'if (digitalModes.length >= 2) return "MIX";',
+        'function fmtCount(value) {',
+        'function scheduleRecentDecodePanelRender()',
+        'ingestDecodeItem(item, { renderList: false, renderMap: false });',
+        'const healthCounts = {};',
+        'const busiestCounts = healthDecodeTotal > 0 ? healthCounts : counts;',
+        'byId("chip-all-decodes").textContent = fmtCount(totalDecodes);',
     ]
 
     for snippet in required_snippets:
@@ -71,6 +92,10 @@ def test_pro_dashboard_serves_fault_summary_and_receiver_health_hooks() -> None:
         'id="auto-selected-bands"',
         'data-nav="summary"',
         'id="summary-busiest-band"',
+        'id="chip-stream-4010-count"',
+        'id="chip-stream-4020-count"',
+        'UDP: 4010</div>',
+        '<article class="status-chip" data-icon="signal">',
     ]
 
     for snippet in forbidden_snippets:
@@ -103,6 +128,27 @@ def test_prod_minimal_pro_template_keeps_fault_summary_and_receiver_health_hooks
         'function renderReasons(reasonCounts)',
         'el.innerHTML = "<li>No active faults</li>";',
         'renderReasons(h.reason_counts || {});',
+        'class="status-chip status-chip-stream" data-icon="stream">',
+        'id="chip-stream">Connecting...</div>',
+        'class="status-chip status-chip-rx-summary" data-icon="shield">',
+        'class="status-chip-head">',
+        'class="chip-label chip-label-secondary" data-icon="signal">Busiest Band</div>',
+        'class="chip-side-value" id="chip-busiest-band">...</div>',
+        'class="chip-side-label" data-icon="signal">All Decodes</div>',
+        'class="chip-side-value" id="chip-all-decodes">...</div>',
+        'class="status-chip status-chip-empty" aria-hidden="true"></article>',
+        'function displayManagedReceiverPrefix(value)',
+        'return prefix.startsWith("ROAM") ? "ROAM" : prefix;',
+        'const readableMatch = raw.match(/^(AUTO|FIXED|ROAM(?:\\d+)?)_([^_]+)_(.+)$/i);',
+        '|| /^(AUTO|FIXED|ROAM(?:\\d+)?)_([^_]+)_(.+)$/i.test(raw);',
+        'if (digitalModes.length >= 3) return "ALL";',
+        'if (digitalModes.length >= 2) return "MIX";',
+        'function fmtCount(value) {',
+        'function scheduleRecentDecodePanelRender()',
+        'ingestDecodeItem(item, { renderList: false, renderMap: false });',
+        'const healthCounts = {};',
+        'const busiestCounts = healthDecodeTotal > 0 ? healthCounts : counts;',
+        'byId("chip-all-decodes").textContent = fmtCount(totalDecodes);',
     ]
 
     for snippet in required_snippets:
@@ -127,6 +173,10 @@ def test_prod_minimal_pro_template_keeps_fault_summary_and_receiver_health_hooks
         'id="auto-selected-bands"',
         'data-nav="summary"',
         'id="summary-busiest-band"',
+        'id="chip-stream-4010-count"',
+        'id="chip-stream-4020-count"',
+        'UDP: 4010</div>',
+        '<article class="status-chip" data-icon="signal">',
     ]
 
     for snippet in forbidden_snippets:

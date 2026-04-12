@@ -59,12 +59,86 @@ _BAND_WSPR_FREQS: dict[str, float] = {
 _IQ_MAX_SEPARATION_HZ = 10_000  # ±5 kHz fits safely within 12 kHz IQ bandwidth
 
 
+def _read_env_bool(name: str, default: bool) -> bool:
+    raw = str(os.environ.get(name, "")).strip().lower()
+    if not raw:
+        return bool(default)
+    return raw not in {"0", "false", "no", "off"}
+
+
+def _read_env_float(name: str, default: float, *, min_v: float, max_v: float) -> float:
+    raw = str(os.environ.get(name, "")).strip()
+    if not raw:
+        return float(default)
+    try:
+        value = float(raw)
+    except Exception:
+        return float(default)
+    return max(float(min_v), min(float(max_v), value))
+
+
+def _read_env_int(name: str, default: int, *, min_v: int, max_v: int) -> int:
+    raw = str(os.environ.get(name, "")).strip()
+    if not raw:
+        return int(default)
+    try:
+        value = int(raw)
+    except Exception:
+        return int(default)
+    return max(int(min_v), min(int(max_v), value))
+
+
+def _normalize_user_label_band(band: str) -> str:
+    raw = str(band or "").strip().replace("_", "")
+    match = re.match(r"^(\d+)\s*[mM]?$", raw)
+    if match:
+        return f"{match.group(1)}m"
+    return raw or "--"
+
+
+def _normalize_user_label_mode(mode_tag: str) -> str:
+    raw = str(mode_tag or "").strip().upper()
+    normalized = raw.replace(" ", "").replace("-", "/").replace("_", "/")
+    if not normalized:
+        return ""
+    if normalized == "ALL":
+        return "ALL"
+    if normalized == "MIX":
+        return "MIX"
+    if "SSB" in normalized or "PHONE" in normalized:
+        return "SSB"
+    digital_modes: list[str] = []
+    if "FT8" in normalized:
+        digital_modes.append("FT8")
+    if "FT4" in normalized:
+        digital_modes.append("FT4")
+    if "WSPR" in normalized or normalized == "WS":
+        digital_modes.append("WSPR")
+    if len(digital_modes) >= 3:
+        return "ALL"
+    if len(digital_modes) >= 2:
+        return "MIX"
+    if len(digital_modes) == 1:
+        return digital_modes[0]
+    return re.sub(r"\W+", "_", raw).strip("_")
+
+
 def _compact_user_label(prefix: str, band: str, mode_tag: str) -> str:
-    prefix_text = str(prefix or "").strip().upper().replace("_", "")
-    band_text = str(band or "").strip().upper().replace("_", "")
-    mode_text = str(mode_tag or "").strip().upper().replace(" ", "").replace("/", "").replace("_", "")
-    label = f"{prefix_text}{band_text}{mode_text}"
-    return label[:12]
+    prefix_text = str(prefix or "").strip().upper().replace(" ", "")
+    band_text = _normalize_user_label_band(band)
+    mode_text = _normalize_user_label_mode(mode_tag)
+    return "_".join(part for part in (prefix_text, band_text, mode_text) if part)
+
+
+def _preferred_user_label_prefix(rx: int) -> str:
+    return "FIXED" if int(rx) >= 2 else "ROAM"
+
+
+def _compatible_user_label_prefixes(rx: int) -> tuple[str, ...]:
+    rx_i = int(rx)
+    if rx_i >= 2:
+        return ("FIXED",)
+    return ("ROAM", f"ROAM{rx_i + 1}")
 
 
 def _ft4_wspr_iq_params(band: str) -> "tuple[str, float, float] | None":
@@ -188,22 +262,20 @@ class _ReceiverWorker(threading.Thread):
         self._cfg_lock = threading.Lock()
         self._reconfigure = threading.Event()
         self._slot_ready = threading.Event()
-        try:
-            env_adjust = int(str(os.environ.get("KIWISCAN_RX_CHAN_OFFSET", "0")).strip())
-        except Exception:
-            env_adjust = 0
+        env_adjust = self._env_int("KIWISCAN_RX_CHAN_OFFSET", 0, min_v=-64, max_v=64)
         self._rx_chan_adjust = int(initial_rx_chan_adjust) if initial_rx_chan_adjust else env_adjust
 
     @staticmethod
+    def _env_bool(name: str, default: bool) -> bool:
+        return _read_env_bool(name, default)
+
+    @staticmethod
     def _env_float(name: str, default: float, *, min_v: float, max_v: float) -> float:
-        raw = str(os.environ.get(name, "")).strip()
-        if not raw:
-            return float(default)
-        try:
-            value = float(raw)
-        except Exception:
-            return float(default)
-        return max(float(min_v), min(float(max_v), value))
+        return _read_env_float(name, default, min_v=min_v, max_v=max_v)
+
+    @staticmethod
+    def _env_int(name: str, default: int, *, min_v: int, max_v: int) -> int:
+        return _read_env_int(name, default, min_v=min_v, max_v=max_v)
 
     def _watchdog_base_backoff_s(self) -> float:
         return self._env_float("KIWISCAN_WATCHDOG_BASE_BACKOFF_S", 0.5, min_v=0.1, max_v=5.0)
@@ -230,8 +302,7 @@ class _ReceiverWorker(threading.Thread):
         return self._env_float("KIWISCAN_DIGITAL_REMAP_GRACE_S", 20.0, min_v=5.0, max_v=300.0)
 
     def _strict_digital_slot_enforcement(self) -> bool:
-        raw = str(os.environ.get("KIWISCAN_STRICT_DIGITAL_SLOT_ENFORCEMENT", "1")).strip().lower()
-        return raw not in {"0", "false", "no", "off"}
+        return self._env_bool("KIWISCAN_STRICT_DIGITAL_SLOT_ENFORCEMENT", True)
 
     def _pipeline_log_path(self) -> Path:
         return Path("/tmp") / f"kiwi_rx{self._rx}_pipeline.log"
@@ -319,10 +390,7 @@ class _ReceiverWorker(threading.Thread):
         return None
 
     def _use_python_udp_sender(self) -> bool:
-        raw = str(os.environ.get("KIWISCAN_USE_PY_UDP_AUDIO", "")).strip().lower()
-        if raw:
-            return raw not in {"0", "false", "no", "off"}
-        return False
+        return self._env_bool("KIWISCAN_USE_PY_UDP_AUDIO", False)
 
     def _resolve_python_udp_sender(self) -> Optional[Path]:
         candidates = [
@@ -471,7 +539,7 @@ class _ReceiverWorker(threading.Thread):
 
     @property
     def _user_prefix(self) -> str:
-        return "FIXED" if int(self._rx) >= 2 else f"ROAM{int(self._rx) + 1}"
+        return _preferred_user_label_prefix(int(self._rx))
 
     @staticmethod
     def _kill_local_kiwi_user_processes(user_label: str) -> None:
@@ -692,8 +760,7 @@ class _ReceiverWorker(threading.Thread):
 
     @staticmethod
     def _decoder_keep_wavs_enabled() -> bool:
-        raw = str(os.environ.get("KIWISCAN_FT8MODEM_KEEP", "0") or "0").strip().lower()
-        return raw not in {"", "0", "false", "no", "off"}
+        return _ReceiverWorker._env_bool("KIWISCAN_FT8MODEM_KEEP", False)
 
     def _decoder_env(self, mode: str) -> Optional[dict]:
         """Return an environment override for decoder processes.
@@ -1292,11 +1359,7 @@ class _ReceiverWorker(threading.Thread):
             self._last_spawn_error_reason = "kiwirecorder_missing"
             return None
         freq_khz = self._format_freq_khz(self._freq_hz)
-        mode_tag = self._mode_label.strip().upper().replace(" ", "").replace("/", "")
-        # Use max 12-char label suffix: WSPR→WS keeps labels ≤12 chars so Kiwi
-        # preserves the label unchanged (>12-char labels are replaced by Kiwi firmware).
-        _pm = "FT8" if "FT8" in mode_tag else ("FT4" if "FT4" in mode_tag else ("WS" if "WSPR" in mode_tag else mode_tag[:8]))
-        user_label = _compact_user_label(self._user_prefix, self._band, _pm)
+        user_label = _compact_user_label(self._user_prefix, self._band, self._mode_label)
         self._active_user_label = user_label
         self._kill_local_kiwi_user_processes(user_label)
         logger.info(
@@ -1682,32 +1745,15 @@ class ReceiverManager:
 
     @staticmethod
     def _env_bool(name: str, default: bool) -> bool:
-        raw = str(os.environ.get(name, "")).strip().lower()
-        if not raw:
-            return bool(default)
-        return raw not in {"0", "false", "no", "off"}
+        return _read_env_bool(name, default)
 
     @staticmethod
     def _env_float(name: str, default: float, *, min_v: float, max_v: float) -> float:
-        raw = str(os.environ.get(name, "")).strip()
-        if not raw:
-            return float(default)
-        try:
-            value = float(raw)
-        except Exception:
-            return float(default)
-        return max(float(min_v), min(float(max_v), value))
+        return _read_env_float(name, default, min_v=min_v, max_v=max_v)
 
     @staticmethod
     def _env_int(name: str, default: int, *, min_v: int, max_v: int) -> int:
-        raw = str(os.environ.get(name, "")).strip()
-        if not raw:
-            return int(default)
-        try:
-            value = int(raw)
-        except Exception:
-            return int(default)
-        return max(int(min_v), min(int(max_v), value))
+        return _read_env_int(name, default, min_v=min_v, max_v=max_v)
 
     def _stale_recovery_enabled(self) -> bool:
         return self._env_bool("KIWISCAN_STALE_RECOVERY_ENABLED", True)
@@ -2132,10 +2178,8 @@ class ReceiverManager:
                 self._stop_worker(old_worker)
             return False
 
-        stale_labels: set[str] = set()
-        expected_label = self._expected_user_label(assignment)
-        if expected_label:
-            stale_labels.add(expected_label)
+        expected_labels = self._expected_user_label_aliases(assignment)
+        stale_labels: set[str] = set(expected_labels)
         active_label = str(getattr(old_worker, "_active_user_label", "") or "").strip() if old_worker is not None else ""
         if active_label:
             stale_labels.add(active_label)
@@ -2169,7 +2213,7 @@ class ReceiverManager:
             mismatch_slots = {int(rx)}
             live_users = self._fetch_live_users(host, port)
             for live_slot, live_label in live_users.items():
-                if self._user_label_matches(expected_label, live_label):
+                if self._label_matches_any(expected_labels, live_label):
                     mismatch_slots.add(int(live_slot))
             for _kick_attempt in range(2):
                 try:
@@ -2391,30 +2435,17 @@ class ReceiverManager:
             return 600.0
         return 900.0
 
-    @staticmethod
-    def _no_decode_warning_seconds() -> float:
-        raw = str(os.environ.get("KIWISCAN_NO_DECODE_WARN_S", "")).strip()
-        if not raw:
-            return 120.0
-        try:
-            value = float(raw)
-        except Exception:
-            return 120.0
-        return max(30.0, min(3600.0, value))
+    @classmethod
+    def _no_decode_warning_seconds(cls) -> float:
+        return cls._env_float("KIWISCAN_NO_DECODE_WARN_S", 120.0, min_v=30.0, max_v=3600.0)
+
+    @classmethod
+    def _digital_remap_grace_seconds(cls) -> float:
+        return cls._env_float("KIWISCAN_DIGITAL_REMAP_GRACE_S", 20.0, min_v=5.0, max_v=300.0)
 
     @staticmethod
-    def _digital_remap_grace_seconds() -> float:
-        raw = str(os.environ.get("KIWISCAN_DIGITAL_REMAP_GRACE_S", "")).strip()
-        if not raw:
-            return 20.0
-        try:
-            value = float(raw)
-        except Exception:
-            return 20.0
-        return max(5.0, min(300.0, value))
-
-    def _metrics_cache_with_meta(self) -> Dict[str, object] | None:
-        cached = dict(self._metrics_snapshot_cache) if self._metrics_snapshot_cache else None
+    def _cache_with_meta(payload: Dict[str, object]) -> Dict[str, object] | None:
+        cached = dict(payload) if payload else None
         if not cached:
             return None
         cached_unix_raw = cached.get("_cached_unix")
@@ -2426,6 +2457,18 @@ class ReceiverManager:
             cached["_cache_age_s"] = max(0.0, time.time() - cached_unix)
         cached["_from_cache"] = True
         return cached
+
+    @staticmethod
+    def _prepare_cached_payload(payload: Dict[str, object]) -> Dict[str, object]:
+        cached = dict(payload)
+        cached["_cached_unix"] = time.time()
+        return cached
+
+    def _metrics_cache_with_meta(self) -> Dict[str, object] | None:
+        return self._cache_with_meta(self._metrics_snapshot_cache)
+
+    def _store_metrics_snapshot_cache(self, payload: Dict[str, object]) -> None:
+        self._metrics_snapshot_cache = self._prepare_cached_payload(payload)
 
     def metrics_snapshot(self) -> Dict[str, object]:
         acquired = self._lock.acquire(timeout=0.5)
@@ -2471,9 +2514,7 @@ class ReceiverManager:
             }
         finally:
             self._lock.release()
-        cached = dict(result)
-        cached["_cached_unix"] = time.time()
-        self._metrics_snapshot_cache = cached
+        self._store_metrics_snapshot_cache(result)
         result["_from_cache"] = False
         return result
 
@@ -2516,40 +2557,16 @@ class ReceiverManager:
             self._lock.release()
 
     def _truth_cache_with_meta(self) -> Dict[str, object] | None:
-        cached = dict(self._truth_snapshot_cache) if self._truth_snapshot_cache else None
-        if not cached:
-            return None
-        try:
-            cached_unix = float(cached.get("_cached_unix"))
-        except Exception:
-            cached_unix = None
-        if cached_unix is not None:
-            cached["_cache_age_s"] = max(0.0, time.time() - cached_unix)
-        cached["_from_cache"] = True
-        return cached
+        return self._cache_with_meta(self._truth_snapshot_cache)
 
     def _store_truth_snapshot_cache(self, payload: Dict[str, object]) -> None:
-        cached = dict(payload)
-        cached["_cached_unix"] = time.time()
-        self._truth_snapshot_cache = cached
+        self._truth_snapshot_cache = self._prepare_cached_payload(payload)
 
     def _health_cache_with_meta(self) -> Dict[str, object] | None:
-        cached = dict(self._health_summary_cache) if self._health_summary_cache else None
-        if not cached:
-            return None
-        try:
-            cached_unix = float(cached.get("_cached_unix"))
-        except Exception:
-            cached_unix = None
-        if cached_unix is not None:
-            cached["_cache_age_s"] = max(0.0, time.time() - cached_unix)
-        cached["_from_cache"] = True
-        return cached
+        return self._cache_with_meta(self._health_summary_cache)
 
     def _store_health_summary_cache(self, payload: Dict[str, object]) -> None:
-        cached = dict(payload)
-        cached["_cached_unix"] = time.time()
-        self._health_summary_cache = cached
+        self._health_summary_cache = self._prepare_cached_payload(payload)
 
     @staticmethod
     def _empty_propagation_summary() -> Dict[str, object]:
@@ -2692,6 +2709,7 @@ class ReceiverManager:
             wd = watchdog_by_rx.get(int(rx), {})
             activity = activity_by_rx.get(int(rx), {})
             expected_label = self._expected_user_label(assignment) if assignment is not None else ""
+            expected_labels = self._expected_user_label_aliases(assignment)
 
             observed_slot: int | None = None
             observed_label: str | None = None
@@ -2701,7 +2719,7 @@ class ReceiverManager:
                     label = str(entry[0] if isinstance(entry, tuple) and len(entry) >= 1 else "").strip()
                     if not label:
                         continue
-                    if self._user_label_matches(expected_label, label):
+                    if self._label_matches_any(expected_labels, label):
                         observed_slot = int(slot)
                         observed_label = label
                         age_s = entry[1] if isinstance(entry, tuple) and len(entry) >= 2 else None
@@ -2826,6 +2844,7 @@ class ReceiverManager:
                 for rx in sorted(fallback_assignments.keys()):
                     assignment = fallback_assignments[int(rx)]
                     expected_label = self._expected_user_label(assignment)
+                    expected_labels = self._expected_user_label_aliases(assignment)
                     observed_slot: int | None = None
                     observed_label: str = ""
                     observed_age_s: float | None = None
@@ -2833,7 +2852,7 @@ class ReceiverManager:
                         label = str(entry[0] if isinstance(entry, tuple) and len(entry) >= 1 else "").strip()
                         if not label:
                             continue
-                        if self._user_label_matches(expected_label, label):
+                        if self._label_matches_any(expected_labels, label):
                             observed_slot = int(slot)
                             observed_label = label
                             try:
@@ -2889,13 +2908,9 @@ class ReceiverManager:
                 rx_i = int(ch.get("rx", int(rx_key)))
                 band = str(ch.get("band") or "").strip().upper()
                 mode_label = str(ch.get("mode") or "").strip().upper()
-                prefix = "FIXED" if rx_i >= 2 else f"ROAM{rx_i + 1}"
-                if "SSB" in mode_label or "PHONE" in mode_label:
-                    expected_label = _compact_user_label(prefix, band, "SSB")
-                else:
-                    mode_tag = mode_label.replace(" ", "").replace("/", "")
-                    pm = "FT8" if "FT8" in mode_tag else ("FT4" if "FT4" in mode_tag else ("WS" if "WSPR" in mode_tag else mode_tag[:8]))
-                    expected_label = _compact_user_label(prefix, band, pm)
+                prefix = _preferred_user_label_prefix(rx_i)
+                expected_label = _compact_user_label(prefix, band, mode_label)
+                expected_labels = self._user_label_aliases_for_rx(rx_i, band, mode_label)
 
                 observed_slot: int | None = None
                 observed_label: str = ""
@@ -2904,7 +2919,7 @@ class ReceiverManager:
                     label = str(entry[0] if isinstance(entry, tuple) and len(entry) >= 1 else "").strip()
                     if not label:
                         continue
-                    if self._user_label_matches(expected_label, label):
+                    if self._label_matches_any(expected_labels, label):
                         observed_slot = int(slot)
                         observed_label = label
                         try:
@@ -2962,6 +2977,7 @@ class ReceiverManager:
         for rx in sorted(assignments.keys()):
             assignment = assignments[int(rx)]
             expected_label = self._expected_user_label(assignment)
+            expected_labels = self._expected_user_label_aliases(assignment)
             observed_slot: int | None = None
             observed_label: str = ""
             observed_age_s: float | None = None
@@ -2973,7 +2989,7 @@ class ReceiverManager:
                     continue
                 if not label:
                     continue
-                if self._user_label_matches(expected_label, label):
+                if self._label_matches_any(expected_labels, label):
                     observed_slot = int(slot)
                     observed_label = label
                     try:
@@ -3113,12 +3129,13 @@ class ReceiverManager:
             kiwi_user_age_s = None
             visible_slot: int | None = None
             expected_label = self._expected_user_label(assignment) if assignment is not None else ""
+            expected_labels = self._expected_user_label_aliases(assignment)
             if is_ssb and assignment is not None:
                 # Search all kiwi slots — workers may land on any slot index at connect time.
                 # Use the same compact label builder as the worker so health checks stay
                 # aligned with Kiwi's truncated /users labels.
                 visible_slot = next(
-                    (slot for slot, name in users_by_rx.items() if self._user_label_matches(expected_label, name)),
+                    (slot for slot, name in users_by_rx.items() if self._label_matches_any(expected_labels, name)),
                     None,
                 )
                 is_active = visible_slot is not None
@@ -3131,7 +3148,7 @@ class ReceiverManager:
                 # Use the same compact label builder as the worker so health checks stay
                 # aligned with Kiwi's truncated /users labels.
                 visible_slot = next(
-                    (slot for slot, name in users_by_rx.items() if self._user_label_matches(expected_label, name)),
+                    (slot for slot, name in users_by_rx.items() if self._label_matches_any(expected_labels, name)),
                     None,
                 )
                 visible_on_kiwi = visible_slot is not None
@@ -3198,12 +3215,20 @@ class ReceiverManager:
 
             if is_digital and assignment is not None:
                 decoder_missing = (decoder_output_age_s is None) or (decoder_output_age_s > stall_threshold_s)
-                expected_label = self._expected_user_label(assignment).upper()
+                expected_label_keys = {
+                    str(label or "").strip().upper()
+                    for label in expected_labels
+                    if str(label or "").strip()
+                }
                 # Also search for truncated key variants (KiwiSDR may truncate long usernames)
-                _live_locs_raw = live_auto_locations.get(expected_label)
+                _live_locs_raw = None
+                for _expected_key in expected_label_keys:
+                    _live_locs_raw = live_auto_locations.get(_expected_key)
+                    if _live_locs_raw is not None:
+                        break
                 if _live_locs_raw is None:
                     for _key, _locs in live_auto_locations.items():
-                        if self._user_label_matches(expected_label, _key):
+                        if self._label_matches_any(expected_labels, _key):
                             _live_locs_raw = _locs
                             break
                 live_locations = list(_live_locs_raw or [])
@@ -3221,11 +3246,11 @@ class ReceiverManager:
                 occupant_age_s = user_age_by_rx.get(int(rx))
                 displaced_by_stale_auto = bool(
                     self._is_auto_label(occupant)
-                    and not self._user_label_matches(expected_label, occupant)
+                    and not self._label_matches_any(expected_labels, occupant)
                     and (occupant_age_s is None or occupant_age_s >= remap_grace_s)
                 )
                 # Record what is blocking the expected slot (if anything foreign is there)
-                if occupant and not self._user_label_matches(expected_label, occupant):
+                if occupant and not self._label_matches_any(expected_labels, occupant):
                     kiwi_occupant = occupant
                 mismatch_detected = bool(wrong_slot_stale or displaced_by_stale_auto)
                 strict_roaming_slot = bool(int(rx) < 2 and not bool(getattr(assignment, "ignore_slot_check", False)))
@@ -3683,15 +3708,13 @@ class ReceiverManager:
                 return False
         return True
 
-    @staticmethod
-    def _force_full_reset_on_band_change_enabled() -> bool:
-        raw = str(os.environ.get("KIWISCAN_RESET_ALL_ON_BAND_CHANGE", "1")).strip().lower()
-        return raw not in {"0", "false", "no", "off"}
+    @classmethod
+    def _force_full_reset_on_band_change_enabled(cls) -> bool:
+        return cls._env_bool("KIWISCAN_RESET_ALL_ON_BAND_CHANGE", True)
 
-    @staticmethod
-    def _force_full_reset_on_reconcile_enabled() -> bool:
-        raw = str(os.environ.get("KIWISCAN_RESET_ALL_ON_RECONCILE", "1")).strip().lower()
-        return raw not in {"0", "false", "no", "off"}
+    @classmethod
+    def _force_full_reset_on_reconcile_enabled(cls) -> bool:
+        return cls._env_bool("KIWISCAN_RESET_ALL_ON_RECONCILE", True)
 
     @classmethod
     def _band_plan_changed(cls, current: Dict[int, ReceiverAssignment], desired: Dict[int, ReceiverAssignment]) -> bool:
@@ -3735,18 +3758,66 @@ class ReceiverManager:
             return True
         return len(actual_text) >= max(8, len(expected_text) - 3) and expected_text.startswith(actual_text)
 
+    @staticmethod
+    def _legacy_user_label_mode_token(mode_label: str) -> str:
+        mode_text = str(mode_label or "").strip().upper().replace(" ", "")
+        if "FT8" in mode_text:
+            return "FT8"
+        if "FT4" in mode_text:
+            return "FT4"
+        if "WSPR" in mode_text:
+            return "WS"
+        if "SSB" in mode_text or "PHONE" in mode_text:
+            return "SSB"
+        cleaned = "".join(ch for ch in mode_text if ch.isalnum())
+        return cleaned[:4]
+
+    @classmethod
+    def _legacy_compact_user_label(cls, prefix: str, band: str, mode_label: str) -> str:
+        prefix_text = "".join(ch for ch in str(prefix or "").strip().upper() if ch.isalnum())
+        band_text = "".join(ch for ch in str(band or "").strip().upper() if ch.isalnum())
+        mode_text = cls._legacy_user_label_mode_token(mode_label)
+        return f"{prefix_text}{band_text}{mode_text}"[:12]
+
+    @classmethod
+    def _user_label_aliases(cls, prefix: str, band: str, mode_label: str) -> set[str]:
+        labels: set[str] = set()
+        readable = _compact_user_label(prefix, band, mode_label)
+        if readable:
+            labels.add(readable)
+        legacy = cls._legacy_compact_user_label(prefix, band, mode_label)
+        if legacy:
+            labels.add(legacy)
+        return labels
+
+    @classmethod
+    def _user_label_aliases_for_rx(cls, rx: int, band: str, mode_label: str) -> set[str]:
+        labels: set[str] = set()
+        for prefix in _compatible_user_label_prefixes(int(rx)):
+            labels.update(cls._user_label_aliases(prefix, band, mode_label))
+        return labels
+
+    @classmethod
+    def _expected_user_label_aliases(cls, assignment: Optional[ReceiverAssignment]) -> set[str]:
+        if assignment is None:
+            return set()
+        mode_label = "SSB" if bool(assignment.ssb_scan) and cls._is_ssb_assignment(assignment) else assignment.mode_label
+        return cls._user_label_aliases_for_rx(int(assignment.rx), assignment.band, str(mode_label or ""))
+
+    @classmethod
+    def _label_matches_any(cls, expected_labels: set[str], actual: str) -> bool:
+        return any(
+            cls._user_label_matches(expected, actual)
+            for expected in expected_labels
+            if str(expected or "").strip()
+        )
+
     @classmethod
     def _expected_user_label(cls, assignment: ReceiverAssignment) -> str:
-        prefix = "FIXED" if int(assignment.rx) >= 2 else f"ROAM{int(assignment.rx) + 1}"
+        prefix = _preferred_user_label_prefix(int(assignment.rx))
         if bool(assignment.ssb_scan) and cls._is_ssb_assignment(assignment):
-            return _compact_user_label(prefix, str(assignment.band).upper(), "SSB")
-        mode_tag = str(assignment.mode_label or "FT8").strip().upper().replace(" ", "").replace("/", "")
-        # Kiwi firmware modifies labels > ~12 chars in /users (truncates or regenerates
-        # from the tuned frequency), causing label-matching to fail for IQ multi-mode
-        # workers.  Use short suffixes: WSPR→WS keeps "AUTO_20m_WS" (11 chars) within
-        # the 12-char limit.  Priority: FT8 > FT4 > WS (WSPR).
-        _pm = "FT8" if "FT8" in mode_tag else ("FT4" if "FT4" in mode_tag else ("WS" if "WSPR" in mode_tag else mode_tag[:8]))
-        return _compact_user_label(prefix, str(assignment.band).upper(), _pm)
+            return _compact_user_label(prefix, assignment.band, "SSB")
+        return _compact_user_label(prefix, assignment.band, assignment.mode_label)
 
     def _seed_truth_snapshot_cache(self, *, host: str, port: int, assignments: Dict[int, ReceiverAssignment]) -> None:
         """Seed truth cache before long apply phases so endpoint has immediate structure."""
@@ -3864,13 +3935,9 @@ class ReceiverManager:
         if not live_users:
             return set()
 
-        expected_by_rx = {
-            int(rx): self._expected_user_label(assignment)
-            for rx, assignment in assignments.items()
-        }
         out: set[int] = set()
-        for rx, expected_label in expected_by_rx.items():
-            assignment = assignments.get(int(rx))
+        for rx, assignment in assignments.items():
+            expected_labels = self._expected_user_label_aliases(assignment)
             ignore_slot = bool(getattr(assignment, "ignore_slot_check", False))
             if ignore_slot:
                 # For fixed receivers (ignore_slot_check=True), the Kiwi slot won't
@@ -3878,7 +3945,7 @@ class ReceiverManager:
                 # be visible somewhere on the Kiwi, otherwise stale AUTO users can keep
                 # the worker blocked indefinitely while the local thread looks healthy.
                 label_found = any(
-                    self._user_label_matches(expected_label, lbl)
+                    self._label_matches_any(expected_labels, lbl)
                     for lbl in live_users.values()
                 )
                 if not label_found:
@@ -3897,14 +3964,14 @@ class ReceiverManager:
                     if slot_ready is not None and slot_ready.is_set():
                         out.add(int(rx))
                     continue
-                if not self._user_label_matches(expected_label, active_label):
+                if not self._label_matches_any(expected_labels, active_label):
                     out.add(int(rx))
                 continue
             # For roaming receivers, check if the expected label appears on ANY active Kiwi
             # slot (not just the "expected" slot number). This avoids false drift triggers
             # when a human listener occupies the expected slot.
             label_found = any(
-                self._user_label_matches(expected_label, lbl)
+                self._label_matches_any(expected_labels, lbl)
                 for lbl in live_users.values()
             )
             if not label_found:
@@ -3915,7 +3982,7 @@ class ReceiverManager:
                 out.add(int(rx))
                 continue
             active_label = str(getattr(worker, "_active_user_label", "") or "").strip()
-            if active_label and not self._user_label_matches(expected_label, active_label):
+            if active_label and not self._label_matches_any(expected_labels, active_label):
                 out.add(int(rx))
         return out
 
@@ -4114,7 +4181,7 @@ class ReceiverManager:
             for rx in sorted(to_stop):
                 current_assignment = self._assignments.get(rx)
                 if current_assignment is not None:
-                    stopped_labels.add(self._expected_user_label(current_assignment))
+                    stopped_labels.update(self._expected_user_label_aliases(current_assignment))
 
             for rx in sorted(to_stop):
                 worker = self._workers.pop(rx, None)
@@ -4285,6 +4352,7 @@ class ReceiverManager:
                 # and stable for >=2 s. This covers kiwirecorder's 15 s "Too busy"
                 # retry cycle without any kicks.
                 _exp_lbl = self._expected_user_label(desired)
+                _exp_lbls = self._expected_user_label_aliases(desired)
                 _poll_timeout_s = 15.0 if int(rx) >= 2 else 15.0
                 if starting_from_empty and int(rx) >= 2:
                     # On empty-state fixed bootstrap, avoid long per-rx stalls so we can
@@ -4298,7 +4366,7 @@ class ReceiverManager:
                     _live_p = self._fetch_live_users(str(host), int(port))
                     _last_live_p = dict(_live_p)
                     _cur_slot = next(
-                        (int(_s) for _s, _l in _live_p.items() if self._user_label_matches(_exp_lbl, _l)),
+                        (int(_s) for _s, _l in _live_p.items() if self._label_matches_any(_exp_lbls, _l)),
                         None,
                     )
                     if _cur_slot is not None and _cur_slot == _stable_slot:
@@ -4336,7 +4404,7 @@ class ReceiverManager:
                         {
                             int(_slot)
                             for _slot, _label in _last_live_p.items()
-                            if self._user_label_matches(_exp_lbl, _label)
+                            if self._label_matches_any(_exp_lbls, _label)
                             or int(_slot) == int(rx)
                         }
                     )
@@ -4352,7 +4420,7 @@ class ReceiverManager:
                         self._wait_for_kiwi_auto_users_missing(
                             host=str(host),
                             port=int(port),
-                            labels={_exp_lbl},
+                            labels=_exp_lbls,
                             timeout_s=3.0,
                         )
 
@@ -4401,13 +4469,13 @@ class ReceiverManager:
                         time.sleep(0.75)
                     _live_roam = self._fetch_live_users(str(host), int(port))
                     _expected_roam = {
-                        int(rx): self._expected_user_label(assignments[int(rx)])
+                        int(rx): self._expected_user_label_aliases(assignments[int(rx)])
                         for rx in roaming_rxs_to_verify
                     }
                     _actual_slots: Dict[int, int] = {}
                     for _slot, _label in _live_roam.items():
-                        for _rx, _expected_label in _expected_roam.items():
-                            if self._user_label_matches(_expected_label, _label):
+                        for _rx, _expected_labels in _expected_roam.items():
+                            if self._label_matches_any(_expected_labels, _label):
                                 _actual_slots.setdefault(int(_rx), int(_slot))
                                 break
                     _needs_fix = [
@@ -4419,7 +4487,7 @@ class ReceiverManager:
                         int(_slot)
                         for _slot in roaming_rxs_to_verify
                         if int(_slot) in _live_roam
-                        and not self._user_label_matches(_expected_roam[int(_slot)], _live_roam[int(_slot)])
+                        and not self._label_matches_any(_expected_roam[int(_slot)], _live_roam[int(_slot)])
                     ]
                     if not _needs_fix and not _blocked_targets:
                         break
@@ -4490,17 +4558,19 @@ class ReceiverManager:
                     if _evict_attempt > 0:
                         time.sleep(0.75)
                     live_now = self._fetch_live_users(str(host), int(port))
-                    expected_labels = {
-                        self._expected_user_label(assignments[int(rx)])
+                    expected_labels_by_rx = {
+                        int(rx): self._expected_user_label_aliases(assignments[int(rx)])
+                        for rx in desired_rxs
+                    }
+                    expected_label_by_rx = {
+                        int(rx): self._expected_user_label(assignments[int(rx)])
                         for rx in desired_rxs
                     }
                     # Build rx → actual Kiwi slot mapping
                     rx_to_actual_slot: Dict[int, int] = {}
                     for _slot, _lbl in live_now.items():
                         for _rx in desired_rxs:
-                            if self._user_label_matches(
-                                self._expected_user_label(assignments[int(_rx)]), _lbl
-                            ):
+                            if self._label_matches_any(expected_labels_by_rx[int(_rx)], _lbl):
                                 if int(_rx) not in rx_to_actual_slot:
                                     rx_to_actual_slot[int(_rx)] = int(_slot)
                                 break
@@ -4508,13 +4578,14 @@ class ReceiverManager:
                     # (e.g. two 20m FT8 receivers → AUTO_20M_FT8 expected count = 2).
                     _expected_label_counts: Dict[str, int] = {}
                     for _rx in desired_rxs:
-                        _el = self._expected_user_label(assignments[int(_rx)])
+                        _el = expected_label_by_rx[int(_rx)]
                         _expected_label_counts[_el] = _expected_label_counts.get(_el, 0) + 1
                     # Clone detection: label appears MORE times than expected (true ghost)
                     live_expected_counts: Dict[str, int] = {}
                     for _lbl in live_now.values():
-                        for _exp in expected_labels:
-                            if self._user_label_matches(_exp, _lbl):
+                        for _rx in desired_rxs:
+                            _exp = expected_label_by_rx[int(_rx)]
+                            if self._label_matches_any(expected_labels_by_rx[int(_rx)], _lbl):
                                 live_expected_counts[_exp] = live_expected_counts.get(_exp, 0) + 1
                                 break
                     _cloned_labels = {
@@ -4524,14 +4595,20 @@ class ReceiverManager:
                     # Ghost slots: label not matching any expected, OR cloned
                     ghost_slots = [
                         _slot for _slot, _lbl in live_now.items()
-                        if (not any(self._user_label_matches(exp, _lbl) for exp in expected_labels)
-                            or any(self._user_label_matches(cl, _lbl) for cl in _cloned_labels))
+                        if (
+                            not any(self._label_matches_any(expected_labels_by_rx[int(_rx)], _lbl) for _rx in desired_rxs)
+                            or any(
+                                expected_label_by_rx[int(_rx)] in _cloned_labels
+                                and self._label_matches_any(expected_labels_by_rx[int(_rx)], _lbl)
+                                for _rx in desired_rxs
+                            )
+                        )
                     ]
                     # Absent: our label not found in live_now at all, or cloned
                     absent = [
                         int(_rx) for _rx in desired_rxs
                         if int(_rx) not in rx_to_actual_slot
-                        or self._expected_user_label(assignments[int(_rx)]) in _cloned_labels
+                        or expected_label_by_rx[int(_rx)] in _cloned_labels
                     ]
                     # Wrongly placed: connected but Kiwi slot ≠ rx number
                     wrongly_placed = [
@@ -4547,10 +4624,7 @@ class ReceiverManager:
                     target_to_kick = [
                         int(_rx) for _rx in needs_fix
                         if int(_rx) in live_now
-                        and not any(
-                            self._user_label_matches(_exp, live_now[int(_rx)])
-                            for _exp in expected_labels
-                        )
+                        and not self._label_matches_any(expected_labels_by_rx[int(_rx)], live_now[int(_rx)])
                     ]
                     all_slots_to_evict = sorted(set(ghost_slots + target_to_kick))
                     if not all_slots_to_evict and not needs_fix:
@@ -4630,7 +4704,12 @@ class ReceiverManager:
                             for _w2 in _evict_stop_workers
                         }
                         _restart_labels.update(
-                            self._expected_user_label(assignments[int(_rx)])
+                            _label
+                            for _rx in workers_to_restart
+                            for _label in self._expected_user_label_aliases(assignments[int(_rx)])
+                        )
+                        _restart_labels.update(
+                            str(getattr(self._workers.get(int(_rx)), "_active_user_label", "") or "").strip()
                             for _rx in workers_to_restart
                         )
                         _restart_labels = {
@@ -4714,6 +4793,7 @@ class ReceiverManager:
                                     time.sleep(0.3)
                             _w.start()
                             _lbl = self._expected_user_label(_r)
+                            _lbls = self._expected_user_label_aliases(_r)
                             _target_slot = None if probe else int(the_rx)
                             logger.info(
                                 "_ev_start_one rx=%d probe=%s lbl=%s target_slot=%s",
@@ -4733,7 +4813,7 @@ class ReceiverManager:
                                     _sc: Optional[int] = None
                                     if _entry is not None:
                                         _el, _ea = _entry
-                                        _lbl_ok = self._user_label_matches(_lbl, _el)
+                                        _lbl_ok = self._label_matches_any(_lbls, _el)
                                         _age_ok = (_ea is None or _ea <= _max_age)
                                         if _lbl_ok and _age_ok:
                                             _sc = _target_slot
@@ -4753,7 +4833,7 @@ class ReceiverManager:
                                         (
                                             int(_s)
                                             for _s, (_el, _ea) in _lv_raw.items()
-                                            if self._user_label_matches(_lbl, _el)
+                                            if self._label_matches_any(_lbls, _el)
                                             and (_ea is None or _ea <= _max_age)
                                         ),
                                         None,
@@ -4790,7 +4870,7 @@ class ReceiverManager:
                                 {
                                     int(_slot)
                                     for _slot, (_label, _age) in _lv_raw.items()
-                                    if self._user_label_matches(_lbl, _label)
+                                    if self._label_matches_any(_lbls, _label)
                                     or int(_slot) == int(the_rx)
                                 }
                             )
@@ -4806,7 +4886,7 @@ class ReceiverManager:
                                 self._wait_for_kiwi_auto_users_missing(
                                     host=str(host),
                                     port=int(port),
-                                    labels={_lbl},
+                                    labels=_lbls,
                                     timeout_s=3.0,
                                 )
                             if _try_n < _MAX_TRIES - 1:

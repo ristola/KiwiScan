@@ -7,7 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import kiwi_scan.receiver_manager as receiver_manager
-from kiwi_scan.receiver_manager import ReceiverAssignment, ReceiverManager
+from kiwi_scan.receiver_manager import ReceiverAssignment, ReceiverManager, _ReceiverWorker
 
 
 class _FakeResponse:
@@ -33,6 +33,22 @@ def _make_manager() -> ReceiverManager:
     )
 
 
+def _make_worker(*, initial_rx_chan_adjust: int = 0) -> _ReceiverWorker:
+    return _ReceiverWorker(
+        kiwirecorder_path=Path("/bin/sh"),
+        ft8modem_path=Path("/bin/sh"),
+        af2udp_path=Path("/bin/sh"),
+        sox_path="/bin/sh",
+        host="kiwi.local",
+        port=8073,
+        rx=2,
+        band="20m",
+        freq_hz=14_074_000.0,
+        mode_label="FT8",
+        initial_rx_chan_adjust=initial_rx_chan_adjust,
+    )
+
+
 def _set_visible_user(monkeypatch, user_label: str) -> None:
     payload = [{"i": 2, "n": user_label, "t": "0:10:00"}]
 
@@ -47,6 +63,68 @@ def _set_users_payload(monkeypatch, payload: list[dict[str, object]]) -> None:
         return _FakeResponse(payload)
 
     monkeypatch.setattr(receiver_manager.urllib.request, "urlopen", fake_urlopen)
+
+
+def test_receiver_manager_float_env_helpers_clamp_and_default(monkeypatch) -> None:
+    monkeypatch.delenv("KIWISCAN_NO_DECODE_WARN_S", raising=False)
+    monkeypatch.setenv("KIWISCAN_DIGITAL_REMAP_GRACE_S", "bad-value")
+
+    assert ReceiverManager._no_decode_warning_seconds() == 120.0
+    assert ReceiverManager._digital_remap_grace_seconds() == 20.0
+
+    monkeypatch.setenv("KIWISCAN_NO_DECODE_WARN_S", "10")
+    monkeypatch.setenv("KIWISCAN_DIGITAL_REMAP_GRACE_S", "999")
+
+    assert ReceiverManager._no_decode_warning_seconds() == 30.0
+    assert ReceiverManager._digital_remap_grace_seconds() == 300.0
+
+
+def test_receiver_manager_bool_env_helpers_honor_false_values(monkeypatch) -> None:
+    monkeypatch.setenv("KIWISCAN_RESET_ALL_ON_BAND_CHANGE", "off")
+    monkeypatch.setenv("KIWISCAN_RESET_ALL_ON_RECONCILE", "0")
+
+    assert ReceiverManager._force_full_reset_on_band_change_enabled() is False
+    assert ReceiverManager._force_full_reset_on_reconcile_enabled() is False
+
+    monkeypatch.delenv("KIWISCAN_RESET_ALL_ON_BAND_CHANGE", raising=False)
+    monkeypatch.delenv("KIWISCAN_RESET_ALL_ON_RECONCILE", raising=False)
+
+    assert ReceiverManager._force_full_reset_on_band_change_enabled() is True
+    assert ReceiverManager._force_full_reset_on_reconcile_enabled() is True
+
+
+def test_receiver_worker_env_helpers_respect_defaults_and_overrides(monkeypatch) -> None:
+    monkeypatch.setenv("KIWISCAN_RX_CHAN_OFFSET", "7")
+    monkeypatch.setenv("KIWISCAN_STRICT_DIGITAL_SLOT_ENFORCEMENT", "off")
+    monkeypatch.setenv("KIWISCAN_USE_PY_UDP_AUDIO", "1")
+    monkeypatch.setenv("KIWISCAN_FT8MODEM_KEEP", "yes")
+
+    worker = _make_worker()
+
+    assert worker._rx_chan_adjust == 7
+    assert worker._strict_digital_slot_enforcement() is False
+    assert worker._use_python_udp_sender() is True
+    assert worker._decoder_keep_wavs_enabled() is True
+
+
+def test_receiver_worker_env_helpers_clamp_and_fallback(monkeypatch) -> None:
+    monkeypatch.setenv("KIWISCAN_RX_CHAN_OFFSET", "bad-value")
+    monkeypatch.delenv("KIWISCAN_STRICT_DIGITAL_SLOT_ENFORCEMENT", raising=False)
+    monkeypatch.delenv("KIWISCAN_USE_PY_UDP_AUDIO", raising=False)
+    monkeypatch.setenv("KIWISCAN_FT8MODEM_KEEP", "0")
+
+    worker = _make_worker(initial_rx_chan_adjust=0)
+    bounded = _ReceiverWorker._env_int("KIWISCAN_RX_CHAN_OFFSET", 0, min_v=-64, max_v=64)
+
+    assert worker._rx_chan_adjust == 0
+    assert bounded == 0
+    assert worker._strict_digital_slot_enforcement() is True
+    assert worker._use_python_udp_sender() is False
+    assert worker._decoder_keep_wavs_enabled() is False
+
+    monkeypatch.setenv("KIWISCAN_RX_CHAN_OFFSET", "999")
+
+    assert _ReceiverWorker._env_int("KIWISCAN_RX_CHAN_OFFSET", 0, min_v=-64, max_v=64) == 64
 
 
 def test_health_summary_marks_silent_receiver_when_heartbeat_is_recent(monkeypatch) -> None:
@@ -272,12 +350,25 @@ def test_wait_for_kiwi_auto_users_clear_retries_until_managed_labels_are_gone(mo
     assert fake_now["value"] == 0.5
 
 
-def test_expected_user_label_uses_compact_kiwi_safe_format() -> None:
-    fixed = ReceiverAssignment(rx=2, band="20m", freq_hz=14_077_000.0, mode_label="FT4 / FT8")
+def test_expected_user_label_uses_readable_band_and_mode_summary() -> None:
+    fixed_mix = ReceiverAssignment(rx=2, band="20m", freq_hz=14_077_000.0, mode_label="FT4 / FT8")
+    fixed_all = ReceiverAssignment(rx=7, band="17m", freq_hz=18_102_000.0, mode_label="FT4 / FT8 / WSPR")
     roam = ReceiverAssignment(rx=0, band="10m", freq_hz=28_074_000.0, mode_label="FT8")
 
-    assert ReceiverManager._expected_user_label(fixed) == "FIXED20MFT8"
-    assert ReceiverManager._expected_user_label(roam) == "ROAM110MFT8"
+    assert ReceiverManager._expected_user_label(fixed_mix) == "FIXED_20m_MIX"
+    assert ReceiverManager._expected_user_label(fixed_all) == "FIXED_17m_ALL"
+    assert ReceiverManager._expected_user_label(roam) == "ROAM_10m_FT8"
+
+
+def test_user_label_matching_accepts_compact_kiwi_variants() -> None:
+    assert ReceiverManager._user_label_matches("FIXED_20m_MIX", "FIXED20MMIX") is True
+    assert ReceiverManager._user_label_matches("FIXED_17m_ALL", "FIXED17MALL") is True
+    roam = ReceiverAssignment(rx=0, band="10m", freq_hz=28_074_000.0, mode_label="FT8")
+    roam_labels = ReceiverManager._expected_user_label_aliases(roam)
+
+    assert "ROAM_10m_FT8" in roam_labels
+    assert "ROAM1_10m_FT8" in roam_labels
+    assert ReceiverManager._label_matches_any(roam_labels, "ROAM110MFT8") is True
 
 
 def test_health_summary_lock_timeout_returns_seeded_channels() -> None:
@@ -361,7 +452,7 @@ def test_apply_assignments_empty_manual_mode_prefers_graceful_stop_before_kick(m
             "graceful_timeout_s": 6.0,
         },
     )
-    assert ("wait_missing", {"FIXED20MFT8"}) in events
+    assert ("wait_missing", {"FIXED20MFT8", "FIXED_20m_FT8"}) in events
     assert ("cleanup", None) in events
     assert ("wait_orphans", 6.0) in events
     assert not any(event[0] == "kick" for event in events)
@@ -542,8 +633,8 @@ def test_apply_assignments_targeted_correction_keeps_healthy_workers_running(mon
     manager.apply_assignments("kiwi.local", 8073, assignments)
 
     assert global_cleanup_calls == ["global"]
-    assert scoped_cleanup_calls == [{"FIXED40MFT8"}]
-    assert live_users == {2: "FIXED20MFT8", 3: "FIXED40MFT8"}
+    assert scoped_cleanup_calls == [{"FIXED40MFT8", "FIXED_40m_FT8"}]
+    assert live_users == {2: "FIXED_20m_FT8", 3: "FIXED_40m_FT8"}
     assert sorted(manager._workers.keys()) == [2, 3]
     assert start_counts == {2: 1, 3: 2}
 
@@ -677,10 +768,10 @@ def test_restart_receiver_waits_for_old_label_and_cleans_up_stragglers(monkeypat
     assert ("stop_old", old_worker) in events
     wait_events = [event for event in events if event[0] == "wait_missing"]
     assert wait_events == [
-        ("wait_missing", {"FIXED20MFT8", "FIXED_20M_FT8"}),
-        ("wait_missing", {"FIXED20MFT8", "FIXED_20M_FT8"}),
+        ("wait_missing", {"FIXED20MFT8", "FIXED_20M_FT8", "FIXED_20m_FT8"}),
+        ("wait_missing", {"FIXED20MFT8", "FIXED_20M_FT8", "FIXED_20m_FT8"}),
     ]
-    assert ("cleanup_labels", {"FIXED20MFT8", "FIXED_20M_FT8"}) in events
+    assert ("cleanup_labels", {"FIXED20MFT8", "FIXED_20M_FT8", "FIXED_20m_FT8"}) in events
     assert ("make_worker", 3) in events
     assert ("start", None) in events
 

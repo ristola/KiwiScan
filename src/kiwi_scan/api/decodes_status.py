@@ -64,6 +64,8 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
             raw = str(value or "").strip().upper().replace("_", " ").replace("-", " ")
             if not raw:
                 return set()
+            if raw == "ALL" or raw == "MIX":
+                return {"FT4", "FT8", "WSPR"}
             tokens: set[str] = set()
             if "FT4" in raw:
                 tokens.add("FT4")
@@ -78,6 +80,9 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
             return {raw}
 
         def _normalize_mode_label(value: object) -> str:
+            raw = str(value or "").strip().upper()
+            if raw in {"ALL", "MIX"}:
+                return raw
             tokens = _mode_token_set(value)
             if not tokens:
                 return ""
@@ -110,7 +115,7 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
             name = str(label or "").strip().strip('"\'')
             if not name:
                 return None
-            match = re.search(r"^(?:AUTO|FIXED|ROAM\d+)_([^_]+)_(.+)$", name, flags=re.IGNORECASE)
+            match = re.search(r"^(?:AUTO|FIXED|ROAM(?:\d+)?)_([^_]+)_(.+)$", name, flags=re.IGNORECASE)
             if not match:
                 match = re.search(r"^(?:AUTO|FIXED|ROAM\d)(\d+[mM])([A-Z0-9/\-]+)$", name, flags=re.IGNORECASE)
             if not match:

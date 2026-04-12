@@ -854,6 +854,7 @@
 
         .summary-k .ui-icon,
         .chip-label .ui-icon,
+        .chip-side-label .ui-icon,
         .system-card-title .ui-icon {
             width: 15px;
             height: 15px;
@@ -902,6 +903,52 @@
             justify-content: center;
         }
 
+        .status-chip.status-chip-rx-summary {
+            justify-content: center;
+        }
+
+        .status-chip-head {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            align-items: center;
+            gap: 18px;
+            width: 100%;
+            margin-bottom: 4px;
+        }
+
+        .status-chip-split {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            align-items: flex-start;
+            gap: 18px;
+            width: 100%;
+        }
+
+        .status-chip-main {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            text-align: center;
+            min-width: 0;
+        }
+
+        .status-chip-side {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 4px;
+            text-align: center;
+            min-width: 0;
+        }
+
+        .status-chip.status-chip-stream {
+            justify-content: flex-start;
+            align-items: center;
+            text-align: center;
+        }
+
         .chip-label {
             display: flex;
             align-items: center;
@@ -913,6 +960,21 @@
             margin-bottom: 4px;
         }
 
+        .status-chip-stream .chip-label {
+            justify-content: center;
+            margin-bottom: 4px;
+        }
+
+        .status-chip-head .chip-label {
+            margin-bottom: 0;
+            justify-content: center;
+        }
+
+        .chip-label-secondary {
+            text-align: center;
+            margin-left: 0;
+        }
+
         .chip-value {
             font-size: 1rem;
             font-weight: 700;
@@ -922,6 +984,31 @@
 
         .chip-value-active {
             color: var(--ok);
+        }
+
+        .chip-side-label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            color: var(--muted);
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            line-height: 1.1;
+            margin-top: 8px;
+        }
+
+        .chip-side-value {
+            font-size: 1rem;
+            font-weight: 700;
+            line-height: 1.2;
+            word-break: break-word;
+        }
+
+        .status-chip-rx-summary .chip-value,
+        .status-chip-rx-summary .chip-side-value {
+            text-align: center;
         }
 
         .chip-sub {
@@ -4159,18 +4246,27 @@
                             <div class="chip-value" id="chip-server">Connecting...</div>
                             <div class="chip-sub mono" id="chip-server-endpoint">--</div>
                         </article>
-                        <article class="status-chip" data-icon="shield">
-                            <div class="chip-label">RX Health</div>
-                            <div class="chip-value" id="chip-rx-health">...</div>
+                        <article class="status-chip status-chip-rx-summary" data-icon="shield">
+                            <div class="status-chip-head">
+                                <div class="chip-label">RX Health</div>
+                                <div class="chip-label chip-label-secondary" data-icon="signal">Busiest Band</div>
+                            </div>
+                            <div class="status-chip-split">
+                                <div class="status-chip-main">
+                                    <div class="chip-value" id="chip-rx-health">...</div>
+                                </div>
+                                <div class="status-chip-side">
+                                    <div class="chip-side-value" id="chip-busiest-band">...</div>
+                                    <div class="chip-side-label" data-icon="signal">All Decodes</div>
+                                    <div class="chip-side-value" id="chip-all-decodes">...</div>
+                                </div>
+                            </div>
                         </article>
-                        <article class="status-chip" data-icon="stream">
+                        <article class="status-chip status-chip-stream" data-icon="stream">
                             <div class="chip-label">WebSocket Stream</div>
                             <div class="chip-value" id="chip-stream">Connecting...</div>
                         </article>
-                        <article class="status-chip" data-icon="signal">
-                            <div class="chip-label">Busiest Band</div>
-                            <div class="chip-value" id="chip-busiest-band">...</div>
-                        </article>
+                        <article class="status-chip status-chip-empty" aria-hidden="true"></article>
                     </div>
                 </article>
             </section>
@@ -4772,11 +4868,15 @@
         let receiverDecodeSnrHistory = {};
         let lastKnownSnrByRx = {};
         let currentBandAssignments = {};
-        let decodeWsClientCount = null;
+        let decodeWs4010ClientCount = null;
         let decodeWsClientPollTimer = null;
+        let decodeWsClientPollInFlight = false;
+        let decodeWsClientPollGeneration = 0;
+        const DECODE_WS_CLIENT_POLL_TIMEOUT_MS = 1500;
         let latestSystemInfo = null;
         let systemInfoRequest = null;
         let lastSystemInfoRefreshMs = 0;
+        let lastActiveReceiversTableSignature = "";
         let trendHoverIndex = -1;
         let bandChartHoverIndex = -1;
         let _bandChartLastBands = [];
@@ -4892,6 +4992,8 @@
         });
         const DECODE_SORT_DEFAULT = { key: "time", direction: "desc" };
         let recentDecodeItems = [];
+        let recentDecodePanelRenderPending = false;
+        let propagationMapRenderPending = false;
         let decodeSelectedModes = new Set(MAP_MODE_FILTERS);
         let decodeCqOnly = false;
         let decodeDxOnly = false;
@@ -5095,6 +5197,12 @@
             const num = Number(value);
             if (!Number.isFinite(num)) return "--";
             return `${num.toFixed(digits)}%`;
+        }
+
+        function fmtCount(value) {
+            const num = Number(value);
+            if (!Number.isFinite(num)) return "--";
+            return Math.round(num).toLocaleString("en-US");
         }
 
         function clampRefreshInterval(ms) {
@@ -5384,7 +5492,7 @@
 
         function activeReceiverNameHtml(user) {
             const rawName = safeText(user && user.name, "--");
-            const label = formatManagedReceiverLabel(rawName) || "--";
+            const label = safeText(user && user.display_name, "") || formatManagedReceiverLabel(rawName) || "--";
             const note = user && user.unexpected
                 ? '<span style="margin-left:6px;color:#f59e0b;font-size:0.75rem;font-weight:700">Kiwi only</span>'
                 : "";
@@ -5424,15 +5532,33 @@
                 .replace(/^(\d+)\s*[mM]$/, "$1m");
         }
 
+        function displayManagedReceiverPrefix(value) {
+            const prefix = String(safeText(value, "")).trim().toUpperCase();
+            if (!prefix) return "";
+            return prefix.startsWith("ROAM") ? "ROAM" : prefix;
+        }
+
         function readableReceiverModeLabel(mode) {
             const raw = String(mode || "").trim().toUpperCase();
             if (!raw) return "";
-            const normalized = raw.replace(/\s+/g, "").replace(/-/g, "/");
-            if (normalized === "FT4/FT8/WSPR") return "FT4_FT8_WSPR";
-            if (normalized === "FT4/FT8") return "FT4_FT8";
-            if (normalized === "FT4/WSPR") return "FT4_WSPR";
-            if (normalized === "WS") return "WSPR";
+            const normalized = raw.replace(/\s+/g, "").replace(/-/g, "/").replace(/_/g, "/");
+            const digitalModes = [];
+            if (normalized.includes("FT8")) digitalModes.push("FT8");
+            if (normalized.includes("FT4")) digitalModes.push("FT4");
+            if (normalized.includes("WSPR") || normalized === "WS") digitalModes.push("WSPR");
+            if (digitalModes.length >= 3) return "ALL";
+            if (digitalModes.length >= 2) return "MIX";
+            if (digitalModes.length === 1) return digitalModes[0];
+            if (normalized.includes("SSB") || normalized.includes("PHONE")) return "SSB";
             return raw.replace(/\s*\/\s*/g, "_").replace(/\s+/g, "_");
+        }
+
+        function buildManagedReceiverLabel(prefix, band, mode) {
+            const prefixText = displayManagedReceiverPrefix(prefix);
+            const bandText = normalizeActiveReceiverBand(band);
+            const modeText = readableReceiverModeLabel(mode);
+            if (!prefixText || !bandText || !modeText) return "";
+            return `${prefixText}_${bandText}_${modeText}`;
         }
 
         function formatManagedReceiverLabel(value) {
@@ -5441,17 +5567,11 @@
             if (raw.startsWith("(connecting")) return raw;
             const compactMatch = raw.match(/^(AUTO|FIXED|ROAM\d)(\d+[mM])([A-Z0-9]+)$/i);
             if (compactMatch) {
-                const prefix = compactMatch[1].toUpperCase();
-                const band = normalizeActiveReceiverBand(compactMatch[2]);
-                const mode = readableReceiverModeLabel(compactMatch[3]);
-                return `${prefix}_${band}_${mode}`;
+                return buildManagedReceiverLabel(compactMatch[1], compactMatch[2], compactMatch[3]) || raw;
             }
-            const readableMatch = raw.match(/^(AUTO|FIXED|ROAM\d+)_([^_]+)_(.+)$/i);
+            const readableMatch = raw.match(/^(AUTO|FIXED|ROAM(?:\d+)?)_([^_]+)_(.+)$/i);
             if (readableMatch) {
-                const prefix = readableMatch[1].toUpperCase();
-                const band = normalizeActiveReceiverBand(readableMatch[2]);
-                const mode = readableReceiverModeLabel(readableMatch[3]);
-                return `${prefix}_${band}_${mode}`;
+                return buildManagedReceiverLabel(readableMatch[1], readableMatch[2], readableMatch[3]) || raw;
             }
             return raw;
         }
@@ -5461,7 +5581,7 @@
             if (!raw) return false;
             if (raw.startsWith("(connecting")) return true;
             return /^(AUTO|FIXED|ROAM\d)(\d+[mM])([A-Z0-9]+)$/i.test(raw)
-                || /^(AUTO|FIXED|ROAM\d+)_([^_]+)_(.+)$/i.test(raw);
+                || /^(AUTO|FIXED|ROAM(?:\d+)?)_([^_]+)_(.+)$/i.test(raw);
         }
 
         function buildExpectedActiveReceiverName(rx, assignment, channel) {
@@ -5473,15 +5593,19 @@
             let prefix = "AUTO";
             let rxNum = Number(rx);
             if (Number.isFinite(rxNum)) {
-                prefix = rxNum >= 2 ? "FIXED" : `ROAM${rxNum + 1}`;
+                prefix = rxNum >= 2 ? "FIXED" : "ROAM";
             }
-            return `${prefix}_${band}_${readableReceiverModeLabel(mode)}`;
+            return buildManagedReceiverLabel(prefix, band, mode) || `(connecting RX${safeText(rx, "--")})`;
         }
 
         function buildActiveReceiverRows(kiwiUsers, rawKiwiUsers) {
             const autoModeEnabled = readSelectBool(
                 "auto-mode-enabled",
                 latestAutomationSettings && latestAutomationSettings.fixedModeEnabled !== false,
+            );
+            const hasReceiverContext = Boolean(
+                Object.keys(latestChannelsMap || {}).length
+                || (latestAssignmentsSource !== "kiwi_users" && Object.keys(latestAssignments || {}).length)
             );
             const users = Array.isArray(kiwiUsers) ? kiwiUsers : [];
             const rawUsers = Array.isArray(rawKiwiUsers) ? rawKiwiUsers : [];
@@ -5555,9 +5679,14 @@
                         || managedName
                         || (autoModeEnabled && rawName)
                     );
+                    const fallbackDisplayName = formatManagedReceiverLabel(managedName || (autoModeEnabled ? rawName : ""));
+                    const preferredDisplayName = (hasReceiverContext && populated && !synthesizedName.startsWith("(connecting"))
+                        ? synthesizedName
+                        : (fallbackDisplayName || synthesizedName || "Unassigned");
                     return {
                         rx: rxNum,
                         name: managedName || (autoModeEnabled ? rawName : "") || (populated ? synthesizedName : "Unassigned"),
+                        display_name: preferredDisplayName,
                         freq_khz: Number.isFinite(Number(channel.freq_hz))
                             ? Number(channel.freq_hz) / 1000.0
                             : (Number.isFinite(Number(systemUser.freq_khz))
@@ -5656,8 +5785,25 @@
 
             const usersEl = byId("active-receivers-table");
             if (!usersEl) return;
+            const usersSignature = users.length
+                ? JSON.stringify(users.map((user) => ({
+                    rx: Number(user && user.rx),
+                    name: safeText(user && user.display_name, safeText(user && user.name, "")),
+                    freq_khz: Number.isFinite(Number(user && user.freq_khz)) ? Number(user.freq_khz) : null,
+                    mode: safeText(user && user.mode, ""),
+                    connected_seconds: Number.isFinite(Number(user && user.connected_seconds)) ? Number(user.connected_seconds) : null,
+                    fixed: !!(user && user.fixed),
+                    active: !!(user && user.active),
+                })))
+                : "__empty__";
+            if (usersSignature === lastActiveReceiversTableSignature) {
+                _updateRxBusyOverlay();
+                return;
+            }
+            lastActiveReceiversTableSignature = usersSignature;
             if (!users.length) {
                 usersEl.innerHTML = `<div class="control-status">No active receivers reported.</div>`;
+                _updateRxBusyOverlay();
                 return;
             }
             const body = users.map((user) => `
@@ -5689,10 +5835,14 @@
             }
             if (systemInfoRequest) return systemInfoRequest;
             setSystemStatus("loading...");
+            const deferFirstRender = !force && lastSuccessfulRefreshMs === null;
             systemInfoRequest = getJson("/system/info", SYSTEM_INFO_TIMEOUT_MS)
                 .then((data) => {
                     lastSystemInfoRefreshMs = Date.now();
-                    renderSystemPanel(data);
+                    latestSystemInfo = data;
+                    if (!deferFirstRender) {
+                        renderSystemPanel(data);
+                    }
                     setSystemStatus(`updated ${new Date().toLocaleTimeString()}`);
                     return data;
                 })
@@ -5898,7 +6048,7 @@
                 label.insertAdjacentHTML("afterbegin", iconMarkup);
             });
 
-            document.querySelectorAll("h2[data-icon], .summary-k[data-icon]").forEach((label) => {
+            document.querySelectorAll("h2[data-icon], .summary-k[data-icon], .chip-label[data-icon], .chip-side-label[data-icon], .system-card-title[data-icon]").forEach((label) => {
                 const existing = label.querySelector(":scope > .ui-icon");
                 if (existing) existing.remove();
                 const iconMarkup = buildIconMarkup(label.dataset.icon);
@@ -6510,6 +6660,15 @@
             }).join("");
         }
 
+        function scheduleRecentDecodePanelRender() {
+            if (recentDecodePanelRenderPending) return;
+            recentDecodePanelRenderPending = true;
+            requestAnimationFrame(() => {
+                recentDecodePanelRenderPending = false;
+                renderRecentDecodePanel();
+            });
+        }
+
         function pruneMapPoints() {
             const cutoff = Date.now() - MAP_POINT_TTL_MS;
             for (const [key, value] of mapPoints.entries()) {
@@ -6980,7 +7139,16 @@
             if (metaEl) metaEl.textContent = `${entries.length} visible spot${entries.length === 1 ? "" : "s"}`;
         }
 
-        function addMapPointFromDecode(item) {
+        function schedulePropagationMapRender() {
+            if (propagationMapRenderPending) return;
+            propagationMapRenderPending = true;
+            requestAnimationFrame(() => {
+                propagationMapRenderPending = false;
+                renderPropagationMap();
+            });
+        }
+
+        function addMapPointFromDecode(item, options = {}) {
             if (!item) return;
             const grid = normalizeGridSquare(item.grid);
             if (!grid) return;
@@ -7001,10 +7169,11 @@
                 snr: Number.isFinite(Number(item.snr)) ? Number(item.snr) : null,
                 lastSeen: Number(item.receivedAt || Date.now()),
             });
-            renderPropagationMap();
+            if (options.renderMap === false) return;
+            schedulePropagationMapRender();
         }
 
-        function ingestDecodeItem(item) {
+        function ingestDecodeItem(item, options = {}) {
             if (!shouldKeepDecodeItem(item)) return;
             const normalized = {
                 ...item,
@@ -7018,8 +7187,8 @@
             recordDecodeSnr(normalized);
             recentDecodeItems.push(normalized);
             if (recentDecodeItems.length > RECENT_DECODE_LIMIT) recentDecodeItems = recentDecodeItems.slice(-RECENT_DECODE_LIMIT);
-            renderRecentDecodePanel();
-            addMapPointFromDecode(normalized);
+            if (options.renderList !== false) scheduleRecentDecodePanelRender();
+            addMapPointFromDecode(normalized, options);
         }
 
         function initMapPanel() {
@@ -8376,6 +8545,14 @@
                         getJson("/health/rx"),
                         getJson("/system/info"),
                     ]);
+                    if (system && typeof system === "object") {
+                        latestSystemInfo = system;
+                    }
+                    if (health && typeof health === "object") {
+                        applyHealth(health);
+                    } else if (latestSystemInfo) {
+                        renderSystemPanel(latestSystemInfo);
+                    }
                     const activeReceivers = Number(health && health.active_receivers);
                     const managedUsers = Array.isArray(system && system.kiwi && system.kiwi.active_users)
                         ? system.kiwi.active_users
@@ -8644,7 +8821,9 @@
                             const recent = await getJson(`/decodes?since=${encodeURIComponent(Math.max(0, decodeCursor - RECENT_DECODE_LIMIT))}`);
                             const recentItems = Array.isArray(recent.items) ? recent.items : [];
                             recentDecodeItems = [];
-                            for (const item of recentItems) ingestDecodeItem(item);
+                            for (const item of recentItems) ingestDecodeItem(item, { renderList: false, renderMap: false });
+                            scheduleRecentDecodePanelRender();
+                            schedulePropagationMapRender();
                         } catch (_) {
                             // Leave the decode panel empty if the backfill fails.
                         }
@@ -8660,7 +8839,7 @@
 
                 for (const item of items) {
                     if (!item || typeof item !== "object") continue;
-                    ingestDecodeItem(item);
+                    ingestDecodeItem(item, { renderList: false, renderMap: false });
                     const band = String(item.band || "").trim();
                     if (!band || band.toLowerCase() === "control") continue;
 
@@ -8671,6 +8850,11 @@
                         receiverDecodeTotals[rxLabel] = Number(receiverDecodeTotals[rxLabel] || 0) + 1;
                     }
 
+                }
+
+                if (items.length) {
+                    scheduleRecentDecodePanelRender();
+                    schedulePropagationMapRender();
                 }
 
                 const knownReceivers = new Set(Object.keys(receiverActivityHistory));
@@ -9711,6 +9895,8 @@
         }
 
         function stopDecodeWsClientPolling() {
+            decodeWsClientPollGeneration += 1;
+            decodeWsClientPollInFlight = false;
             if (decodeWsClientPollTimer) {
                 clearInterval(decodeWsClientPollTimer);
                 decodeWsClientPollTimer = null;
@@ -9729,66 +9915,60 @@
             return Number.isFinite(wsLastMessageMs) && (Date.now() - wsLastMessageMs) <= Math.max(1000, Number(maxAgeMs) || 15000);
         }
 
+        function formatStreamConnectionText(value) {
+            const count = Math.max(0, Math.round(Number(value) || 0));
+            return `${count} Connection${count === 1 ? "" : "s"}`;
+        }
+
         function startDecodeWsClientPolling(wsUrl) {
             stopDecodeWsClientPolling();
-            const use4010 = String(wsUrl || "").includes(":4010");
+            void wsUrl;
+            const pollGeneration = decodeWsClientPollGeneration;
 
             const poll = async () => {
-                try {
-                    let visibleClients = NaN;
-                    if (use4010) {
-                        const data = await getJson("/admin/ws4010/status");
-                        const external4010 = Number(data && data.ws4010_clients);
-                        const total4010 = Number(data && data.ws4010_total_clients);
-                        let mainWsClients = NaN;
-                        try {
-                            const mainData = await getJson("/decodes/ws_status");
-                            mainWsClients = Number(mainData && mainData.ws_clients);
-                        } catch (_) {
-                        }
-
-                        const localOpen = isDecode4010SocketOpen();
-                        const fromTotal = Number.isFinite(total4010)
-                            ? Math.max(0, Math.round(total4010) - (localOpen ? 1 : 0))
-                            : NaN;
-                        const fromExternal = Number.isFinite(external4010)
-                            ? Math.max(0, Math.round(external4010))
-                            : NaN;
-                        const fromMain = Number.isFinite(mainWsClients)
-                            ? Math.max(0, Math.round(mainWsClients))
-                            : NaN;
-                        const candidates = [fromTotal, fromExternal, fromMain].filter((value) => Number.isFinite(value));
-                        if (candidates.length) visibleClients = Math.max(...candidates);
-                    } else {
-                        const data = await getJson("/decodes/ws_status");
-                        const clients = Number(data && data.ws_clients);
-                        visibleClients = Number.isFinite(clients) ? Math.max(0, Math.round(clients)) : NaN;
-                    }
-
-                    decodeWsClientCount = Number.isFinite(visibleClients) ? visibleClients : null;
-                } catch (_) {
-                    decodeWsClientCount = isDecode4010SocketOpen() || hasRecentDecodeWsMessage() ? 0 : null;
+                if (pollGeneration !== decodeWsClientPollGeneration || decodeWsClientPollInFlight) {
+                    return;
                 }
+                decodeWsClientPollInFlight = true;
+                let next4010 = null;
+                try {
+                    const data = await getJson("/admin/ws4010/status", DECODE_WS_CLIENT_POLL_TIMEOUT_MS);
+                    const total4010 = Number(data && data.ws4010_total_clients);
+                    next4010 = Number.isFinite(total4010) ? Math.max(0, Math.round(total4010)) : null;
+                } catch (_) {
+                    next4010 = null;
+                } finally {
+                    if (pollGeneration === decodeWsClientPollGeneration) {
+                        decodeWsClientPollInFlight = false;
+                    }
+                }
+
+                if (pollGeneration !== decodeWsClientPollGeneration) return;
+
+                const local4010 = isDecode4010SocketOpen();
+                if (!Number.isFinite(next4010)) next4010 = local4010 ? 1 : 0;
+
+                decodeWs4010ClientCount = next4010;
                 updateDecodeStreamChip();
             };
 
-            poll();
-            decodeWsClientPollTimer = setInterval(poll, 5000);
+            void poll();
+            decodeWsClientPollTimer = setInterval(() => {
+                void poll();
+            }, 5000);
         }
 
         function updateDecodeStreamChip() {
             const chip = byId("chip-stream");
             if (!chip) return;
-            const clientCount = Number.isFinite(decodeWsClientCount) ? Math.max(0, Math.round(decodeWsClientCount)) : 0;
-            const connected = !!(wsRef && wsRef.readyState === WebSocket.OPEN);
-            const recent = hasRecentDecodeWsMessage();
-            const active = clientCount > 0 || connected || recent;
-            chip.textContent = clientCount > 0
-                ? `${clientCount} Station${clientCount === 1 ? "" : "s"}`
-                : (connected
-                    ? (recent ? "Live" : "Connected")
-                    : "Idle");
-            chip.classList.toggle("chip-value-active", active);
+
+            const local4010 = isDecode4010SocketOpen();
+            const count4010 = Number.isFinite(decodeWs4010ClientCount)
+                ? Math.max(0, Math.round(decodeWs4010ClientCount))
+                : (local4010 ? 1 : 0);
+
+            chip.textContent = formatStreamConnectionText(count4010);
+            chip.classList.toggle("chip-value-active", count4010 > 0 || local4010);
         }
 
         function startDecodeWebSocket() {
@@ -9830,7 +10010,7 @@
                     clearTimeout(timeout);
                     if (wsRef === ws) wsRef = null;
                     stopDecodeWsClientPolling();
-                    decodeWsClientCount = null;
+                    decodeWs4010ClientCount = null;
                     if (!opened) {
                         tryConnect(idx + 1);
                         return;
@@ -10003,7 +10183,7 @@
                             const ph = agg.ph != null ? agg.ph : 0;
                             const tot = agg.tot != null ? agg.tot : 0;
                             const mc = modeColor(m);
-                            return `<span style="display:inline-flex;align-items:baseline;gap:4px;font-size:0.72rem"><span style="font-weight:700;color:${mc}">${safeText(m)}:</span><span>${pm} min</span><span style="color:var(--muted)">&#8226;</span><span>${ph} hr</span><span style="color:var(--muted)">&#8226;</span><span>${tot} total</span></span>`;
+                            return `<span style="display:inline-flex;align-items:baseline;gap:4px;font-size:0.72rem"><span style="font-weight:700;color:${mc}">${safeText(m)}:</span><span>${fmtCount(pm)} min</span><span style="color:var(--muted)">&#8226;</span><span>${fmtCount(ph)} hr</span><span style="color:var(--muted)">&#8226;</span><span>${fmtCount(tot)} total</span></span>`;
                         }).join("<br>");
                     card.innerHTML = `<div class="rx-top"><div style="display:flex;flex-direction:column;gap:2px;width:100%"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px"><span style="display:inline-flex;align-items:center;gap:6px"><span class="rx-band-label" style="font-size:1rem;font-weight:800">${band}</span>${isFixedPlanBand(band) ? fixedLockSvgHtml("fixed-rx-lock-icon") : ""}${(() => { const ct = conditionText(band); return ct !== "--" ? `\u00a0\u00a0<span style="font-size:0.78rem;font-weight:600;color:${conditionColor(band)}">${ct}</span>` : ""; })()}</span><div style="display:flex;align-items:flex-start;gap:4px;flex-wrap:wrap;flex-shrink:0">${rxPills}</div></div>${iconLine("heart", "State/Health", "rx-state-line", safeText(ch.health_state, "-"), heartColor)}</div></div><p class="kv">${iconLine("gauge", "SNR(avg)", "rx-snr-line", (() => { const t = snrAvgTextForRx(row.rxLabel); return t !== "--" ? t : (Number.isFinite(Number(ch.snr_avg_db)) ? `${Number(ch.snr_avg_db).toFixed(1)} dB` : "--"); })())}${(() => { const sc = bandScoreText(band); return iconLine("spark", "Score", "rx-score-line", sc === "--" ? "--" : `Score: ${sc}`, bandScoreColor(band)); })()}<span class="rx-decode-rates" style="display:block;margin-top:4px;line-height:1.6">${decodeRateRows}</span></p>`;
                 }
@@ -10495,32 +10675,45 @@
 
         function applyExecutiveSummary(status, health, ratePerMin) {
             const counts = {};
+            let recentDecodeTotal = 0;
             for (const item of recentDecodeItems) {
                 if (!item || typeof item !== "object") continue;
                 const band = String(item.band || "").trim();
                 if (!band || band.toLowerCase() === "control") continue;
+                recentDecodeTotal += 1;
                 counts[band] = Number(counts[band] || 0) + 1;
             }
 
+            const h = health && typeof health === "object" ? health : {};
+            const healthChannels = Object.values((h.channels && typeof h.channels === "object") ? h.channels : {});
+            const healthCounts = {};
+            for (const channel of healthChannels) {
+                const band = String(channel && channel.band || "").trim();
+                const value = Number(channel && channel.decode_total);
+                if (!band || !Number.isFinite(value)) continue;
+                healthCounts[band] = Number(healthCounts[band] || 0) + Math.max(0, Math.round(value));
+            }
+            const healthDecodeTotal = Object.values(healthCounts).reduce((sum, value) => sum + Number(value || 0), 0);
+            const busiestCounts = healthDecodeTotal > 0 ? healthCounts : counts;
             let busiestBand = "None";
             let busiestSlots = 0;
-            for (const [band, n] of Object.entries(counts)) {
+            for (const [band, n] of Object.entries(busiestCounts)) {
                 if (n > busiestSlots || (n === busiestSlots && band < busiestBand)) {
                     busiestBand = band;
                     busiestSlots = n;
                 }
             }
-
-            const h = health && typeof health === "object" ? health : {};
+            const totalDecodes = healthDecodeTotal > 0 ? healthDecodeTotal : recentDecodeTotal;
             const reasonCounts = h.reason_counts && typeof h.reason_counts === "object" ? h.reason_counts : {};
             const totalFaultReasons = Object.values(reasonCounts).reduce((acc, v) => acc + Number(v || 0), 0);
             const unstable = Number(h.unstable_receivers || 0);
             const warns = Number(h.silent_receivers || 0) + Number(h.no_decode_warning_receivers || 0);
             const faultLoad = unstable + warns;
             const severity = faultSeverity(faultLoad);
-            const busiestText = busiestSlots > 0 ? `${busiestBand} (${busiestSlots})` : "None";
+            const busiestText = busiestSlots > 0 ? `${busiestBand} (${fmtCount(busiestSlots)})` : "None";
 
             byId("chip-busiest-band").textContent = busiestText;
+            byId("chip-all-decodes").textContent = fmtCount(totalDecodes);
             const faultEl = byId("summary-fault-load");
             faultEl.textContent = `fault:${unstable} warn:${warns} reasons:${totalFaultReasons}`;
             faultEl.classList.remove("ok", "warn", "fault");
@@ -11011,21 +11204,30 @@
             }
         }
 
+        function runStartupStep(name, fn) {
+            try {
+                return fn();
+            } catch (err) {
+                console.error(`startup step failed: ${name}`, err);
+                return null;
+            }
+        }
+
         applyUiPreferences(readStoredUiThemeMode(), readStoredUiDensityMode(), readStoredUiThemeNightHour(), readStoredUiThemeHourOffset());
         applyOverviewTopicPrefs(readStoredOverviewTopicPrefs());
-        initRefreshControls();
-        initAssignmentsBandChartControls();
-        initConfigAutomationControls();
-        initBandConditionsPanel();
-        initMapPanel();
-        initSectionNav();
-        initTopbarActions();
-        initSystemPanel();
-        initSystemCardToggles();
-        initDashboardPanelToggles();
-        decorateUiIcons();
-        startDecodeWebSocket();
-        renderRecentDecodePanel();
+        runStartupStep("initRefreshControls", () => initRefreshControls());
+        runStartupStep("initAssignmentsBandChartControls", () => initAssignmentsBandChartControls());
+        runStartupStep("initConfigAutomationControls", () => initConfigAutomationControls());
+        runStartupStep("initBandConditionsPanel", () => initBandConditionsPanel());
+        runStartupStep("initMapPanel", () => initMapPanel());
+        runStartupStep("initSectionNav", () => initSectionNav());
+        runStartupStep("initTopbarActions", () => initTopbarActions());
+        runStartupStep("initSystemPanel", () => initSystemPanel());
+        runStartupStep("initSystemCardToggles", () => initSystemCardToggles());
+        runStartupStep("initDashboardPanelToggles", () => initDashboardPanelToggles());
+        runStartupStep("decorateUiIcons", () => decorateUiIcons());
+        runStartupStep("startDecodeWebSocket", () => startDecodeWebSocket());
+        runStartupStep("renderRecentDecodePanel", () => renderRecentDecodePanel());
         refreshSystemInfo(false).catch(() => { });
         refresh();
         restartRefreshTimer();
