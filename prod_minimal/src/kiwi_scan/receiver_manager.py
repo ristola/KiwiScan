@@ -1794,6 +1794,21 @@ class ReceiverManager:
     def _mismatch_require_decoder_gap(self) -> bool:
         return self._env_bool("KIWISCAN_MISMATCH_REQUIRE_DECODER_GAP", True)
 
+    def _startup_slot_stable_s(self) -> float:
+        return self._env_float("KIWISCAN_STARTUP_SLOT_STABLE_S", 1.0, min_v=0.25, max_v=10.0)
+
+    def _startup_poll_interval_s(self) -> float:
+        return self._env_float("KIWISCAN_STARTUP_POLL_INTERVAL_S", 0.25, min_v=0.05, max_v=1.0)
+
+    def _startup_short_pause_s(self) -> float:
+        return self._env_float("KIWISCAN_STARTUP_SHORT_PAUSE_S", 0.25, min_v=0.0, max_v=5.0)
+
+    def _startup_retry_pause_s(self) -> float:
+        return self._env_float("KIWISCAN_STARTUP_RETRY_PAUSE_S", 0.35, min_v=0.0, max_v=10.0)
+
+    def _startup_slot_clear_stable_s(self) -> float:
+        return self._env_float("KIWISCAN_STARTUP_SLOT_CLEAR_STABLE_S", 1.5, min_v=0.25, max_v=10.0)
+
     def _strict_digital_slot_enforcement(self) -> bool:
         return self._env_bool("KIWISCAN_STRICT_DIGITAL_SLOT_ENFORCEMENT", True)
 
@@ -2653,6 +2668,78 @@ class ReceiverManager:
             "propagation": self._empty_propagation_summary(),
             "auto_kick": self._empty_auto_kick_summary(),
             "_from_cache": True,
+        })
+
+    def _refresh_starting_health_summary_cache(self, *, host: str, port: int, assignments: Dict[int, ReceiverAssignment]) -> None:
+        cached_payload = dict(self._health_summary_cache) if self._health_summary_cache else {}
+        cached_channels_raw = cached_payload.get("channels") if isinstance(cached_payload, dict) else {}
+        cached_channels = cached_channels_raw if isinstance(cached_channels_raw, dict) else {}
+        live_users = self._fetch_live_users(str(host), int(port)) if host and int(port) > 0 else {}
+        now = time.time()
+
+        channels: Dict[str, Dict[str, object]] = {}
+        active = 0
+        for rx in sorted(assignments.keys()):
+            assignment = assignments[int(rx)]
+            current = dict(cached_channels.get(str(rx), {})) if isinstance(cached_channels.get(str(rx)), dict) else {}
+            expected_labels = self._expected_user_label_aliases(assignment)
+            observed_slot: int | None = None
+            observed_label: str | None = None
+            for slot, label in live_users.items():
+                if self._label_matches_any(expected_labels, str(label or "")):
+                    observed_slot = int(slot)
+                    observed_label = str(label or "").strip() or None
+                    break
+
+            worker = self._workers.get(int(rx))
+            is_active = bool(observed_slot is not None)
+            if is_active:
+                active += 1
+
+            current.update({
+                "rx": int(rx),
+                "kiwi_rx": observed_slot if observed_slot is not None else int(rx),
+                "freq_hz": float(assignment.freq_hz),
+                "band": str(assignment.band),
+                "mode": str(assignment.mode_label),
+                "active": is_active,
+                "visible_on_kiwi": is_active,
+                "kiwi_user_age_s": None,
+                "kiwi_actual_rx": observed_slot,
+                "kiwi_occupant": None if is_active else current.get("kiwi_occupant"),
+                "restart_count": int(self._restart_by_rx.get(int(rx), 0)),
+                "consecutive_failures": 0,
+                "backoff_s": 0.0,
+                "cooling_down": False,
+                "cooldown_remaining_s": 0.0,
+                "last_reason": "healthy" if is_active else ("starting" if worker is not None else "inactive"),
+                "last_updated_unix": now if worker is not None else current.get("last_updated_unix"),
+                "health_state": "healthy" if is_active else "inactive",
+                "status_level": "healthy",
+                "is_no_decode_warning": False,
+                "is_silent": False,
+                "is_stalled": False,
+                "is_unstable": False,
+            })
+            if observed_label is not None:
+                current["observed_label"] = observed_label
+            channels[str(rx)] = current
+
+        overall = "starting" if channels and active < len(channels) else ("healthy" if active > 0 else "idle")
+        propagation = cached_payload.get("propagation") if isinstance(cached_payload.get("propagation"), dict) else self._empty_propagation_summary()
+        self._store_health_summary_cache({
+            "overall": overall,
+            "active_receivers": active,
+            "unstable_receivers": 0,
+            "stalled_receivers": 0,
+            "silent_receivers": 0,
+            "no_decode_warning_receivers": 0,
+            "restart_total": int(self._restart_total),
+            "health_stale_seconds": 0.0 if active > 0 else None,
+            "reason_counts": {},
+            "channels": channels,
+            "propagation": propagation,
+            "auto_kick": self._auto_kick_summary(),
         })
 
     def _fallback_health_summary_locked(self) -> Dict[str, object]:
@@ -4227,6 +4314,12 @@ class ReceiverManager:
                     timeout_s=8.0,
                 )
 
+            _startup_slot_stable_s = self._startup_slot_stable_s()
+            _startup_poll_interval_s = self._startup_poll_interval_s()
+            _startup_short_pause_s = self._startup_short_pause_s()
+            _startup_retry_pause_s = self._startup_retry_pause_s()
+            _startup_slot_clear_stable_s = self._startup_slot_clear_stable_s()
+
             if did_full_reset:
                 self._cleanup_orphan_processes()
                 self._wait_for_orphan_cleanup(timeout_s=6.0)
@@ -4274,7 +4367,7 @@ class ReceiverManager:
                         logger.info(
                             "Starting from empty with fixed receivers configured; skipping global stable-clear wait and claiming fixed slots immediately"
                         )
-                        time.sleep(1.0)
+                        time.sleep(_startup_short_pause_s)
                     else:
                         # Stable-clear wait: the Kiwi's REST /users clears immediately after
                         # kick but its internal slot counter may take several more seconds to
@@ -4341,8 +4434,8 @@ class ReceiverManager:
                 self._workers[rx] = worker
                 worker.start()
                 # Poll /users from the main thread until the expected label is present
-                # and stable for >=2 s. This covers kiwirecorder's 15 s "Too busy"
-                # retry cycle without any kicks.
+                # and briefly stable. A short stability window preserves connection
+                # ordering while avoiding the older, slower ghost-era wait.
                 _exp_lbl = self._expected_user_label(desired)
                 _exp_lbls = self._expected_user_label_aliases(desired)
                 _poll_timeout_s = 15.0 if int(rx) >= 2 else 15.0
@@ -4362,12 +4455,12 @@ class ReceiverManager:
                         None,
                     )
                     if _cur_slot is not None and _cur_slot == _stable_slot:
-                        if time.time() - _stable_since >= 2.0:
+                        if time.time() - _stable_since >= _startup_slot_stable_s:
                             break
                     else:
                         _stable_slot = _cur_slot
                         _stable_since = time.time()
-                    time.sleep(0.4)
+                    time.sleep(_startup_poll_interval_s)
                 if _stable_slot == int(rx):
                     logger.info("Sequential start rx=%d: correct slot=%d", rx, rx)
                 elif _stable_slot is not None:
@@ -4415,6 +4508,7 @@ class ReceiverManager:
                             labels=_exp_lbls,
                             timeout_s=3.0,
                         )
+                self._refresh_starting_health_summary_cache(host=str(host), port=int(port), assignments=assignments)
 
             _startup_order = sorted(desired_rxs)
             _defer_roaming_start = bool(bootstrap_fixed_first)
@@ -4443,7 +4537,7 @@ class ReceiverManager:
                     "Fixed bootstrap complete; starting deferred roaming RXs: %s",
                     _deferred_roaming_rxs,
                 )
-                time.sleep(0.5)
+                time.sleep(_startup_short_pause_s)
                 for rx in _deferred_roaming_rxs:
                     _start_worker_sequential(int(rx))
 
@@ -4458,7 +4552,7 @@ class ReceiverManager:
                 MAX_ROAMING_CORRECTION_RETRIES = 3
                 for _roam_attempt in range(MAX_ROAMING_CORRECTION_RETRIES):
                     if _roam_attempt > 0:
-                        time.sleep(0.75)
+                        time.sleep(_startup_retry_pause_s)
                     _live_roam = self._fetch_live_users(str(host), int(port))
                     _expected_roam = {
                         int(rx): self._expected_user_label_aliases(assignments[int(rx)])
@@ -4523,12 +4617,12 @@ class ReceiverManager:
                             if not any(int(_slot) in _live_after_kick for _slot in _slots_to_kick):
                                 if _clear_stable_since is None:
                                     _clear_stable_since = time.time()
-                                elif time.time() - _clear_stable_since >= 4.0:
+                                elif time.time() - _clear_stable_since >= _startup_slot_clear_stable_s:
                                     break
                             else:
                                 _clear_stable_since = None
-                            time.sleep(0.4)
-                        time.sleep(0.5)
+                            time.sleep(_startup_poll_interval_s)
+                        time.sleep(_startup_short_pause_s)
 
                     for _rx in _rxs_to_restart:
                         _start_worker_sequential(int(_rx))
@@ -4548,7 +4642,7 @@ class ReceiverManager:
                 for _evict_attempt in range(MAX_EVICT_RETRIES):
                     # Brief wait on retries so we see the ghost after it reconnects
                     if _evict_attempt > 0:
-                        time.sleep(0.75)
+                        time.sleep(_startup_retry_pause_s)
                     live_now = self._fetch_live_users(str(host), int(port))
                     expected_labels_by_rx = {
                         int(rx): self._expected_user_label_aliases(assignments[int(rx)])
@@ -4715,7 +4809,7 @@ class ReceiverManager:
                                 labels=_restart_labels,
                                 timeout_s=8.0,
                             )
-                        time.sleep(0.5)
+                        time.sleep(_startup_short_pause_s)
                     # Restart workers sequentially using P-probe rotation.
                     #
                     # The KiwiSDR assigns slots from a persistent round-robin pointer P,
@@ -4782,7 +4876,7 @@ class ReceiverManager:
                                         _last_rekick_t = time.time()
                                     if time.time() >= _clear_deadline:
                                         break  # gave up waiting; start anyway
-                                    time.sleep(0.3)
+                                    time.sleep(_startup_poll_interval_s)
                             _w.start()
                             _lbl = self._expected_user_label(_r)
                             _lbls = self._expected_user_label_aliases(_r)
@@ -4831,7 +4925,7 @@ class ReceiverManager:
                                         None,
                                     )
                                 if _sc is not None and _sc == _ss:
-                                    if time.time() - _st >= 2.0:
+                                    if time.time() - _st >= _startup_slot_stable_s:
                                         break
                                 else:
                                     if _sc is not None and _ss is None:
@@ -4843,7 +4937,7 @@ class ReceiverManager:
                                         )
                                     _ss = _sc
                                     _st = time.time()
-                                time.sleep(0.4)
+                                time.sleep(_startup_poll_interval_s)
                             if _ss is not None:
                                 return _ss
                             logger.info(
@@ -4882,7 +4976,7 @@ class ReceiverManager:
                                     timeout_s=3.0,
                                 )
                             if _try_n < _MAX_TRIES - 1:
-                                time.sleep(1.0)  # brief pause before retry
+                                time.sleep(_startup_retry_pause_s)  # brief pause before retry
                         return None
 
                     _w2r_set = set(int(_r) for _r in workers_to_restart)

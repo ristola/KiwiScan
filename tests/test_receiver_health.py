@@ -516,6 +516,9 @@ def test_apply_assignments_empty_start_bootstraps_fixed_receivers_first(monkeypa
 
     assert stable_clear_calls == []
     assert started_rxs == [2, 3, 0]
+    assert fake_now["value"] == 3.5
+    assert manager._health_summary_cache.get("active_receivers") == 3
+    assert manager._health_summary_cache.get("overall") == "healthy"
 
 
 def test_apply_assignments_targeted_correction_keeps_healthy_workers_running(monkeypatch) -> None:

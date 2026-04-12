@@ -2509,21 +2509,6 @@
             -webkit-text-fill-color: var(--accent);
         }
 
-        .autosave-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            border: 1px solid color-mix(in srgb, var(--accent-2), white 62%);
-            border-radius: 999px;
-            background: color-mix(in srgb, var(--accent-2), white 92%);
-            color: color-mix(in srgb, var(--accent), black 16%);
-            padding: 5px 10px;
-            font-size: 0.74rem;
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
-            font-weight: 700;
-        }
-
         .system-grid {
             display: grid;
             grid-template-columns: 1fr;
@@ -4764,15 +4749,6 @@
                                             &nbsp;/&nbsp; Night: <strong>80m FT4+FT8 + 160m WSPR</strong>
                                         </p>
                                     </section>
-                                    <div class="control-actions" style="margin-top: 0;">
-                                        <span class="autosave-badge">Autosave On</span>
-                                        <button class="action-btn" id="auto-reload" type="button"
-                                            data-icon="refresh">Reload
-                                            Automation</button>
-                                        <button class="action-btn" id="auto-apply-now" type="button"
-                                            data-icon="spark">Apply
-                                            Auto-Set Now</button>
-                                    </div>
                                     <div class="control-status" id="auto-status">Automation: idle</div>
                                 </div><!-- /auto-mode-content -->
                         </section>
@@ -7432,7 +7408,7 @@
         function saveStoredUiDensityMode(mode) {
             try {
                 const density = normalizeUiDensityMode(mode, UI_DENSITY_DEFAULT_MODE);
-                localStorage.setItem(UI_DENSITY_STORAGE_KEY, density === "compact" ? "dense" : "normal");
+                localStorage.setItem(UI_DENSITY_STORAGE_KEY, density);
             } catch (_) {
                 // Ignore localStorage failures in restricted environments.
             }
@@ -7682,16 +7658,26 @@
                     getJson("/config"),
                     getJson("/automation/settings"),
                 ]);
-                const nextThemeMode = normalizeUiThemeMode(auto.uiThemeMode, UI_THEME_DEFAULT_MODE);
+                const storedThemeMode = readStoredUiThemeMode();
+                const storedNightHour = readStoredUiThemeNightHour();
+                const storedHourOffset = readStoredUiThemeHourOffset();
+                const storedDensity = readStoredUiDensityMode();
+                const nextThemeMode = normalizeUiThemeMode(
+                    auto.uiThemeMode,
+                    currentUiThemeMode || storedThemeMode || UI_THEME_DEFAULT_MODE,
+                );
                 const nextNightHour = Number.isFinite(Number(auto.uiThemeNightHour))
                     ? clampUiThemeHour(auto.uiThemeNightHour)
-                    : UI_THEME_DEFAULT_NIGHT_HOUR;
+                    : clampUiThemeHour(currentUiThemeNightHour || storedNightHour || UI_THEME_DEFAULT_NIGHT_HOUR);
                 authoritativeUiThemeNightHour = nextNightHour;
                 const nextHourOffset = Number.isFinite(Number(auto.uiThemeHourOffset))
                     ? clampUiThemeHourOffset(auto.uiThemeHourOffset)
-                    : readStoredUiThemeHourOffset();
+                    : clampUiThemeHourOffset(currentUiThemeHourOffset || storedHourOffset || UI_THEME_DEFAULT_HOUR_OFFSET);
                 authoritativeUiThemeHourOffset = nextHourOffset;
-                const nextDensity = normalizeUiDensityMode(auto.uiDensity, UI_DENSITY_DEFAULT_MODE);
+                const nextDensity = normalizeUiDensityMode(
+                    auto.uiDensity,
+                    currentUiDensity || storedDensity || UI_DENSITY_DEFAULT_MODE,
+                );
                 const nextOverviewTopics = normalizeOverviewTopicPrefs(auto.overviewTopics, readStoredOverviewTopicPrefs());
                 const nextKiwiSettings = normalizeKiwiSettingsSnapshot({
                     host: cfg.host,
@@ -8050,14 +8036,24 @@
             try {
                 const a = await getJson("/automation/settings");
                 latestAutomationSettings = a && typeof a === "object" ? { ...a } : {};
-                const nextThemeMode = normalizeUiThemeMode(a.uiThemeMode, UI_THEME_DEFAULT_MODE);
-                const nextDensity = normalizeUiDensityMode(a.uiDensity, UI_DENSITY_DEFAULT_MODE);
+                const storedThemeMode = readStoredUiThemeMode();
+                const storedNightHour = readStoredUiThemeNightHour();
+                const storedHourOffset = readStoredUiThemeHourOffset();
+                const storedDensity = readStoredUiDensityMode();
+                const nextThemeMode = normalizeUiThemeMode(
+                    a.uiThemeMode,
+                    currentUiThemeMode || storedThemeMode || UI_THEME_DEFAULT_MODE,
+                );
+                const nextDensity = normalizeUiDensityMode(
+                    a.uiDensity,
+                    currentUiDensity || storedDensity || UI_DENSITY_DEFAULT_MODE,
+                );
                 const nextNightHour = Number.isFinite(Number(a.uiThemeNightHour))
                     ? clampUiThemeHour(a.uiThemeNightHour)
-                    : UI_THEME_DEFAULT_NIGHT_HOUR;
+                    : clampUiThemeHour(currentUiThemeNightHour || storedNightHour || UI_THEME_DEFAULT_NIGHT_HOUR);
                 const nextHourOffset = Number.isFinite(Number(a.uiThemeHourOffset))
                     ? clampUiThemeHourOffset(a.uiThemeHourOffset)
-                    : authoritativeUiThemeHourOffset;
+                    : clampUiThemeHourOffset(authoritativeUiThemeHourOffset || currentUiThemeHourOffset || storedHourOffset || UI_THEME_DEFAULT_HOUR_OFFSET);
                 const nextOverviewTopics = normalizeOverviewTopicPrefs(a.overviewTopics, overviewTopicPrefs);
                 authoritativeUiThemeNightHour = nextNightHour;
                 authoritativeUiThemeHourOffset = nextHourOffset;
@@ -8067,14 +8063,21 @@
                 setSelectBool("auto-ssb-enabled", !!a.ssbEnabled);
                 setSelectBool("auto-ssb-adaptive-threshold", a.ssbAdaptiveThreshold !== false);
                 setSelectBool("auto-ssb-use-kiwi-snr", a.ssbUseKiwiSnr !== false);
-                byId("auto-ssb-sideband").value = safeText(a.ssbSideband, "USB").toUpperCase();
-                byId("auto-ssb-threshold-db").value = Number.isFinite(Number(a.ssbThresholdDb)) ? String(Number(a.ssbThresholdDb)) : "";
-                byId("auto-ssb-wait-s").value = Number.isFinite(Number(a.ssbWaitS)) ? String(Number(a.ssbWaitS)) : "";
-                byId("auto-ssb-dwell-s").value = Number.isFinite(Number(a.ssbDwellS)) ? String(Number(a.ssbDwellS)) : "";
-                byId("auto-ssb-tail-s").value = Number.isFinite(Number(a.ssbTailS)) ? String(Number(a.ssbTailS)) : "";
-                byId("auto-ssb-step-strategy").value = safeText(a.ssbStepStrategy, "adaptive").toLowerCase();
-                byId("auto-ssb-step-khz").value = Number.isFinite(Number(a.ssbStepKHz)) ? String(Number(a.ssbStepKHz)) : "";
-                updateAutomationSsbStepVisibility(byId("auto-ssb-step-strategy").value);
+                const autoSsbSideband = byId("auto-ssb-sideband");
+                if (autoSsbSideband) autoSsbSideband.value = safeText(a.ssbSideband, "USB").toUpperCase();
+                const autoSsbThresholdDb = byId("auto-ssb-threshold-db");
+                if (autoSsbThresholdDb) autoSsbThresholdDb.value = Number.isFinite(Number(a.ssbThresholdDb)) ? String(Number(a.ssbThresholdDb)) : "";
+                const autoSsbWaitS = byId("auto-ssb-wait-s");
+                if (autoSsbWaitS) autoSsbWaitS.value = Number.isFinite(Number(a.ssbWaitS)) ? String(Number(a.ssbWaitS)) : "";
+                const autoSsbDwellS = byId("auto-ssb-dwell-s");
+                if (autoSsbDwellS) autoSsbDwellS.value = Number.isFinite(Number(a.ssbDwellS)) ? String(Number(a.ssbDwellS)) : "";
+                const autoSsbTailS = byId("auto-ssb-tail-s");
+                if (autoSsbTailS) autoSsbTailS.value = Number.isFinite(Number(a.ssbTailS)) ? String(Number(a.ssbTailS)) : "";
+                const autoSsbStepStrategy = byId("auto-ssb-step-strategy");
+                if (autoSsbStepStrategy) autoSsbStepStrategy.value = safeText(a.ssbStepStrategy, "adaptive").toLowerCase();
+                const autoSsbStepKHz = byId("auto-ssb-step-khz");
+                if (autoSsbStepKHz) autoSsbStepKHz.value = Number.isFinite(Number(a.ssbStepKHz)) ? String(Number(a.ssbStepKHz)) : "";
+                updateAutomationSsbStepVisibility(autoSsbStepStrategy ? autoSsbStepStrategy.value : safeText(a.ssbStepStrategy, "adaptive").toLowerCase());
                 const fixedEnabled = a.fixedModeEnabled !== false;
                 setReceiversMode(fixedEnabled ? "auto" : "manual");
                 applyAutoModeVisibility(fixedEnabled);
@@ -8638,9 +8641,6 @@
             const cfgOverviewTopicInputs = OVERVIEW_TOPIC_KEYS
                 .map((key) => byId(`cfg-overview-${key}`))
                 .filter(Boolean);
-            const autoReload = byId("auto-reload");
-            const autoSave = byId("auto-save");
-            const autoApplyNow = byId("auto-apply-now");
             const autoSsbStepStrategy = byId("auto-ssb-step-strategy");
             let discoverFeedbackTimer = null;
             const configAutosaveIds = [
@@ -8736,9 +8736,6 @@
                     scheduleAutomationAutosave();
                 });
             });
-            if (autoReload) autoReload.addEventListener("click", () => { loadAutomationSection(); });
-            if (autoSave) autoSave.addEventListener("click", () => { saveAutomationSection(); });
-            if (autoApplyNow) autoApplyNow.addEventListener("click", () => { applyAutomationNow(); });
 
             const autoModeBtn = byId("auto-mode-enabled");
             const scanModeBtn = byId("scan-mode-btn");
