@@ -2052,12 +2052,6 @@
                 width: 100%;
             }
 
-            .panel-hdr.bc-panel-hdr .panel-hdr-actions .bc-mode-toggle {
-                grid-column: 1 / -1;
-                justify-self: center;
-                margin-bottom: 2px;
-            }
-
             .panel-hdr.bc-panel-hdr .panel-hdr-actions .action-btn-sm {
                 width: 100%;
             }
@@ -2455,58 +2449,6 @@
 
         .bc-action-note.error {
             color: var(--fault);
-        }
-
-        .bc-mode-toggle {
-            display: inline-flex;
-            border: 1px solid #cbd5e1;
-            border-radius: 6px;
-            overflow: hidden;
-        }
-
-        .bc-mode-btn {
-            font: inherit;
-            font-size: 0.78rem;
-            font-weight: 600;
-            padding: 3px 9px;
-            border: none;
-            border-right: 1px solid #cbd5e1;
-            background: #fff;
-            color: #486581;
-            -webkit-text-fill-color: #486581;
-            cursor: pointer;
-            transition: background 0.12s, color 0.12s;
-        }
-
-        .bc-mode-btn:last-child {
-            border-right: none;
-        }
-
-        .bc-mode-btn.is-active {
-            background: color-mix(in srgb, var(--accent), white 82%);
-            color: var(--accent);
-            -webkit-text-fill-color: var(--accent);
-        }
-
-        .bc-mode-btn:hover:not(.is-active) {
-            background: color-mix(in srgb, var(--accent), white 92%);
-        }
-
-        body.theme-dark .bc-mode-toggle {
-            border-color: var(--line);
-        }
-
-        body.theme-dark .bc-mode-btn {
-            background: var(--panel);
-            color: var(--fg-muted);
-            -webkit-text-fill-color: var(--fg-muted);
-            border-right-color: var(--line);
-        }
-
-        body.theme-dark .bc-mode-btn.is-active {
-            background: color-mix(in srgb, var(--accent), var(--panel) 80%);
-            color: var(--accent);
-            -webkit-text-fill-color: var(--accent);
         }
 
         .system-grid {
@@ -4835,7 +4777,6 @@
         let latestBcConditions = {};
         let latestBcStatus = null;
         let latestBcChangedBands = new Set();
-        let bcCurrentMode = 'ft8';
         let bcChangedBandsTimer = null;
         let bandActivityHistory = {};
         let bandBreakdownHistory = {};
@@ -7456,12 +7397,6 @@
             const cfgDensity = byId("cfg-ui-density");
             if (cfgDensity && cfgDensity.value !== currentUiDensity) cfgDensity.value = currentUiDensity;
 
-            const autoTheme = byId("auto-ui-theme-mode");
-            if (autoTheme && autoTheme.value !== currentUiThemeMode) autoTheme.value = currentUiThemeMode;
-
-            const autoDensity = byId("auto-ui-density");
-            if (autoDensity && autoDensity.value !== currentUiDensity) autoDensity.value = currentUiDensity;
-
         }
 
         function persistUiPreferences(themeMode, densityMode, nightHour, hourOffset) {
@@ -7482,15 +7417,6 @@
                 readTextInput("cfg-ui-density", currentUiDensity),
                 readNumberInput("cfg-ui-theme-night-hour", authoritativeUiThemeNightHour),
                 readNumberInput("cfg-ui-theme-hour-offset", authoritativeUiThemeHourOffset),
-            );
-        }
-
-        function previewUiPreferencesFromAutomation() {
-            applyUiPreferences(
-                readTextInput("auto-ui-theme-mode", currentUiThemeMode),
-                readTextInput("auto-ui-density", currentUiDensity),
-                authoritativeUiThemeNightHour,
-                authoritativeUiThemeHourOffset,
             );
         }
 
@@ -7593,12 +7519,6 @@
             } finally {
                 setReceiversBusy(false);
             }
-        }
-
-        function updateAutomationSsbStepVisibility(strategyValue) {
-            const el = byId("auto-ssb-step-khz-field");
-            if (!el) return;
-            el.style.display = String(strategyValue || "").toLowerCase() === "fixed" ? "" : "none";
         }
 
         function setKiwiNoticeVisible(visible, detailText = "Running auto Discover.") {
@@ -7995,10 +7915,6 @@
                     uiDensity: "normal",
                     overviewTopics: resetOverviewTopics,
                 });
-                const autoThemeMode = byId("auto-ui-theme-mode");
-                if (autoThemeMode) autoThemeMode.value = "auto";
-                const autoDensity = byId("auto-ui-density");
-                if (autoDensity) autoDensity.value = "normal";
                 applyAndPersistUiPreferences("auto", "normal", 21, 0);
                 setConfigStatus("UI preferences reset");
                 checkForUpdates();
@@ -8057,27 +7973,6 @@
                 const nextOverviewTopics = normalizeOverviewTopicPrefs(a.overviewTopics, overviewTopicPrefs);
                 authoritativeUiThemeNightHour = nextNightHour;
                 authoritativeUiThemeHourOffset = nextHourOffset;
-                setSelectBool("auto-scan-on-block", !!a.autoScanOnBlock);
-                setSelectBool("auto-refresh-schedule", !!a.autoRefreshSchedule);
-                setSelectBool("auto-scan-on-startup", !!a.autoScanOnStartup);
-                setSelectBool("auto-ssb-enabled", !!a.ssbEnabled);
-                setSelectBool("auto-ssb-adaptive-threshold", a.ssbAdaptiveThreshold !== false);
-                setSelectBool("auto-ssb-use-kiwi-snr", a.ssbUseKiwiSnr !== false);
-                const autoSsbSideband = byId("auto-ssb-sideband");
-                if (autoSsbSideband) autoSsbSideband.value = safeText(a.ssbSideband, "USB").toUpperCase();
-                const autoSsbThresholdDb = byId("auto-ssb-threshold-db");
-                if (autoSsbThresholdDb) autoSsbThresholdDb.value = Number.isFinite(Number(a.ssbThresholdDb)) ? String(Number(a.ssbThresholdDb)) : "";
-                const autoSsbWaitS = byId("auto-ssb-wait-s");
-                if (autoSsbWaitS) autoSsbWaitS.value = Number.isFinite(Number(a.ssbWaitS)) ? String(Number(a.ssbWaitS)) : "";
-                const autoSsbDwellS = byId("auto-ssb-dwell-s");
-                if (autoSsbDwellS) autoSsbDwellS.value = Number.isFinite(Number(a.ssbDwellS)) ? String(Number(a.ssbDwellS)) : "";
-                const autoSsbTailS = byId("auto-ssb-tail-s");
-                if (autoSsbTailS) autoSsbTailS.value = Number.isFinite(Number(a.ssbTailS)) ? String(Number(a.ssbTailS)) : "";
-                const autoSsbStepStrategy = byId("auto-ssb-step-strategy");
-                if (autoSsbStepStrategy) autoSsbStepStrategy.value = safeText(a.ssbStepStrategy, "adaptive").toLowerCase();
-                const autoSsbStepKHz = byId("auto-ssb-step-khz");
-                if (autoSsbStepKHz) autoSsbStepKHz.value = Number.isFinite(Number(a.ssbStepKHz)) ? String(Number(a.ssbStepKHz)) : "";
-                updateAutomationSsbStepVisibility(autoSsbStepStrategy ? autoSsbStepStrategy.value : safeText(a.ssbStepStrategy, "adaptive").toLowerCase());
                 const fixedEnabled = a.fixedModeEnabled !== false;
                 setReceiversMode(fixedEnabled ? "auto" : "manual");
                 applyAutoModeVisibility(fixedEnabled);
@@ -8130,23 +8025,7 @@
             const bsGrid = readBandScheduleFromGrid();
             const payload = {
                 ...snapshot,
-                // Preserve auto-scan settings from snapshot when their UI elements
-                // have been removed (fall back to element value only if present).
-                autoScanOnBlock: byId("auto-scan-on-block") ? readSelectBool("auto-scan-on-block", false) : ("autoScanOnBlock" in snapshot ? snapshot.autoScanOnBlock : false),
-                autoRefreshSchedule: byId("auto-refresh-schedule") ? readSelectBool("auto-refresh-schedule", true) : ("autoRefreshSchedule" in snapshot ? snapshot.autoRefreshSchedule : true),
-                autoScanOnStartup: byId("auto-scan-on-startup") ? readSelectBool("auto-scan-on-startup", false) : ("autoScanOnStartup" in snapshot ? snapshot.autoScanOnStartup : false),
                 fixedModeEnabled: readSelectBool("auto-mode-enabled", true),
-                // Preserve SSB settings from snapshot when their UI controls are absent.
-                ssbEnabled: byId("auto-ssb-enabled") ? readSelectBool("auto-ssb-enabled", true) : ("ssbEnabled" in snapshot ? snapshot.ssbEnabled : true),
-                ssbSideband: byId("auto-ssb-sideband") ? readTextInput("auto-ssb-sideband", "USB").toUpperCase() : (snapshot.ssbSideband || "USB"),
-                ssbThresholdDb: byId("auto-ssb-threshold-db") ? readNumberInput("auto-ssb-threshold-db", 20) : ("ssbThresholdDb" in snapshot ? snapshot.ssbThresholdDb : 20),
-                ssbAdaptiveThreshold: byId("auto-ssb-adaptive-threshold") ? readSelectBool("auto-ssb-adaptive-threshold", true) : ("ssbAdaptiveThreshold" in snapshot ? snapshot.ssbAdaptiveThreshold : true),
-                ssbUseKiwiSnr: byId("auto-ssb-use-kiwi-snr") ? readSelectBool("auto-ssb-use-kiwi-snr", true) : ("ssbUseKiwiSnr" in snapshot ? snapshot.ssbUseKiwiSnr : true),
-                ssbWaitS: byId("auto-ssb-wait-s") ? readNumberInput("auto-ssb-wait-s", 1) : ("ssbWaitS" in snapshot ? snapshot.ssbWaitS : 1),
-                ssbDwellS: byId("auto-ssb-dwell-s") ? readNumberInput("auto-ssb-dwell-s", 6) : ("ssbDwellS" in snapshot ? snapshot.ssbDwellS : 6),
-                ssbTailS: byId("auto-ssb-tail-s") ? readNumberInput("auto-ssb-tail-s", 1) : ("ssbTailS" in snapshot ? snapshot.ssbTailS : 1),
-                ssbStepStrategy: byId("auto-ssb-step-strategy") ? readTextInput("auto-ssb-step-strategy", "adaptive").toLowerCase() : (snapshot.ssbStepStrategy || "adaptive"),
-                ssbStepKHz: byId("auto-ssb-step-khz") ? readNumberInput("auto-ssb-step-khz", 10) : ("ssbStepKHz" in snapshot ? snapshot.ssbStepKHz : 10),
                 uiThemeMode,
                 uiThemeNightHour,
                 uiThemeHourOffset,
@@ -8483,9 +8362,7 @@
                     return;
                 }
 
-                const mode = byId("auto-apply-mode")
-                    ? (readTextInput("auto-apply-mode", "ft8").toLowerCase() || "ft8")
-                    : "ft8";
+                const mode = "ft8";
                 const sched = await getJson(`/schedule?mode=${encodeURIComponent(mode)}`);
                 const block = safeText(sched.block, "");
                 if (!block) throw new Error("missing schedule block");
@@ -8503,7 +8380,7 @@
                 } else {
                     selectedBands = parseSelectedBands();
                     for (const band of selectedBands) {
-                        bandModes[band] = mode === "phone" ? "SSB" : "FT8";
+                        bandModes[band] = "FT8";
                     }
                 }
 
@@ -8641,7 +8518,6 @@
             const cfgOverviewTopicInputs = OVERVIEW_TOPIC_KEYS
                 .map((key) => byId(`cfg-overview-${key}`))
                 .filter(Boolean);
-            const autoSsbStepStrategy = byId("auto-ssb-step-strategy");
             let discoverFeedbackTimer = null;
             const configAutosaveIds = [
                 "cfg-host",
@@ -8658,21 +8534,6 @@
                 "cfg-ui-theme-night-hour",
                 "cfg-ui-theme-hour-offset",
                 "cfg-ui-density",
-            ];
-            const automationAutosaveIds = [
-                "auto-scan-on-block",
-                "auto-refresh-schedule",
-                "auto-scan-on-startup",
-                "auto-ssb-enabled",
-                "auto-ssb-sideband",
-                "auto-ssb-threshold-db",
-                "auto-ssb-adaptive-threshold",
-                "auto-ssb-use-kiwi-snr",
-                "auto-ssb-wait-s",
-                "auto-ssb-dwell-s",
-                "auto-ssb-tail-s",
-                "auto-ssb-step-strategy",
-                "auto-ssb-step-khz",
             ];
 
             const setConfigActionState = (button, state = "idle") => {
@@ -8715,16 +8576,12 @@
             if (cfgUiThemeNightHour) {
                 cfgUiThemeNightHour.addEventListener("input", () => {
                     if (cfgUiThemeMode) cfgUiThemeMode.value = "auto";
-                    const autoUiThemeMode = byId("auto-ui-theme-mode");
-                    if (autoUiThemeMode) autoUiThemeMode.value = "auto";
                     previewUiPreferencesFromConfig();
                 });
             }
             if (cfgUiThemeHourOffset) {
                 cfgUiThemeHourOffset.addEventListener("input", () => {
                     if (cfgUiThemeMode) cfgUiThemeMode.value = "auto";
-                    const autoUiThemeMode = byId("auto-ui-theme-mode");
-                    if (autoUiThemeMode) autoUiThemeMode.value = "auto";
                     previewUiPreferencesFromConfig();
                 });
             }
@@ -8761,35 +8618,11 @@
                     applyAutoModeEnabled(false);
                 });
             }
-            if (autoSsbStepStrategy) {
-                autoSsbStepStrategy.addEventListener("change", () => {
-                    updateAutomationSsbStepVisibility(autoSsbStepStrategy.value);
-                });
-                updateAutomationSsbStepVisibility(autoSsbStepStrategy.value);
-            }
 
             configAutosaveIds.forEach((id) => {
                 const el = byId(id);
                 if (!el) return;
                 const queue = () => { scheduleConfigAutosave(); };
-                if (el.tagName === "BUTTON") {
-                    el.addEventListener("click", () => {
-                        const next = el.getAttribute("aria-pressed") !== "true";
-                        setSelectBool(id, next);
-                        queue();
-                    });
-                    return;
-                }
-                el.addEventListener("change", queue);
-                if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") {
-                    el.addEventListener("input", queue);
-                }
-            });
-
-            automationAutosaveIds.forEach((id) => {
-                const el = byId(id);
-                if (!el) return;
-                const queue = () => { scheduleAutomationAutosave(); };
                 if (el.tagName === "BUTTON") {
                     el.addEventListener("click", () => {
                         const next = el.getAttribute("aria-pressed") !== "true";
@@ -10890,7 +10723,7 @@
         }
 
         async function fetchSmartScheduler() {
-            const data = await getJson('/smart_scheduler/status?mode=' + encodeURIComponent(bcCurrentMode)).catch(() => null);
+            const data = await getJson('/smart_scheduler/status').catch(() => null);
             if (data) applySmartScheduler(data);
             return data;
         }
@@ -11033,7 +10866,7 @@
                         await ensureBcActionOk(await fetch('/smart_scheduler/force_check', { method: 'POST' }));
                         // wait briefly for the background thread to complete
                         await new Promise(r => setTimeout(r, 1200));
-                        const data = await getJson('/smart_scheduler/status?mode=' + encodeURIComponent(bcCurrentMode)).catch(() => null);
+                        const data = await getJson('/smart_scheduler/status').catch(() => null);
                         const changes = _bcConditionChanges(beforeConditions, data && data.conditions);
                         if (data) {
                             _bcSetChangedBands(changes, data);
@@ -11054,17 +10887,6 @@
             }
             const grid = byId('bc-grid');
             if (!grid) return;
-            // Mode toggle (FT8 / Phone)
-            document.querySelectorAll('.bc-mode-btn').forEach(modeBtn => {
-                modeBtn.addEventListener('click', () => {
-                    if (modeBtn.dataset.bcMode === bcCurrentMode) return;
-                    bcCurrentMode = modeBtn.dataset.bcMode;
-                    document.querySelectorAll('.bc-mode-btn').forEach(b => {
-                        b.classList.toggle('is-active', b.dataset.bcMode === bcCurrentMode);
-                    });
-                    fetchSmartScheduler().catch(() => { });
-                });
-            });
             grid.addEventListener('click', async e => {
                 const btn = e.target.closest('[data-bc-band]');
                 if (!btn) return;
@@ -11088,7 +10910,7 @@
                         }));
                         actionLabel = `Pinned ${band} to ${cond}`;
                     }
-                    const data = await getJson('/smart_scheduler/status?mode=' + encodeURIComponent(bcCurrentMode)).catch(() => null);
+                    const data = await getJson('/smart_scheduler/status').catch(() => null);
                     const changes = _bcConditionChanges(beforeConditions, data && data.conditions);
                     if (data) {
                         _bcSetChangedBands(changes, data);
@@ -11177,7 +10999,7 @@
                 if (currentSectionNavId === "system") {
                     refreshSystemInfo(false).catch(() => { });
                 }
-                getJson('/smart_scheduler/status?mode=' + encodeURIComponent(bcCurrentMode)).then(d => {
+                getJson('/smart_scheduler/status').then(d => {
                     if (d) applySmartScheduler(d);
                 }).catch(() => { });
                 renderTrend();

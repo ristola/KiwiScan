@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Callable, Dict, Optional
 
 from .bandplan import bandplan_ranges_for_label
-from .ssb_scan_hits import log_ssb_scan_hit, update_ssb_scan_status
 
 logger = logging.getLogger(__name__)
 
@@ -207,7 +206,6 @@ class ReceiverAssignment:
     band: str
     freq_hz: float
     mode_label: str
-    ssb_scan: Optional[dict] = None
     sideband: Optional[str] = None
     ignore_slot_check: bool = False
 
@@ -226,7 +224,6 @@ class _ReceiverWorker(threading.Thread):
         band: str,
         freq_hz: float,
         mode_label: str,
-        ssb_scan: Optional[dict] = None,
         sideband: Optional[str] = None,
         decode_callback: Optional[Callable[[dict], None]] = None,
         on_restart: Optional[Callable[[int, str, str, float, int], None]] = None,
@@ -246,7 +243,6 @@ class _ReceiverWorker(threading.Thread):
         self._band = str(band)
         self._freq_hz = float(freq_hz)
         self._mode_label = str(mode_label or "FT8")
-        self._ssb_scan = dict(ssb_scan or {}) if ssb_scan else None
         self._sideband = str(sideband).strip().upper() if sideband else None
         self._decode_callback = decode_callback
         self._on_restart = on_restart
@@ -803,317 +799,14 @@ class _ReceiverWorker(threading.Thread):
         logger.warning("WSPR selected but wsprd not found on PATH")
         return None
 
-    def _is_ssb_scan(self) -> bool:
-        norm = self._mode_label.strip().upper()
-        return (norm in {"SSB", "PHONE"} or ("SSB" in norm) or ("PHONE" in norm)) and bool(self._ssb_scan)
-
-    def _ssb_scan_sideband(self) -> str:
-        ranges = self._ssb_scan_ranges()
-        if ranges:
-            max_hz = max(max(start_hz, end_hz) for start_hz, end_hz in ranges)
-            return "lsb" if max_hz < 10_000_000 else "usb"
-        sideband = str((self._ssb_scan or {}).get("sideband") or "USB").strip().upper()
-        return "lsb" if sideband == "LSB" else "usb"
-
     def _ssb_assignment_sideband(self) -> str:
         if self._sideband:
             return "lsb" if self._sideband == "LSB" else "usb"
-        ranges = self._ssb_scan_ranges()
+        ranges = bandplan_ranges_for_label("Phone", band=self._band)
         if ranges:
             max_hz = max(max(start_hz, end_hz) for start_hz, end_hz in ranges)
             return "lsb" if max_hz < 10_000_000 else "usb"
         return "usb"
-
-    def _ssb_scan_step_sequence(self) -> list[float]:
-        scan_cfg = self._ssb_scan or {}
-        strategy = str(scan_cfg.get("step_strategy") or "adaptive").strip().lower()
-        if strategy == "fixed":
-            step = float(scan_cfg.get("step_khz") or 10.0)
-            return [max(0.1, step)]
-        return [10.0, 5.0, 2.5]
-
-    def _ssb_scan_ranges(self) -> list[tuple[float, float]]:
-        return bandplan_ranges_for_label("Phone", band=self._band)
-
-    def _ssb_scan_freqs_khz(self, step_khz: float) -> list[float]:
-        ranges = self._ssb_scan_ranges()
-        if not ranges:
-            return []
-        out: list[float] = []
-        step = max(0.1, float(step_khz))
-        for start_hz, end_hz in ranges:
-            start_khz = float(start_hz) / 1000.0
-            end_khz = float(end_hz) / 1000.0
-            f = start_khz
-            while f <= end_khz:
-                out.append(f)
-                f += step
-        return out
-
-    def _write_ssb_scan_yaml(self, *, freqs_khz: list[float], path: Path) -> None:
-        scan_cfg = self._ssb_scan or {}
-        threshold = scan_cfg.get("threshold_db")
-        wait_s = float(scan_cfg.get("wait_s") or 1.0)
-        dwell_s = float(scan_cfg.get("dwell_s") or 6.0)
-        lines = ["Scan:"]
-        if threshold is not None:
-            lines.append(f"  threshold: {float(threshold)}")
-        lines.append(f"  wait: {wait_s}")
-        lines.append(f"  dwell: {dwell_s}")
-        freq_parts = []
-        for f in freqs_khz:
-            s = f"{float(f):.3f}".rstrip("0").rstrip(".")
-            freq_parts.append(s)
-        lines.append(f"  frequencies: [{', '.join(freq_parts)}]")
-        lines.append("  pbc: true")
-        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-    def _run_ssb_scan_loop(self) -> None:
-        if int(self._rx) not in {0, 1}:
-            logger.error(
-                "Refusing to start SSB scan outside RX0/RX1: rx=%s band=%s mode=%s",
-                self._rx,
-                self._band,
-                self._mode_label,
-            )
-            return
-
-        scan_cfg = self._ssb_scan or {}
-        wait_s = float(scan_cfg.get("wait_s") or 1.0)
-        dwell_s = float(scan_cfg.get("dwell_s") or 6.0)
-        tail_s = float(scan_cfg.get("tail_s") or 1.0)
-        step_sequence = self._ssb_scan_step_sequence()
-        step_index = 0
-        mismatch_failures = 0
-
-        while not self._stop_event.is_set():
-            self._reconfigure.clear()
-            step_khz = step_sequence[min(step_index, len(step_sequence) - 1)]
-            freqs = self._ssb_scan_freqs_khz(step_khz)
-            if not freqs:
-                time.sleep(self._watchdog_spawn_retry_s())
-                continue
-
-            yaml_path = Path("/tmp") / f"kiwi_scan_ssb_rx{self._rx}_{self._band}_{step_khz:.1f}.yaml"
-            try:
-                self._write_ssb_scan_yaml(freqs_khz=freqs, path=yaml_path)
-            except Exception:
-                time.sleep(self._watchdog_spawn_retry_s())
-                continue
-
-            cmd = [
-                self._python_cmd,
-                str(self._kiwirecorder_path),
-                "-s",
-                str(self._host),
-                "-p",
-                str(self._port),
-                "-m",
-                self._ssb_scan_sideband(),
-                "--rx-chan",
-                str(self._kiwi_rx_chan()),
-                "--user",
-                _compact_user_label(self._user_prefix, self._band, "SSB"),
-                "--scan-yaml",
-                str(yaml_path),
-                "--squelch-tail",
-                str(tail_s),
-                "--log_level=info",
-            ]
-            self._active_user_label = _compact_user_label(self._user_prefix, self._band, "SSB")
-            self._kill_local_kiwi_user_processes(self._active_user_label)
-
-            try:
-                proc = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                    start_new_session=True,
-                )
-            except Exception:
-                time.sleep(self._watchdog_spawn_retry_s())
-                continue
-
-            if not self._verify_kiwi_rx_channel(
-                user_label=self._active_user_label,
-                expected_rx=self._kiwi_rx_chan(),
-                timeout_s=6.0,
-                strict=True,
-                require_visible=True,
-            ):
-                self._terminate_external_proc(proc)
-                mismatch_failures += 1
-                backoff_s = self._watchdog_retry_backoff_s(mismatch_failures)
-                if self._on_restart is not None:
-                    try:
-                        self._on_restart(self._rx, self._band, "ssb_rx_mismatch", backoff_s, mismatch_failures)
-                    except Exception:
-                        pass
-                time.sleep(backoff_s)
-                continue
-
-            self._proc = proc
-            hits = {"count": 0}
-            freq_re = re.compile(r"DWELL\s*[:=]?\s*([0-9.]+)\s*kHz", re.IGNORECASE)
-            freq_alt_re = re.compile(r"(?:FREQ|FREQUENCY|SCAN|TUNE|TUNED)\s*[:=]?\s*([0-9.]+)\s*(kHz|MHz)", re.IGNORECASE)
-            freq_unit_re = re.compile(r"\b([0-9]+(?:\.[0-9]+)?)\s*(kHz|MHz)\b", re.IGNORECASE)
-            rssi_re = re.compile(r"(?:RSSI|SNR|S[-_ ]?METER|SIGNAL)\s*[:=]?\s*([+-]?[0-9.]+)", re.IGNORECASE)
-            last_freq_khz: Optional[float] = None
-            last_rssi_db: Optional[float] = None
-            last_rssi_at: float = 0.0
-            log_path = Path("/tmp") / f"kiwi_ssb_scan_rx{self._rx}.log"
-            log_fp = None
-
-            def _reader() -> None:
-                nonlocal last_freq_khz
-                if proc.stdout is None:
-                    return
-                nonlocal log_fp
-                try:
-                    log_fp = open(log_path, "a", encoding="utf-8")
-                except Exception:
-                    log_fp = None
-                for line in proc.stdout:
-                    if log_fp:
-                        try:
-                            log_fp.write(line)
-                            log_fp.flush()
-                        except Exception:
-                            pass
-                    freq_khz = None
-                    rssi_db = None
-                    m = freq_re.search(line)
-                    if m:
-                        try:
-                            freq_khz = float(m.group(1))
-                        except Exception:
-                            freq_khz = None
-                    if freq_khz is None:
-                        m = freq_alt_re.search(line)
-                        if m:
-                            try:
-                                raw = float(m.group(1))
-                                unit = str(m.group(2)).lower()
-                                freq_khz = raw * 1000.0 if unit == "mhz" else raw
-                            except Exception:
-                                freq_khz = None
-                    if freq_khz is None:
-                        m = freq_unit_re.search(line)
-                        if m:
-                            try:
-                                raw = float(m.group(1))
-                                unit = str(m.group(2)).lower()
-                                freq_khz = raw * 1000.0 if unit == "mhz" else raw
-                            except Exception:
-                                freq_khz = None
-                    m = rssi_re.search(line)
-                    if m:
-                        try:
-                            rssi_db = float(m.group(1))
-                        except Exception:
-                            rssi_db = None
-                    if rssi_db is not None:
-                        last_rssi_db = rssi_db
-                        last_rssi_at = time.time()
-                    if freq_khz is not None:
-                        last_freq_khz = freq_khz
-                    elif rssi_db is not None and last_freq_khz is not None:
-                        freq_khz = last_freq_khz
-                    if freq_khz is not None and rssi_db is None and last_rssi_db is not None:
-                        if (time.time() - last_rssi_at) <= 2.5:
-                            rssi_db = last_rssi_db
-                    if freq_khz is not None or rssi_db is not None:
-                        update_ssb_scan_status(
-                            band=self._band,
-                            rx=self._rx,
-                            freq_khz=freq_khz,
-                            rssi_db=rssi_db,
-                            step_khz=step_khz,
-                            sideband=self._ssb_scan_sideband(),
-                            threshold_db=(self._ssb_scan or {}).get("threshold_db"),
-                        )
-                    if "Started a new file" in line:
-                        hits["count"] += 1
-                        log_ssb_scan_hit(
-                            band=self._band,
-                            rx=self._rx,
-                            freq_khz=freq_khz,
-                            step_khz=step_khz,
-                            sideband=self._ssb_scan_sideband(),
-                            threshold_db=(self._ssb_scan or {}).get("threshold_db"),
-                        )
-                    if self._stop_event.is_set():
-                        break
-                if log_fp:
-                    try:
-                        log_fp.close()
-                    except Exception:
-                        pass
-
-            reader = threading.Thread(target=_reader, daemon=True)
-            reader.start()
-
-            sweep_s = max(1.0, len(freqs) * (wait_s + dwell_s))
-            end_time = time.time() + sweep_s
-            proc_started_at = time.time()
-            rapid_exit = False
-            next_channel_check = time.time() + self._watchdog_channel_check_s()
-            while not self._stop_event.is_set() and time.time() < end_time:
-                if self._reconfigure.is_set():
-                    rapid_exit = True
-                    self._last_spawn_error_reason = "ssb_reconfigure"
-                    break
-                if proc.poll() is not None:
-                    rapid_exit = (time.time() - proc_started_at) < 3.0
-                    break
-                if time.time() >= next_channel_check:
-                    next_channel_check = time.time() + self._watchdog_channel_check_s()
-                    if not self._verify_kiwi_rx_channel(
-                        user_label=f"{self._user_prefix}_{self._band}_SSBSCAN",
-                        expected_rx=self._kiwi_rx_chan(),
-                        timeout_s=0.9,
-                        strict=True,
-                        require_visible=True,
-                    ):
-                        self._last_spawn_error_reason = "ssb_rx_mismatch"
-                        mismatch_failures += 1
-                        backoff_s = self._watchdog_retry_backoff_s(mismatch_failures)
-                        if self._on_restart is not None:
-                            try:
-                                self._on_restart(self._rx, self._band, "ssb_rx_mismatch", backoff_s, mismatch_failures)
-                            except Exception:
-                                pass
-                        rapid_exit = True
-                        break
-                time.sleep(self._watchdog_loop_sleep_s())
-
-            self._terminate_proc()
-
-            if self._stop_event.is_set():
-                break
-
-            if self._reconfigure.is_set():
-                time.sleep(self._watchdog_loop_sleep_s())
-                continue
-
-            if rapid_exit:
-                if str(self._last_spawn_error_reason or "") == "ssb_rx_mismatch":
-                    backoff_s = self._watchdog_retry_backoff_s(mismatch_failures)
-                    time.sleep(backoff_s)
-                else:
-                    time.sleep(self._watchdog_spawn_retry_s())
-                continue
-
-            mismatch_failures = 0
-
-            if len(step_sequence) > 1:
-                if hits["count"] > 0:
-                    step_index = 0
-                else:
-                    step_index = min(step_index + 1, len(step_sequence) - 1)
-            time.sleep(0.5)
 
     def update_assignment(
         self,
@@ -1121,14 +814,12 @@ class _ReceiverWorker(threading.Thread):
         band: str,
         freq_hz: float,
         mode_label: str,
-        ssb_scan: Optional[dict],
         sideband: Optional[str],
     ) -> None:
         with self._cfg_lock:
             self._band = str(band)
             self._freq_hz = float(freq_hz)
             self._mode_label = str(mode_label or "FT8")
-            self._ssb_scan = dict(ssb_scan or {}) if ssb_scan else None
             self._sideband = str(sideband).strip().upper() if sideband else None
         self._reconfigure.set()
         self._terminate_proc()
@@ -1619,9 +1310,6 @@ class _ReceiverWorker(threading.Thread):
             return None
 
     def run(self) -> None:
-        if self._is_ssb_scan():
-            self._run_ssb_scan_loop()
-            return
         consecutive_failures = 0
         unstable_window_s = 20.0
         while not self._stop_event.is_set():
@@ -2150,7 +1838,6 @@ class ReceiverManager:
             band=assignment.band,
             freq_hz=assignment.freq_hz,
             mode_label=assignment.mode_label,
-            ssb_scan=assignment.ssb_scan,
             sideband=assignment.sideband,
             decode_callback=self._decode_callback,
             on_restart=self._on_worker_restart,
@@ -3748,15 +3435,7 @@ class ReceiverManager:
 
     @classmethod
     def _is_ssb_assignment(cls, assignment: ReceiverAssignment) -> bool:
-        return bool(assignment.ssb_scan) or cls._is_ssb_mode_label(assignment.mode_label)
-
-    @staticmethod
-    def _normalized_ssb_scan_cfg(scan_cfg: Optional[dict]) -> dict:
-        if not scan_cfg:
-            return {}
-        cfg = dict(scan_cfg)
-        cfg.pop("threshold_db", None)
-        return cfg
+        return cls._is_ssb_mode_label(assignment.mode_label)
 
     @classmethod
     def _assignment_equivalent(cls, current: ReceiverAssignment, desired: ReceiverAssignment) -> bool:
@@ -3774,8 +3453,6 @@ class ReceiverManager:
         except Exception:
             if current.freq_hz != desired.freq_hz:
                 return False
-        if cls._normalized_ssb_scan_cfg(current.ssb_scan) != cls._normalized_ssb_scan_cfg(desired.ssb_scan):
-            return False
         return True
 
     @classmethod
@@ -3880,7 +3557,7 @@ class ReceiverManager:
     def _expected_user_label_aliases(cls, assignment: Optional[ReceiverAssignment]) -> set[str]:
         if assignment is None:
             return set()
-        mode_label = "SSB" if bool(assignment.ssb_scan) and cls._is_ssb_assignment(assignment) else assignment.mode_label
+        mode_label = "SSB" if cls._is_ssb_assignment(assignment) else assignment.mode_label
         return cls._user_label_aliases_for_rx(int(assignment.rx), assignment.band, str(mode_label or ""))
 
     @classmethod
@@ -3894,7 +3571,7 @@ class ReceiverManager:
     @classmethod
     def _expected_user_label(cls, assignment: ReceiverAssignment) -> str:
         prefix = _preferred_user_label_prefix(int(assignment.rx))
-        if bool(assignment.ssb_scan) and cls._is_ssb_assignment(assignment):
+        if cls._is_ssb_assignment(assignment):
             return _compact_user_label(prefix, assignment.band, "SSB")
         return _compact_user_label(prefix, assignment.band, assignment.mode_label)
 
@@ -4124,7 +3801,6 @@ class ReceiverManager:
                 band=desired.band,
                 freq_hz=desired.freq_hz,
                 mode_label=desired.mode_label,
-                ssb_scan=desired.ssb_scan,
                 sideband=desired.sideband,
             )
             used_ssb_slots.add(target_rx)
@@ -4283,7 +3959,6 @@ class ReceiverManager:
                     band=desired.band,
                     freq_hz=desired.freq_hz,
                     mode_label=desired.mode_label,
-                    ssb_scan=desired.ssb_scan,
                     sideband=desired.sideband,
                 )
 

@@ -46,7 +46,6 @@ from .api.schedule import make_router as make_schedule_router
 from .api.auto_set import make_router as make_auto_set_router
 from .api.ws_status import broadcast_status, make_router as make_ws_status_router
 from .api.calibrate import make_router as make_calibrate_router
-from .api.ssb_scan_hits import router as ssb_scan_hits_router
 from .api.rx_monitor import make_router as make_rx_monitor_router
 from .api.admin import make_router as make_admin_router
 from .api.automation import make_router as make_automation_router
@@ -523,7 +522,6 @@ mount_static(app)
 app.include_router(ui_router)
 app.include_router(backup_router)
 app.include_router(decodes_router)
-app.include_router(ssb_scan_hits_router)
 
 BAND_ORDER: List[str] = ["10m", "12m", "15m", "17m", "20m", "30m", "40m", "60m", "80m", "160m"]
 BAND_FREQS_HZ: Dict[str, float] = {
@@ -548,16 +546,6 @@ BAND_FT4_FREQS_HZ: Dict[str, float] = {
     "40m": 7.0475e6,
     "60m": 5.357e6,
     "80m": 3.575e6,
-    "160m": 1.843e6,
-}
-BAND_SSB_FREQS_HZ: Dict[str, float] = {
-    "10m": 28.500e6,
-    "12m": 24.950e6,
-    "15m": 21.200e6,
-    "17m": 18.110e6,
-    "20m": 14.150e6,
-    "40m": 7.125e6,
-    "80m": 3.600e6,
     "160m": 1.843e6,
 }
 BAND_WSPR_FREQS_HZ: Dict[str, float] = {
@@ -673,7 +661,6 @@ app.include_router(
         band_order=BAND_ORDER,
         band_freqs_hz=BAND_FREQS_HZ,
         band_ft4_freqs_hz=BAND_FT4_FREQS_HZ,
-        band_ssb_freqs_hz=BAND_SSB_FREQS_HZ,
         band_wspr_freqs_hz=BAND_WSPR_FREQS_HZ,
     )
 )

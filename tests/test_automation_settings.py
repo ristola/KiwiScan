@@ -35,7 +35,7 @@ def test_automation_settings_post_notifies_auto_set_loop(monkeypatch) -> None:
     assert saved[-1]["fixedModeEnabled"] is False
 
 
-def test_automation_settings_strip_deprecated_wspr_keys(monkeypatch) -> None:
+def test_automation_settings_strip_deprecated_legacy_keys(monkeypatch) -> None:
     saved: list[dict] = []
 
     monkeypatch.setattr(
@@ -44,7 +44,16 @@ def test_automation_settings_strip_deprecated_wspr_keys(monkeypatch) -> None:
         lambda: {
             "headlessEnabled": True,
             "autoScanWspr": True,
+            "alertsEnabled": True,
+            "alertThreshold": 12,
+            "bandHopMinutes": 60,
             "bandHopSeconds": 120,
+            "quietEnd": "06:00",
+            "quietStart": "22:00",
+            "scheduleProfiles": {
+                "ft8": {"00-04": {"selectedBands": ["20m"], "bandModes": {"20m": "FT8"}}},
+                "phone": {"00-06": {"selectedBands": ["40m"], "bandModes": {"40m": "SSB"}}},
+            },
             "wsprStartBand": "20m",
             "wsprHopState": {"active_band": "20m"},
         },
@@ -57,13 +66,21 @@ def test_automation_settings_strip_deprecated_wspr_keys(monkeypatch) -> None:
 
     response = client.post(
         "/automation/settings",
-        json={"fixedModeEnabled": False, "autoScanWspr": True, "bandHopSeconds": 90},
+        json={"fixedModeEnabled": False, "autoScanWspr": True, "alertsEnabled": False, "bandHopSeconds": 90},
     )
 
     assert response.status_code == 200
     assert saved
     assert "autoScanWspr" not in saved[-1]
+    assert "alertsEnabled" not in saved[-1]
+    assert "alertThreshold" not in saved[-1]
+    assert "bandHopMinutes" not in saved[-1]
     assert "bandHopSeconds" not in saved[-1]
+    assert "quietEnd" not in saved[-1]
+    assert "quietStart" not in saved[-1]
+    assert saved[-1]["scheduleProfiles"] == {
+        "ft8": {"00-04": {"selectedBands": ["20m"], "bandModes": {"20m": "FT8"}}}
+    }
     assert "wsprStartBand" not in saved[-1]
     assert "wsprHopState" not in saved[-1]
 

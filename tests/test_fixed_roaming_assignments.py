@@ -103,7 +103,6 @@ def test_fixed_mode_only_uses_rx0_rx1_for_roaming(monkeypatch) -> None:
                 "15m": 21_074_000.0,
             },
             band_ft4_freqs_hz={},
-            band_ssb_freqs_hz={},
             band_wspr_freqs_hz={},
         )
     )
@@ -129,7 +128,6 @@ def test_fixed_mode_only_uses_rx0_rx1_for_roaming(monkeypatch) -> None:
                 {"rx": 6, "band": "30m", "mode": "FT4 / FT8 / WSPR", "freq_hz": 10_138_000.0},
                 {"rx": 7, "band": "17m", "mode": "FT4 / FT8 / WSPR", "freq_hz": 18_102_000.0},
             ],
-            "ssb_scan": {"use_kiwi_snr": False},
         },
     )
 
@@ -180,7 +178,6 @@ def test_fixed_mode_roaming_drops_bands_reserved_by_fixed_assignments(monkeypatc
             band_ft4_freqs_hz={
                 "80m": 3_575_000.0,
             },
-            band_ssb_freqs_hz={},
             band_wspr_freqs_hz={},
         )
     )
@@ -204,7 +201,6 @@ def test_fixed_mode_roaming_drops_bands_reserved_by_fixed_assignments(monkeypatc
                 {"rx": 2, "band": "40m", "mode": "FT8", "freq_hz": 7_074_000.0},
                 {"rx": 7, "band": "17m", "mode": "FT4 / FT8 / WSPR", "freq_hz": 18_102_000.0},
             ],
-            "ssb_scan": {"use_kiwi_snr": False},
         },
     )
 
@@ -433,6 +429,27 @@ def test_ws4010_apply_preserves_fixed_assignments_in_fixed_mode(monkeypatch) -> 
     assert payload.get("enabled") is True
 
 
+def test_ws4010_phone_profile_maps_to_ft8_schedule(monkeypatch) -> None:
+    saved: list[dict] = []
+
+    monkeypatch.setattr(decodes_api, "_load_automation_settings", lambda: {"scheduleProfiles": {}})
+    monkeypatch.setattr(decodes_api, "_save_automation_settings", lambda payload: saved.append(payload))
+    monkeypatch.setattr(decodes_api, "_trigger_auto_set_apply", lambda settings, mode: {"ok": True, "mode": mode})
+
+    result = decodes_api._apply_ws4010_band_command(
+        {
+            "enabled": True,
+            "profile": "phone",
+            "band": "20m",
+        }
+    )
+
+    assert result["mode"] == "ft8"
+    assert saved
+    assert "ft8" in saved[-1]["scheduleProfiles"]
+    assert "phone" not in saved[-1]["scheduleProfiles"]
+
+
 def test_non_fixed_payload_ignores_schedule_block_for_assignments(monkeypatch) -> None:
     # Freeze time to 14:00 so block_for_hour returns "10-16", which is not defined
     # in the test profile → fallback lands on the nearest prior block "00-04".
@@ -510,7 +527,6 @@ def test_fixed_mode_endpoint_overrides_nonfixed_caller_payload(monkeypatch) -> N
                 "40m": 7_047_500.0,
                 "80m": 3_575_000.0,
             },
-            band_ssb_freqs_hz={},
             band_wspr_freqs_hz={
                 "17m": 18_104_600.0,
                 "20m": 14_095_600.0,
@@ -539,3 +555,43 @@ def test_fixed_mode_endpoint_overrides_nonfixed_caller_payload(monkeypatch) -> N
     assert receiver_mgr.last_assignments[2].mode_label == "FT4 / FT8"
     assert receiver_mgr.last_assignments[3].band == "20m"
     assert receiver_mgr.last_assignments[3].mode_label == "WSPR"
+
+
+def test_auto_set_rejects_phone_mode(monkeypatch) -> None:
+    monkeypatch.delenv("KIWISCAN_AUTOSET_MAX_RX", raising=False)
+    monkeypatch.setattr(
+        auto_set_api,
+        "_load_automation_settings",
+        lambda: {"fixedModeEnabled": False, "headlessEnabled": True},
+    )
+
+    mgr = _MgrStub()
+    receiver_mgr = _ReceiverMgrStub()
+    app = FastAPI()
+    app.include_router(
+        make_router(
+            mgr=mgr,
+            receiver_mgr=receiver_mgr,
+            band_order=["20m"],
+            band_freqs_hz={"20m": 14_074_000.0},
+            band_ft4_freqs_hz={},
+            band_wspr_freqs_hz={},
+        )
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/auto_set_receivers",
+        json={
+            "enabled": True,
+            "force": True,
+            "mode": "phone",
+            "block": "00-04",
+            "selected_bands": ["20m"],
+            "band_modes": {"20m": "SSB"},
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "mode must be 'ft8'"}
+    assert receiver_mgr.last_assignments == {}

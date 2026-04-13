@@ -8,7 +8,6 @@ import json
 import os
 import re
 import time
-from urllib.request import urlopen
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
@@ -302,7 +301,6 @@ def make_router(
     band_order: List[str],
     band_freqs_hz: Dict[str, float],
     band_ft4_freqs_hz: Dict[str, float],
-    band_ssb_freqs_hz: Dict[str, float],
     band_wspr_freqs_hz: Dict[str, float],
 ) -> APIRouter:
     """Create router for POST /auto_set_receivers.
@@ -315,19 +313,6 @@ def make_router(
     _last_apply_response: dict | None = None
     _last_apply_ts: float = 0.0
 
-    band_ranges_khz = {
-        "160m": (1800.0, 2000.0),
-        "80m": (3500.0, 4000.0),
-        "60m": (5250.0, 5450.0),
-        "40m": (7000.0, 7300.0),
-        "30m": (10100.0, 10150.0),
-        "20m": (14000.0, 14350.0),
-        "17m": (18068.0, 18168.0),
-        "15m": (21000.0, 21450.0),
-        "12m": (24890.0, 24990.0),
-        "10m": (28000.0, 29700.0),
-    }
-
     def _max_auto_receivers() -> int:
         raw = str(os.environ.get("KIWISCAN_AUTOSET_MAX_RX", "8") or "8").strip()
         try:
@@ -335,60 +320,6 @@ def make_router(
         except Exception:
             value = 8
         return max(2, min(8, value))
-
-    def _snr_to_threshold(value: object) -> float | None:
-        try:
-            snr = float(value)
-        except Exception:
-            return None
-        # Use a conservative offset so squelch sits above noise but below strong signals.
-        return max(6.0, min(40.0, snr + 10.0))
-
-    def _fetch_snr_by_band(host: str, port: int) -> Dict[str, float]:
-        url = f"http://{host}:{port}/snr"
-        try:
-            with urlopen(url, timeout=0.6) as resp:
-                data = json.loads(resp.read(1024 * 1024).decode("utf-8", errors="ignore"))
-        except Exception:
-            return {}
-        if not isinstance(data, list) or not data:
-            return {}
-        latest = data[-1]
-        snr_list = latest.get("snr") if isinstance(latest, dict) else None
-        if not isinstance(snr_list, list):
-            return {}
-
-        out: Dict[str, float] = {}
-        for band, (lo_b, hi_b) in band_ranges_khz.items():
-            best = None
-            best_overlap = -1.0
-            for item in snr_list:
-                if not isinstance(item, dict):
-                    continue
-                try:
-                    lo = float(item.get("lo"))
-                    hi = float(item.get("hi"))
-                except Exception:
-                    continue
-                overlap = max(0.0, min(hi, hi_b) - max(lo, lo_b))
-                if overlap <= 0:
-                    continue
-                if overlap > best_overlap:
-                    best_overlap = overlap
-                    best = item
-            if not best:
-                continue
-            threshold = _snr_to_threshold(best.get("snr"))
-            if threshold is None:
-                try:
-                    p50 = float(best.get("p50"))
-                    p95 = float(best.get("p95"))
-                    threshold = _snr_to_threshold(p95 - p50)
-                except Exception:
-                    threshold = None
-            if threshold is not None:
-                out[band] = float(threshold)
-        return out
 
     @router.post("/auto_set_receivers")
     async def auto_set_receivers(request: Request):
@@ -399,46 +330,36 @@ def make_router(
         payload = await request.json()
         logger.info(f"auto_set_receivers invoked with payload: {json.dumps(payload)}")
         enabled = bool(payload.get("enabled", False))
-        mode = str(payload.get("mode", "ft8")).strip().lower()
-        if mode not in {"ft8", "phone"}:
-            raise HTTPException(status_code=400, detail="mode must be 'ft8' or 'phone'")
-
-        ssb_scan_raw = payload.get("ssb_scan") if isinstance(payload, dict) else None
-        ssb_scan_raw = ssb_scan_raw if isinstance(ssb_scan_raw, dict) else {}
-
-        def _num(value: object, default: float, min_v: float, max_v: float) -> float:
-            try:
-                v = float(value)
-            except Exception:
-                v = float(default)
-            v = max(min_v, min(max_v, v))
-            return v
-
-        ssb_scan_cfg = {
-            "enabled": bool(ssb_scan_raw.get("enabled", True)),
-            "threshold_db": _num(ssb_scan_raw.get("threshold_db"), 20.0, 1.0, 60.0),
-            "wait_s": _num(ssb_scan_raw.get("wait_s"), 1.0, 0.1, 10.0),
-            "dwell_s": _num(ssb_scan_raw.get("dwell_s"), 6.0, 1.0, 60.0),
-            "tail_s": _num(ssb_scan_raw.get("tail_s"), 1.0, 0.1, 10.0),
-            "step_strategy": str(ssb_scan_raw.get("step_strategy") or "adaptive").strip().lower(),
-            "step_khz": _num(ssb_scan_raw.get("step_khz"), 10.0, 0.1, 20.0),
-            "sideband": str(ssb_scan_raw.get("sideband") or "USB").strip().upper(),
-            "adaptive_threshold": bool(ssb_scan_raw.get("adaptive_threshold", True)),
-            "use_kiwi_snr": bool(ssb_scan_raw.get("use_kiwi_snr", True)),
-        }
+        requested_mode = str(payload.get("mode", "ft8")).strip().lower()
+        if requested_mode != "ft8":
+            raise HTTPException(status_code=400, detail="mode must be 'ft8'")
+        mode = "ft8"
 
         local_dt = datetime.now().astimezone()
         season = season_for_date(local_dt)
         try:
-            table = get_table(season, mode)
+            table = get_table(season, "ft8")
         except KeyError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
         block = str(payload.get("block") or "").strip()
         if not block or block not in table.blocks:
-            block = block_for_hour(local_dt.hour, mode=mode)
+            block = block_for_hour(local_dt.hour, mode="ft8")
 
         settings = _load_automation_settings()
+
+        def _sanitize_band_modes(source: object) -> Dict[str, str]:
+            out: Dict[str, str] = {}
+            if not isinstance(source, dict):
+                return out
+            for band in band_order:
+                if band not in source:
+                    continue
+                val = str(source.get(band) or "FT8").strip().upper()
+                if val not in {"FT8", "FT4", "FT4 / FT8", "FT4 / FT8 / WSPR", "FT4 / WSPR", "WSPR"}:
+                    val = "FT8"
+                out[band] = val
+            return out
 
         def _profile_for(mode_key: str, block_key: str) -> tuple[Optional[List[str]], Dict[str, str]]:
             if not isinstance(settings, dict):
@@ -463,24 +384,11 @@ def make_router(
                     if band in band_order and band not in seen:
                         selected.append(band)
                         seen.add(band)
-
-            band_modes_out: Dict[str, str] = {}
-            band_modes_raw = entry.get("bandModes")
-            if isinstance(band_modes_raw, dict):
-                for band in band_order:
-                    if band not in band_modes_raw:
-                        continue
-                    val = str(band_modes_raw.get(band) or "FT8").strip().upper()
-                    if val in {"FT8", "FT4", "FT4 / FT8", "FT4 / FT8 / WSPR", "FT4 / WSPR", "WSPR", "SSB"}:
-                        band_modes_out[band] = val
-                    else:
-                        band_modes_out[band] = "FT8"
-            return selected, band_modes_out
+            return selected, _sanitize_band_modes(entry.get("bandModes"))
 
         selected_bands = payload.get("selected_bands")
         selected_set = set(selected_bands) if isinstance(selected_bands, list) else None
-        band_modes_raw = payload.get("band_modes")
-        band_modes = band_modes_raw if isinstance(band_modes_raw, dict) else {}
+        band_modes = _sanitize_band_modes(payload.get("band_modes"))
         profile_selected, profile_band_modes = _profile_for(mode, block)
         if selected_set is None and profile_selected is not None:
             selected_set = set(profile_selected)
@@ -541,7 +449,6 @@ def make_router(
                 "block": str(block),
                 "desired_bands": [str(b) for b in desired_bands],
                 "band_modes": {str(k): str(v) for k, v in sorted(dict(band_modes).items())},
-                "ssb_scan_cfg": ssb_scan_cfg,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -562,21 +469,6 @@ def make_router(
             host = str(mgr.host)
             port = int(mgr.port)
 
-        adaptive_enabled = bool(ssb_scan_cfg.get("adaptive_threshold", True))
-        snr_poll_enabled = adaptive_enabled and bool(ssb_scan_cfg.get("use_kiwi_snr", True))
-        snr_thresholds = _fetch_snr_by_band(host, port) if snr_poll_enabled else {}
-        adaptive_alpha = 0.35
-        adaptive_min_db = 6.0
-        adaptive_max_db = 40.0
-        adaptive_state_raw = settings.get("ssbAdaptiveThresholdByBand") if isinstance(settings, dict) else None
-        adaptive_state: Dict[str, float] = {}
-        if isinstance(adaptive_state_raw, dict):
-            for band_key, value in adaptive_state_raw.items():
-                try:
-                    adaptive_state[str(band_key)] = float(value)
-                except Exception:
-                    continue
-
         if not enabled:
             # Stop RX0-RX7 processes.  Run in a thread so the event loop is
             # never blocked by apply_assignments() / _wait_for_kiwi_slots_stable_clear().
@@ -589,8 +481,8 @@ def make_router(
                 "block": block,
                 "open_bands": open_bands,
                 "assignments": [],
-                "ssb_max_receivers": min(2, _max_auto_receivers()),
-                "other_max_receivers": max(0, _max_auto_receivers() - min(2, _max_auto_receivers())),
+                "ssb_max_receivers": 0,
+                "other_max_receivers": _max_auto_receivers(),
                 "requested_ssb_tasks": 0,
                 "requested_other_tasks": 0,
                 "assigned_ssb_tasks": 0,
@@ -611,8 +503,6 @@ def make_router(
                 return "ft4"
             if raw in {"ft8", "ft8/ft4", "ft8-ft4"}:
                 return "ft8"
-            if raw in {"ssb", "phone"}:
-                return "ssb"
             if raw in {"wspr"}:
                 return "wspr"
             return "ft8"
@@ -654,8 +544,6 @@ def make_router(
                     return (float(ft4_hz) + float(wspr_hz)) / 2.0
                 return band_wspr_freqs_hz.get(band)
             norm = _normalize_mode(mode_label)
-            if norm == "ssb":
-                return band_ssb_freqs_hz.get(band)
             if norm == "wspr":
                 return band_wspr_freqs_hz.get(band)
             if norm == "ft4":
@@ -664,7 +552,6 @@ def make_router(
 
         ordered_bands = [b for b in band_order if b in desired_bands]
         tasks: List[Dict[str, str]] = []
-        ssb_enabled = bool(ssb_scan_cfg.get("enabled", True))
         skipped_ssb_due_to_wspr = 0
         for band in ordered_bands:
             mode_label = str(band_modes.get(band) or "FT8")
@@ -707,10 +594,8 @@ def make_router(
                 if str(task.get("band") or "").strip().lower() not in fixed_band_set
             ]
 
-        ssb_tasks = [t for t in tasks if str(t.get("mode") or "").strip().upper() == "SSB"]
-        other_tasks = [t for t in tasks if str(t.get("mode") or "").strip().upper() != "SSB"]
         other_tasks = _sort_other_tasks_by_activity(
-            tasks=other_tasks,
+            tasks=tasks,
             band_order=band_order,
             blocks=table.blocks,
             block_key=block,
@@ -726,27 +611,22 @@ def make_router(
         # Fixed assignments: pin specified RX slots directly, leaving remaining slots for roaming tasks.
 
         all_rx_slots = [s for s in range(max_total_rx) if s not in fixed_rx_slots]
-        ssb_capacity = min(2, len(ssb_tasks), len(all_rx_slots))
-        ssb_rx_request_list = all_rx_slots[:ssb_capacity]
-        desired_ssb_tasks = ssb_tasks[: len(ssb_rx_request_list)]
-        other_rx_request_list = all_rx_slots[len(ssb_rx_request_list):]
+        other_rx_request_list = list(all_rx_slots)
 
         desired_other_tasks = _select_other_tasks_with_band_coverage(
             tasks=other_tasks,
             capacity=len(other_rx_request_list),
             preferred_band_order=ordered_bands,
         )
-        requested_ssb_tasks = len(ssb_tasks)
+        requested_ssb_tasks = 0
         requested_other_tasks = len(other_tasks)
-        assigned_ssb_tasks = len(desired_ssb_tasks)
+        assigned_ssb_tasks = 0
         assigned_other_tasks = len(desired_other_tasks)
-        skipped_ssb_tasks = max(0, requested_ssb_tasks - assigned_ssb_tasks)
+        skipped_ssb_tasks = 0
         skipped_other_tasks = max(0, requested_other_tasks - assigned_other_tasks)
-        skipped_tasks = skipped_ssb_tasks + skipped_other_tasks
+        skipped_tasks = skipped_other_tasks
 
         task_slots: List[tuple[int, Dict[str, str]]] = []
-        for i, task in enumerate(desired_ssb_tasks):
-            task_slots.append((int(ssb_rx_request_list[i]), task))
         for i, task in enumerate(desired_other_tasks):
             task_slots.append((int(other_rx_request_list[i]), task))
 
@@ -769,30 +649,14 @@ def make_router(
                 })
                 continue
             freq_hz_f = float(freq_hz)
-            scan_cfg = None
-            if mode_task == "SSB" and ssb_enabled:
-                scan_cfg = dict(ssb_scan_cfg)
-                target_threshold = float(scan_cfg.get("threshold_db") or 20.0)
-                if band in snr_thresholds:
-                    target_threshold = float(snr_thresholds[band])
-                target_threshold = max(adaptive_min_db, min(adaptive_max_db, target_threshold))
-
-                effective_threshold = target_threshold
-                if adaptive_enabled:
-                    prev = adaptive_state.get(band)
-                    if prev is not None:
-                        effective_threshold = (adaptive_alpha * target_threshold) + ((1.0 - adaptive_alpha) * float(prev))
-                scan_cfg["threshold_db"] = max(adaptive_min_db, min(adaptive_max_db, float(effective_threshold)))
-                adaptive_state[band] = float(scan_cfg["threshold_db"])
             assignments[rx_request] = ReceiverAssignment(
                 rx=rx_request,
                 band=band,
                 freq_hz=freq_hz_f,
                 mode_label=mode_task,
-                ssb_scan=scan_cfg,
                 sideband=None,
                 # Keep RX0/RX1 as strict roaming slots; only fixed RX2+ should float.
-                ignore_slot_check=True if (scan_cfg is None and int(rx_request) >= 2) else False,
+                ignore_slot_check=True if int(rx_request) >= 2 else False,
             )
             allowed_bands.add(band)
             assignment_results.append({
@@ -803,51 +667,6 @@ def make_router(
                 "freq_hz": freq_hz_f,
                 "ok": True,
             })
-
-        # Final API-layer safety: force any SSB/PHONE assignment onto RX0/RX1.
-        # This protects against any upstream/UI edge cases before workers start.
-        ssb_slots = [0, 1]
-        taken_ssb: set[int] = set()
-        normalized_assignments: Dict[int, ReceiverAssignment] = {}
-        remap_by_band_mode: Dict[tuple[str, str], int] = {}
-
-        for rx in sorted(assignments.keys()):
-            a = assignments[rx]
-            mode_norm = str(a.mode_label or "").strip().upper()
-            is_ssb = mode_norm in {"SSB", "PHONE"} or bool(a.ssb_scan)
-            if not is_ssb:
-                continue
-            target = None
-            for candidate in ssb_slots:
-                if candidate not in taken_ssb:
-                    target = candidate
-                    break
-            if target is None:
-                logger.warning("Dropping extra SSB assignment in auto_set: band=%s mode=%s rx=%s", a.band, a.mode_label, rx)
-                continue
-            normalized_assignments[target] = ReceiverAssignment(
-                rx=target,
-                band=a.band,
-                freq_hz=a.freq_hz,
-                mode_label=a.mode_label,
-                ssb_scan=a.ssb_scan,
-                sideband=a.sideband,
-            )
-            remap_by_band_mode[(str(a.band), str(a.mode_label))] = int(target)
-            taken_ssb.add(target)
-
-        for rx in sorted(assignments.keys()):
-            a = assignments[rx]
-            mode_norm = str(a.mode_label or "").strip().upper()
-            is_ssb = mode_norm in {"SSB", "PHONE"} or bool(a.ssb_scan)
-            if is_ssb:
-                continue
-            if int(rx) in normalized_assignments:
-                logger.warning("Dropping colliding non-SSB assignment in auto_set: band=%s mode=%s rx=%s", a.band, a.mode_label, rx)
-                continue
-            normalized_assignments[int(rx)] = a
-
-        assignments = normalized_assignments
 
         # Inject fixed assignments — these pin specific RX slots bypassing the task machinery.
         for entry in fixed_assignments_list:
@@ -870,22 +689,6 @@ def make_router(
                 "fixed": True,
             })
 
-        for row in assignment_results:
-            try:
-                band = str(row.get("band") or "")
-                mode = str(row.get("mode") or "")
-                mode_norm = mode.strip().upper()
-                is_ssb = mode_norm in {"SSB", "PHONE"}
-                if is_ssb:
-                    mapped = remap_by_band_mode.get((band, mode))
-                    if mapped is not None:
-                        row["rx"] = int(mapped)
-                        row["rx_request"] = int(mapped)
-                    else:
-                        row["ok"] = False
-            except Exception:
-                continue
-
         try:
             if hasattr(receiver_mgr, "dependency_report") and hasattr(mgr, "set_runtime_dependencies"):
                 report = receiver_mgr.dependency_report()  # type: ignore[attr-defined]
@@ -902,14 +705,8 @@ def make_router(
             if not isinstance(latest_settings, dict):
                 latest_settings = {}
             changed = False
-            if adaptive_enabled:
-                latest_settings["ssbAdaptiveThresholdByBand"] = {
-                    str(k): round(float(v), 2)
-                    for k, v in adaptive_state.items()
-                }
-                changed = True
-            if "wsprHopState" in latest_settings:
-                del latest_settings["wsprHopState"]
+            if "ssbAdaptiveThresholdByBand" in latest_settings:
+                del latest_settings["ssbAdaptiveThresholdByBand"]
                 changed = True
             if changed:
                 _save_automation_settings(latest_settings)
@@ -923,7 +720,7 @@ def make_router(
             "block": block,
             "open_bands": open_bands,
             "assignments": assignment_results,
-            "ssb_max_receivers": len(ssb_rx_request_list),
+            "ssb_max_receivers": 0,
             "other_max_receivers": len(other_rx_request_list),
             "requested_ssb_tasks": requested_ssb_tasks,
             "requested_other_tasks": requested_other_tasks,

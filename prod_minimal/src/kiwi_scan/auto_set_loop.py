@@ -211,13 +211,7 @@ class AutoSetLoop:
         if schedule_key[0] == "fixed":
             return self._build_fixed_roaming_payload(settings, schedule_key[1])
 
-        mode = str(settings.get("autoScanMode") or "ft8").strip().lower()
-        if mode not in {"ft8", "phone"}:
-            mode = "ft8"
-
-        active_mode, active_block = schedule_key
-        if str(active_mode).strip().lower() in {"ft8", "phone"}:
-            mode = str(active_mode).strip().lower()
+        mode = "ft8"
 
         # Always use the current time's block for band selection regardless of the
         # passed schedule_key.  The loop passes the current key for mode-routing, but
@@ -232,19 +226,7 @@ class AutoSetLoop:
         payload: Dict[str, Any] = {
             "enabled": True,
             "mode": mode,
-            "block": str(active_block),
-            "ssb_scan": {
-                "enabled": self._safe_bool(settings.get("ssbEnabled"), default=True),
-                "threshold_db": self._safe_num(settings.get("ssbThresholdDb"), 20.0, 1.0, 60.0),
-                "wait_s": self._safe_num(settings.get("ssbWaitS"), 1.0, 0.1, 10.0),
-                "dwell_s": self._safe_num(settings.get("ssbDwellS"), 6.0, 1.0, 60.0),
-                "tail_s": self._safe_num(settings.get("ssbTailS"), 1.0, 0.1, 10.0),
-                "step_strategy": str(settings.get("ssbStepStrategy") or "adaptive").strip().lower(),
-                "step_khz": self._safe_num(settings.get("ssbStepKHz"), 10.0, 0.1, 20.0),
-                "sideband": str(settings.get("ssbSideband") or "USB").strip().upper(),
-                "adaptive_threshold": self._safe_bool(settings.get("ssbAdaptiveThreshold"), default=True),
-                "use_kiwi_snr": self._safe_bool(settings.get("ssbUseKiwiSnr"), default=True),
-            },
+            "block": str(current_block),
         }
         if isinstance(selected_bands, list):
             # Filter against the user's band allowlist ("On" checkboxes in Band Schedule).
@@ -310,18 +292,6 @@ class AutoSetLoop:
             "enabled": True,
             "mode": "ft8",
             "block": day_night,
-            "ssb_scan": {
-                "enabled": self._safe_bool(settings.get("ssbEnabled"), default=False),
-                "threshold_db": self._safe_num(settings.get("ssbThresholdDb"), 20.0, 1.0, 60.0),
-                "wait_s": self._safe_num(settings.get("ssbWaitS"), 1.0, 0.1, 10.0),
-                "dwell_s": self._safe_num(settings.get("ssbDwellS"), 6.0, 1.0, 60.0),
-                "tail_s": self._safe_num(settings.get("ssbTailS"), 1.0, 0.1, 10.0),
-                "step_strategy": str(settings.get("ssbStepStrategy") or "adaptive").strip().lower(),
-                "step_khz": self._safe_num(settings.get("ssbStepKHz"), 10.0, 0.1, 20.0),
-                "sideband": str(settings.get("ssbSideband") or "USB").strip().upper(),
-                "adaptive_threshold": self._safe_bool(settings.get("ssbAdaptiveThreshold"), default=True),
-                "use_kiwi_snr": self._safe_bool(settings.get("ssbUseKiwiSnr"), default=True),
-            },
             "fixed_assignments": list(_FIXED_ASSIGNMENTS),
             "selected_bands": selected_bands,
             "band_modes": band_modes,
@@ -334,27 +304,13 @@ class AutoSetLoop:
             local_hour = datetime.now().astimezone().hour
             day_night = "day" if 7 <= local_hour < 21 else "night"
             return ("fixed", day_night)
-        mode = str(settings.get("autoScanMode") or "ft8").strip().lower()
-        if mode not in {"ft8", "phone"}:
-            mode = "ft8"
         local_dt = datetime.now().astimezone()
-        return mode, block_for_hour(local_dt.hour, mode=mode)
+        return ("ft8", block_for_hour(local_dt.hour, mode="ft8"))
 
     @staticmethod
     def _apply_signature(settings: Dict[str, Any], schedule_key: tuple[str, str]) -> str:
         relevant = {
             "schedule_key": [str(schedule_key[0]), str(schedule_key[1])],
-            "autoScanMode": settings.get("autoScanMode"),
-            "ssbEnabled": settings.get("ssbEnabled"),
-            "ssbThresholdDb": settings.get("ssbThresholdDb"),
-            "ssbAdaptiveThreshold": settings.get("ssbAdaptiveThreshold"),
-            "ssbUseKiwiSnr": settings.get("ssbUseKiwiSnr"),
-            "ssbWaitS": settings.get("ssbWaitS"),
-            "ssbDwellS": settings.get("ssbDwellS"),
-            "ssbTailS": settings.get("ssbTailS"),
-            "ssbStepStrategy": settings.get("ssbStepStrategy"),
-            "ssbStepKHz": settings.get("ssbStepKHz"),
-            "ssbSideband": settings.get("ssbSideband"),
             "scheduleProfiles": settings.get("scheduleProfiles"),
             "fixedModeEnabled": settings.get("fixedModeEnabled"),
         }

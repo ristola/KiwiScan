@@ -75,7 +75,14 @@ def _get_station_coords() -> Optional[tuple[float, float]]:
         logger.debug("Could not load station coordinates for distance calculation", exc_info=True)
         _station_coords = False
         return None
-_valid_band_modes = {"FT4", "FT4 / FT8", "FT8", "WSPR", "SSB"}
+_valid_band_modes = {
+    "FT4",
+    "FT4 / FT8",
+    "FT4 / FT8 / WSPR",
+    "FT4 / WSPR",
+    "FT8",
+    "WSPR",
+}
 
 
 def set_loop(loop: asyncio.AbstractEventLoop | None) -> None:
@@ -123,10 +130,14 @@ def _normalize_band_mode(value: object) -> str:
     raw = str(value or "FT8").strip().upper().replace("_", " ")
     if raw in {"FT4/FT8", "FT4 + FT8", "FT4-FT8"}:
         return "FT4 / FT8"
+    if raw in {"FT4/FT8/WSPR", "FT4 + FT8 + WSPR", "FT4-FT8-WSPR"}:
+        return "FT4 / FT8 / WSPR"
+    if raw in {"FT4/WSPR", "FT4 + WSPR", "FT4-WSPR"}:
+        return "FT4 / WSPR"
     if raw == "WSRP":
         return "WSPR"
-    if raw in {"PHONE", "LSB", "USB"}:
-        return "SSB"
+    if raw in {"PHONE", "LSB", "USB", "SSB"}:
+        return "FT8"
     if raw in _valid_band_modes:
         return raw
     return "FT8"
@@ -135,7 +146,8 @@ def _normalize_band_mode(value: object) -> str:
 def _blocks_for_mode(mode: str, block: str) -> List[str]:
     _ = str(block or "").strip()
     now = datetime.now().astimezone()
-    current = block_for_hour(now.hour, mode=mode)
+    _ = mode
+    current = block_for_hour(now.hour, mode="ft8")
     blocks: List[str] = [current]
     m = re.match(r"^(\d{2})-(\d{2})$", current)
     if m:
@@ -197,8 +209,10 @@ def _fallback_profile_entry(by_mode: dict, block_key: str) -> tuple[str, dict] |
 
 def _trigger_auto_set_apply(settings: Dict[str, Any], mode: str) -> Dict[str, Any]:
     try:
+        _ = mode
+        mode = "ft8"
         now = datetime.now().astimezone()
-        block = block_for_hour(now.hour, mode=mode)
+        block = block_for_hour(now.hour, mode="ft8")
         candidate_blocks = _blocks_for_mode(mode, block)
         schedule_profiles = settings.get("scheduleProfiles") if isinstance(settings, dict) else {}
         by_mode = schedule_profiles.get(mode) if isinstance(schedule_profiles, dict) else {}
@@ -267,20 +281,19 @@ def _apply_ws4010_band_command(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     if band_mode_raw is None and mode_raw:
         mode_as_band_mode = _normalize_band_mode(mode_raw)
-        if mode_as_band_mode in _valid_band_modes:
+        if mode_raw.lower() != "phone" and mode_as_band_mode in _valid_band_modes:
             band_mode_raw = mode_raw
 
     if profile_raw:
-        mode = profile_raw
+        if profile_raw not in {"ft8", "phone"}:
+            raise ValueError("profile must be 'ft8'")
+        mode = "ft8"
     elif band_mode_raw is not None and str(band_mode_raw).strip() != "":
         mode = "ft8"
     elif mode_raw.lower() in {"ft8", "phone"}:
-        mode = mode_raw.lower()
+        mode = "ft8"
     else:
         mode = "ft8"
-
-    if mode not in {"ft8", "phone"}:
-        raise ValueError("profile must be 'ft8' or 'phone'")
 
     has_band_mode = band_mode_raw is not None and str(band_mode_raw).strip() != ""
     band_mode = _normalize_band_mode(band_mode_raw) if has_band_mode else None
@@ -389,21 +402,17 @@ def _apply_ws4010_status_command(payload: Dict[str, Any]) -> Dict[str, Any]:
     else:
         verbose = str(verbose_raw or "").strip().lower() in {"1", "true", "yes", "on", "full", "verbose"}
 
-    mode_raw = str(payload.get("mode") or payload.get("profile") or "").strip().lower()
+    _ = str(payload.get("mode") or payload.get("profile") or "").strip().lower()
 
     with _automation_lock:
         settings = _load_automation_settings()
 
-    if mode_raw not in {"ft8", "phone"}:
-        auto_mode = str(settings.get("autoScanMode") or "ft8").strip().lower()
-        mode = auto_mode if auto_mode in {"ft8", "phone"} else "ft8"
-    else:
-        mode = mode_raw
+    mode = "ft8"
 
     now = datetime.now().astimezone()
     season = season_for_date(now)
-    block = block_for_hour(now.hour, mode=mode)
-    candidate_blocks = _blocks_for_mode(mode, block)
+    block = block_for_hour(now.hour, mode="ft8")
+    candidate_blocks = _blocks_for_mode("ft8", block)
 
     schedule_profiles = settings.get("scheduleProfiles") if isinstance(settings, dict) else {}
     by_mode = schedule_profiles.get(mode) if isinstance(schedule_profiles, dict) else {}
@@ -436,7 +445,7 @@ def _apply_ws4010_status_command(payload: Dict[str, Any]) -> Dict[str, Any]:
         for b in _valid_bands:
             band_modes[b] = "FT8"
 
-    seasonal_tables = expected_schedule_by_season(mode=mode)
+    seasonal_tables = expected_schedule_by_season(mode="ft8")
     season_blocks = seasonal_tables.get(season) if isinstance(seasonal_tables, dict) else {}
     block_conditions = season_blocks.get(selected_block) if isinstance(season_blocks, dict) else {}
     if not isinstance(block_conditions, dict):
@@ -498,7 +507,7 @@ def _apply_ws4010_status_command(payload: Dict[str, Any]) -> Dict[str, Any]:
         "season": season,
         "block": selected_block,
         "verbose": verbose,
-        "auto_scan_mode": str(settings.get("autoScanMode") or mode),
+        "auto_scan_mode": "ft8",
         "selected_bands": [b for b in _valid_bands if b in selected_set],
         "open_bands": active_conditions,
         "assignment_count": total_assignments,

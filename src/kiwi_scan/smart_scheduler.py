@@ -55,9 +55,8 @@ _ALL_BANDS: tuple[str, ...] = (
     "10m", "12m", "15m", "17m", "20m", "30m", "40m", "60m", "80m", "160m"
 )
 
-# FT8 and phone block start-hours (must match scheduler.py block_for_hour logic).
+# FT8 block start-hours (must match scheduler.py block_for_hour logic).
 _FT8_BLOCK_STARTS: tuple[int, ...] = (0, 4, 8, 10, 16, 20)
-_PHONE_BLOCK_STARTS: tuple[int, ...] = (0, 6, 10, 16, 20)
 
 
 # ---------------------------------------------------------------------------
@@ -131,10 +130,10 @@ def _next_seasonal_change_for_band(
     """
     from datetime import timedelta  # noqa: PLC0415 — avoid circular at module level
 
-    starts = _FT8_BLOCK_STARTS if mode != "phone" else _PHONE_BLOCK_STARTS
+    _ = mode
     now_ts = local_dt.timestamp()
     for day_offset in range(2):
-        for start_h in starts:
+        for start_h in _FT8_BLOCK_STARTS:
             future_dt = (
                 local_dt.replace(hour=start_h, minute=0, second=0, microsecond=0)
                 + timedelta(days=day_offset)
@@ -143,9 +142,9 @@ def _next_seasonal_change_for_band(
             if secs <= 0 or secs > 26 * 3600:
                 continue
             season = season_for_date(future_dt)
-            block = block_for_hour(start_h, mode=mode)
+            block = block_for_hour(start_h, mode="ft8")
             try:
-                table = get_table(season, mode)
+                table = get_table(season, "ft8")
             except KeyError:
                 continue
             new_cond = str(table.blocks.get(block, {}).get(band, "")).upper()
@@ -374,22 +373,14 @@ class SmartScheduler:
             self._last_check_ts = time.time()
             self._last_health_overall = health_overall
 
-        # Recompute merged conditions for both modes and detect changes.
         local_dt = datetime.now().astimezone()
-        for mode in ("ft8", "phone"):
-            old_merged = self._compute_merged(old_empirical, mode, local_dt)
-            new_merged = self._compute_merged(new_empirical, mode, local_dt)
-            if new_merged != old_merged:
-                with self._lock:
-                    if mode == "ft8":
-                        self._last_merged = dict(new_merged)
-                logger.info(
-                    "SmartScheduler: %s band conditions changed — %s",
-                    mode.upper(),
-                    new_merged,
-                )
-                self._maybe_fire_change_callback()
-                break  # one callback per assessment cycle is enough
+        old_merged = self._compute_merged(old_empirical, "ft8", local_dt)
+        new_merged = self._compute_merged(new_empirical, "ft8", local_dt)
+        with self._lock:
+            self._last_merged = dict(new_merged)
+        if new_merged != old_merged:
+            logger.info("SmartScheduler: FT8 band conditions changed — %s", new_merged)
+            self._maybe_fire_change_callback()
 
     def _compute_merged(
         self,
@@ -422,9 +413,10 @@ class SmartScheduler:
 
     def merged_conditions(self, mode: str = "ft8") -> Dict[str, str]:
         """Return the current merged band-condition map for *mode*."""
+        _ = mode
         with self._lock:
             empirical = dict(self._empirical)
-        return self._compute_merged(empirical, mode, datetime.now().astimezone())
+        return self._compute_merged(empirical, "ft8", datetime.now().astimezone())
 
     def get_closed_bands(self, mode: str = "ft8") -> Set[str]:
         """Return the set of bands that should not be assigned a decoder.
@@ -435,9 +427,10 @@ class SmartScheduler:
         Called each AutoSetLoop cycle to build the ``closed_bands`` payload
         field passed to /auto_set_receivers.
         """
+        _ = mode
         allowed = self._allowed_bands()
         result: Set[str] = set()
-        for band, condition in self.merged_conditions(mode).items():
+        for band, condition in self.merged_conditions("ft8").items():
             if band not in allowed or condition == "CLOSED":
                 result.add(band)
         # Also close bands that appear in the allowlist but have no condition entry
@@ -511,10 +504,10 @@ class SmartScheduler:
     # ------------------------------------------------------------------
 
     def get_status(self, mode: str = "ft8") -> Dict[str, Any]:
+        _ = mode
         with self._lock:
             empirical = dict(self._empirical)
             last_check_ts = self._last_check_ts
-            last_merged = dict(self._last_merged)
             health_overall = str(self._last_health_overall)
 
         overrides = self._load_overrides()
@@ -522,9 +515,9 @@ class SmartScheduler:
         local_dt = datetime.now().astimezone()
         season = season_for_date(local_dt)
 
-        merged = self._compute_merged(empirical, mode, local_dt)
+        merged = self._compute_merged(empirical, "ft8", local_dt)
         try:
-            seasonal = expected_schedule(mode=mode, local_dt=local_dt)
+            seasonal = expected_schedule(mode="ft8", local_dt=local_dt)
         except Exception:
             seasonal = {}
 
@@ -541,7 +534,7 @@ class SmartScheduler:
             else:
                 source = "seasonal"
             seasonal_val = str(seasonal.get(band, "UNKNOWN")).upper()
-            next_chg = _next_seasonal_change_for_band(band, seasonal_val, local_dt, mode=mode)
+            next_chg = _next_seasonal_change_for_band(band, seasonal_val, local_dt, mode="ft8")
             conditions[band] = {
                 "merged": merged_val,
                 "seasonal": seasonal_val,
@@ -550,7 +543,7 @@ class SmartScheduler:
                 "source": source,
                 "next_seasonal_change_in_s": int(next_chg[0]) if next_chg else None,
                 "next_seasonal_condition": next_chg[1] if next_chg else None,
-                "score": _compute_band_score(band, merged_val, season, mode, local_dt),
+                "score": _compute_band_score(band, merged_val, season, "ft8", local_dt),
             }
 
         return {
@@ -558,7 +551,7 @@ class SmartScheduler:
             "receiver_health_overall": health_overall,
             "last_check_ts": last_check_ts,
             "interval_s": self._interval_s(),
-            "mode": mode,
+            "mode": "ft8",
             "conditions": conditions,
             "closed_bands": sorted(b for b, c in merged.items() if c == "CLOSED" and b in allowed),
             "open_bands": sorted(b for b, c in merged.items() if c == "OPEN" and b in allowed),

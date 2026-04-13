@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -13,12 +13,9 @@ def make_router(*, smart_scheduler: SmartScheduler) -> APIRouter:
     router = APIRouter()
 
     @router.get("/smart_scheduler/status")
-    async def get_status(mode: str = "ft8") -> Dict[str, Any]:
-        """Return current band conditions and SmartScheduler health.
-
-        Optional ``?mode=ft8`` (default) or ``?mode=phone``.
-        """
-        return smart_scheduler.get_status(mode=mode)
+    async def get_status() -> Dict[str, Any]:
+        """Return current FT8 band conditions and SmartScheduler health."""
+        return smart_scheduler.get_status()
 
     @router.get("/smart_scheduler/scan_config")
     async def get_scan_config() -> Dict[str, Any]:

@@ -10,9 +10,25 @@ from fastapi import APIRouter, HTTPException, Request
 _lock = threading.Lock()
 
 _DEPRECATED_SETTINGS_KEYS = {
+    "autoScanMode",
     "autoScanWspr",
+    "alertsEnabled",
+    "alertThreshold",
     "bandHopMinutes",
     "bandHopSeconds",
+    "quietEnd",
+    "quietStart",
+    "ssbAdaptiveThreshold",
+    "ssbAdaptiveThresholdByBand",
+    "ssbDwellS",
+    "ssbEnabled",
+    "ssbSideband",
+    "ssbStepKHz",
+    "ssbStepStrategy",
+    "ssbTailS",
+    "ssbThresholdDb",
+    "ssbUseKiwiSnr",
+    "ssbWaitS",
     "wsprHopState",
     "wsprStartBand",
 }
@@ -21,20 +37,6 @@ _DEFAULT_SETTINGS: Dict[str, Any] = {
     "autoScanOnBlock": False,
     "autoScanOnStartup": False,
     "autoRefreshSchedule": True,
-    "quietStart": "22:00",
-    "quietEnd": "06:00",
-    "alertsEnabled": True,
-    "alertThreshold": 12,
-    "ssbEnabled": True,
-    "ssbSideband": "USB",
-    "ssbThresholdDb": 20,
-    "ssbAdaptiveThreshold": True,
-    "ssbUseKiwiSnr": True,
-    "ssbWaitS": 1.0,
-    "ssbDwellS": 6.0,
-    "ssbTailS": 1.0,
-    "ssbStepStrategy": "adaptive",
-    "ssbStepKHz": 10.0,
     "headlessEnabled": True,
     "useLaunchd": False,
     "uiThemeMode": "auto",
@@ -69,10 +71,22 @@ def _save_settings(payload: Dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _sanitize_schedule_profiles(payload: object) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    ft8 = payload.get("ft8")
+    if not isinstance(ft8, dict):
+        return {}
+    return {"ft8": ft8}
+
+
 def _sanitize_settings(payload: Dict[str, Any] | None) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         return {}
-    return {key: value for key, value in payload.items() if key not in _DEPRECATED_SETTINGS_KEYS}
+    clean = {key: value for key, value in payload.items() if key not in _DEPRECATED_SETTINGS_KEYS}
+    if "scheduleProfiles" in clean:
+        clean["scheduleProfiles"] = _sanitize_schedule_profiles(clean.get("scheduleProfiles"))
+    return clean
 
 
 def _with_defaults(payload: Dict[str, Any]) -> Dict[str, Any]:
