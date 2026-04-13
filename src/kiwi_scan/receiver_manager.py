@@ -1532,6 +1532,7 @@ class ReceiverManager:
         port: int,
         force_all: bool = False,
         kick_only_slots: Optional[list[int]] = None,
+        allow_fallback_kick_all: bool = True,
     ) -> bool:
         script = self._find_admin_kick_script()
         if script is None:
@@ -1584,6 +1585,11 @@ class ReceiverManager:
             if stdout:
                 logger.info("Mismatch auto-kick success: %s", stdout.splitlines()[-1])
             return True
+
+        if not allow_fallback_kick_all:
+            detail = stderr or stdout or f"exit={completed.returncode}"
+            logger.warning("Mismatch auto-kick targeted command failed without fallback: %s", detail)
+            return False
 
         # Fallback: attempt generic kick-all in case per-target kick did not clear stuck sessions.
         fallback_cmd = [
@@ -3830,7 +3836,14 @@ class ReceiverManager:
 
         return normalized
 
-    def apply_assignments(self, host: str, port: int, assignments: Dict[int, ReceiverAssignment]) -> None:
+    def apply_assignments(
+        self,
+        host: str,
+        port: int,
+        assignments: Dict[int, ReceiverAssignment],
+        *,
+        allow_starting_from_empty_full_reset: bool = True,
+    ) -> None:
         with self._lock:
             prior_host = str(getattr(self, "_active_host", "") or "")
             prior_port = int(getattr(self, "_active_port", 0) or 0)
@@ -3894,10 +3907,14 @@ class ReceiverManager:
                     logger.info(
                         "Starting receiver set from empty state; fixed-first bootstrap enabled (skip full Kiwi reset)"
                     )
+                elif not allow_starting_from_empty_full_reset:
+                    logger.info(
+                        "Starting receiver set from empty state; full Kiwi receiver reset suppressed for external runtime"
+                    )
                 else:
                     logger.info("Starting receiver set from empty state; forcing full Kiwi receiver reset before re-apply")
             did_full_reset = bool(host_changed or force_full_reset or force_reconcile_full_reset)
-            if starting_from_empty and not bootstrap_fixed_first:
+            if starting_from_empty and not bootstrap_fixed_first and allow_starting_from_empty_full_reset:
                 did_full_reset = True
             if force_full_reset:
                 logger.warning("Band-plan change detected; forcing full Kiwi receiver reset before re-apply")

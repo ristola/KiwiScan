@@ -69,6 +69,7 @@ class AutoSetLoop:
         # take up to ~3 min for 8 receivers over VPN).
         self._recovery_backoff_until_ts: float = time.time() + 180.0
         self._RECOVERY_BACKOFF_S: float = 180.0
+        self._external_hold_reason: str | None = None
 
     def set_smart_scheduler(self, smart_scheduler: Any) -> None:
         """Bind a SmartScheduler instance so closed bands are filtered each cycle."""
@@ -113,6 +114,31 @@ class AutoSetLoop:
 
     def notify_settings_changed(self) -> None:
         self._wake.set()
+
+    def pause_for_external(self, reason: str = "external") -> None:
+        with self._state_lock:
+            self._external_hold_reason = str(reason or "external")
+            self._manual_mode_cleared = True
+            self._did_startup_apply = False
+            self._last_schedule_key = None
+            self._last_apply_signature = None
+            self._last_applied_band_config = None
+        self.notify_settings_changed()
+
+    def resume_from_external(self, reason: str | None = None) -> None:
+        with self._state_lock:
+            current_reason = self._external_hold_reason
+            if current_reason is None:
+                return
+            if reason is not None and str(reason) != str(current_reason):
+                return
+            self._external_hold_reason = None
+            self._manual_mode_cleared = False
+            self._did_startup_apply = False
+            self._last_schedule_key = None
+            self._last_apply_signature = None
+            self._last_applied_band_config = None
+        self.notify_settings_changed()
 
     def _wait_for_notification(self, timeout_s: float | None = None) -> None:
         self._wake.wait(timeout=timeout_s)
@@ -530,6 +556,18 @@ class AutoSetLoop:
                 self._wait_for_notification(timeout_s=interval_s)
                 continue
 
+            with self._state_lock:
+                external_hold_reason = self._external_hold_reason
+            if external_hold_reason:
+                logger.info("Auto-set loop: external hold active (%s) — parking loop", external_hold_reason)
+                self._manual_mode_cleared = True
+                self._did_startup_apply = False
+                self._last_schedule_key = None
+                self._last_apply_signature = None
+                self._last_applied_band_config = None
+                self._wait_for_notification()
+                continue
+
             fixed_mode_enabled = self._safe_bool(settings.get("fixedModeEnabled"), default=True)
             if not fixed_mode_enabled:
                 if not self._manual_mode_cleared:
@@ -694,6 +732,7 @@ class AutoSetLoop:
             last_run_ts = self._last_run_ts
             last_success_ts = self._last_success_ts
             last_error = self._last_error
+            external_hold_reason = self._external_hold_reason
         return {
             "enabled_by_env": bool(self._enabled_by_env()),
             "thread_running": bool(self._thread is not None and self._thread.is_alive()),
@@ -708,6 +747,7 @@ class AutoSetLoop:
             "last_run_ts": last_run_ts,
             "last_success_ts": last_success_ts,
             "last_error": last_error,
+            "external_hold_reason": external_hold_reason,
             "fixed_rx_count": len(_FIXED_ASSIGNMENTS),
             "fixed_rxs": [{"rx": e["rx"], "band": e["band"], "mode": e["mode"]} for e in _FIXED_ASSIGNMENTS],
         }

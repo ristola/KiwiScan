@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import threading
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -12,6 +13,7 @@ from .bandplan import bandplan_label, bandplan_ranges_for_label, combine_type_hi
 from .detect import PersistenceTracker, detect_peaks_with_noise_floor
 from .display import sparkline, span_bar, top_peaks
 from .kiwi_waterfall import (
+    allocate_ws_timestamp,
     KiwiCampRejected,
     KiwiClientUnavailable,
     WaterfallFrame,
@@ -349,6 +351,9 @@ def run_scan(
     rx_wait_max_retries: int = 0,
     status_hold_s: float = 0.0,
     max_runtime_s: float = 0.0,
+    status_modulation: str = "usb",
+    status_pre_tune: bool = True,
+    status_parallel_snd: bool = False,
     ssb_occ_thresh_db: float = 6.0,
     ssb_voice_min_score: float = 0.0,
     ssb_early_stop_frames: int = 0,
@@ -843,10 +848,51 @@ def run_scan(
 
     try:
         retry_start = time.time()
-        retries = 0
+        busy_retries = 0
+        transient_retries = 0
         while True:
             try:
-                if rx_chan is not None:
+                status_stop_event: threading.Event | None = None
+                status_thread: threading.Thread | None = None
+                status_ready_event: threading.Event | None = None
+                ws_timestamp: int | None = None
+
+                if rx_chan is not None and bool(status_parallel_snd):
+                    ws_timestamp = allocate_ws_timestamp()
+                    status_stop_event = threading.Event()
+                    status_ready_event = threading.Event()
+
+                    def _run_status_stream() -> None:
+                        try:
+                            set_receiver_frequency(
+                                host=host,
+                                port=port,
+                                rx_chan=int(rx_chan),
+                                freq_hz=float(center_freq_hz),
+                                password=password,
+                                user=user,
+                                timeout_s=10.0,
+                                hold_s=0.0,
+                                rx_wait_timeout_s=rx_wait_timeout_s,
+                                rx_wait_interval_s=rx_wait_interval_s,
+                                rx_wait_max_retries=rx_wait_max_retries,
+                                modulation=str(status_modulation),
+                                ws_timestamp=ws_timestamp,
+                                hold_event=status_stop_event,
+                                ready_event=status_ready_event,
+                            )
+                        except Exception:
+                            return
+
+                    status_thread = threading.Thread(
+                        name=f"scan-status-rx{int(rx_chan)}",
+                        target=_run_status_stream,
+                        daemon=True,
+                    )
+                    status_thread.start()
+                    status_ready_event.wait(timeout=max(0.5, min(2.0, float(status_hold_s) or 2.0)))
+
+                if rx_chan is not None and bool(status_pre_tune) and not bool(status_parallel_snd):
                     ok = set_receiver_frequency(
                         host=host,
                         port=port,
@@ -859,6 +905,8 @@ def run_scan(
                         rx_wait_timeout_s=rx_wait_timeout_s,
                         rx_wait_interval_s=rx_wait_interval_s,
                         rx_wait_max_retries=rx_wait_max_retries,
+                        modulation=str(status_modulation),
+                        ws_timestamp=ws_timestamp,
                     )
                     if not ok:
                         raise KiwiCampRejected(requested_rx=int(rx_chan), response="tune failed")
@@ -892,14 +940,16 @@ def run_scan(
                     max_duration_s=float(max_runtime_s) if float(max_runtime_s) > 0 else None,
                     debug=debug,
                     debug_messages=debug_messages,
+                    status_modulation=str(status_modulation),
+                    ws_timestamp=ws_timestamp,
                 )
                 break
             except KiwiCampRejected as e:
                 if rx_chan is None:
                     raise
-                retries += 1
+                busy_retries += 1
                 elapsed = time.time() - retry_start
-                if int(rx_wait_max_retries) > 0 and retries > int(rx_wait_max_retries):
+                if int(rx_wait_max_retries) > 0 and busy_retries > int(rx_wait_max_retries):
                     print(f"RX{int(rx_chan)} unavailable after {rx_wait_max_retries} retries ({e})")
                     return 3
                 if float(rx_wait_timeout_s) > 0 and elapsed >= float(rx_wait_timeout_s):
@@ -914,21 +964,41 @@ def run_scan(
                 # Treat these as transient and retry a few times.
                 name = type(e).__name__
                 msg = str(e)
+                msg_lower = msg.lower()
+                is_busy = (
+                    "all 8 client slots taken" in msg_lower
+                    or "all client slots taken" in msg_lower
+                    or "too busy now" in msg_lower
+                )
                 is_transient = name in {
                     "KiwiServerTerminatedConnection",
                     "ConnectionResetError",
                     "BrokenPipeError",
                     "TimeoutError",
-                } or "server closed the connection" in msg.lower() or "connection reset" in msg.lower()
+                } or "server closed the connection" in msg_lower or "connection reset" in msg_lower
+
+                if is_busy and rx_chan is not None:
+                    busy_retries += 1
+                    elapsed = time.time() - retry_start
+                    if int(rx_wait_max_retries) > 0 and busy_retries > int(rx_wait_max_retries):
+                        print(f"RX{int(rx_chan)} unavailable after {rx_wait_max_retries} retries ({msg})")
+                        return 3
+                    if float(rx_wait_timeout_s) > 0 and elapsed >= float(rx_wait_timeout_s):
+                        print(f"RX{int(rx_chan)} unavailable after {elapsed:.1f}s ({msg})")
+                        return 3
+                    sleep_s = max(0.25, float(rx_wait_interval_s))
+                    print(f"RX{int(rx_chan)} busy ({msg}); retrying in {sleep_s:.1f}s...")
+                    time.sleep(sleep_s)
+                    continue
 
                 if not is_transient:
                     raise
 
-                retries += 1
+                transient_retries += 1
                 elapsed = time.time() - retry_start
                 max_retry = int(rx_wait_max_retries) if int(rx_wait_max_retries) > 0 else 3
-                if retries > max_retry:
-                    print(f"ERROR: waterfall transient disconnect after {retries} retries: {name}: {msg}")
+                if transient_retries > max_retry:
+                    print(f"ERROR: waterfall transient disconnect after {transient_retries} retries: {name}: {msg}")
                     return 2
                 if float(rx_wait_timeout_s) > 0 and elapsed >= float(rx_wait_timeout_s):
                     print(f"ERROR: waterfall transient disconnect after {elapsed:.1f}s: {name}: {msg}")
@@ -936,6 +1006,11 @@ def run_scan(
                 sleep_s = min(3.0, max(0.5, float(rx_wait_interval_s)))
                 print(f"WARN: transient Kiwi disconnect ({name}); retrying in {sleep_s:.1f}s...")
                 time.sleep(sleep_s)
+            finally:
+                if status_stop_event is not None:
+                    status_stop_event.set()
+                if status_thread is not None:
+                    status_thread.join(timeout=1.0)
     except KiwiClientUnavailable as e:
         print(f"ERROR: {e}")
         return 2

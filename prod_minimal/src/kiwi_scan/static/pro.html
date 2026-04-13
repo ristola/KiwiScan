@@ -1390,6 +1390,185 @@
             letter-spacing: 0.06em;
         }
 
+        .receiver-scan-summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 10px;
+        }
+
+        .receiver-scan-stat {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: color-mix(in srgb, var(--panel), white 20%);
+            padding: 10px 12px;
+            min-height: 70px;
+        }
+
+        .receiver-scan-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .receiver-scan-results-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .receiver-scan-lane-card {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            background: color-mix(in srgb, var(--panel), white 14%);
+            padding: 10px;
+            display: grid;
+            gap: 10px;
+            min-width: 0;
+        }
+
+        .receiver-scan-lane-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .receiver-scan-lane-status {
+            color: var(--muted);
+            font-size: 0.76rem;
+            font-weight: 600;
+            text-align: right;
+        }
+
+        .receiver-scan-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: grid;
+            gap: 8px;
+        }
+
+        .receiver-scan-list-item {
+            border: 1px solid var(--line);
+            border-radius: 9px;
+            background: color-mix(in srgb, var(--panel), white 20%);
+            padding: 8px 10px;
+            display: grid;
+            gap: 4px;
+        }
+
+        .receiver-scan-list-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            font-size: 0.8rem;
+            font-weight: 700;
+        }
+
+        .receiver-scan-list-summary {
+            font-size: 0.82rem;
+            color: var(--ink);
+        }
+
+        .receiver-scan-followup {
+            border: 1px dashed var(--line);
+            border-radius: 8px;
+            background: color-mix(in srgb, var(--panel), white 18%);
+            padding: 8px;
+            display: grid;
+            gap: 4px;
+        }
+
+        .receiver-scan-followup-label {
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .receiver-scan-followup-text {
+            font-size: 0.8rem;
+            color: var(--ink);
+            word-break: break-word;
+        }
+
+        .receiver-scan-followup-text.is-invalid {
+            color: var(--muted);
+        }
+
+        .receiver-scan-list-meta {
+            font-size: 0.72rem;
+            color: var(--muted);
+        }
+
+        .receiver-scan-metrics {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 6px;
+        }
+
+        .receiver-scan-metric {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: color-mix(in srgb, var(--panel), white 24%);
+            padding: 6px 8px;
+            display: grid;
+            gap: 2px;
+            min-width: 0;
+        }
+
+        .receiver-scan-metric-label {
+            color: var(--muted);
+            font-size: 0.64rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .receiver-scan-metric-value {
+            color: var(--ink);
+            font-size: 0.8rem;
+            font-weight: 700;
+            word-break: break-word;
+        }
+
+        .receiver-scan-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 58px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            border: 1px solid var(--line);
+        }
+
+        .receiver-scan-pill.status-activity {
+            background: color-mix(in srgb, #22c55e, var(--panel) 82%);
+            color: #15803d;
+        }
+
+        .receiver-scan-pill.status-watch {
+            background: color-mix(in srgb, #f59e0b, var(--panel) 82%);
+            color: #b45309;
+        }
+
+        .receiver-scan-pill.status-quiet {
+            background: color-mix(in srgb, var(--fg-muted), var(--panel) 88%);
+            color: var(--fg-muted);
+        }
+
+        .receiver-scan-pill.status-error,
+        .receiver-scan-pill.status-unavailable,
+        .receiver-scan-pill.status-stopped {
+            background: color-mix(in srgb, #ef4444, var(--panel) 84%);
+            color: #b91c1c;
+        }
+
         /* ── Band Schedule grid (FT8 time-block planner) ── */
         .band-sched-wrap {
             overflow-x: auto;
@@ -2283,6 +2462,14 @@
             background: color-mix(in srgb, var(--ok), white 90%);
             border-color: color-mix(in srgb, var(--ok), white 46%);
             box-shadow: 0 0 0 1px color-mix(in srgb, var(--ok), white 58%);
+        }
+
+        .action-btn-sm.is-active {
+            background: color-mix(in srgb, var(--accent), white 88%);
+            border-color: color-mix(in srgb, var(--accent), white 42%);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent), white 56%);
+            color: #0f4c81;
+            -webkit-text-fill-color: #0f4c81;
         }
 
         .action-btn-sm.is-error {
@@ -3682,6 +3869,13 @@
             box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.26);
         }
 
+        body.theme-dark .action-btn-sm.is-active {
+            background: color-mix(in srgb, var(--accent), transparent 78%);
+            border-color: color-mix(in srgb, var(--accent), transparent 42%);
+            color: color-mix(in srgb, var(--accent), white 14%);
+            -webkit-text-fill-color: color-mix(in srgb, var(--accent), white 14%);
+        }
+
         body.theme-dark .action-btn-sm.is-error {
             background: rgba(248, 113, 113, 0.18);
             border-color: rgba(248, 113, 113, 0.44);
@@ -4074,6 +4268,7 @@
                 <li data-overview-nav="map"><a href="#map" data-nav="map" data-icon="globe">Map</a></li>
                 <li data-overview-nav="active-receivers"><a href="#active-receivers" data-nav="active-receivers"
                         data-icon="users">Active Receivers</a></li>
+                <li><a href="#receiver-scan" data-nav="receiver-scan" data-icon="crosshair">Receiver Scan</a></li>
                 <li><a href="#settings" data-nav="settings" data-icon="settings">Settings</a></li>
                 <li><a href="#system" data-nav="system" data-icon="server">System Info</a></li>
             </ul>
@@ -4239,6 +4434,71 @@
                             <canvas id="spark-fault-load" class="summary-spark" width="280" height="28"></canvas>
                         </article>
                         <ul id="reasons" class="assign-list"></ul>
+                    </article>
+                    <article class="panel panel-collapsible" id="receiver-scan" data-panel-card="receiver-scan">
+                        <div class="panel-hdr">
+                            <h2 data-icon="crosshair">Receiver Scan</h2>
+                            <div class="panel-hdr-actions">
+                                <button class="action-btn-sm" id="receiver-scan-start" type="button"
+                                    data-icon="crosshair" aria-pressed="false" aria-busy="false">Start 20m
+                                    Scan</button>
+                                <button class="action-btn-sm" id="receiver-scan-stop" type="button" data-icon="pause"
+                                    aria-pressed="false" aria-busy="false" disabled>Stop</button>
+                            </div>
+                        </div>
+                        <div class="panel-body">
+                            <div class="receiver-scan-summary-grid">
+                                <article class="receiver-scan-stat">
+                                    <div class="summary-k">Mode</div>
+                                    <div class="summary-v" id="receiver-scan-mode-state">Idle</div>
+                                </article>
+                                <article class="receiver-scan-stat">
+                                    <div class="summary-k">Reserved</div>
+                                    <div class="summary-v" id="receiver-scan-reserved">RX0 CW | RX1 Phone</div>
+                                </article>
+                                <article class="receiver-scan-stat">
+                                    <div class="summary-k">CW Current</div>
+                                    <div class="summary-v" id="receiver-scan-cw-current">--</div>
+                                </article>
+                                <article class="receiver-scan-stat">
+                                    <div class="summary-k">Phone Current</div>
+                                    <div class="summary-v" id="receiver-scan-phone-current">--</div>
+                                </article>
+                                <article class="receiver-scan-stat">
+                                    <div class="summary-k">Last Run</div>
+                                    <div class="summary-v" id="receiver-scan-last-run">--</div>
+                                </article>
+                            </div>
+                            <p class="band-sched-hint" id="receiver-scan-note" style="margin:0;">
+                                RX0 scans 40m CW anchors while RX1 scans 40m Phone from 7.125 to 7.300 MHz. RX2-RX7 stay
+                                on the fixed digital plan.
+                            </p>
+                            <div class="receiver-scan-results-grid">
+                                <section class="receiver-scan-lane-card" aria-labelledby="receiver-scan-cw-heading">
+                                    <div class="receiver-scan-lane-head">
+                                        <div class="settings-subcard-title" id="receiver-scan-cw-heading">RX0 CW
+                                            Anchors</div>
+                                        <div class="receiver-scan-lane-status" id="receiver-scan-cw-status">Idle
+                                        </div>
+                                    </div>
+                                    <ul class="receiver-scan-list" id="receiver-scan-cw-results">
+                                        <li>No CW probes have run yet.</li>
+                                    </ul>
+                                </section>
+                                <section class="receiver-scan-lane-card" aria-labelledby="receiver-scan-phone-heading">
+                                    <div class="receiver-scan-lane-head">
+                                        <div class="settings-subcard-title" id="receiver-scan-phone-heading">RX1
+                                            Phone Anchors</div>
+                                        <div class="receiver-scan-lane-status" id="receiver-scan-phone-status">Idle
+                                        </div>
+                                    </div>
+                                    <ul class="receiver-scan-list" id="receiver-scan-phone-results">
+                                        <li>No Phone probes have run yet.</li>
+                                    </ul>
+                                </section>
+                            </div>
+                            <div class="control-status" id="receiver-scan-status">Receiver Scan: idle</div>
+                        </div>
                     </article>
                     <article class="panel panel-collapsible panel-full" id="messages" data-panel-card="messages">
                         <div class="panel-hdr">
@@ -4572,6 +4832,13 @@
                                             <input id="cfg-overview-active-receivers" type="checkbox" checked
                                                 aria-label="Show Active Receivers in overview">
                                         </div>
+                                        <div class="overview-topic-item" data-overview-key="receiver-scan"
+                                            draggable="true">
+                                            <span class="overview-topic-handle" aria-hidden="true">::</span>
+                                            <span class="overview-topic-label">Receiver Scan</span>
+                                            <input id="cfg-overview-receiver-scan" type="checkbox" checked
+                                                aria-label="Show Receiver Scan in overview">
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -4841,7 +5108,8 @@
             messages: true,
             map: true,
             "active-receivers": true,
-            order: ["status", "assignments", "faults", "messages", "map", "active-receivers"],
+            "receiver-scan": true,
+            order: ["status", "assignments", "faults", "messages", "map", "active-receivers", "receiver-scan"],
         };
 
         const REFRESH_INTERVAL_KEY = "kiwiscan.pro.refreshIntervalMs";
@@ -4864,7 +5132,7 @@
         const DEFAULT_SUBTITLE_TEXT = "Realtime operations dashboard for receiver health and propagation";
         const OVERVIEW_TOPICS_STORAGE_KEY = "kiwiscan.pro.overviewTopics";
         const DECODE_EXTRA_FILTERS_STORAGE_KEY = "kiwiscan.pro.decodeExtraFilters.v1";
-        const OVERVIEW_TOPIC_KEYS = ["status", "assignments", "faults", "messages", "map", "active-receivers"];
+        const OVERVIEW_TOPIC_KEYS = ["status", "assignments", "faults", "messages", "map", "active-receivers", "receiver-scan"];
         const OVERVIEW_TOPIC_METADATA = Object.freeze({
             status: { sectionId: "status-strip", fullWidth: true },
             assignments: { sectionId: "assignments", fullWidth: true },
@@ -4872,6 +5140,7 @@
             messages: { sectionId: "messages", fullWidth: true },
             map: { sectionId: "map", fullWidth: true },
             "active-receivers": { sectionId: "active-receivers", fullWidth: true },
+            "receiver-scan": { sectionId: "receiver-scan", fullWidth: true },
         });
         const GRAPH_WINDOW_MIN_MS = 5 * 60 * 1000;
         const GRAPH_HISTORY_MAX_SAMPLES = 360;
@@ -5502,6 +5771,8 @@
         }
 
         function buildExpectedActiveReceiverName(rx, assignment, channel) {
+            const explicitDisplayName = safeText(channel && channel.display_name, "").trim();
+            if (explicitDisplayName) return explicitDisplayName;
             const channelBand = normalizeActiveReceiverBand(channel && channel.band);
             const assignmentBand = normalizeActiveReceiverBand(assignment && assignment.band);
             const band = channelBand || assignmentBand;
@@ -5520,9 +5791,12 @@
                 "auto-mode-enabled",
                 latestAutomationSettings && latestAutomationSettings.fixedModeEnabled !== false,
             );
+            const scanModeActive = !!(latestReceiverScanStatus && (latestReceiverScanStatus.mode_active || latestReceiverScanStatus.running));
+            const managedModeActive = autoModeEnabled || scanModeActive;
             const hasReceiverContext = Boolean(
                 Object.keys(latestChannelsMap || {}).length
                 || (latestAssignmentsSource !== "kiwi_users" && Object.keys(latestAssignments || {}).length)
+                || scanModeActive
             );
             const users = Array.isArray(kiwiUsers) ? kiwiUsers : [];
             const rawUsers = Array.isArray(rawKiwiUsers) ? rawKiwiUsers : [];
@@ -5552,12 +5826,18 @@
             usersByRx.forEach((_, rxNum) => {
                 if (Number.isFinite(rxNum) && rxNum >= 0) managedRxSet.add(rxNum);
             });
-            if (autoModeEnabled) {
+            if (managedModeActive) {
                 rawUsersByRx.forEach((rawUser, rxNum) => {
                     const rawName = safeText(rawUser && rawUser.name, "");
                     if (Number.isFinite(rxNum) && rxNum >= 0 && isManagedReceiverLabel(rawName)) {
                         managedRxSet.add(rxNum);
                     }
+                });
+            }
+            if (scanModeActive && Array.isArray(latestReceiverScanStatus && latestReceiverScanStatus.reserved_receivers)) {
+                latestReceiverScanStatus.reserved_receivers.forEach((rx) => {
+                    const rxNum = Number(rx);
+                    if (Number.isFinite(rxNum) && rxNum >= 0) managedRxSet.add(rxNum);
                 });
             }
 
@@ -5579,30 +5859,34 @@
                         ? (rawUsersByRx.get(liveKiwiRx) || rawUserBySlot)
                         : rawUserBySlot;
                     const synthesizedName = buildExpectedActiveReceiverName(rxNum, assignment, channel);
+                    const channelDisplayName = safeText(channel && channel.display_name, "");
                     const managedName = safeText(systemUser.name, "");
                     const rawName = safeText(rawUser.name, "");
                     const freqHz = Number((assignment && assignment.freq_hz) || NaN);
                     const connected = Boolean(
                         channel.active
                         || channel.visible_on_kiwi
+                        || channelDisplayName
                         || managedName
-                        || (autoModeEnabled && rawName)
+                        || (managedModeActive && rawName)
                     );
                     const populated = Boolean(
+                        channelDisplayName
+                        ||
                         safeText(channel.band, "")
                         || safeText(channel.mode, "")
                         || safeText(assignment.band, "")
                         || safeText(assignment.mode, "")
                         || managedName
-                        || (autoModeEnabled && rawName)
+                        || (managedModeActive && rawName)
                     );
-                    const fallbackDisplayName = formatManagedReceiverLabel(managedName || (autoModeEnabled ? rawName : ""));
+                    const fallbackDisplayName = channelDisplayName || formatManagedReceiverLabel(managedName || (managedModeActive ? rawName : ""));
                     const preferredDisplayName = (hasReceiverContext && populated && !synthesizedName.startsWith("(connecting"))
                         ? synthesizedName
                         : (fallbackDisplayName || synthesizedName || "Unassigned");
                     return {
                         rx: rxNum,
-                        name: managedName || (autoModeEnabled ? rawName : "") || (populated ? synthesizedName : "Unassigned"),
+                        name: channelDisplayName || managedName || (managedModeActive ? rawName : "") || (populated ? synthesizedName : "Unassigned"),
                         display_name: preferredDisplayName,
                         freq_khz: Number.isFinite(Number(channel.freq_hz))
                             ? Number(channel.freq_hz) / 1000.0
@@ -7431,6 +7715,250 @@
             if (el) el.textContent = `Automation: ${text}`;
         }
 
+        function setReceiverScanStatusText(text) {
+            const el = byId("receiver-scan-status");
+            if (el) el.textContent = `Receiver Scan: ${text}`;
+        }
+
+        let latestReceiverScanStatus = null;
+        let receiverScanPendingAction = "";
+
+        function setReceiverScanButtonLabel(button, label) {
+            if (!button) return;
+            const iconMarkup = buildIconMarkup(button.dataset.icon);
+            button.innerHTML = `${iconMarkup}<span>${escapeHtml(String(label || ""))}</span>`;
+        }
+
+        function syncReceiverScanControls(scan = latestReceiverScanStatus) {
+            const startBtn = byId("receiver-scan-start");
+            const stopBtn = byId("receiver-scan-stop");
+            const running = !!(scan && scan.running);
+            const modeActive = !!(scan && scan.mode_active);
+            const startPending = receiverScanPendingAction === "start";
+            const stopPending = receiverScanPendingAction === "stop";
+
+            if (startBtn) {
+                startBtn.classList.toggle("is-busy", startPending);
+                startBtn.classList.toggle("is-active", !startPending && (running || modeActive));
+                startBtn.classList.remove("is-error", "is-success");
+                startBtn.disabled = startPending || running;
+                startBtn.setAttribute("aria-pressed", (startPending || running || modeActive) ? "true" : "false");
+                startBtn.setAttribute("aria-busy", startPending ? "true" : "false");
+                setReceiverScanButtonLabel(
+                    startBtn,
+                    startPending ? "Starting..." : running ? "Scanning 20m" : modeActive ? "Run 20m Scan" : "Start 20m Scan",
+                );
+            }
+
+            if (stopBtn) {
+                const canStop = running || modeActive || stopPending;
+                stopBtn.classList.toggle("is-busy", stopPending);
+                stopBtn.classList.toggle("is-active", !stopPending && canStop);
+                stopBtn.classList.remove("is-error", "is-success");
+                stopBtn.disabled = !canStop || stopPending;
+                stopBtn.setAttribute("aria-pressed", stopPending ? "true" : "false");
+                stopBtn.setAttribute("aria-busy", stopPending ? "true" : "false");
+                setReceiverScanButtonLabel(
+                    stopBtn,
+                    stopPending ? "Stopping..." : running ? "Stop Scan" : modeActive ? "Release Scan" : "Stop",
+                );
+            }
+        }
+
+        function fmtReceiverScanFreq(value) {
+            const mhz = Number(value);
+            return Number.isFinite(mhz) ? `${mhz.toFixed(3)} MHz` : "--";
+        }
+
+        function fmtReceiverScanStamp(value) {
+            const ts = Number(value);
+            if (!Number.isFinite(ts) || ts <= 0) return "--";
+            return new Date(ts * 1000).toLocaleTimeString();
+        }
+
+        function receiverScanStatusClass(status) {
+            const key = safeText(status, "quiet").toLowerCase();
+            if (["activity", "watch", "quiet", "error", "unavailable", "stopped"].includes(key)) {
+                return `status-${key}`;
+            }
+            return "status-quiet";
+        }
+
+        function renderReceiverScanResults(targetId, items, emptyText, options = {}) {
+            const el = byId(targetId);
+            if (!el) return;
+            const kind = safeText(options.kind, "").toLowerCase();
+            const filteredItems = Array.isArray(items)
+                ? items.filter((item) => kind !== "phone" || safeText(item && item.status, "quiet").toLowerCase() === "activity")
+                : [];
+            if (!filteredItems.length) {
+                el.innerHTML = `<li>${escapeHtml(emptyText)}</li>`;
+                return;
+            }
+            const fmtMaybe = (value, suffix = "", digits = 0) => {
+                const num = Number(value);
+                if (!Number.isFinite(num)) return "--";
+                return `${num.toFixed(digits)}${suffix}`;
+            };
+            el.innerHTML = filteredItems.map((item) => {
+                const status = safeText(item && item.status, "quiet").toUpperCase();
+                const freqText = fmtReceiverScanFreq(item && item.freq_mhz);
+                const score = Number(item && item.score);
+                const scoreText = Number.isFinite(score) ? `Score ${Math.round(score)}` : "Score --";
+                const summary = safeText(item && item.summary, "No summary");
+                const signalCount = Number(item && item.signal_count);
+                const eventCount = Number(item && item.event_count);
+                const metricPairs = [
+                    ["Hits", Number.isFinite(signalCount) ? String(Math.round(signalCount)) : "--"],
+                    ["Events", Number.isFinite(eventCount) ? String(Math.round(eventCount)) : "--"],
+                    ["Peak", fmtMaybe(item && item.max_rel_db, " dB", 1)],
+                    ["Best S", fmtMaybe(item && item.best_s_est, "", 1)],
+                    ["Voice", fmtMaybe(item && item.voice_score, "", 2)],
+                    ["BW", fmtMaybe(item && item.occupied_bw_hz, " Hz", 0)],
+                ];
+                const probeIndex = item && item.probe_index != null ? String(item.probe_index) : "--";
+                const probeTotal = item && item.probe_total != null ? String(item.probe_total) : "--";
+                const followupSelected = Boolean(item && item.followup_selected);
+                const followupStatus = safeText(item && item.followup_status, "idle").toLowerCase();
+                const followupValidationSummary = safeText(item && item.followup_validation_summary, "");
+                const followupDecodedText = safeText(item && (item.followup_validated_text || item.followup_decoded_text), "");
+                const followupValidationReason = safeText(item && item.followup_validation_reason, "");
+                const followupMessageValid = Boolean(item && item.followup_message_valid);
+                const followupDetails = followupSelected && (followupStatus !== "idle" || followupDecodedText)
+                    ? `
+                        <div class="receiver-scan-followup">
+                            <div class="receiver-scan-followup-label">CW Follow-up</div>
+                            <div class="receiver-scan-followup-text${followupMessageValid ? "" : " is-invalid"}">${escapeHtml(followupValidationSummary || safeText(item && item.followup_summary, "CW follow-up complete"))}</div>
+                            ${followupDecodedText ? `<div class="receiver-scan-followup-text">${escapeHtml(followupDecodedText)}</div>` : ""}
+                            ${followupValidationReason && !followupMessageValid ? `<div class="receiver-scan-list-meta">${escapeHtml(followupValidationReason)}</div>` : ""}
+                        </div>
+                    `
+                    : "";
+                return `
+                    <li class="receiver-scan-list-item">
+                        <div class="receiver-scan-list-head">
+                            <span class="receiver-scan-pill ${receiverScanStatusClass(item && item.status)}">${escapeHtml(status)}</span>
+                            <span class="mono">${escapeHtml(freqText)}</span>
+                            <span>${escapeHtml(scoreText)}</span>
+                        </div>
+                        <div class="receiver-scan-list-summary">${escapeHtml(summary)}</div>
+                        ${followupDetails}
+                        <div class="receiver-scan-list-meta">Probe ${escapeHtml(probeIndex)} of ${escapeHtml(probeTotal)}</div>
+                        <div class="receiver-scan-metrics">
+                            ${metricPairs.map(([label, value]) => `
+                                <div class="receiver-scan-metric">
+                                    <div class="receiver-scan-metric-label">${escapeHtml(String(label))}</div>
+                                    <div class="receiver-scan-metric-value">${escapeHtml(String(value))}</div>
+                                </div>
+                            `).join("")}
+                        </div>
+                    </li>
+                `;
+            }).join("");
+        }
+
+        function applyReceiverScanLane(kind, lane, items) {
+            const statusEl = byId(`receiver-scan-${kind}-status`);
+            const currentEl = byId(`receiver-scan-${kind}-current`);
+            if (statusEl) {
+                const bits = [];
+                const rxChan = Number(lane && lane.rx_chan);
+                const score = Number(lane && lane.last_score);
+                const currentFreq = Number(lane && lane.current_freq_mhz);
+                if (Number.isFinite(rxChan)) bits.push(`RX${Math.round(rxChan)}`);
+                bits.push(safeText(lane && lane.status, "idle"));
+                if (Number.isFinite(currentFreq)) bits.push(fmtReceiverScanFreq(currentFreq));
+                else if (Number.isFinite(score)) bits.push(`score ${Math.round(score)}`);
+                statusEl.textContent = bits.join(" | ");
+            }
+            if (currentEl) {
+                const currentFreq = Number(lane && lane.current_freq_mhz);
+                currentEl.textContent = Number.isFinite(currentFreq) ? fmtReceiverScanFreq(currentFreq) : "--";
+            }
+            renderReceiverScanResults(
+                `receiver-scan-${kind}-results`,
+                items,
+                kind === "cw" ? "No CW probes have run yet." : "No Phone activity hits yet.",
+                { kind },
+            );
+        }
+
+        function applyReceiverScanStatus(scan) {
+            if (!scan || typeof scan !== "object") return;
+            latestReceiverScanStatus = scan;
+            if (receiverScanPendingAction === "start" && (scan.running || scan.mode_active)) {
+                receiverScanPendingAction = "";
+            }
+            if (receiverScanPendingAction === "stop" && !scan.running) {
+                receiverScanPendingAction = "";
+            }
+            if (scan.mode_active) {
+                setReceiversMode("scan", { persist: false });
+                applyAutoModeVisibility(false);
+            }
+            const modeEl = byId("receiver-scan-mode-state");
+            const modeLabel = safeText(scan.mode_label, "Receiver Scan");
+            if (modeEl) {
+                modeEl.textContent = scan.running
+                    ? `${modeLabel} scanning`
+                    : (scan.mode_active ? `${modeLabel} reserved` : "Idle");
+            }
+            const reservedEl = byId("receiver-scan-reserved");
+            if (reservedEl) {
+                reservedEl.textContent = Array.isArray(scan.reserved_receivers) && scan.reserved_receivers.length >= 2
+                    ? `RX${scan.reserved_receivers[0]} CW | RX${scan.reserved_receivers[1]} Phone`
+                    : "RX0 CW | RX1 Phone";
+            }
+            const lastRunEl = byId("receiver-scan-last-run");
+            if (lastRunEl) {
+                const stamp = scan.last_finished_ts || scan.last_started_ts;
+                lastRunEl.textContent = fmtReceiverScanStamp(stamp);
+            }
+            const noteEl = byId("receiver-scan-note");
+            const followup = scan.cw_followup && typeof scan.cw_followup === "object" ? scan.cw_followup : null;
+            const bandLabel = safeText(scan.band, "40m");
+            const plan = scan.plan && typeof scan.plan === "object" ? scan.plan : {};
+            const phoneRange = plan.phone_range_mhz && typeof plan.phone_range_mhz === "object" ? plan.phone_range_mhz : null;
+            const phoneRangeStart = Number(phoneRange && phoneRange.start);
+            const phoneRangeEnd = Number(phoneRange && phoneRange.end);
+            const defaultPhoneText = Number.isFinite(phoneRangeStart) && Number.isFinite(phoneRangeEnd)
+                ? `${fmtReceiverScanFreq(phoneRangeStart)} to ${fmtReceiverScanFreq(phoneRangeEnd)}`
+                : `${bandLabel} Phone anchors`;
+            const defaultNote = `RX0 scans ${bandLabel} CW anchors while RX1 scans ${bandLabel} Phone from ${defaultPhoneText}. After the CW anchor sweep, RX0 records the best CW hit for 60s. RX2-RX7 stay on the fixed digital plan.`;
+            if (noteEl) {
+                noteEl.textContent = scan.last_error
+                    ? `Receiver Scan warning: ${safeText(scan.last_error, "unknown error")}`
+                    : ((followup && safeText(followup.status, "idle") !== "idle")
+                        ? safeText(followup.summary, defaultNote)
+                        : defaultNote);
+            }
+            const stateText = scan.running
+                ? "running"
+                : (scan.mode_active ? "ready" : safeText(scan.status, "idle"));
+            setReceiverScanStatusText(stateText);
+            const lanes = scan.lanes && typeof scan.lanes === "object" ? scan.lanes : {};
+            const results = scan.results && typeof scan.results === "object" ? scan.results : {};
+            applyReceiverScanLane("cw", lanes.cw, Array.isArray(results.cw) ? results.cw : []);
+            applyReceiverScanLane("phone", lanes.phone, Array.isArray(results.phone) ? results.phone : []);
+            syncReceiverScanControls(scan);
+        }
+
+        async function deactivateReceiverScanMode(options = {}) {
+            receiverScanPendingAction = "stop";
+            syncReceiverScanControls();
+            try {
+                const result = await postJson("/receiver_scan/deactivate", {});
+                applyReceiverScanStatus(result);
+                return result;
+            } catch (err) {
+                receiverScanPendingAction = "";
+                syncReceiverScanControls();
+                if (!options.quiet) throw err;
+                console.warn("receiver scan deactivate failed", err);
+                return null;
+            }
+        }
+
         let _rxBusyManual = false;
         let _rxBusyAutoKick = false;
         let _rxBusyMismatch = false;
@@ -7508,16 +8036,38 @@
         }
 
         async function applyReceiversScanMode() {
-            setAutomationStatus("entering scan mode...");
-            setReceiversBusy(true, "Entering Scan\u2026");
+            setAutomationStatus("starting Receiver Scan...");
+            setReceiversBusy(true, "Preparing Receiver Scan...");
+            receiverScanPendingAction = "start";
+            syncReceiverScanControls();
             try {
-                await postJson("/auto_set_receivers", { enabled: false });
-                setAutomationStatus("scan mode — receivers released");
+                const result = await postJson("/receiver_scan/start", {});
+                applyReceiverScanStatus(result);
+                setAutomationStatus(result && result.running
+                    ? "Receiver Scan active - RX0 CW / RX1 Phone"
+                    : "Receiver Scan ready");
                 refresh();
             } catch (err) {
+                receiverScanPendingAction = "";
+                syncReceiverScanControls();
                 setAutomationStatus(`scan mode failed: ${String((err && err.message) || err)}`);
             } finally {
                 setReceiversBusy(false);
+            }
+        }
+
+        async function stopReceiverScanRun() {
+            setAutomationStatus("stopping Receiver Scan...");
+            receiverScanPendingAction = "stop";
+            syncReceiverScanControls();
+            try {
+                const result = await postJson("/receiver_scan/stop", {});
+                applyReceiverScanStatus(result);
+                setAutomationStatus("Receiver Scan stopping...");
+            } catch (err) {
+                receiverScanPendingAction = "";
+                syncReceiverScanControls();
+                setAutomationStatus(`Receiver Scan stop failed: ${String((err && err.message) || err)}`);
             }
         }
 
@@ -8407,10 +8957,13 @@
         }
 
         function applyAutoModeVisibility(enabled) {
+            const mode = enabled ? "auto" : getCurrentReceiversMode();
             const content = byId("auto-mode-content");
-            if (content) content.style.display = enabled ? "" : "none";
+            if (content) content.style.display = mode === "auto" ? "" : "none";
+            const scanContent = byId("scan-mode-content");
+            if (scanContent) scanContent.style.display = mode === "scan" ? "" : "none";
             const roamingLabel = byId("auto-roaming-label");
-            if (roamingLabel && enabled) {
+            if (roamingLabel && mode === "auto") {
                 const h = new Date().getHours();
                 const isDay = h >= 7 && h < 21;
                 roamingLabel.textContent = isDay ? "15m FT8 + 10m FT8" : "80m FT4+FT8 + 160m WSPR";
@@ -8597,8 +9150,11 @@
             const autoModeBtn = byId("auto-mode-enabled");
             const scanModeBtn = byId("scan-mode-btn");
             const manualModeBtn = byId("manual-mode-btn");
+            const receiverScanStartBtn = byId("receiver-scan-start");
+            const receiverScanStopBtn = byId("receiver-scan-stop");
             if (autoModeBtn) {
-                autoModeBtn.addEventListener("click", () => {
+                autoModeBtn.addEventListener("click", async () => {
+                    await deactivateReceiverScanMode({ quiet: true });
                     setReceiversMode("auto");
                     applyAutoModeVisibility(true);
                     applyAutoModeEnabled(true);
@@ -8608,16 +9164,32 @@
                 scanModeBtn.addEventListener("click", () => {
                     setReceiversMode("scan");
                     applyAutoModeVisibility(false);
+                    if (typeof window.kiwiProSetView === "function") window.kiwiProSetView("receiver-scan", true);
                     applyReceiversScanMode();
                 });
             }
             if (manualModeBtn) {
-                manualModeBtn.addEventListener("click", () => {
+                manualModeBtn.addEventListener("click", async () => {
+                    await deactivateReceiverScanMode({ quiet: true });
                     setReceiversMode("manual");
                     applyAutoModeVisibility(false);
                     applyAutoModeEnabled(false);
                 });
             }
+            if (receiverScanStartBtn) {
+                receiverScanStartBtn.addEventListener("click", () => {
+                    setReceiversMode("scan");
+                    applyAutoModeVisibility(false);
+                    if (typeof window.kiwiProSetView === "function") window.kiwiProSetView("receiver-scan", true);
+                    applyReceiversScanMode();
+                });
+            }
+            if (receiverScanStopBtn) {
+                receiverScanStopBtn.addEventListener("click", () => {
+                    stopReceiverScanRun();
+                });
+            }
+            syncReceiverScanControls();
 
             configAutosaveIds.forEach((id) => {
                 const el = byId(id);
@@ -9446,10 +10018,10 @@
             const layout = byId("main-layout");
             const receivers = byId("receivers");
             const rightCol = layout ? layout.querySelector(".right-col") : null;
-            const rightPanels = ["assignments", "faults", "messages", "map", "active-receivers", "settings", "system"]
+            const rightPanels = ["assignments", "faults", "receiver-scan", "messages", "map", "active-receivers", "settings", "system"]
                 .map((id) => byId(id))
                 .filter(Boolean);
-            const validIds = new Set(["overview", "receivers", "assignments", "faults", "messages", "map", "active-receivers", "settings", "system"]);
+            const validIds = new Set(["overview", "receivers", "assignments", "faults", "receiver-scan", "messages", "map", "active-receivers", "settings", "system"]);
             const overviewLinkedNavIds = new Set(["assignments", "faults", "messages", "map", "active-receivers"]);
 
             const activate = (id) => {
@@ -9741,6 +10313,13 @@
             );
         }
 
+        function isDecodeSocketOpen() {
+            return !!(
+                wsRef
+                && wsRef.readyState === WebSocket.OPEN
+            );
+        }
+
         function hasRecentDecodeWsMessage(maxAgeMs = 15000) {
             return Number.isFinite(wsLastMessageMs) && (Date.now() - wsLastMessageMs) <= Math.max(1000, Number(maxAgeMs) || 15000);
         }
@@ -9760,13 +10339,16 @@
                     return;
                 }
                 decodeWsClientPollInFlight = true;
-                let next4010 = null;
+                let nextCount = null;
                 try {
-                    const data = await getJson("/admin/ws4010/status", DECODE_WS_CLIENT_POLL_TIMEOUT_MS);
+                    const data = await getJson("/decodes/ws_status", DECODE_WS_CLIENT_POLL_TIMEOUT_MS);
+                    const wsClients = Number(data && data.ws_clients);
                     const total4010 = Number(data && data.ws4010_total_clients);
-                    next4010 = Number.isFinite(total4010) ? Math.max(0, Math.round(total4010)) : null;
+                    const directCount = Number.isFinite(wsClients) ? Math.max(0, Math.round(wsClients)) : 0;
+                    const relayCount = Number.isFinite(total4010) ? Math.max(0, Math.round(total4010)) : 0;
+                    nextCount = (Number.isFinite(wsClients) || Number.isFinite(total4010)) ? (directCount + relayCount) : null;
                 } catch (_) {
-                    next4010 = null;
+                    nextCount = null;
                 } finally {
                     if (pollGeneration === decodeWsClientPollGeneration) {
                         decodeWsClientPollInFlight = false;
@@ -9775,10 +10357,10 @@
 
                 if (pollGeneration !== decodeWsClientPollGeneration) return;
 
-                const local4010 = isDecode4010SocketOpen();
-                if (!Number.isFinite(next4010)) next4010 = local4010 ? 1 : 0;
+                const localOpen = isDecodeSocketOpen();
+                if (!Number.isFinite(nextCount)) nextCount = localOpen ? 1 : 0;
 
-                decodeWs4010ClientCount = next4010;
+                decodeWs4010ClientCount = nextCount;
                 updateDecodeStreamChip();
             };
 
@@ -9792,13 +10374,14 @@
             const chip = byId("chip-stream");
             if (!chip) return;
 
-            const local4010 = isDecode4010SocketOpen();
+            const localOpen = isDecodeSocketOpen();
+            const recentMessage = hasRecentDecodeWsMessage();
             const count4010 = Number.isFinite(decodeWs4010ClientCount)
                 ? Math.max(0, Math.round(decodeWs4010ClientCount))
-                : (local4010 ? 1 : 0);
+                : ((localOpen || recentMessage) ? 1 : 0);
 
             chip.textContent = formatStreamConnectionText(count4010);
-            chip.classList.toggle("chip-value-active", count4010 > 0 || local4010);
+            chip.classList.toggle("chip-value-active", count4010 > 0 || localOpen || recentMessage);
         }
 
         function startDecodeWebSocket() {
@@ -9875,10 +10458,11 @@
                 latestAutomationSettings && latestAutomationSettings.fixedModeEnabled !== false,
             );
             const currentMode = getCurrentReceiversMode();
+            const scanModeActive = currentMode === "scan" || !!(latestReceiverScanStatus && latestReceiverScanStatus.mode_active);
             const kiwi = latestSystemInfo && latestSystemInfo.kiwi && typeof latestSystemInfo.kiwi === "object"
                 ? latestSystemInfo.kiwi
                 : {};
-            if (!autoModeEnabled) {
+            if (!(autoModeEnabled || scanModeActive)) {
                 currentBandAssignments = {};
                 _bandChartLiveBands = [];
                 _bandChartLiveColorMap = {};
@@ -10044,14 +10628,19 @@
                 "auto-mode-enabled",
                 latestAutomationSettings && latestAutomationSettings.fixedModeEnabled !== false,
             );
-            if (!autoModeEnabled) {
+            const currentMode = getCurrentReceiversMode();
+            const scanModeActive = currentMode === "scan" || !!(latestReceiverScanStatus && latestReceiverScanStatus.mode_active);
+            if (!(autoModeEnabled || scanModeActive)) {
                 targets.forEach((el) => {
                     el.innerHTML = '<div class="balance-item"><div class="balance-band">none</div><div class="balance-value">0</div></div>';
                 });
                 return;
             }
 
-            const rows = assignments && typeof assignments === "object" ? Object.values(assignments) : [];
+            const healthRows = Object.values(latestChannelsMap || {}).filter((item) => item && typeof item === "object" && item.band);
+            const rows = healthRows.length
+                ? healthRows
+                : (assignments && typeof assignments === "object" ? Object.values(assignments) : []);
             const counts = {};
             for (const item of rows) {
                 if (!item || typeof item !== "object") continue;
@@ -10947,14 +11536,15 @@
                 const versionP = getJson("/version", TIMEOUT).catch(() => null);
                 const deltaP = pollDecodeDelta().catch(() => null);
                 const chartP = getJson("/decodes/chart", TIMEOUT).catch(() => null);
+                const receiverScanP = getJson("/receiver_scan/status", TIMEOUT).catch(() => null);
 
                 // Apply core data the instant each endpoint responds — don't wait for all.
                 let appliedHealth = false, appliedStatus = false;
                 healthP.then(d => { if (d) { appliedHealth = true; applyHealth(d); updateDecodeStreamChip(); } });
                 statusP.then(d => { if (d) { appliedStatus = true; applyStatus(d); } });
 
-                const [health, status, version, deltaInfo, chartData] = await Promise.all([
-                    healthP, statusP, versionP, deltaP, chartP,
+                const [health, status, version, deltaInfo, chartData, receiverScan] = await Promise.all([
+                    healthP, statusP, versionP, deltaP, chartP, receiverScanP,
                 ]);
 
                 // Both core endpoints unreachable — server not yet ready.
@@ -10990,6 +11580,7 @@
                 if (!appliedHealth) applyHealth(health);
                 if (!appliedStatus) applyStatus(status);
                 if (chartData) applyChartData(chartData);
+                if (receiverScan) applyReceiverScanStatus(receiverScan);
                 if (version && typeof version === "object") {
                     applyVersion(version);
                 }

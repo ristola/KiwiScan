@@ -71,6 +71,23 @@ def _unique_ws_timestamp() -> int:
         return int(time.time() + _WS_TS_COUNTER) & 0xFFFFFFFF
 
 
+def allocate_ws_timestamp() -> int:
+    return _unique_ws_timestamp()
+
+
+def _default_preview_passband(modulation: str) -> tuple[int, int]:
+    mod = str(modulation or "usb").strip().lower()
+    if mod in {"iq", "drm", "sas", "qam"}:
+        return (-6000, 6000)
+    if mod in {"am", "amn", "amw"}:
+        return (-5000, 5000)
+    if mod in {"lsb", "lsn"}:
+        return (-2700, -300)
+    if mod in {"cw", "cwn"}:
+        return (300, 700)
+    return (300, 2700)
+
+
 def _build_set_mod_cmd(*, s: object, freq_khz: float) -> str:
     opt = getattr(s, "_options", None)
     mod = str(getattr(opt, "modulation", "usb")).lower()
@@ -80,6 +97,15 @@ def _build_set_mod_cmd(*, s: object, freq_khz: float) -> str:
 
     lc = lp_cut
     hc = hp_cut
+    if mod in {"iq", "drm", "sas", "qam"}:
+        try:
+            lc_i = int(lc) if lc is not None else None
+            hc_i = int(hc) if hc is not None else None
+        except Exception:
+            lc_i = None
+            hc_i = None
+        if lc_i is None or hc_i is None or lc_i >= 0 or hc_i <= 0:
+            lc, hc = _default_preview_passband(mod)
     if mod in {"am", "amn", "amw"}:
         hc = int(hp_cut) if hp_cut is not None else hp_cut
         lc = -hc if hc is not None else hc
@@ -128,6 +154,10 @@ def set_receiver_frequency(
     rx_wait_timeout_s: float = 0.0,
     rx_wait_interval_s: float = 2.0,
     rx_wait_max_retries: int = 0,
+    modulation: str = "usb",
+    ws_timestamp: int | None = None,
+    hold_event: object | None = None,
+    ready_event: object | None = None,
 ) -> bool:
     kiwi = _import_kiwiclient()
     KiwiSDRStream = getattr(kiwi, "KiwiSDRStream", None)
@@ -148,6 +178,10 @@ def set_receiver_frequency(
                 user=user,
                 timeout_s=float(timeout_s),
                 hold_s=float(hold_s),
+                modulation=str(modulation),
+                ws_timestamp=ws_timestamp,
+                hold_event=hold_event,
+                ready_event=ready_event,
             )
         except _KiwiAssignedRxMismatch as e:
             # Server assigned a different RX than requested; treat as "busy".
@@ -197,9 +231,37 @@ def _set_receiver_frequency_once(
     user: str,
     timeout_s: float,
     hold_s: float,
+    modulation: str,
+    ws_timestamp: int | None = None,
+    hold_event: object | None = None,
+    ready_event: object | None = None,
 ) -> bool:
     freq_khz = float(freq_hz) / 1000.0
-    s = KiwiSDRStream()  # type: ignore[no-untyped-call]
+    preview_mod = str(modulation or "usb").strip().lower()
+    lp_cut, hp_cut = _default_preview_passband(preview_mod)
+
+    class _SND(KiwiSDRStream):  # type: ignore[misc]
+        def _setup_rx_params(self) -> None:  # type: ignore[override]
+            try:
+                if hasattr(self, "set_name"):
+                    self.set_name(user)  # type: ignore[attr-defined]
+                else:
+                    self._send_message(f"SET ident_user={user}")  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+            try:
+                self._send_message(_build_set_mod_cmd(s=self, freq_khz=float(freq_khz)))  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+            try:
+                if hasattr(self, "set_agc") and preview_mod not in {"iq", "drm", "sas", "qam"}:
+                    self.set_agc(True)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+    s = _SND()  # type: ignore[no-untyped-call]
     s._type = "SND"  # type: ignore[attr-defined]
     s._freq = float(freq_khz)  # type: ignore[attr-defined]
     try:
@@ -229,7 +291,7 @@ def _set_receiver_frequency_once(
     opt.tlimit_password = ""
     opt.user = user
     opt.wideband = False
-    opt.ws_timestamp = _unique_ws_timestamp()
+    opt.ws_timestamp = int(ws_timestamp) if ws_timestamp is not None else _unique_ws_timestamp()
     opt.socket_timeout = float(timeout_s)
     opt.admin = False
     opt.nolocal = False
@@ -245,9 +307,9 @@ def _set_receiver_frequency_once(
     opt.wf_cal = None
     opt.tlimit = None
     opt.rev_bin = False
-    opt.modulation = "usb"
-    opt.lp_cut = 300
-    opt.hp_cut = 2700
+    opt.modulation = preview_mod
+    opt.lp_cut = int(lp_cut)
+    opt.hp_cut = int(hp_cut)
     opt.freq_pbc = False
     opt.no_api = False
     opt.agc_gain = None
@@ -307,15 +369,29 @@ def _set_receiver_frequency_once(
                 break
             # SND setup will call set_freq() and begin streaming. We treat this
             # as "tuned" once we have a sample_rate (i.e. setup completed).
-            if assigned_rx[0] is not None and int(assigned_rx[0]) == int(rx_chan) and s._sample_rate is not None:  # type: ignore[attr-defined]
+            if s._sample_rate is not None and (assigned_rx[0] is None or int(assigned_rx[0]) == int(rx_chan)):  # type: ignore[attr-defined]
                 tuned[0] = True
                 break
 
         # Keep the connection alive briefly so it becomes visible on the
         # KiwiSDR status page (which refreshes at a coarse interval).
-        if tuned[0] and float(hold_s) > 0:
-            end = time.time() + float(hold_s)
-            while time.time() < end:
+        if tuned[0]:
+            try:
+                if ready_event is not None and hasattr(ready_event, "set"):
+                    ready_event.set()
+            except Exception:
+                pass
+
+        if tuned[0] and (float(hold_s) > 0 or hold_event is not None):
+            end = (time.time() + float(hold_s)) if float(hold_s) > 0 else None
+            while True:
+                if end is not None and time.time() >= end:
+                    break
+                try:
+                    if hold_event is not None and getattr(hold_event, "is_set")():
+                        break
+                except Exception:
+                    pass
                 try:
                     s.run()  # type: ignore[no-untyped-call]
                 except Exception:
@@ -351,6 +427,8 @@ def subscribe_waterfall(
     max_duration_s: Optional[float] = None,
     debug: bool = False,
     debug_messages: bool = False,
+    status_modulation: str = "usb",
+    ws_timestamp: int | None = None,
 ) -> None:
     """Subscribe to a KiwiSDR waterfall and call `on_frame` per frame.
 
@@ -553,7 +631,7 @@ def subscribe_waterfall(
     opt.user = user
 
     opt.wideband = False
-    opt.ws_timestamp = _unique_ws_timestamp()
+    opt.ws_timestamp = int(ws_timestamp) if ws_timestamp is not None else _unique_ws_timestamp()
     opt.socket_timeout = 10
     opt.admin = False
     opt.nolocal = False
@@ -569,9 +647,8 @@ def subscribe_waterfall(
     # when rx_chan is not None and >= 0).
     opt.idx = int(required_rx) if required_rx is not None else 0
     opt.rx_chan = int(required_rx) if required_rx is not None else -1
-    opt.modulation = "usb"
-    opt.lp_cut = 300
-    opt.hp_cut = 2700
+    opt.modulation = str(status_modulation or "usb").strip().lower()
+    opt.lp_cut, opt.hp_cut = _default_preview_passband(opt.modulation)
     opt.freq_pbc = False
     opt.wf_cal = None
     opt.tlimit = None
