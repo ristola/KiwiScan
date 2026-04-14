@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 
@@ -153,6 +154,61 @@ def test_receiver_scan_start_applies_fixed_only_assignments_and_collects_results
     assert status["lanes"]["phone"]["status"] == "complete"
 
 
+def test_receiver_scan_start_supports_20m_band(monkeypatch, tmp_path: Path) -> None:
+    receiver_mgr = _ReceiverMgrStub()
+    service = ReceiverScanService(
+        receiver_mgr=receiver_mgr,
+        auto_set_loop=_AutoSetLoopStub(),
+        output_root=tmp_path,
+    )
+
+    monkeypatch.setattr(
+        service,
+        "_spawn_thread",
+        lambda *, name, target: _InlineThread(target),
+    )
+
+    def _fake_scan_frequency(**kwargs):
+        lane_key = str(kwargs["lane_key"])
+        freq_mhz = float(kwargs["freq_mhz"])
+        rx_chan = int(kwargs["rx_chan"])
+        probe_index = int(kwargs["probe_index"])
+        probe_total = int(kwargs["probe_total"])
+        return {
+            "lane": lane_key,
+            "rx_chan": rx_chan,
+            "freq_mhz": freq_mhz,
+            "status": "activity" if lane_key == "cw" else "watch",
+            "score": 68 if lane_key == "cw" else 41,
+            "summary": f"{lane_key} probe {probe_index}",
+            "signal_count": 1,
+            "event_count": 1,
+            "max_rel_db": 11.0,
+            "best_s_est": 4.0,
+            "voice_score": 0.57 if lane_key == "phone" else None,
+            "occupied_bw_hz": 2050.0 if lane_key == "phone" else None,
+            "probe_index": probe_index,
+            "probe_total": probe_total,
+        }
+
+    monkeypatch.setattr(service, "_scan_frequency", _fake_scan_frequency)
+    monkeypatch.setattr(service, "_run_cw_followup", lambda **kwargs: None)
+
+    result = service.start(host="kiwi.local", port=8073, password=None, threshold_db=8.0, band="20m")
+
+    assert result["ok"] is True
+    status = service.status()
+    assert status["band"] == "20m"
+    assert status["mode_label"] == "20m IQ"
+    assert status["supported_bands"] == ["20m", "40m"]
+    assert status["plan"]["cw_freqs_mhz"] == [14.025, 14.035, 14.045, 14.055]
+    assert status["plan"]["phone_range_mhz"] == {"start": 14.15, "end": 14.35}
+    assert status["plan"]["phone_priority_freqs_mhz"] == [14.295, 14.3, 14.305, 14.31]
+    assert [item["freq_mhz"] for item in status["results"]["cw"]] == service.CW_FREQS_MHZ
+    assert [item["freq_mhz"] for item in status["results"]["phone"][:4]] == [14.295, 14.3, 14.305, 14.31]
+    assert status["results"]["phone"][-1]["freq_mhz"] == 14.35
+
+
 def test_receiver_scan_runs_phone_in_parallel_with_cw(monkeypatch, tmp_path: Path) -> None:
     receiver_mgr = _ReceiverMgrStub()
     service = ReceiverScanService(
@@ -181,14 +237,21 @@ def test_receiver_scan_runs_phone_in_parallel_with_cw(monkeypatch, tmp_path: Pat
         if lane_key == "cw":
             if probe_index == probe_total:
                 assert phone_started.wait(timeout=1.0)
-            signal_count = 4 if abs(freq_mhz - 7.035) < 1e-6 else 2
-            score = 74 if abs(freq_mhz - 7.035) < 1e-6 else 92
+            if abs(freq_mhz - 7.035) < 1e-6:
+                signal_count = 4
+                score = 74
+            elif abs(freq_mhz - 7.055) < 1e-6:
+                signal_count = 2
+                score = 92
+            else:
+                signal_count = 0
+                score = 12
             summary = f"cw hits={signal_count}"
             return {
                 "lane": lane_key,
                 "rx_chan": 0,
                 "freq_mhz": freq_mhz,
-                "status": "activity",
+                "status": "activity" if signal_count else "quiet",
                 "score": score,
                 "summary": summary,
                 "signal_count": signal_count,
@@ -245,24 +308,72 @@ def test_receiver_scan_runs_phone_in_parallel_with_cw(monkeypatch, tmp_path: Pat
 
     assert result["ok"] is True
     assert order.index("record:7.035") > order.index("scan:phone:7.125")
+    assert order.index("record:7.055") > order.index("record:7.035")
     assert any(item.startswith("scan:cw:") for item in order)
     assert any(item.startswith("scan:phone:") for item in order)
 
     status = service.status()
     assert status["cw_followup"]["status"] == "complete"
-    assert status["cw_followup"]["selected_freq_mhz"] == 7.035
-    assert status["cw_followup"]["decoded_text"] == "CQ TEST"
-    assert status["cw_followup"]["message_valid"] is True
-    assert status["cw_followup"]["validation_summary"] == "Validated CW message: CQ TEST"
-    assert status["cw_followup"]["confidence"] == 0.98
+    assert status["cw_followup"]["completed"] == 2
+    assert status["cw_followup"]["total"] == 2
+    assert status["cw_followup"]["validated_count"] == 2
+    assert status["cw_followup"]["summary"] == "Completed 2 CW follow-up decodes; validated 2"
+    assert [item["selected_freq_mhz"] for item in status["cw_followup"]["items"]] == [7.035, 7.055]
+    assert all(item["decoded_text"] == "CQ TEST" for item in status["cw_followup"]["items"])
     assert status["lanes"]["cw"]["status"] == "complete"
     assert status["lanes"]["phone"]["status"] == "complete"
-    assert status["lanes"]["cw"]["last_summary"] == "Validated CW message: CQ TEST"
+    assert status["lanes"]["cw"]["last_summary"] == "Completed 2 CW follow-up decodes; validated 2"
     selected_anchor = next(item for item in status["results"]["cw"] if abs(float(item["freq_mhz"]) - 7.035) < 1e-6)
     assert selected_anchor["followup_selected"] is True
     assert selected_anchor["followup_message_valid"] is True
     assert selected_anchor["followup_decoded_text"] == "CQ TEST"
     assert selected_anchor["followup_validation_summary"] == "Validated CW message: CQ TEST"
+    second_anchor = next(item for item in status["results"]["cw"] if abs(float(item["freq_mhz"]) - 7.055) < 1e-6)
+    assert second_anchor["followup_selected"] is True
+    assert second_anchor["followup_message_valid"] is True
+
+
+def test_receiver_scan_phone_probe_requires_confirmed_phone_iq_clusters(tmp_path: Path) -> None:
+    service = ReceiverScanService(
+        receiver_mgr=_ReceiverMgrStub(),
+        auto_set_loop=_AutoSetLoopStub(),
+        output_root=tmp_path,
+    )
+
+    report_path = tmp_path / "phone_report.json"
+    events_path = tmp_path / "phone_events.jsonl"
+    report_path.write_text(
+        json.dumps(
+            {
+                "peak": {
+                    "rel_db": 13.0,
+                    "s_est": 4.5,
+                    "voice_score": 0.62,
+                    "occ_bw_hz": 2400.0,
+                },
+                "frames_seen": 8,
+            }
+        ),
+        encoding="utf-8",
+    )
+    events_path.write_text("", encoding="utf-8")
+
+    result = service._summarize_probe(
+        lane_key="phone",
+        rx_chan=1,
+        freq_mhz=7.185,
+        probe_index=1,
+        probe_total=1,
+        rc=0,
+        report_path=report_path,
+        events_path=events_path,
+    )
+
+    assert result["status"] == "watch"
+    assert result["event_count"] == 0
+    assert result["raw_event_count"] == 0
+    assert result["mode_hint"] == "SSB Phone"
+    assert "Unconfirmed SSB Phone IQ cluster" in result["summary"]
 
 
 def test_receiver_scan_health_channels_include_reserved_receivers(tmp_path: Path) -> None:

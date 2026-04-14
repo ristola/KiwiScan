@@ -28,6 +28,7 @@ from pathlib import Path
 from .discovery import FT8_WATERHOLES
 from .receiver_manager import ReceiverManager
 from .band_scanner import BandScanner
+from .net_monitor import NetMonitorService
 from .receiver_scan import ReceiverScanService
 from .discovery_manager import DiscoveryManager
 from .api.backup import router as backup_router
@@ -41,6 +42,7 @@ from .api.decodes import (
 )
 from .api.decodes_status import make_router as make_decodes_status_router
 from .api.band_scan import make_router as make_band_scan_router
+from .api.net_monitor import make_router as make_net_monitor_router
 from .api.receiver_scan import make_router as make_receiver_scan_router
 from .api.config import make_router as make_config_router
 from .api.status import compute_s_metrics, make_router as make_status_router
@@ -636,6 +638,7 @@ mgr = DiscoveryManager(
 rx_monitor = RxMonitor(kiwirecorder_path=_KIWIRECORDER_PATH, mgr=mgr)
 auto_set_loop = AutoSetLoop()
 receiver_scan = ReceiverScanService(receiver_mgr=receiver_mgr, auto_set_loop=auto_set_loop)
+net_monitor = NetMonitorService(receiver_mgr=receiver_mgr, auto_set_loop=auto_set_loop)
 
 # SmartScheduler: merges seasonal tables + live propagation evidence + user pins
 # into a band-condition map.  Fires force_reassign() when conditions change so
@@ -651,7 +654,8 @@ auto_set_loop.set_smart_scheduler(smart_scheduler)
 loop: Optional[asyncio.AbstractEventLoop] = None
 
 app.include_router(make_band_scan_router(mgr=mgr, band_scanner=band_scanner))
-app.include_router(make_receiver_scan_router(mgr=mgr, receiver_scan=receiver_scan))
+app.include_router(make_net_monitor_router(mgr=mgr, net_monitor=net_monitor, receiver_scan=receiver_scan))
+app.include_router(make_receiver_scan_router(mgr=mgr, receiver_scan=receiver_scan, net_monitor=net_monitor))
 try:
     app.include_router(make_config_router(mgr=mgr, waterholes=FT8_WATERHOLES, receiver_mgr=receiver_mgr))
 except TypeError:

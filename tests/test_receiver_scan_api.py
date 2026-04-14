@@ -60,3 +60,25 @@ def test_receiver_scan_start_uses_threshold_for_scan_band() -> None:
             "threshold_db": 12.5,
         }
     ]
+
+
+def test_receiver_scan_start_uses_requested_band_threshold() -> None:
+    app = FastAPI()
+    manager = _ManagerStub()
+    receiver_scan = _ReceiverScanStub()
+    app.include_router(make_router(mgr=manager, receiver_scan=receiver_scan))
+    client = TestClient(app)
+
+    response = client.post("/receiver_scan/start", json={"band": "20m"})
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert receiver_scan.start_calls == [
+        {
+            "host": "kiwi.local",
+            "port": 8073,
+            "password": None,
+            "threshold_db": 8.0,
+            "band": "20m",
+        }
+    ]

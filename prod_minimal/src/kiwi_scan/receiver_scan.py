@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import logging
 import threading
@@ -7,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from .activity_classifier import classify_activity_width
 from .auto_set_loop import AutoSetLoop, _FIXED_ASSIGNMENTS
 from .cw_decode import try_decode_cw_wav, validate_cw_message
 from .record import RecordRequest, RecorderUnavailable, run_record
@@ -32,28 +34,176 @@ def _build_stepwise_freqs_mhz(*, start_mhz: float, end_mhz: float, step_hz: floa
     return freqs
 
 
+@dataclass(frozen=True)
+class ReceiverScanBandPlan:
+    band: str
+    mode_label: str
+    cw_freqs_mhz: tuple[float, ...]
+    phone_scan_start_mhz: float
+    phone_scan_end_mhz: float
+    phone_priority_freqs_mhz: tuple[float, ...] = ()
+
+
 class ReceiverScanService:
-    BAND = "40m"
-    MODE_LABEL = "40m IQ"
+    DEFAULT_BAND = "40m"
+    DEFAULT_SCAN_MODE = "smart"
+    SCAN_MODE_LABELS: dict[str, str] = {
+        "smart": "Smart Scan",
+        "cw": "CW Scan",
+        "phone": "PHONE Scan",
+    }
+    BAND_PLANS: dict[str, ReceiverScanBandPlan] = {
+        "20m": ReceiverScanBandPlan(
+            band="20m",
+            mode_label="20m IQ",
+            cw_freqs_mhz=(14.025, 14.035, 14.045, 14.055),
+            phone_scan_start_mhz=14.150,
+            phone_scan_end_mhz=14.350,
+            phone_priority_freqs_mhz=(14.295, 14.300, 14.305, 14.310),
+        ),
+        "40m": ReceiverScanBandPlan(
+            band="40m",
+            mode_label="40m IQ",
+            cw_freqs_mhz=(7.025, 7.035, 7.045, 7.055),
+            phone_scan_start_mhz=7.125,
+            phone_scan_end_mhz=7.300,
+        ),
+    }
     HOLD_REASON = "receiver_scan"
     RESERVED_RECEIVERS = (0, 1)
     LISTEN_SECONDS = 2.5
     CW_FOLLOWUP_SECONDS = 60
-    CW_FREQS_MHZ = [7.025, 7.035, 7.045, 7.055]
-    PHONE_SCAN_START_MHZ = 7.125
-    PHONE_SCAN_END_MHZ = 7.300
     PHONE_STEP_HZ = 5_000.0
-    PHONE_SPAN_HZ = 5_000.0
+    PHONE_SPAN_HZ = 12_000.0
     PHONE_MIN_WIDTH_HZ = 1_000.0
+    PHONE_CLUSTER_MIN_HZ = 1_800.0
+    PHONE_CLUSTER_MAX_HZ = 3_200.0
     PHONE_VOICE_MIN_SCORE = 0.18
     PHONE_MAX_FRAMES = 12
     PHONE_EARLY_STOP_FRAMES = 0
     PHONE_ACTIVITY_MIN_SCORE = 45
-    PHONE_FREQS_MHZ = _build_stepwise_freqs_mhz(
-        start_mhz=PHONE_SCAN_START_MHZ,
-        end_mhz=PHONE_SCAN_END_MHZ,
-        step_hz=PHONE_STEP_HZ,
-    )
+
+    @classmethod
+    def normalize_band(cls, band: object, *, fallback: str | None = None) -> str | None:
+        band_text = str(band or "").strip().lower()
+        for candidate in cls.BAND_PLANS:
+            if candidate.lower() == band_text:
+                return candidate
+        fallback_text = str(fallback or "").strip().lower()
+        for candidate in cls.BAND_PLANS:
+            if candidate.lower() == fallback_text:
+                return candidate
+        return None
+
+    @classmethod
+    def normalize_scan_mode(cls, mode: object, *, fallback: str | None = None) -> str | None:
+        mode_text = str(mode or "").strip().lower()
+        if mode_text in cls.SCAN_MODE_LABELS:
+            return mode_text
+        fallback_text = str(fallback or "").strip().lower()
+        if fallback_text in cls.SCAN_MODE_LABELS:
+            return fallback_text
+        return None
+
+    def _current_band_plan(self) -> ReceiverScanBandPlan:
+        band_key = self.normalize_band(getattr(self, "_band", self.DEFAULT_BAND), fallback=self.DEFAULT_BAND)
+        return self.BAND_PLANS[band_key or self.DEFAULT_BAND]
+
+    def _current_scan_mode(self) -> str:
+        return self.normalize_scan_mode(
+            getattr(self, "_scan_mode", self.DEFAULT_SCAN_MODE),
+            fallback=self.DEFAULT_SCAN_MODE,
+        ) or self.DEFAULT_SCAN_MODE
+
+    @property
+    def band(self) -> str:
+        return self._current_band_plan().band
+
+    @property
+    def BAND(self) -> str:
+        return self.band
+
+    @property
+    def scan_mode(self) -> str:
+        return self._current_scan_mode()
+
+    @property
+    def scan_mode_label(self) -> str:
+        return self.SCAN_MODE_LABELS[self.scan_mode]
+
+    @property
+    def MODE_LABEL(self) -> str:
+        return self._current_band_plan().mode_label
+
+    @property
+    def CW_FREQS_MHZ(self) -> list[float]:
+        return list(self._current_band_plan().cw_freqs_mhz)
+
+    @property
+    def PHONE_SCAN_START_MHZ(self) -> float:
+        return float(self._current_band_plan().phone_scan_start_mhz)
+
+    @property
+    def PHONE_SCAN_END_MHZ(self) -> float:
+        return float(self._current_band_plan().phone_scan_end_mhz)
+
+    @property
+    def PHONE_PRIORITY_FREQS_MHZ(self) -> list[float]:
+        return [round(float(freq_mhz), 3) for freq_mhz in self._current_band_plan().phone_priority_freqs_mhz]
+
+    @property
+    def PHONE_FREQS_MHZ(self) -> list[float]:
+        base_freqs = _build_stepwise_freqs_mhz(
+            start_mhz=self.PHONE_SCAN_START_MHZ,
+            end_mhz=self.PHONE_SCAN_END_MHZ,
+            step_hz=self.PHONE_STEP_HZ,
+        )
+        ordered_freqs: list[float] = []
+        seen_freqs: set[float] = set()
+        for freq_mhz in [*self.PHONE_PRIORITY_FREQS_MHZ, *base_freqs]:
+            rounded = round(float(freq_mhz), 3)
+            if rounded < round(self.PHONE_SCAN_START_MHZ, 3) or rounded > round(self.PHONE_SCAN_END_MHZ, 3):
+                continue
+            if rounded in seen_freqs:
+                continue
+            seen_freqs.add(rounded)
+            ordered_freqs.append(rounded)
+        return ordered_freqs
+
+    def _enabled_lanes(self, scan_mode: str | None = None) -> tuple[str, ...]:
+        resolved_mode = self.normalize_scan_mode(scan_mode, fallback=self.scan_mode) or self.DEFAULT_SCAN_MODE
+        if resolved_mode == "smart":
+            return ("cw", "phone")
+        if resolved_mode == "cw":
+            return ("cw",)
+        return ("phone",)
+
+    def _lane_enabled(self, lane_key: str, scan_mode: str | None = None) -> bool:
+        return str(lane_key or "").strip().lower() in self._enabled_lanes(scan_mode)
+
+    def _cw_followup_enabled(self, scan_mode: str | None = None) -> bool:
+        return self._lane_enabled("cw", scan_mode)
+
+    def _reserved_receivers_for_mode(self, scan_mode: str | None = None) -> list[int]:
+        enabled_lanes = self._enabled_lanes(scan_mode)
+        lane_to_rx = {"cw": 0, "phone": 1}
+        return [lane_to_rx[lane_key] for lane_key in enabled_lanes if lane_key in lane_to_rx]
+
+    def _scan_order_for_mode(self, scan_mode: str | None = None) -> list[str]:
+        resolved_mode = self.normalize_scan_mode(scan_mode, fallback=self.scan_mode) or self.DEFAULT_SCAN_MODE
+        if resolved_mode == "smart":
+            return ["cw", "phone", "cw_followup"]
+        if resolved_mode == "cw":
+            return ["cw", "cw_followup"]
+        return ["phone"]
+
+    def _inactive_lane_summary(self, lane_key: str, scan_mode: str | None = None) -> str:
+        resolved_mode = self.normalize_scan_mode(scan_mode, fallback=self.scan_mode) or self.DEFAULT_SCAN_MODE
+        if lane_key == "cw" and resolved_mode == "phone":
+            return "CW lane inactive for PHONE-only scan"
+        if lane_key == "phone" and resolved_mode == "cw":
+            return "PHONE lane inactive for CW-only scan"
+        return "Waiting for scan"
 
     def __init__(
         self,
@@ -66,6 +216,8 @@ class ReceiverScanService:
         self._auto_set_loop = auto_set_loop
         self._output_root = output_root or (Path(__file__).resolve().parents[2] / "outputs" / "receiver_scans")
         self._lock = threading.Lock()
+        self._band = self.DEFAULT_BAND
+        self._scan_mode = self.DEFAULT_SCAN_MODE
         self._thread: threading.Thread | None = None
         self._stop_requested = threading.Event()
         self._activating = False
@@ -77,38 +229,43 @@ class ReceiverScanService:
         self._last_finished_ts: float | None = None
         self._session_id: str | None = None
         self._results: dict[str, list[dict[str, Any]]] = {"cw": [], "phone": []}
-        self._lanes: dict[str, dict[str, Any]] = self._initial_lanes()
-        self._cw_followup: dict[str, Any] = self._initial_cw_followup()
+        self._lanes: dict[str, dict[str, Any]] = self._initial_lanes(scan_mode=self.scan_mode)
+        self._cw_followup: dict[str, Any] = self._initial_cw_followup(scan_mode=self.scan_mode)
 
-    def _initial_lanes(self) -> dict[str, dict[str, Any]]:
+    def _initial_lanes(self, *, scan_mode: str | None = None) -> dict[str, dict[str, Any]]:
+        resolved_mode = self.normalize_scan_mode(scan_mode, fallback=self.scan_mode) or self.DEFAULT_SCAN_MODE
+        cw_enabled = self._lane_enabled("cw", resolved_mode)
+        phone_enabled = self._lane_enabled("phone", resolved_mode)
         return {
             "cw": {
                 "lane": "cw",
                 "label": "CW Anchors",
                 "rx_chan": 0,
-                "status": "idle",
+                "status": "idle" if cw_enabled else "inactive",
                 "completed": 0,
-                "total": len(self.CW_FREQS_MHZ),
+                "total": len(self.CW_FREQS_MHZ) if cw_enabled else 0,
                 "current_freq_mhz": None,
                 "last_score": None,
-                "last_summary": "Waiting for scan",
+                "last_summary": self._inactive_lane_summary("cw", resolved_mode),
             },
             "phone": {
                 "lane": "phone",
                 "label": "Phone Anchors",
                 "rx_chan": 1,
-                "status": "idle",
+                "status": "idle" if phone_enabled else "inactive",
                 "completed": 0,
-                "total": len(self.PHONE_FREQS_MHZ),
+                "total": len(self.PHONE_FREQS_MHZ) if phone_enabled else 0,
                 "current_freq_mhz": None,
                 "last_score": None,
-                "last_summary": "Waiting for CW scan",
+                "last_summary": self._inactive_lane_summary("phone", resolved_mode),
             },
         }
 
-    def _initial_cw_followup(self) -> dict[str, Any]:
+    def _initial_cw_followup(self, *, scan_mode: str | None = None) -> dict[str, Any]:
+        followup_enabled = self._cw_followup_enabled(scan_mode)
+        default_summary = "Waiting for CW scan" if followup_enabled else "CW follow-up inactive for PHONE-only scan"
         return {
-            "status": "idle",
+            "status": "idle" if followup_enabled else "inactive",
             "rx_chan": int(self.RESERVED_RECEIVERS[0]),
             "duration_s": int(self.CW_FOLLOWUP_SECONDS),
             "selected_freq_mhz": None,
@@ -125,7 +282,11 @@ class ReceiverScanService:
             "tone_hz": None,
             "dot_ms": None,
             "wpm_est": None,
-            "summary": "Waiting for CW scan",
+            "completed": 0,
+            "total": 0,
+            "validated_count": 0,
+            "items": [],
+            "summary": default_summary,
         }
 
     def _spawn_thread(self, *, name: str, target: Callable[[], None]) -> threading.Thread:
@@ -213,7 +374,12 @@ class ReceiverScanService:
 
     def status(self) -> dict[str, Any]:
         with self._lock:
+            scan_mode = self.scan_mode
             cw_followup = dict(self._cw_followup)
+            if isinstance(cw_followup.get("items"), list):
+                cw_followup["items"] = [
+                    dict(item) for item in cw_followup["items"] if isinstance(item, dict)
+                ]
             results = {key: [dict(item) for item in value] for key, value in self._results.items()}
             return {
                 "ok": True,
@@ -223,20 +389,26 @@ class ReceiverScanService:
                 "running": bool(self._running),
                 "stop_requested": bool(self._stop_requested.is_set()),
                 "band": self.BAND,
+                "supported_bands": list(self.BAND_PLANS.keys()),
+                "scan_mode": scan_mode,
+                "scan_mode_label": self.SCAN_MODE_LABELS[scan_mode],
+                "supported_scan_modes": list(self.SCAN_MODE_LABELS.keys()),
                 "mode_label": self.MODE_LABEL,
                 "listen_seconds": float(self.LISTEN_SECONDS),
                 "session_id": self._session_id,
-                "reserved_receivers": [0, 1],
+                "reserved_receivers": self._reserved_receivers_for_mode(scan_mode),
                 "fixed_receivers": [int(entry["rx"]) for entry in _FIXED_ASSIGNMENTS],
                 "plan": {
-                    "scan_order": ["cw", "phone", "cw_followup"],
-                    "parallel_lanes": True,
+                    "scan_order": self._scan_order_for_mode(scan_mode),
+                    "parallel_lanes": len(self._enabled_lanes(scan_mode)) > 1,
+                    "active_lanes": list(self._enabled_lanes(scan_mode)),
                     "cw_freqs_mhz": list(self.CW_FREQS_MHZ),
                     "cw_followup_seconds": int(self.CW_FOLLOWUP_SECONDS),
                     "phone_range_mhz": {
                         "start": float(self.PHONE_SCAN_START_MHZ),
                         "end": float(self.PHONE_SCAN_END_MHZ),
                     },
+                    "phone_priority_freqs_mhz": list(self.PHONE_PRIORITY_FREQS_MHZ),
                     "phone_freqs_mhz": list(self.PHONE_FREQS_MHZ),
                 },
                 "lanes": {key: dict(value) for key, value in self._lanes.items()},
@@ -253,33 +425,71 @@ class ReceiverScanService:
         results: dict[str, list[dict[str, Any]]],
         cw_followup: dict[str, Any],
     ) -> dict[str, list[dict[str, Any]]]:
+        followup_items = [
+            dict(item) for item in cw_followup.get("items", []) if isinstance(item, dict)
+        ]
         target_freq = cw_followup.get("selected_freq_mhz")
-        if target_freq is None:
-            return results
-        try:
-            target_freq = float(target_freq)
-        except Exception:
-            return results
+        current_status = str(cw_followup.get("status") or "idle").strip().lower()
+        if target_freq is not None and current_status not in {"idle", "skipped"}:
+            try:
+                current_freq = float(target_freq)
+            except Exception:
+                current_freq = None
+            if current_freq is not None and not any(
+                abs(float(item.get("selected_freq_mhz") or 0.0) - current_freq) <= 1e-6
+                for item in followup_items
+                if item.get("selected_freq_mhz") is not None
+            ):
+                followup_items.append(
+                    {
+                        "status": cw_followup.get("status"),
+                        "rx_chan": cw_followup.get("rx_chan"),
+                        "duration_s": cw_followup.get("duration_s"),
+                        "selected_freq_mhz": current_freq,
+                        "signal_count": cw_followup.get("signal_count"),
+                        "score": cw_followup.get("score"),
+                        "recording_path": cw_followup.get("recording_path"),
+                        "wav_path": cw_followup.get("wav_path"),
+                        "decoded_text": cw_followup.get("decoded_text"),
+                        "validated_text": cw_followup.get("validated_text"),
+                        "message_valid": cw_followup.get("message_valid"),
+                        "validation_reason": cw_followup.get("validation_reason"),
+                        "validation_summary": cw_followup.get("validation_summary"),
+                        "confidence": cw_followup.get("confidence"),
+                        "tone_hz": cw_followup.get("tone_hz"),
+                        "dot_ms": cw_followup.get("dot_ms"),
+                        "wpm_est": cw_followup.get("wpm_est"),
+                        "summary": cw_followup.get("summary"),
+                    }
+                )
+
+        followup_by_freq: dict[float, dict[str, Any]] = {}
+        for followup_item in followup_items:
+            try:
+                freq_key = round(float(followup_item.get("selected_freq_mhz") or 0.0), 6)
+            except Exception:
+                continue
+            followup_by_freq[freq_key] = followup_item
 
         for item in results.get("cw", []):
             try:
                 freq_mhz = float(item.get("freq_mhz") or 0.0)
             except Exception:
                 continue
-            if abs(freq_mhz - target_freq) > 1e-6:
+            followup_item = followup_by_freq.get(round(freq_mhz, 6))
+            if followup_item is None:
                 continue
             item["followup_selected"] = True
-            item["followup_status"] = cw_followup.get("status")
-            item["followup_summary"] = cw_followup.get("summary")
-            item["followup_decoded_text"] = cw_followup.get("decoded_text")
-            item["followup_validated_text"] = cw_followup.get("validated_text")
-            item["followup_message_valid"] = bool(cw_followup.get("message_valid"))
-            item["followup_validation_reason"] = cw_followup.get("validation_reason")
-            item["followup_validation_summary"] = cw_followup.get("validation_summary")
-            item["followup_confidence"] = cw_followup.get("confidence")
-            item["followup_tone_hz"] = cw_followup.get("tone_hz")
-            item["followup_wpm_est"] = cw_followup.get("wpm_est")
-            break
+            item["followup_status"] = followup_item.get("status")
+            item["followup_summary"] = followup_item.get("summary")
+            item["followup_decoded_text"] = followup_item.get("decoded_text")
+            item["followup_validated_text"] = followup_item.get("validated_text")
+            item["followup_message_valid"] = bool(followup_item.get("message_valid"))
+            item["followup_validation_reason"] = followup_item.get("validation_reason")
+            item["followup_validation_summary"] = followup_item.get("validation_summary")
+            item["followup_confidence"] = followup_item.get("confidence")
+            item["followup_tone_hz"] = followup_item.get("tone_hz")
+            item["followup_wpm_est"] = followup_item.get("wpm_est")
         return results
 
     def health_channels(self) -> dict[str, dict[str, Any]]:
@@ -287,6 +497,7 @@ class ReceiverScanService:
             if not self._mode_active:
                 return {}
             running = bool(self._running)
+            enabled_lanes = set(self._enabled_lanes())
             lanes = {key: dict(value) for key, value in self._lanes.items()}
             cw_followup = dict(self._cw_followup)
             started_ts = float(self._last_started_ts) if self._last_started_ts is not None else None
@@ -300,6 +511,8 @@ class ReceiverScanService:
 
         channels: dict[str, dict[str, Any]] = {}
         for lane_key, lane in lanes.items():
+            if lane_key not in enabled_lanes:
+                continue
             rx_chan = int(lane.get("rx_chan") or 0)
             lane_status = str(lane.get("status") or "idle").strip().lower()
             lane_summary = str(lane.get("last_summary") or "").strip()
@@ -362,12 +575,38 @@ class ReceiverScanService:
             }
         return channels
 
-    def start(self, *, host: str, port: int, password: str | None, threshold_db: float) -> dict[str, Any]:
+    def start(
+        self,
+        *,
+        host: str,
+        port: int,
+        password: str | None,
+        threshold_db: float,
+        band: str | None = None,
+        mode: str | None = None,
+    ) -> dict[str, Any]:
+        selected_band = self.normalize_band(band, fallback=self.band if band is None else None)
+        if selected_band is None:
+            payload = self.status()
+            payload["ok"] = False
+            payload["status"] = "error"
+            payload["last_error"] = f"Unsupported receiver scan band: {band}"
+            return payload
+        selected_mode = self.normalize_scan_mode(mode, fallback=self.scan_mode if mode is None else None)
+        if selected_mode is None:
+            payload = self.status()
+            payload["ok"] = False
+            payload["status"] = "error"
+            payload["last_error"] = f"Unsupported receiver scan mode: {mode}"
+            return payload
+
         already_active = False
         with self._lock:
             if self._running or self._activating:
                 already_active = True
             else:
+                self._band = selected_band
+                self._scan_mode = selected_mode
                 self._activating = True
                 self._stop_requested.clear()
                 self._release_requested = False
@@ -376,9 +615,11 @@ class ReceiverScanService:
                 self._last_finished_ts = None
                 self._session_id = time.strftime("receiver_scan_%Y%m%d_%H%M%S")
                 self._results = {"cw": [], "phone": []}
-                self._lanes = self._initial_lanes()
-                self._cw_followup = self._initial_cw_followup()
+                self._lanes = self._initial_lanes(scan_mode=selected_mode)
+                self._cw_followup = self._initial_cw_followup(scan_mode=selected_mode)
                 for lane in self._lanes.values():
+                    if str(lane.get("status") or "") == "inactive":
+                        continue
                     lane["status"] = "starting"
                     lane["last_summary"] = "Activating receivers"
 
@@ -462,26 +703,32 @@ class ReceiverScanService:
         with self._lock:
             stop_requested = bool(self._stop_requested.is_set())
             release_requested = bool(self._release_requested)
+            scan_mode = self.scan_mode
             self._activating = False
             if stop_requested:
                 self._running = False
                 self._thread = None
                 self._last_finished_ts = time.time()
-                self._cw_followup["status"] = "stopped"
-                self._cw_followup["summary"] = "Scan stopped before CW follow-up began"
+                if self._cw_followup_enabled(scan_mode):
+                    self._cw_followup["status"] = "stopped"
+                    self._cw_followup["summary"] = "Scan stopped before CW follow-up began"
                 for lane in self._lanes.values():
+                    if str(lane.get("status") or "") == "inactive":
+                        continue
                     lane["status"] = "stopped"
                     lane["current_freq_mhz"] = None
                     lane["last_summary"] = "Scan stopped before probes began"
             else:
                 self._running = True
-                self._lanes["cw"]["status"] = "ready"
-                self._lanes["cw"]["current_freq_mhz"] = None
-                self._lanes["cw"]["last_summary"] = "Starting CW scan"
-                self._lanes["phone"]["status"] = "ready"
-                self._lanes["phone"]["current_freq_mhz"] = None
-                self._lanes["phone"]["last_summary"] = "Starting Phone scan"
-                self._cw_followup = self._initial_cw_followup()
+                if self._lane_enabled("cw", scan_mode):
+                    self._lanes["cw"]["status"] = "ready"
+                    self._lanes["cw"]["current_freq_mhz"] = None
+                    self._lanes["cw"]["last_summary"] = "Starting CW scan"
+                if self._lane_enabled("phone", scan_mode):
+                    self._lanes["phone"]["status"] = "ready"
+                    self._lanes["phone"]["current_freq_mhz"] = None
+                    self._lanes["phone"]["last_summary"] = "Starting Phone scan"
+                self._cw_followup = self._initial_cw_followup(scan_mode=scan_mode)
 
         if stop_requested:
             logger.info("Receiver Scan activation completed after stop request; session will not start")
@@ -499,52 +746,77 @@ class ReceiverScanService:
         )
 
     def _run_session(self, *, host: str, port: int, password: str | None, threshold_db: float) -> None:
+        scan_mode = self.scan_mode
+        enabled_lanes = set(self._enabled_lanes(scan_mode))
         try:
-            lane_errors: list[tuple[str, Exception]] = []
-            lane_error_lock = threading.Lock()
+            if scan_mode == "smart":
+                lane_errors: list[tuple[str, Exception]] = []
+                lane_error_lock = threading.Lock()
 
-            def _run_lane_safe(*, lane_key: str, rx_chan: int, freqs_mhz: list[float]) -> None:
-                try:
-                    self._run_lane(
-                        lane_key=lane_key,
-                        rx_chan=rx_chan,
-                        freqs_mhz=freqs_mhz,
-                        host=host,
-                        port=port,
-                        password=password,
-                        threshold_db=threshold_db,
-                    )
-                except Exception as exc:
-                    with lane_error_lock:
-                        lane_errors.append((lane_key, exc))
+                def _run_lane_safe(*, lane_key: str, rx_chan: int, freqs_mhz: list[float]) -> None:
+                    try:
+                        self._run_lane(
+                            lane_key=lane_key,
+                            rx_chan=rx_chan,
+                            freqs_mhz=freqs_mhz,
+                            host=host,
+                            port=port,
+                            password=password,
+                            threshold_db=threshold_db,
+                        )
+                    except Exception as exc:
+                        with lane_error_lock:
+                            lane_errors.append((lane_key, exc))
 
-            cw_thread = threading.Thread(
-                name="receiver-scan-cw",
-                target=lambda: _run_lane_safe(
+                cw_thread = threading.Thread(
+                    name="receiver-scan-cw",
+                    target=lambda: _run_lane_safe(
+                        lane_key="cw",
+                        rx_chan=0,
+                        freqs_mhz=list(self.CW_FREQS_MHZ),
+                    ),
+                    daemon=True,
+                )
+                phone_thread = threading.Thread(
+                    name="receiver-scan-phone",
+                    target=lambda: _run_lane_safe(
+                        lane_key="phone",
+                        rx_chan=1,
+                        freqs_mhz=list(self.PHONE_FREQS_MHZ),
+                    ),
+                    daemon=True,
+                )
+                cw_thread.start()
+                phone_thread.start()
+                cw_thread.join()
+                if not self._stop_requested.is_set() and self._cw_followup_enabled(scan_mode):
+                    self._run_cw_followup(host=host, port=port, password=password)
+                phone_thread.join()
+                if lane_errors:
+                    lane_key, exc = lane_errors[0]
+                    raise RuntimeError(f"{lane_key} lane failed: {exc}") from exc
+            elif scan_mode == "cw":
+                self._run_lane(
                     lane_key="cw",
                     rx_chan=0,
                     freqs_mhz=list(self.CW_FREQS_MHZ),
-                ),
-                daemon=True,
-            )
-            phone_thread = threading.Thread(
-                name="receiver-scan-phone",
-                target=lambda: _run_lane_safe(
+                    host=host,
+                    port=port,
+                    password=password,
+                    threshold_db=threshold_db,
+                )
+                if not self._stop_requested.is_set() and self._cw_followup_enabled(scan_mode):
+                    self._run_cw_followup(host=host, port=port, password=password)
+            else:
+                self._run_lane(
                     lane_key="phone",
                     rx_chan=1,
                     freqs_mhz=list(self.PHONE_FREQS_MHZ),
-                ),
-                daemon=True,
-            )
-            cw_thread.start()
-            phone_thread.start()
-            cw_thread.join()
-            if not self._stop_requested.is_set():
-                self._run_cw_followup(host=host, port=port, password=password)
-            phone_thread.join()
-            if lane_errors:
-                lane_key, exc = lane_errors[0]
-                raise RuntimeError(f"{lane_key} lane failed: {exc}") from exc
+                    host=host,
+                    port=port,
+                    password=password,
+                    threshold_db=threshold_db,
+                )
         except Exception as exc:
             with self._lock:
                 self._last_error = f"Receiver Scan failed: {exc}"
@@ -552,15 +824,19 @@ class ReceiverScanService:
             release_requested = False
             session_id = None
             with self._lock:
-                for lane in self._lanes.values():
-                    if lane["status"] not in {"error", "stopped"}:
+                for lane_key, lane in self._lanes.items():
+                    if lane_key not in enabled_lanes:
+                        continue
+                    if lane["status"] not in {"error", "stopped", "inactive"}:
                         lane["status"] = "complete"
                         lane["current_freq_mhz"] = None
                 if self._stop_requested.is_set():
-                    for lane in self._lanes.values():
+                    for lane_key, lane in self._lanes.items():
+                        if lane_key not in enabled_lanes:
+                            continue
                         if lane["status"] != "error":
                             lane["status"] = "stopped"
-                    if self._cw_followup["status"] not in {"complete", "error", "skipped", "stopped"}:
+                    if self._cw_followup["status"] not in {"complete", "error", "skipped", "stopped", "inactive"}:
                         self._cw_followup["status"] = "stopped"
                         self._cw_followup["summary"] = "Scan stopped during CW follow-up"
                 self._running = False
@@ -637,15 +913,15 @@ class ReceiverScanService:
             lane = self._lanes[lane_key]
             if self._stop_requested.is_set():
                 lane["status"] = "stopped"
-            elif lane_key == "cw":
+            elif lane_key == "cw" and self._cw_followup_enabled():
                 lane["status"] = "followup"
-                lane["last_summary"] = "Selecting best CW anchor for follow-up"
+                lane["last_summary"] = "Preparing CW follow-up decode queue"
             elif lane["status"] != "error":
                 lane["status"] = "complete"
 
     def _run_cw_followup(self, *, host: str, port: int, password: str | None) -> None:
-        best = self._select_best_cw_result()
-        if best is None:
+        selected_results = self._select_cw_followup_results()
+        if not selected_results:
             with self._lock:
                 self._cw_followup["status"] = "skipped"
                 self._cw_followup["summary"] = "No CW hits found; follow-up skipped"
@@ -660,117 +936,204 @@ class ReceiverScanService:
                 self._cw_followup["summary"] = "Stop requested before CW follow-up started"
             return
 
-        freq_mhz = float(best["freq_mhz"])
         rx_chan = int(self.RESERVED_RECEIVERS[0])
         session_id = self._session_id or time.strftime("receiver_scan_%Y%m%d_%H%M%S")
-        followup_dir = self._output_root / session_id / "cw_followup"
-        followup_dir.mkdir(parents=True, exist_ok=True)
-        initial_summary = f"Recording {int(self.CW_FOLLOWUP_SECONDS)}s CW follow-up on {freq_mhz:.3f} MHz"
+        followup_root = self._output_root / session_id / "cw_followup"
+        followup_root.mkdir(parents=True, exist_ok=True)
+        total = len(selected_results)
+        completed_items: list[dict[str, Any]] = []
+        validated_count = 0
 
         with self._lock:
             self._cw_followup = {
+                **self._initial_cw_followup(),
+                "status": "queued",
+                "rx_chan": rx_chan,
+                "duration_s": int(self.CW_FOLLOWUP_SECONDS),
+                "total": total,
+                "summary": f"Preparing {total} CW follow-up decode{'s' if total != 1 else ''}",
+            }
+            self._lanes["cw"]["status"] = "followup"
+            self._lanes["cw"]["current_freq_mhz"] = None
+            self._lanes["cw"]["last_summary"] = self._cw_followup["summary"]
+
+        for followup_index, selected in enumerate(selected_results, start=1):
+            if self._stop_requested.is_set():
+                break
+
+            freq_mhz = float(selected["freq_mhz"])
+            followup_dir = followup_root / f"{followup_index:02d}_{str(f'{freq_mhz:.3f}').replace('.', '_')}"
+            followup_dir.mkdir(parents=True, exist_ok=True)
+            initial_summary = (
+                f"Recording {int(self.CW_FOLLOWUP_SECONDS)}s CW follow-up "
+                f"{followup_index}/{total} on {freq_mhz:.3f} MHz"
+            )
+            followup_state = {
                 "status": "recording",
                 "rx_chan": rx_chan,
                 "duration_s": int(self.CW_FOLLOWUP_SECONDS),
                 "selected_freq_mhz": freq_mhz,
-                "signal_count": int(best.get("signal_count") or 0),
-                "score": best.get("score"),
+                "signal_count": int(selected.get("signal_count") or 0),
+                "score": selected.get("score"),
                 "recording_path": str(followup_dir),
                 "wav_path": None,
                 "decoded_text": "",
                 "validated_text": "",
                 "message_valid": False,
                 "validation_reason": "",
-                "validation_summary": "Recording CW follow-up",
+                "validation_summary": f"Recording CW follow-up {followup_index}/{total}",
                 "confidence": 0.0,
                 "tone_hz": None,
                 "dot_ms": None,
                 "wpm_est": None,
                 "summary": initial_summary,
             }
-            self._lanes["cw"]["status"] = "followup"
-            self._lanes["cw"]["current_freq_mhz"] = freq_mhz
-            self._lanes["cw"]["last_summary"] = initial_summary
 
-        wav_path: Path | None = None
-        try:
-            self._clear_reserved_slot(host=host, port=int(port), rx_chan=rx_chan)
-            run_record(
-                RecordRequest(
-                    host=host,
-                    port=int(port),
-                    password=password,
-                    user="Receiver Scan CW Follow-up",
-                    freq_hz=freq_mhz * 1e6,
-                    rx_chan=rx_chan,
-                    duration_s=int(self.CW_FOLLOWUP_SECONDS),
-                    mode="cw",
-                    out_dir=followup_dir,
+            with self._lock:
+                self._cw_followup = {
+                    **self._cw_followup,
+                    **followup_state,
+                    "items": [dict(item) for item in completed_items],
+                    "completed": len(completed_items),
+                    "total": total,
+                    "validated_count": validated_count,
+                }
+                self._lanes["cw"]["status"] = "followup"
+                self._lanes["cw"]["current_freq_mhz"] = freq_mhz
+                self._lanes["cw"]["last_summary"] = initial_summary
+
+            wav_path: Path | None = None
+            try:
+                self._clear_reserved_slot(host=host, port=int(port), rx_chan=rx_chan)
+                run_record(
+                    RecordRequest(
+                        host=host,
+                        port=int(port),
+                        password=password,
+                        user="Receiver Scan CW Follow-up",
+                        freq_hz=freq_mhz * 1e6,
+                        rx_chan=rx_chan,
+                        duration_s=int(self.CW_FOLLOWUP_SECONDS),
+                        mode="cw",
+                        out_dir=followup_dir,
+                    )
                 )
-            )
-            wav_path = self._latest_wav_path(followup_dir)
-            if wav_path is None:
-                raise FileNotFoundError("CW follow-up recording completed but no WAV file was found")
-            if self._stop_requested.is_set():
+                wav_path = self._latest_wav_path(followup_dir)
+                if wav_path is None:
+                    raise FileNotFoundError("CW follow-up recording completed but no WAV file was found")
+                if self._stop_requested.is_set():
+                    followup_state["status"] = "stopped"
+                    followup_state["wav_path"] = str(wav_path)
+                    followup_state["summary"] = "Stop requested after CW recording finished"
+                    followup_state["validation_summary"] = "CW follow-up stopped before decode"
+                else:
+                    with self._lock:
+                        self._cw_followup = {
+                            **self._cw_followup,
+                            **followup_state,
+                            "status": "decoding",
+                            "wav_path": str(wav_path),
+                            "summary": f"Decoding CW follow-up {followup_index}/{total} from {freq_mhz:.3f} MHz",
+                            "items": [dict(item) for item in completed_items],
+                            "completed": len(completed_items),
+                            "total": total,
+                            "validated_count": validated_count,
+                        }
+                        self._lanes["cw"]["last_summary"] = self._cw_followup["summary"]
+
+                    decode = try_decode_cw_wav(wav_path)
+                    decoded_text = str(decode.get("decoded_text") or "").strip()
+                    validation = validate_cw_message(decoded_text, confidence=float(decode.get("confidence") or 0.0))
+                    validated_text = str(validation.get("normalized_text") or "").strip()
+                    message_valid = bool(validation.get("valid"))
+                    validation_reason = str(validation.get("reason") or "").strip()
+                    validation_summary = str(validation.get("summary") or "CW decode did not validate").strip()
+                    summary = validation_summary if validated_text else str(decode.get("summary") or "CW follow-up complete")
+
+                    followup_state.update(
+                        {
+                            "status": "complete",
+                            "wav_path": str(wav_path),
+                            "decoded_text": decoded_text,
+                            "validated_text": validated_text,
+                            "message_valid": message_valid,
+                            "validation_reason": validation_reason,
+                            "validation_summary": validation_summary,
+                            "confidence": float(decode.get("confidence") or 0.0),
+                            "tone_hz": decode.get("tone_hz"),
+                            "dot_ms": decode.get("dot_ms"),
+                            "wpm_est": decode.get("wpm_est"),
+                            "summary": summary,
+                        }
+                    )
+            except RecorderUnavailable as exc:
+                summary = f"CW follow-up recording unavailable: {exc}"
                 with self._lock:
-                    self._cw_followup["status"] = "stopped"
-                    self._cw_followup["wav_path"] = str(wav_path)
-                    self._cw_followup["summary"] = "Stop requested after CW recording finished"
-                return
+                    self._last_error = summary
+                followup_state.update(
+                    {
+                        "status": "error",
+                        "wav_path": str(wav_path) if wav_path is not None else None,
+                        "summary": summary,
+                        "validation_summary": summary,
+                    }
+                )
+            except Exception as exc:
+                summary = f"CW follow-up failed: {type(exc).__name__}: {exc}"
+                with self._lock:
+                    self._last_error = summary
+                followup_state.update(
+                    {
+                        "status": "error",
+                        "wav_path": str(wav_path) if wav_path is not None else None,
+                        "summary": summary,
+                        "validation_summary": summary,
+                    }
+                )
+
+            if bool(followup_state.get("message_valid")):
+                validated_count += 1
+            completed_items.append(dict(followup_state))
 
             with self._lock:
-                self._cw_followup["status"] = "decoding"
-                self._cw_followup["wav_path"] = str(wav_path)
-                self._cw_followup["summary"] = f"Decoding CW follow-up from {freq_mhz:.3f} MHz"
-                self._lanes["cw"]["last_summary"] = self._cw_followup["summary"]
+                self._cw_followup = {
+                    **self._cw_followup,
+                    **followup_state,
+                    "items": [dict(item) for item in completed_items],
+                    "completed": len(completed_items),
+                    "total": total,
+                    "validated_count": validated_count,
+                }
+                self._lanes["cw"]["current_freq_mhz"] = None
+                self._lanes["cw"]["last_summary"] = str(
+                    followup_state.get("validation_summary")
+                    or followup_state.get("summary")
+                    or self._lanes["cw"]["last_summary"]
+                )
 
-            decode = try_decode_cw_wav(wav_path)
-            decoded_text = str(decode.get("decoded_text") or "").strip()
-            validation = validate_cw_message(decoded_text, confidence=float(decode.get("confidence") or 0.0))
-            validated_text = str(validation.get("normalized_text") or "").strip()
-            message_valid = bool(validation.get("valid"))
-            validation_reason = str(validation.get("reason") or "").strip()
-            validation_summary = str(validation.get("summary") or "CW decode did not validate").strip()
-            summary = validation_summary if validated_text else str(decode.get("summary") or "CW follow-up complete")
-
-            with self._lock:
+        overall_summary = (
+            f"Completed {len(completed_items)} CW follow-up decode{'s' if len(completed_items) != 1 else ''}; "
+            f"validated {validated_count}"
+        )
+        with self._lock:
+            if self._stop_requested.is_set() and len(completed_items) < total:
+                self._cw_followup["status"] = "stopped"
+                self._cw_followup["summary"] = (
+                    f"Stopped after {len(completed_items)} of {total} CW follow-up decode"
+                    f"{'s' if total != 1 else ''}"
+                )
+            else:
                 self._cw_followup["status"] = "complete"
-                self._cw_followup["wav_path"] = str(wav_path)
-                self._cw_followup["decoded_text"] = decoded_text
-                self._cw_followup["validated_text"] = validated_text
-                self._cw_followup["message_valid"] = message_valid
-                self._cw_followup["validation_reason"] = validation_reason
-                self._cw_followup["validation_summary"] = validation_summary
-                self._cw_followup["confidence"] = float(decode.get("confidence") or 0.0)
-                self._cw_followup["tone_hz"] = decode.get("tone_hz")
-                self._cw_followup["dot_ms"] = decode.get("dot_ms")
-                self._cw_followup["wpm_est"] = decode.get("wpm_est")
-                self._cw_followup["summary"] = summary
-                self._lanes["cw"]["status"] = "complete"
-                self._lanes["cw"]["current_freq_mhz"] = None
-                self._lanes["cw"]["last_summary"] = validation_summary
-        except RecorderUnavailable as exc:
-            summary = f"CW follow-up recording unavailable: {exc}"
-            with self._lock:
-                self._last_error = summary
-                self._cw_followup["status"] = "error"
-                self._cw_followup["wav_path"] = str(wav_path) if wav_path is not None else None
-                self._cw_followup["summary"] = summary
-                self._lanes["cw"]["status"] = "complete"
-                self._lanes["cw"]["current_freq_mhz"] = None
-                self._lanes["cw"]["last_summary"] = summary
-        except Exception as exc:
-            summary = f"CW follow-up failed: {type(exc).__name__}: {exc}"
-            with self._lock:
-                self._last_error = summary
-                self._cw_followup["status"] = "error"
-                self._cw_followup["wav_path"] = str(wav_path) if wav_path is not None else None
-                self._cw_followup["summary"] = summary
-                self._lanes["cw"]["status"] = "complete"
-                self._lanes["cw"]["current_freq_mhz"] = None
-                self._lanes["cw"]["last_summary"] = summary
+                self._cw_followup["summary"] = overall_summary
+            self._cw_followup["items"] = [dict(item) for item in completed_items]
+            self._cw_followup["completed"] = len(completed_items)
+            self._cw_followup["total"] = total
+            self._cw_followup["validated_count"] = validated_count
+            self._lanes["cw"]["status"] = "complete"
+            self._lanes["cw"]["current_freq_mhz"] = None
+            self._lanes["cw"]["last_summary"] = self._cw_followup["summary"]
 
-    def _select_best_cw_result(self) -> dict[str, Any] | None:
+    def _select_cw_followup_results(self) -> list[dict[str, Any]]:
         with self._lock:
             results = [dict(item) for item in self._results.get("cw", [])]
         ranked = [
@@ -779,9 +1142,7 @@ class ReceiverScanService:
             if str(item.get("status") or "") not in {"error", "unavailable"}
         ]
         ranked = [item for item in ranked if int(item.get("signal_count") or 0) > 0]
-        if not ranked:
-            return None
-        return max(
+        return sorted(
             ranked,
             key=lambda item: (
                 int(item.get("signal_count") or 0),
@@ -789,7 +1150,12 @@ class ReceiverScanService:
                 float(item.get("max_rel_db") or float("-inf")),
                 -float(item.get("freq_mhz") or 0.0),
             ),
+            reverse=True,
         )
+
+    def _select_best_cw_result(self) -> dict[str, Any] | None:
+        ranked = self._select_cw_followup_results()
+        return ranked[0] if ranked else None
 
     @staticmethod
     def _latest_wav_path(root: Path) -> Path | None:
@@ -921,6 +1287,7 @@ class ReceiverScanService:
         report = self._read_json(report_path)
         events = self._read_jsonl(events_path)
         peak = report.get("peak") if isinstance(report.get("peak"), dict) else {}
+        raw_event_count = len(events)
         if rc == 3:
             return {
                 "lane": lane_key,
@@ -930,11 +1297,16 @@ class ReceiverScanService:
                 "score": 0,
                 "summary": f"RX{int(rx_chan)} unavailable for this probe",
                 "signal_count": 0,
-                "event_count": len(events),
+                "event_count": 0 if lane_key == "phone" else raw_event_count,
+                "raw_event_count": raw_event_count,
                 "max_rel_db": None,
                 "best_s_est": None,
                 "voice_score": None,
                 "occupied_bw_hz": None,
+                "mode_hint": None,
+                "activity_kind": "unavailable",
+                "bandwidth_bucket": None,
+                "phone_like": False,
                 "probe_index": int(probe_index),
                 "probe_total": int(probe_total),
             }
@@ -947,11 +1319,16 @@ class ReceiverScanService:
                 "score": 0,
                 "summary": f"Probe failed with rc={int(rc)}",
                 "signal_count": 0,
-                "event_count": len(events),
+                "event_count": 0 if lane_key == "phone" else raw_event_count,
+                "raw_event_count": raw_event_count,
                 "max_rel_db": None,
                 "best_s_est": None,
                 "voice_score": None,
                 "occupied_bw_hz": None,
+                "mode_hint": None,
+                "activity_kind": "error",
+                "bandwidth_bucket": None,
+                "phone_like": False,
                 "probe_index": int(probe_index),
                 "probe_total": int(probe_total),
             }
@@ -990,11 +1367,16 @@ class ReceiverScanService:
                 "score": score,
                 "summary": summary,
                 "signal_count": signal_count,
-                "event_count": len(events),
+                "event_count": raw_event_count,
+                "raw_event_count": raw_event_count,
                 "max_rel_db": max_rel_db,
                 "best_s_est": best_s_est,
                 "voice_score": None,
                 "occupied_bw_hz": None,
+                "mode_hint": "CW" if signal_count else None,
+                "activity_kind": "cw",
+                "bandwidth_bucket": "80-220 Hz" if signal_count else None,
+                "phone_like": False,
                 "probe_index": int(probe_index),
                 "probe_total": int(probe_total),
             }
@@ -1007,17 +1389,77 @@ class ReceiverScanService:
         occupied_bw_hz = max(occ_values) if occ_values else (
             float(peak.get("occ_bw_hz")) if isinstance(peak, dict) and peak.get("occ_bw_hz") is not None else None
         )
+        activity_hint = classify_activity_width(
+            occupied_bw_hz,
+            type_guess=peak.get("type_guess") if isinstance(peak, dict) else None,
+            bandplan=peak.get("bandplan") if isinstance(peak, dict) else "Phone",
+        )
+        representative_voice_score = voice_score
+        representative_bw_hz = occupied_bw_hz
+        confirmed_phone_events: list[tuple[dict[str, Any], dict[str, Any]]] = []
+        for event in events:
+            event_bw_hz = event.get("occ_bw_hz")
+            if event_bw_hz is None:
+                event_bw_hz = event.get("width_hz")
+            event_hint = classify_activity_width(
+                event_bw_hz,
+                type_guess=event.get("type_guess"),
+                bandplan=event.get("bandplan") or "Phone",
+            )
+            width_value = event_hint.get("bandwidth_hz")
+            if width_value is None:
+                continue
+            if not event_hint.get("phone_like"):
+                continue
+            if not (float(self.PHONE_CLUSTER_MIN_HZ) <= float(width_value) <= float(self.PHONE_CLUSTER_MAX_HZ)):
+                continue
+            confirmed_phone_events.append((event, event_hint))
+
+        if confirmed_phone_events:
+            best_event, best_event_hint = max(
+                confirmed_phone_events,
+                key=lambda item: (
+                    float(item[0].get("voice_score") or 0.0),
+                    float(item[0].get("rel_db") or float("-inf")),
+                    float(item[1].get("bandwidth_hz") or 0.0),
+                ),
+            )
+            activity_hint = best_event_hint
+            if best_event.get("voice_score") is not None:
+                representative_voice_score = float(best_event.get("voice_score") or 0.0)
+            if best_event_hint.get("bandwidth_hz") is not None:
+                representative_bw_hz = float(best_event_hint.get("bandwidth_hz") or 0.0)
+
         score = self._clamp_score(
             (float(max_rel_db or 0.0) * 4.0)
-            + (float(voice_score or 0.0) * 45.0)
-            + (min(float(occupied_bw_hz or 0.0), 2800.0) / 90.0)
+            + (float(representative_voice_score or 0.0) * 45.0)
+            + (min(float(representative_bw_hz or 0.0), 3200.0) / 90.0)
         )
-        status = "activity" if score >= int(self.PHONE_ACTIVITY_MIN_SCORE) else "watch" if score >= 30 else "quiet"
-        summary = (
-            f"Speech-like energy voice={float(voice_score or 0.0):.2f}, bw={float(occupied_bw_hz or 0.0):.0f} Hz"
-            if score >= 30
-            else "No speech-like energy"
-        )
+        confirmed_event_count = len(confirmed_phone_events)
+        if confirmed_event_count > 0 and score >= int(self.PHONE_ACTIVITY_MIN_SCORE):
+            status = "activity"
+            summary = (
+                f"Confirmed {activity_hint.get('mode_hint') or 'phone'} IQ cluster "
+                f"voice={float(representative_voice_score or 0.0):.2f}, "
+                f"bw={float(representative_bw_hz or 0.0):.0f} Hz"
+            )
+        elif score >= 30:
+            status = "watch"
+            if raw_event_count == 0 and activity_hint.get("phone_like"):
+                summary = (
+                    f"Unconfirmed {activity_hint.get('mode_hint') or 'phone'} IQ cluster "
+                    f"voice={float(representative_voice_score or 0.0):.2f}, "
+                    f"bw={float(representative_bw_hz or 0.0):.0f} Hz"
+                )
+            else:
+                summary = (
+                    f"{activity_hint.get('mode_hint') or 'Band activity'} candidate "
+                    f"voice={float(representative_voice_score or 0.0):.2f}, "
+                    f"bw={float(representative_bw_hz or 0.0):.0f} Hz"
+                )
+        else:
+            status = "quiet"
+            summary = "No confirmed phone-like IQ cluster"
         return {
             "lane": lane_key,
             "rx_chan": int(rx_chan),
@@ -1025,12 +1467,17 @@ class ReceiverScanService:
             "status": status,
             "score": score,
             "summary": summary,
-            "signal_count": 1 if status == "activity" else 0,
-            "event_count": len(events),
+            "signal_count": 1 if confirmed_event_count > 0 else 0,
+            "event_count": confirmed_event_count,
+            "raw_event_count": raw_event_count,
             "max_rel_db": max_rel_db,
             "best_s_est": best_s_est,
-            "voice_score": voice_score,
-            "occupied_bw_hz": occupied_bw_hz,
+            "voice_score": representative_voice_score,
+            "occupied_bw_hz": representative_bw_hz,
+            "mode_hint": activity_hint.get("mode_hint"),
+            "activity_kind": activity_hint.get("activity_kind"),
+            "bandwidth_bucket": activity_hint.get("bandwidth_bucket"),
+            "phone_like": bool(confirmed_event_count > 0),
             "probe_index": int(probe_index),
             "probe_total": int(probe_total),
         }

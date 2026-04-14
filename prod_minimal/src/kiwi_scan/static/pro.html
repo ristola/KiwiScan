@@ -1246,6 +1246,31 @@
             color: #eef6ff;
         }
 
+        body.theme-dark #receiver-scan .receiver-scan-mode-controls {
+            border-color: rgba(148, 163, 184, 0.34);
+            background: color-mix(in srgb, var(--panel), white 4%);
+        }
+
+        body.theme-dark #receiver-scan .receiver-scan-band-select-wrap {
+            border-color: rgba(148, 163, 184, 0.22);
+            background: #3a4c5f;
+        }
+
+        body.theme-dark #receiver-scan .receiver-scan-band-select-wrap:focus-within {
+            background: #42586e;
+            box-shadow: inset 0 0 0 1px rgba(125, 211, 252, 0.32);
+        }
+
+        body.theme-dark #receiver-scan .receiver-scan-smart-band {
+            color: #eef6ff;
+            -webkit-text-fill-color: #eef6ff;
+        }
+
+        body.theme-dark #receiver-scan .receiver-scan-smart-band option {
+            color: #eef6ff;
+            background: #173047;
+        }
+
         body.theme-dark .settings-toggle-btn:hover {
             border-color: rgba(125, 211, 252, 0.36);
             box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
@@ -1412,8 +1437,78 @@
 
         .receiver-scan-results-grid {
             display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: minmax(0, 1fr);
             gap: 10px;
+        }
+
+        .receiver-scan-result-card {
+            width: 100%;
+        }
+
+        .receiver-scan-result-card.is-selected {
+            border-color: color-mix(in srgb, var(--accent), var(--line) 38%);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent), transparent 72%);
+        }
+
+        .receiver-scan-result-card-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .receiver-scan-result-card-title-wrap {
+            display: grid;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .receiver-scan-result-card-subtitle {
+            font-size: 0.78rem;
+            color: var(--muted);
+            line-height: 1.35;
+        }
+
+        .receiver-scan-result-card-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: auto;
+            flex: 0 0 auto;
+        }
+
+        .receiver-scan-result-card-body {
+            display: grid;
+            gap: 10px;
+            min-width: 0;
+        }
+
+        .receiver-scan-result-card.is-collapsed .receiver-scan-result-card-body {
+            display: none;
+        }
+
+        .receiver-scan-result-toggle {
+            flex: 0 0 auto;
+        }
+
+        .receiver-scan-smart-groups {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 10px;
+        }
+
+        .receiver-scan-smart-group {
+            display: grid;
+            gap: 8px;
+            min-width: 0;
+        }
+
+        .receiver-scan-smart-group-title {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: var(--muted);
         }
 
         .receiver-scan-lane-card {
@@ -1496,6 +1591,10 @@
 
         .receiver-scan-followup-text.is-invalid {
             color: var(--muted);
+        }
+
+        .net-monitor-transcript-text {
+            white-space: pre-wrap;
         }
 
         .receiver-scan-list-meta {
@@ -2224,6 +2323,16 @@
             }
         }
 
+        @media (max-width: 980px) {
+            #receiver-scan .receiver-scan-mode-controls {
+                grid-template-columns: repeat(3, minmax(var(--receiver-scan-control-min-width), 1fr));
+            }
+
+            #receiver-scan .receiver-scan-band-select-wrap {
+                grid-column: 1 / -1;
+            }
+        }
+
         @media (max-width: 640px) {
             .panel-hdr.bc-panel-hdr .panel-hdr-actions {
                 display: grid;
@@ -2236,6 +2345,23 @@
             }
 
             .panel-hdr.bc-panel-hdr .panel-hdr-actions .panel-toggle {
+                justify-self: end;
+            }
+
+            #receiver-scan .panel-hdr-actions {
+                grid-template-columns: minmax(0, 1fr) auto;
+            }
+
+            #receiver-scan .receiver-scan-mode-controls {
+                grid-template-columns: repeat(2, minmax(var(--receiver-scan-control-min-width), 1fr));
+            }
+
+            #receiver-scan .receiver-scan-band-select-wrap,
+            #receiver-scan .receiver-scan-mode-btn[data-scan-role="smart"] {
+                grid-column: 1 / -1;
+            }
+
+            #receiver-scan .panel-hdr-actions .panel-toggle {
                 justify-self: end;
             }
         }
@@ -2501,6 +2627,145 @@
             justify-content: flex-end;
             gap: 8px;
             flex-wrap: wrap;
+        }
+
+        #receiver-scan .panel-hdr {
+            align-items: flex-start;
+            flex-wrap: wrap;
+            gap: 8px 12px;
+        }
+
+        #receiver-scan .panel-hdr h2 {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        #receiver-scan .panel-hdr-actions {
+            width: 100%;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: flex-start;
+            gap: 8px 12px;
+        }
+
+        #receiver-scan .receiver-scan-mode-controls {
+            --receiver-scan-control-min-width: 132px;
+            display: grid;
+            grid-template-columns: repeat(4, minmax(var(--receiver-scan-control-min-width), 1fr));
+            align-items: stretch;
+            gap: 2px;
+            min-width: 0;
+            padding: 2px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: color-mix(in srgb, var(--panel), white 3%);
+        }
+
+        #receiver-scan .receiver-scan-band-select-wrap {
+            position: relative;
+            display: flex;
+            align-items: center;
+            min-width: var(--receiver-scan-control-min-width);
+            border: 1px solid color-mix(in srgb, var(--line), white 6%);
+            border-radius: 9px;
+            background: color-mix(in srgb, var(--panel), white 16%);
+            transition: background 0.15s, box-shadow 0.15s;
+        }
+
+        #receiver-scan .receiver-scan-band-select-wrap:hover {
+            background: color-mix(in srgb, var(--panel), white 20%);
+        }
+
+        #receiver-scan .receiver-scan-band-select-wrap:focus-within {
+            background: color-mix(in srgb, var(--panel), white 22%);
+            box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent), white 54%);
+        }
+
+        #receiver-scan .receiver-scan-mode-btn {
+            justify-content: center;
+            width: 100%;
+            min-width: var(--receiver-scan-control-min-width);
+            height: 34px;
+            padding: 0 10px;
+            gap: 5px;
+            font-size: 0.78rem;
+        }
+
+        #receiver-scan .receiver-scan-mode-btn .topbar-mode-label {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #receiver-scan .receiver-scan-mode-btn[data-scan-role="smart"][aria-pressed="true"] {
+            background: #22c55e;
+            border-color: #22c55e;
+            color: #fff;
+        }
+
+        #receiver-scan .receiver-scan-mode-btn[data-scan-role="cw"][aria-pressed="true"] {
+            background: #3b82f6;
+            border-color: #3b82f6;
+            color: #fff;
+        }
+
+        #receiver-scan .receiver-scan-mode-btn[data-scan-role="phone"][aria-pressed="true"] {
+            background: #ef4444;
+            border-color: #ef4444;
+            color: #fff;
+        }
+
+        #receiver-scan .receiver-scan-mode-btn[aria-busy="true"] {
+            opacity: 0.92;
+        }
+
+        #receiver-scan .receiver-scan-smart-band {
+            width: 100%;
+            min-width: var(--receiver-scan-control-min-width);
+            height: 34px;
+            border: 1px solid transparent;
+            border-radius: 9px;
+            background: transparent;
+            color: var(--ink);
+            -webkit-text-fill-color: var(--ink);
+            font: inherit;
+            font-size: 0.78rem;
+            font-weight: 700;
+            padding: 0 30px 0 10px;
+            appearance: none;
+            outline: none;
+        }
+
+        #receiver-scan .receiver-scan-smart-band option {
+            color: #102a43;
+            background: #fff;
+        }
+
+        #receiver-scan .receiver-scan-band-select-caret {
+            position: absolute;
+            right: 10px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 14px;
+            height: 14px;
+            color: var(--muted);
+            pointer-events: none;
+        }
+
+        #receiver-scan .receiver-scan-band-select-caret svg {
+            width: 14px;
+            height: 14px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        #receiver-scan .panel-hdr-actions .panel-toggle {
+            align-self: flex-start;
+            justify-self: end;
         }
 
         .panel-hdr h2 {
@@ -4439,11 +4704,43 @@
                         <div class="panel-hdr">
                             <h2 data-icon="crosshair">Receiver Scan</h2>
                             <div class="panel-hdr-actions">
-                                <button class="action-btn-sm" id="receiver-scan-start" type="button"
-                                    data-icon="crosshair" aria-pressed="false" aria-busy="false">Start 20m
-                                    Scan</button>
-                                <button class="action-btn-sm" id="receiver-scan-stop" type="button" data-icon="pause"
-                                    aria-pressed="false" aria-busy="false" disabled>Stop</button>
+                                <div class="receiver-scan-mode-controls">
+                                    <div class="receiver-scan-band-select-wrap">
+                                        <select id="receiver-scan-smart-band" class="receiver-scan-smart-band"
+                                            aria-label="Receiver Scan band">
+                                            <option value="10m">10m</option>
+                                            <option value="12m">12m</option>
+                                            <option value="15m">15m</option>
+                                            <option value="17m">17m</option>
+                                            <option value="20m" selected>20m</option>
+                                            <option value="30m">30m</option>
+                                            <option value="40m">40m</option>
+                                            <option value="60m">60m</option>
+                                            <option value="80m">80m</option>
+                                            <option value="160m">160m</option>
+                                        </select>
+                                        <span class="receiver-scan-band-select-caret" aria-hidden="true">
+                                            <svg viewBox="0 0 24 24">
+                                                <path d="m6 9 6 6 6-6"></path>
+                                            </svg>
+                                        </span>
+                                    </div>
+                                    <button class="topbar-mode-btn receiver-scan-mode-btn"
+                                        id="receiver-scan-smart-start" data-scan-role="smart" type="button"
+                                        data-icon="spark" aria-pressed="false" aria-busy="false">SMART</button>
+                                    <button class="topbar-mode-btn receiver-scan-mode-btn" id="receiver-scan-cw-start"
+                                        data-scan-role="cw" type="button" data-icon="signal" aria-pressed="false"
+                                        aria-busy="false">CW</button>
+                                    <button class="topbar-mode-btn receiver-scan-mode-btn"
+                                        id="receiver-scan-phone-start" data-scan-role="phone" type="button"
+                                        data-icon="radio" aria-pressed="false" aria-busy="false">PHONE</button>
+                                </div>
+                                <button class="panel-toggle" type="button" aria-expanded="true"
+                                    aria-label="Collapse Receiver Scan">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                                        <path d="m6 9 6 6 6-6"></path>
+                                    </svg>
+                                </button>
                             </div>
                         </div>
                         <div class="panel-body">
@@ -4470,34 +4767,195 @@
                                 </article>
                             </div>
                             <p class="band-sched-hint" id="receiver-scan-note" style="margin:0;">
-                                RX0 scans 40m CW anchors while RX1 scans 40m Phone from 7.125 to 7.300 MHz. RX2-RX7 stay
-                                on the fixed digital plan.
+                                Run a 20m or 40m receiver scan. RX0 handles CW anchors, RX1 uses 12 kHz IQ probes to
+                                look for 2-3 kHz phone clusters, and RX2-RX7 stay on the fixed digital plan.
                             </p>
                             <div class="receiver-scan-results-grid">
-                                <section class="receiver-scan-lane-card" aria-labelledby="receiver-scan-cw-heading">
-                                    <div class="receiver-scan-lane-head">
-                                        <div class="settings-subcard-title" id="receiver-scan-cw-heading">RX0 CW
-                                            Anchors</div>
-                                        <div class="receiver-scan-lane-status" id="receiver-scan-cw-status">Idle
+                                <section class="receiver-scan-lane-card receiver-scan-result-card"
+                                    id="receiver-scan-smart-results-card" data-receiver-scan-card="smart"
+                                    aria-labelledby="receiver-scan-smart-heading">
+                                    <div class="receiver-scan-result-card-head">
+                                        <div class="receiver-scan-result-card-title-wrap">
+                                            <div class="settings-subcard-title receiver-scan-result-title"
+                                                id="receiver-scan-smart-heading">Smart Scan Results</div>
+                                            <div class="receiver-scan-result-card-subtitle"
+                                                id="receiver-scan-smart-summary">Combined SMART CW and PHONE results
+                                                will appear here.</div>
+                                        </div>
+                                        <div class="receiver-scan-result-card-actions">
+                                            <div class="receiver-scan-lane-status" id="receiver-scan-smart-status">Idle
+                                            </div>
+                                            <button class="panel-toggle receiver-scan-result-toggle" type="button"
+                                                aria-expanded="true" aria-label="Collapse Smart Scan Results">
+                                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                                    <path d="m6 9 6 6 6-6"></path>
+                                                </svg>
+                                            </button>
                                         </div>
                                     </div>
-                                    <ul class="receiver-scan-list" id="receiver-scan-cw-results">
-                                        <li>No CW probes have run yet.</li>
-                                    </ul>
+                                    <div class="receiver-scan-result-card-body">
+                                        <div class="receiver-scan-smart-groups">
+                                            <section class="receiver-scan-smart-group"
+                                                aria-labelledby="receiver-scan-smart-cw-heading">
+                                                <div class="receiver-scan-smart-group-title"
+                                                    id="receiver-scan-smart-cw-heading">CW Hits</div>
+                                                <ul class="receiver-scan-list" id="receiver-scan-smart-cw-results">
+                                                    <li>No SMART CW hits yet.</li>
+                                                </ul>
+                                            </section>
+                                            <section class="receiver-scan-smart-group"
+                                                aria-labelledby="receiver-scan-smart-phone-heading">
+                                                <div class="receiver-scan-smart-group-title"
+                                                    id="receiver-scan-smart-phone-heading">PHONE Clusters</div>
+                                                <ul class="receiver-scan-list" id="receiver-scan-smart-phone-results">
+                                                    <li>No SMART PHONE hits yet.</li>
+                                                </ul>
+                                            </section>
+                                        </div>
+                                    </div>
                                 </section>
-                                <section class="receiver-scan-lane-card" aria-labelledby="receiver-scan-phone-heading">
-                                    <div class="receiver-scan-lane-head">
-                                        <div class="settings-subcard-title" id="receiver-scan-phone-heading">RX1
-                                            Phone Anchors</div>
-                                        <div class="receiver-scan-lane-status" id="receiver-scan-phone-status">Idle
+                                <section class="receiver-scan-lane-card receiver-scan-result-card"
+                                    id="receiver-scan-cw-results-card" data-receiver-scan-card="cw"
+                                    aria-labelledby="receiver-scan-cw-heading">
+                                    <div class="receiver-scan-result-card-head">
+                                        <div class="receiver-scan-result-card-title-wrap">
+                                            <div class="settings-subcard-title receiver-scan-result-title"
+                                                id="receiver-scan-cw-heading">CW Scan Results</div>
+                                            <div class="receiver-scan-result-card-subtitle">Dedicated CW-only receiver
+                                                scan results appear here.</div>
+                                        </div>
+                                        <div class="receiver-scan-result-card-actions">
+                                            <div class="receiver-scan-lane-status" id="receiver-scan-cw-status">Idle
+                                            </div>
+                                            <button class="panel-toggle receiver-scan-result-toggle" type="button"
+                                                aria-expanded="true" aria-label="Collapse CW Scan Results">
+                                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                                    <path d="m6 9 6 6 6-6"></path>
+                                                </svg>
+                                            </button>
                                         </div>
                                     </div>
-                                    <ul class="receiver-scan-list" id="receiver-scan-phone-results">
-                                        <li>No Phone probes have run yet.</li>
-                                    </ul>
+                                    <div class="receiver-scan-result-card-body">
+                                        <ul class="receiver-scan-list" id="receiver-scan-cw-results">
+                                            <li>No CW-only scan results yet.</li>
+                                        </ul>
+                                    </div>
+                                </section>
+                                <section class="receiver-scan-lane-card receiver-scan-result-card"
+                                    id="receiver-scan-phone-results-card" data-receiver-scan-card="phone"
+                                    aria-labelledby="receiver-scan-phone-heading">
+                                    <div class="receiver-scan-result-card-head">
+                                        <div class="receiver-scan-result-card-title-wrap">
+                                            <div class="settings-subcard-title receiver-scan-result-title"
+                                                id="receiver-scan-phone-heading">PHONE Scan Results</div>
+                                            <div class="receiver-scan-result-card-subtitle">Dedicated PHONE-only
+                                                receiver scan results appear here.</div>
+                                        </div>
+                                        <div class="receiver-scan-result-card-actions">
+                                            <div class="receiver-scan-lane-status" id="receiver-scan-phone-status">Idle
+                                            </div>
+                                            <button class="panel-toggle receiver-scan-result-toggle" type="button"
+                                                aria-expanded="true" aria-label="Collapse PHONE Scan Results">
+                                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                                    <path d="m6 9 6 6 6-6"></path>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="receiver-scan-result-card-body">
+                                        <ul class="receiver-scan-list" id="receiver-scan-phone-results">
+                                            <li>No PHONE-only scan results yet.</li>
+                                        </ul>
+                                    </div>
                                 </section>
                             </div>
                             <div class="control-status" id="receiver-scan-status">Receiver Scan: idle</div>
+                        </div>
+                    </article>
+                    <article class="panel panel-collapsible" id="net-monitor" data-panel-card="net-monitor">
+                        <div class="panel-hdr">
+                            <h2 data-icon="activity">20m NET Monitor</h2>
+                            <div class="panel-hdr-actions">
+                                <button class="action-btn-sm" id="net-monitor-start" type="button" data-icon="activity"
+                                    aria-pressed="false" aria-busy="false">Start 20m NET
+                                    Monitor</button>
+                                <button class="panel-toggle" type="button" aria-expanded="true"
+                                    aria-label="Collapse 20m NET Monitor">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                                        <path d="m6 9 6 6 6-6"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="panel-body">
+                            <div class="receiver-scan-summary-grid">
+                                <article class="receiver-scan-stat">
+                                    <div class="summary-k">Mode</div>
+                                    <div class="summary-v" id="net-monitor-mode-state">Idle</div>
+                                </article>
+                                <article class="receiver-scan-stat">
+                                    <div class="summary-k">Window</div>
+                                    <div class="summary-v" id="net-monitor-window">14.295 to 14.310 MHz</div>
+                                </article>
+                                <article class="receiver-scan-stat">
+                                    <div class="summary-k">Current</div>
+                                    <div class="summary-v" id="net-monitor-current">--</div>
+                                </article>
+                                <article class="receiver-scan-stat">
+                                    <div class="summary-k">Caption Candidate</div>
+                                    <div class="summary-v" id="net-monitor-caption-candidate">--</div>
+                                </article>
+                                <article class="receiver-scan-stat">
+                                    <div class="summary-k">Last Cycle</div>
+                                    <div class="summary-v" id="net-monitor-last-cycle">--</div>
+                                </article>
+                            </div>
+                            <p class="band-sched-hint" id="net-monitor-note" style="margin:0;">
+                                Monitors 14.295, 14.300, 14.305, and 14.310 on RX1 with rolling signal levels to guide
+                                future audio captioning.
+                            </p>
+                            <div class="receiver-scan-actions">
+                                <button class="action-btn-sm" id="net-monitor-capture" type="button" data-icon="audio"
+                                    aria-pressed="false" aria-busy="false">Capture Candidate
+                                    Audio</button>
+                            </div>
+                            <section class="receiver-scan-lane-card" aria-labelledby="net-monitor-capture-heading">
+                                <div class="receiver-scan-lane-head">
+                                    <div class="settings-subcard-title" id="net-monitor-capture-heading">Caption Audio
+                                        Capture</div>
+                                    <div class="receiver-scan-lane-status" id="net-monitor-capture-state">Idle</div>
+                                </div>
+                                <ul class="receiver-scan-list" id="net-monitor-capture-summary">
+                                    <li>No caption audio captured yet.</li>
+                                </ul>
+                            </section>
+                            <section class="receiver-scan-lane-card" aria-labelledby="net-monitor-transcript-heading">
+                                <div class="receiver-scan-lane-head">
+                                    <div class="settings-subcard-title" id="net-monitor-transcript-heading">Transcript
+                                    </div>
+                                    <div class="receiver-scan-lane-status" id="net-monitor-transcript-state">Idle</div>
+                                </div>
+                                <ul class="receiver-scan-list" id="net-monitor-transcript-summary">
+                                    <li>No transcript generated yet.</li>
+                                </ul>
+                                <div class="receiver-scan-followup">
+                                    <div class="receiver-scan-followup-label">Caption Text</div>
+                                    <div class="receiver-scan-followup-text net-monitor-transcript-text"
+                                        id="net-monitor-transcript-text">Transcript text will appear here after capture
+                                        completes.</div>
+                                </div>
+                            </section>
+                            <section class="receiver-scan-lane-card" aria-labelledby="net-monitor-history-heading">
+                                <div class="receiver-scan-lane-head">
+                                    <div class="settings-subcard-title" id="net-monitor-history-heading">Rolling Signal
+                                        History</div>
+                                    <div class="receiver-scan-lane-status" id="net-monitor-cycle-state">Idle</div>
+                                </div>
+                                <ul class="receiver-scan-list" id="net-monitor-history">
+                                    <li>No NET monitor samples yet.</li>
+                                </ul>
+                            </section>
+                            <div class="control-status" id="net-monitor-status">NET Monitor: idle</div>
                         </div>
                     </article>
                     <article class="panel panel-collapsible panel-full" id="messages" data-panel-card="messages">
@@ -6093,6 +6551,7 @@
         let systemCardPrefs = readStoredSystemCardPrefs();
 
         const DASHBOARD_PANEL_PREFS_KEY = "kiwiscan-pro-dashboard-panel-collapse";
+        const RECEIVER_SCAN_CARD_PREFS_KEY = "kiwiscan-pro-receiver-scan-card-collapse";
 
         function readStoredDashboardPanelPrefs() {
             try {
@@ -6114,6 +6573,27 @@
         }
 
         let dashboardPanelPrefs = readStoredDashboardPanelPrefs();
+
+        function readStoredReceiverScanCardPrefs() {
+            try {
+                const raw = localStorage.getItem(RECEIVER_SCAN_CARD_PREFS_KEY);
+                if (!raw) return {};
+                const parsed = JSON.parse(raw);
+                return parsed && typeof parsed === "object" ? parsed : {};
+            } catch (_) {
+                return {};
+            }
+        }
+
+        function writeStoredReceiverScanCardPrefs(prefs) {
+            try {
+                localStorage.setItem(RECEIVER_SCAN_CARD_PREFS_KEY, JSON.stringify(prefs || {}));
+            } catch (_) {
+                // Ignore storage errors and keep the UI interactive.
+            }
+        }
+
+        let receiverScanCardPrefs = readStoredReceiverScanCardPrefs();
 
         function applyDashboardPanelCollapsedState(panel, collapsed, persist = false) {
             if (!panel) return;
@@ -6154,6 +6634,40 @@
                     toggleBtn.dataset.bound = "true";
                 }
                 applyDashboardPanelCollapsedState(panel, !!dashboardPanelPrefs[key], false);
+            });
+        }
+
+        function applyReceiverScanResultCardCollapsedState(card, collapsed, persist = false) {
+            if (!card) return;
+            const key = String(card.dataset.receiverScanCard || "").trim();
+            const isCollapsed = !!collapsed;
+            card.classList.toggle("is-collapsed", isCollapsed);
+            const toggleBtn = card.querySelector(".receiver-scan-result-toggle");
+            if (toggleBtn) {
+                toggleBtn.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+                const title = (card.querySelector(".receiver-scan-result-title")?.textContent || "Receiver Scan Results").trim();
+                toggleBtn.setAttribute("aria-label", `${isCollapsed ? "Expand" : "Collapse"} ${title}`);
+                toggleBtn.title = `${isCollapsed ? "Expand" : "Collapse"} ${title}`;
+            }
+            if (persist && key) {
+                receiverScanCardPrefs = { ...receiverScanCardPrefs, [key]: isCollapsed };
+                writeStoredReceiverScanCardPrefs(receiverScanCardPrefs);
+            }
+        }
+
+        function initReceiverScanResultCardToggles() {
+            document.querySelectorAll(".receiver-scan-result-card[data-receiver-scan-card]").forEach((card) => {
+                const key = String(card.dataset.receiverScanCard || "").trim();
+                const toggleBtn = card.querySelector(".receiver-scan-result-toggle");
+                if (!toggleBtn) return;
+                if (toggleBtn.dataset.bound !== "true") {
+                    toggleBtn.addEventListener("click", () => {
+                        const collapsed = !card.classList.contains("is-collapsed");
+                        applyReceiverScanResultCardCollapsedState(card, collapsed, true);
+                    });
+                    toggleBtn.dataset.bound = "true";
+                }
+                applyReceiverScanResultCardCollapsedState(card, !!receiverScanCardPrefs[key], false);
             });
         }
 
@@ -7720,47 +8234,189 @@
             if (el) el.textContent = `Receiver Scan: ${text}`;
         }
 
+        function setNetMonitorStatusText(text) {
+            const el = byId("net-monitor-status");
+            if (el) el.textContent = `NET Monitor: ${text}`;
+        }
+
         let latestReceiverScanStatus = null;
         let receiverScanPendingAction = "";
+        let receiverScanPendingBand = "";
+        let receiverScanPendingSource = "";
+        let receiverScanActiveSource = "";
+        const RECEIVER_SCAN_BANDS = ["20m", "40m"];
+        let latestNetMonitorStatus = null;
+        let netMonitorPendingAction = "";
+        let netMonitorCapturePending = false;
+        const NET_MONITOR_CAPTURE_DURATION_S = 20;
+
+        function normalizeReceiverScanBand(value, fallback = "40m") {
+            const valueText = safeText(value, "").toLowerCase();
+            const directMatch = RECEIVER_SCAN_BANDS.find((band) => band.toLowerCase() === valueText);
+            if (directMatch) return directMatch;
+            const fallbackText = safeText(fallback, "").toLowerCase();
+            const fallbackMatch = RECEIVER_SCAN_BANDS.find((band) => band.toLowerCase() === fallbackText);
+            return fallbackMatch || "40m";
+        }
+
+        function readSelectedReceiverScanBand() {
+            return safeText(byId("receiver-scan-smart-band") && byId("receiver-scan-smart-band").value, "").trim();
+        }
+
+        function currentReceiverScanBand(scan = latestReceiverScanStatus) {
+            const pendingBand = receiverScanPendingAction === "start" ? receiverScanPendingBand : "";
+            return normalizeReceiverScanBand(pendingBand || (scan && scan.band), "40m");
+        }
+
+        function getReceiverScanActionButtons() {
+            return [
+                { role: "smart", label: "SMART", button: byId("receiver-scan-smart-start") },
+                { role: "cw", label: "CW", button: byId("receiver-scan-cw-start") },
+                { role: "phone", label: "PHONE", button: byId("receiver-scan-phone-start") },
+            ].filter((entry) => entry.button);
+        }
+
+        function normalizeReceiverScanControlRole(value, fallback = "") {
+            const valueText = safeText(value, "").toLowerCase();
+            if (["smart", "cw", "phone"].includes(valueText)) return valueText;
+            const fallbackText = safeText(fallback, "").toLowerCase();
+            if (["smart", "cw", "phone"].includes(fallbackText)) return fallbackText;
+            return "";
+        }
+
+        function receiverScanRoleLabel(role) {
+            if (role === "smart") return "SMART";
+            if (role === "cw") return "CW";
+            return "PHONE";
+        }
+
+        function receiverScanRunLabel(role) {
+            const resolvedRole = normalizeReceiverScanControlRole(role, "smart") || "smart";
+            return `Run ${receiverScanRoleLabel(resolvedRole)} Scan`;
+        }
+
+        function focusReceiverScanLane(role) {
+            const targetId = role === "smart"
+                ? "receiver-scan-smart-heading"
+                : role === "cw"
+                    ? "receiver-scan-cw-heading"
+                    : role === "phone"
+                        ? "receiver-scan-phone-heading"
+                        : "";
+            const target = targetId ? byId(targetId) : null;
+            if (target && typeof target.scrollIntoView === "function") {
+                target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+            }
+        }
+
+        function setUnsupportedReceiverScanBandStatus(controlRole, selectedBandValue) {
+            if (typeof window.kiwiProSetView === "function") window.kiwiProSetView("receiver-scan", true);
+            if (controlRole === "smart") {
+                setAutomationStatus(`Smart Scan for ${selectedBandValue || "that band"} is not available yet`);
+                return;
+            }
+            const controlLabel = controlRole === "cw" ? "CW Scan" : "PHONE Scan";
+            setAutomationStatus(`${controlLabel} for ${selectedBandValue || "that band"} is not available yet`);
+        }
 
         function setReceiverScanButtonLabel(button, label) {
             if (!button) return;
             const iconMarkup = buildIconMarkup(button.dataset.icon);
-            button.innerHTML = `${iconMarkup}<span>${escapeHtml(String(label || ""))}</span>`;
+            const labelClass = button.classList.contains("receiver-scan-mode-btn") ? ' class="topbar-mode-label"' : "";
+            button.innerHTML = `${iconMarkup}<span${labelClass}>${escapeHtml(String(label || ""))}</span>`;
         }
 
         function syncReceiverScanControls(scan = latestReceiverScanStatus) {
-            const startBtn = byId("receiver-scan-start");
-            const stopBtn = byId("receiver-scan-stop");
+            const buttons = getReceiverScanActionButtons();
             const running = !!(scan && scan.running);
             const modeActive = !!(scan && scan.mode_active);
             const startPending = receiverScanPendingAction === "start";
             const stopPending = receiverScanPendingAction === "stop";
+            const runningSource = running || modeActive
+                ? (normalizeReceiverScanControlRole(scan && scan.scan_mode, receiverScanActiveSource) || receiverScanActiveSource)
+                : "";
+            const selectedSource = normalizeReceiverScanControlRole(
+                receiverScanPendingSource || receiverScanActiveSource,
+                runningSource,
+            );
+            const bandSelect = byId("receiver-scan-smart-band");
 
-            if (startBtn) {
-                startBtn.classList.toggle("is-busy", startPending);
-                startBtn.classList.toggle("is-active", !startPending && (running || modeActive));
-                startBtn.classList.remove("is-error", "is-success");
-                startBtn.disabled = startPending || running;
-                startBtn.setAttribute("aria-pressed", (startPending || running || modeActive) ? "true" : "false");
-                startBtn.setAttribute("aria-busy", startPending ? "true" : "false");
-                setReceiverScanButtonLabel(
-                    startBtn,
-                    startPending ? "Starting..." : running ? "Scanning 20m" : modeActive ? "Run 20m Scan" : "Start 20m Scan",
-                );
+            if (bandSelect) {
+                bandSelect.disabled = startPending || stopPending;
+                bandSelect.setAttribute("aria-busy", (startPending || stopPending) ? "true" : "false");
             }
 
-            if (stopBtn) {
-                const canStop = running || modeActive || stopPending;
-                stopBtn.classList.toggle("is-busy", stopPending);
-                stopBtn.classList.toggle("is-active", !stopPending && canStop);
-                stopBtn.classList.remove("is-error", "is-success");
-                stopBtn.disabled = !canStop || stopPending;
-                stopBtn.setAttribute("aria-pressed", stopPending ? "true" : "false");
-                stopBtn.setAttribute("aria-busy", stopPending ? "true" : "false");
+            buttons.forEach(({ role, label, button }) => {
+                const isBusyRole = role === receiverScanPendingSource && (startPending || stopPending);
+                const isRunningRole = role === runningSource && (running || modeActive);
+                const isSelectedRole = role === selectedSource;
+                button.classList.toggle("is-busy", isBusyRole);
+                button.classList.toggle("is-active", isRunningRole || isSelectedRole);
+                button.classList.remove("is-error", "is-success");
+                button.disabled = startPending || stopPending;
+                button.setAttribute("aria-pressed", (isBusyRole || isRunningRole || isSelectedRole) ? "true" : "false");
+                button.setAttribute("aria-busy", isBusyRole ? "true" : "false");
                 setReceiverScanButtonLabel(
-                    stopBtn,
-                    stopPending ? "Stopping..." : running ? "Stop Scan" : modeActive ? "Release Scan" : "Stop",
+                    button,
+                    startPending && isBusyRole
+                        ? `Starting ${label}...`
+                        : stopPending && isBusyRole
+                            ? "Stopping..."
+                            : running && isRunningRole
+                                ? "Stop Scanning"
+                                : isSelectedRole
+                                    ? receiverScanRunLabel(role)
+                                    : label,
+                );
+            });
+            syncReceiverScanResultCards(scan);
+        }
+
+        function syncNetMonitorControls(status = latestNetMonitorStatus) {
+            const button = byId("net-monitor-start");
+            const captureButton = byId("net-monitor-capture");
+            const running = !!(status && status.running);
+            const activating = !!(status && status.activating);
+            const capture = status && status.capture && typeof status.capture === "object" ? status.capture : null;
+            const captureStatus = safeText(capture && capture.status, "idle").toLowerCase();
+            const captureRunning = !!(capture && capture.running);
+            const hasCandidate = !!(status && status.caption_candidate && (status.caption_candidate.capture_freq_mhz != null || status.caption_candidate.center_freq_mhz != null));
+            const pendingStart = netMonitorPendingAction === "start";
+            const pendingStop = netMonitorPendingAction === "stop";
+            if (button) {
+                button.classList.toggle("is-busy", pendingStart || pendingStop);
+                button.classList.toggle("is-active", !pendingStart && (running || activating));
+                button.classList.remove("is-error", "is-success");
+                button.disabled = pendingStart || pendingStop || captureRunning;
+                button.setAttribute("aria-pressed", (pendingStart || pendingStop || running || activating) ? "true" : "false");
+                button.setAttribute("aria-busy", (pendingStart || pendingStop) ? "true" : "false");
+                setReceiverScanButtonLabel(
+                    button,
+                    pendingStart
+                        ? "Starting NET Monitor..."
+                        : pendingStop
+                            ? "Stopping..."
+                            : (running || activating)
+                                ? "Stop NET Monitor"
+                                : "Start 20m NET Monitor",
+                );
+            }
+            if (captureButton) {
+                captureButton.classList.toggle("is-busy", netMonitorCapturePending || captureRunning);
+                captureButton.classList.toggle("is-active", !netMonitorCapturePending && captureRunning);
+                captureButton.classList.remove("is-error", "is-success");
+                captureButton.disabled = pendingStart || pendingStop || running || activating || netMonitorCapturePending || captureRunning || !hasCandidate;
+                captureButton.setAttribute("aria-pressed", (netMonitorCapturePending || captureRunning) ? "true" : "false");
+                captureButton.setAttribute("aria-busy", (netMonitorCapturePending || captureRunning) ? "true" : "false");
+                setReceiverScanButtonLabel(
+                    captureButton,
+                    netMonitorCapturePending || captureRunning
+                        ? captureStatus === "transcribing"
+                            ? "Transcribing..."
+                            : "Recording Audio..."
+                        : hasCandidate
+                            ? "Capture Candidate Audio"
+                            : "No Candidate Yet",
                 );
             }
         }
@@ -7781,7 +8437,162 @@
             if (["activity", "watch", "quiet", "error", "unavailable", "stopped"].includes(key)) {
                 return `status-${key}`;
             }
+            if (["recording", "capturing", "running", "transcribing", "starting", "busy"].includes(key)) {
+                return "status-watch";
+            }
+            if (["complete", "ready"].includes(key)) {
+                return "status-activity";
+            }
             return "status-quiet";
+        }
+
+        function formatNetMonitorCandidate(candidate) {
+            if (!candidate || candidate.center_freq_mhz == null) return "--";
+            const bits = [fmtReceiverScanFreq(candidate.center_freq_mhz)];
+            const captureFreq = Number(candidate.capture_freq_mhz ?? candidate.last_peak_freq_mhz);
+            if (Number.isFinite(captureFreq) && Math.abs(captureFreq - Number(candidate.center_freq_mhz)) >= 0.0005) {
+                bits.push(`tune ${fmtReceiverScanFreq(captureFreq)}`);
+            }
+            const relDb = Number(candidate.avg_rel_db ?? candidate.last_rel_db);
+            const voiceScore = Number(candidate.avg_voice_score ?? candidate.last_voice_score);
+            if (Number.isFinite(relDb)) bits.push(`${relDb >= 0 ? "+" : ""}${relDb.toFixed(1)} dB`);
+            if (Number.isFinite(voiceScore)) bits.push(`voice ${voiceScore.toFixed(2)}`);
+            return bits.join(" | ");
+        }
+
+        function renderNetMonitorCapture(status = latestNetMonitorStatus) {
+            const el = byId("net-monitor-capture-summary");
+            if (!el) return;
+            const capture = status && status.capture && typeof status.capture === "object" ? status.capture : null;
+            if (!capture || safeText(capture.status, "idle").toLowerCase() === "idle") {
+                el.innerHTML = "<li>No caption audio captured yet.</li>";
+                return;
+            }
+            const sourceFreqText = fmtReceiverScanFreq(capture.source_freq_mhz);
+            const captureFreqText = fmtReceiverScanFreq(capture.capture_freq_mhz);
+            const durationS = Number(capture.duration_s);
+            const wavPath = safeText(capture.wav_path, "");
+            const wavName = wavPath ? wavPath.split("/").pop() : "--";
+            el.innerHTML = `
+                <li class="receiver-scan-list-item">
+                    <div class="receiver-scan-list-head">
+                        <span class="receiver-scan-pill ${receiverScanStatusClass(capture && capture.status)}">${escapeHtml(safeText(capture && capture.status, "idle").toUpperCase())}</span>
+                        <span class="mono">${escapeHtml(captureFreqText)}</span>
+                        <span>${escapeHtml(Number.isFinite(durationS) ? `${Math.round(durationS)}s` : "--")}</span>
+                    </div>
+                    <div class="receiver-scan-list-summary">${escapeHtml(safeText(capture.summary, "No caption audio captured yet"))}</div>
+                    <div class="receiver-scan-list-meta">Candidate ${escapeHtml(sourceFreqText)} | Finished ${escapeHtml(fmtReceiverScanStamp(capture.finished_ts || capture.started_ts))}</div>
+                    <div class="receiver-scan-metrics">
+                        ${[
+                    ["Tune", captureFreqText],
+                    ["Candidate", sourceFreqText],
+                    ["WAV", wavName],
+                ].map(([label, value]) => `
+                            <div class="receiver-scan-metric">
+                                <div class="receiver-scan-metric-label">${escapeHtml(String(label))}</div>
+                                <div class="receiver-scan-metric-value">${escapeHtml(String(value))}</div>
+                            </div>
+                        `).join("")}
+                    </div>
+                </li>
+            `;
+        }
+
+        function renderNetMonitorTranscript(status = latestNetMonitorStatus) {
+            const summaryEl = byId("net-monitor-transcript-summary");
+            const textEl = byId("net-monitor-transcript-text");
+            if (!summaryEl || !textEl) return;
+            const capture = status && status.capture && typeof status.capture === "object" ? status.capture : null;
+            const transcript = capture && capture.transcription && typeof capture.transcription === "object" ? capture.transcription : null;
+            const transcriptStatus = safeText(transcript && transcript.status, "idle").toLowerCase();
+            if (!transcript || (transcriptStatus === "idle" && !safeText(transcript.text, "") && !safeText(transcript.text_path, "") && !safeText(transcript.json_path, ""))) {
+                summaryEl.innerHTML = "<li>No transcript generated yet.</li>";
+                textEl.textContent = "Transcript text will appear here after capture completes.";
+                return;
+            }
+            const transcriptText = safeText(transcript.text, "");
+            const modelText = safeText(transcript.model, "--");
+            const languageText = safeText(transcript.language, "--");
+            const textPath = safeText(transcript.text_path, "");
+            const jsonPath = safeText(transcript.json_path, "");
+            const textName = textPath ? textPath.split("/").pop() : "--";
+            const jsonName = jsonPath ? jsonPath.split("/").pop() : "--";
+            const segmentCount = Number(transcript.segment_count);
+            summaryEl.innerHTML = `
+                <li class="receiver-scan-list-item">
+                    <div class="receiver-scan-list-head">
+                        <span class="receiver-scan-pill ${receiverScanStatusClass(transcript && transcript.status)}">${escapeHtml(safeText(transcript && transcript.status, "idle").toUpperCase())}</span>
+                        <span class="mono">${escapeHtml(languageText)}</span>
+                        <span>${escapeHtml(modelText)}</span>
+                    </div>
+                    <div class="receiver-scan-list-summary">${escapeHtml(safeText(transcript.summary, "No transcript generated yet"))}</div>
+                    <div class="receiver-scan-list-meta">Finished ${escapeHtml(fmtReceiverScanStamp(transcript.finished_ts || transcript.started_ts))}</div>
+                    <div class="receiver-scan-metrics">
+                        ${[
+                    ["Language", languageText],
+                    ["Model", modelText],
+                    ["Segments", Number.isFinite(segmentCount) ? String(Math.round(segmentCount)) : "--"],
+                    ["TXT", textName],
+                    ["JSON", jsonName],
+                ].map(([label, value]) => `
+                            <div class="receiver-scan-metric">
+                                <div class="receiver-scan-metric-label">${escapeHtml(String(label))}</div>
+                                <div class="receiver-scan-metric-value">${escapeHtml(String(value))}</div>
+                            </div>
+                        `).join("")}
+                    </div>
+                </li>
+            `;
+            textEl.textContent = transcriptText || "No recognizable speech returned from the transcript model.";
+        }
+
+        function renderNetMonitorHistory(status = latestNetMonitorStatus) {
+            const el = byId("net-monitor-history");
+            if (!el) return;
+            const items = Array.isArray(status && status.history) ? status.history : [];
+            if (!items.length) {
+                el.innerHTML = "<li>No NET monitor samples yet.</li>";
+                return;
+            }
+            el.innerHTML = items.slice(0, 12).map((item) => {
+                const stateText = safeText(item && item.status, "idle").toUpperCase();
+                const centerText = fmtReceiverScanFreq(item && item.center_freq_mhz);
+                const peakFreq = Number(item && item.peak_freq_mhz);
+                const peakText = Number.isFinite(peakFreq) ? fmtReceiverScanFreq(peakFreq) : "--";
+                const relDb = Number(item && item.rel_db);
+                const relText = Number.isFinite(relDb) ? `${relDb >= 0 ? "+" : ""}${relDb.toFixed(1)} dB` : "--";
+                const voiceScore = Number(item && item.voice_score);
+                const bwHz = Number(item && item.occupied_bw_hz);
+                const bestSEst = Number(item && item.best_s_est);
+                const framesSeen = Number(item && item.frames_seen);
+                const metrics = [
+                    ["Peak", peakText],
+                    ["Voice", Number.isFinite(voiceScore) ? voiceScore.toFixed(2) : "--"],
+                    ["BW", Number.isFinite(bwHz) ? `${bwHz.toFixed(0)} Hz` : "--"],
+                    ["Best S", Number.isFinite(bestSEst) ? bestSEst.toFixed(1) : "--"],
+                    ["Frames", Number.isFinite(framesSeen) ? String(Math.round(framesSeen)) : "--"],
+                    ["Cycle", String(item && item.cycle_index != null ? item.cycle_index : "--")],
+                ];
+                return `
+                    <li class="receiver-scan-list-item">
+                        <div class="receiver-scan-list-head">
+                            <span class="receiver-scan-pill ${receiverScanStatusClass(item && item.status)}">${escapeHtml(stateText)}</span>
+                            <span class="mono">${escapeHtml(centerText)}</span>
+                            <span>${escapeHtml(relText)}</span>
+                        </div>
+                        <div class="receiver-scan-list-summary">${escapeHtml(safeText(item && item.summary, "No summary"))}</div>
+                        <div class="receiver-scan-list-meta">Peak ${escapeHtml(peakText)} | ${escapeHtml(fmtReceiverScanStamp(item && item.sample_ts))}</div>
+                        <div class="receiver-scan-metrics">
+                            ${metrics.map(([label, value]) => `
+                                <div class="receiver-scan-metric">
+                                    <div class="receiver-scan-metric-label">${escapeHtml(String(label))}</div>
+                                    <div class="receiver-scan-metric-value">${escapeHtml(String(value))}</div>
+                                </div>
+                            `).join("")}
+                        </div>
+                    </li>
+                `;
+            }).join("");
         }
 
         function renderReceiverScanResults(targetId, items, emptyText, options = {}) {
@@ -7789,10 +8600,22 @@
             if (!el) return;
             const kind = safeText(options.kind, "").toLowerCase();
             const filteredItems = Array.isArray(items)
-                ? items.filter((item) => kind !== "phone" || safeText(item && item.status, "quiet").toLowerCase() === "activity")
+                ? items.filter((item) => {
+                    if (kind === "phone") {
+                        return safeText(item && item.status, "quiet").toLowerCase() === "activity"
+                            && Number(item && item.event_count) > 0;
+                    }
+                    if (kind === "cw") return Number(item && item.signal_count) > 0;
+                    return true;
+                })
                 : [];
+            const resolvedEmptyText = kind === "cw" && Array.isArray(items) && items.length && !filteredItems.length
+                ? "No persistent CW-like tones detected."
+                : kind === "phone" && Array.isArray(items) && items.length && !filteredItems.length
+                    ? "No confirmed phone-like IQ clusters detected."
+                    : emptyText;
             if (!filteredItems.length) {
-                el.innerHTML = `<li>${escapeHtml(emptyText)}</li>`;
+                el.innerHTML = `<li>${escapeHtml(resolvedEmptyText)}</li>`;
                 return;
             }
             const fmtMaybe = (value, suffix = "", digits = 0) => {
@@ -7811,6 +8634,7 @@
                 const metricPairs = [
                     ["Hits", Number.isFinite(signalCount) ? String(Math.round(signalCount)) : "--"],
                     ["Events", Number.isFinite(eventCount) ? String(Math.round(eventCount)) : "--"],
+                    ["Mode", safeText(item && item.mode_hint, "--")],
                     ["Peak", fmtMaybe(item && item.max_rel_db, " dB", 1)],
                     ["Best S", fmtMaybe(item && item.best_s_est, "", 1)],
                     ["Voice", fmtMaybe(item && item.voice_score, "", 2)],
@@ -7857,19 +8681,89 @@
             }).join("");
         }
 
-        function applyReceiverScanLane(kind, lane, items) {
+        function countReceiverScanMatches(items, kind) {
+            if (!Array.isArray(items)) return 0;
+            if (kind === "phone") {
+                return items.filter((item) => {
+                    return safeText(item && item.status, "quiet").toLowerCase() === "activity"
+                        && Number(item && item.event_count) > 0;
+                }).length;
+            }
+            if (kind === "cw") {
+                return items.filter((item) => Number(item && item.signal_count) > 0).length;
+            }
+            return items.length;
+        }
+
+        function syncReceiverScanResultCards(scan = latestReceiverScanStatus) {
+            const selectedRole = normalizeReceiverScanControlRole(
+                receiverScanPendingSource || receiverScanActiveSource,
+                "",
+            );
+            const runningRole = scan && (scan.running || scan.mode_active)
+                ? normalizeReceiverScanControlRole(scan && scan.scan_mode, selectedRole)
+                : "";
+            const emphasizedRole = selectedRole || runningRole;
+            ["smart", "cw", "phone"].forEach((role) => {
+                const card = byId(`receiver-scan-${role}-results-card`);
+                if (!card) return;
+                card.classList.toggle("is-selected", role === emphasizedRole);
+            });
+        }
+
+        function applyReceiverScanSmartCard(scan, lanes, results) {
+            const statusEl = byId("receiver-scan-smart-status");
+            const summaryEl = byId("receiver-scan-smart-summary");
+            const scanMode = normalizeReceiverScanControlRole(scan && scan.scan_mode, "smart") || "smart";
+            const smartActive = scanMode === "smart";
+            const cwItems = smartActive && Array.isArray(results && results.cw) ? results.cw : [];
+            const phoneItems = smartActive && Array.isArray(results && results.phone) ? results.phone : [];
+            const cwHits = countReceiverScanMatches(cwItems, "cw");
+            const phoneHits = countReceiverScanMatches(phoneItems, "phone");
+            const bandLabel = currentReceiverScanBand(scan);
+            if (statusEl) {
+                statusEl.textContent = smartActive
+                    ? (scan.running ? "Running" : (scan.mode_active ? "Ready" : safeText(scan.status, "idle")))
+                    : "Idle";
+            }
+            if (summaryEl) {
+                summaryEl.textContent = smartActive
+                    ? `Combined SMART results for ${bandLabel}. CW hits ${cwHits}, PHONE clusters ${phoneHits}.`
+                    : "Combined SMART CW and PHONE results will appear here.";
+            }
+            renderReceiverScanResults(
+                "receiver-scan-smart-cw-results",
+                cwItems,
+                "No SMART CW hits yet.",
+                { kind: "cw" },
+            );
+            renderReceiverScanResults(
+                "receiver-scan-smart-phone-results",
+                phoneItems,
+                "No SMART PHONE hits yet.",
+                { kind: "phone" },
+            );
+        }
+
+        function applyReceiverScanLane(kind, lane, items, options = {}) {
             const statusEl = byId(`receiver-scan-${kind}-status`);
             const currentEl = byId(`receiver-scan-${kind}-current`);
+            const scanMode = normalizeReceiverScanControlRole(options.mode, "");
+            const cardActive = scanMode === kind;
             if (statusEl) {
-                const bits = [];
-                const rxChan = Number(lane && lane.rx_chan);
-                const score = Number(lane && lane.last_score);
-                const currentFreq = Number(lane && lane.current_freq_mhz);
-                if (Number.isFinite(rxChan)) bits.push(`RX${Math.round(rxChan)}`);
-                bits.push(safeText(lane && lane.status, "idle"));
-                if (Number.isFinite(currentFreq)) bits.push(fmtReceiverScanFreq(currentFreq));
-                else if (Number.isFinite(score)) bits.push(`score ${Math.round(score)}`);
-                statusEl.textContent = bits.join(" | ");
+                if (cardActive) {
+                    const bits = [];
+                    const rxChan = Number(lane && lane.rx_chan);
+                    const score = Number(lane && lane.last_score);
+                    const currentFreq = Number(lane && lane.current_freq_mhz);
+                    if (Number.isFinite(rxChan)) bits.push(`RX${Math.round(rxChan)}`);
+                    bits.push(safeText(lane && lane.status, "idle"));
+                    if (Number.isFinite(currentFreq)) bits.push(fmtReceiverScanFreq(currentFreq));
+                    else if (Number.isFinite(score)) bits.push(`score ${Math.round(score)}`);
+                    statusEl.textContent = bits.join(" | ");
+                } else {
+                    statusEl.textContent = `Waiting for ${receiverScanRoleLabel(kind)} Scan`;
+                }
             }
             if (currentEl) {
                 const currentFreq = Number(lane && lane.current_freq_mhz);
@@ -7877,8 +8771,8 @@
             }
             renderReceiverScanResults(
                 `receiver-scan-${kind}-results`,
-                items,
-                kind === "cw" ? "No CW probes have run yet." : "No Phone activity hits yet.",
+                cardActive ? items : [],
+                kind === "cw" ? "No CW-only scan results yet." : "No PHONE-only scan results yet.",
                 { kind },
             );
         }
@@ -7886,18 +8780,29 @@
         function applyReceiverScanStatus(scan) {
             if (!scan || typeof scan !== "object") return;
             latestReceiverScanStatus = scan;
+            const resolvedSource = normalizeReceiverScanControlRole(
+                scan && scan.scan_mode,
+                receiverScanPendingSource || receiverScanActiveSource || "smart",
+            ) || "smart";
             if (receiverScanPendingAction === "start" && (scan.running || scan.mode_active)) {
                 receiverScanPendingAction = "";
+                receiverScanPendingBand = "";
+                receiverScanActiveSource = resolvedSource;
+                receiverScanPendingSource = "";
             }
             if (receiverScanPendingAction === "stop" && !scan.running) {
                 receiverScanPendingAction = "";
+                receiverScanPendingBand = "";
+                receiverScanPendingSource = "";
             }
+            if (!receiverScanActiveSource && (scan.running || scan.mode_active)) receiverScanActiveSource = resolvedSource;
             if (scan.mode_active) {
                 setReceiversMode("scan", { persist: false });
                 applyAutoModeVisibility(false);
             }
             const modeEl = byId("receiver-scan-mode-state");
             const modeLabel = safeText(scan.mode_label, "Receiver Scan");
+            const scanMode = normalizeReceiverScanControlRole(scan && scan.scan_mode, receiverScanActiveSource || "smart") || "smart";
             if (modeEl) {
                 modeEl.textContent = scan.running
                     ? `${modeLabel} scanning`
@@ -7905,9 +8810,14 @@
             }
             const reservedEl = byId("receiver-scan-reserved");
             if (reservedEl) {
-                reservedEl.textContent = Array.isArray(scan.reserved_receivers) && scan.reserved_receivers.length >= 2
-                    ? `RX${scan.reserved_receivers[0]} CW | RX${scan.reserved_receivers[1]} Phone`
-                    : "RX0 CW | RX1 Phone";
+                const reservedReceivers = Array.isArray(scan.reserved_receivers)
+                    ? scan.reserved_receivers.map((value) => Number(value)).filter((value) => Number.isFinite(value))
+                    : [];
+                reservedEl.textContent = reservedReceivers.length >= 2
+                    ? `RX${reservedReceivers[0]} CW | RX${reservedReceivers[1]} Phone`
+                    : reservedReceivers.length === 1
+                        ? (scanMode === "phone" ? `RX${reservedReceivers[0]} Phone` : `RX${reservedReceivers[0]} CW`)
+                        : "RX0 CW | RX1 Phone";
             }
             const lastRunEl = byId("receiver-scan-last-run");
             if (lastRunEl) {
@@ -7916,7 +8826,7 @@
             }
             const noteEl = byId("receiver-scan-note");
             const followup = scan.cw_followup && typeof scan.cw_followup === "object" ? scan.cw_followup : null;
-            const bandLabel = safeText(scan.band, "40m");
+            const bandLabel = currentReceiverScanBand(scan);
             const plan = scan.plan && typeof scan.plan === "object" ? scan.plan : {};
             const phoneRange = plan.phone_range_mhz && typeof plan.phone_range_mhz === "object" ? plan.phone_range_mhz : null;
             const phoneRangeStart = Number(phoneRange && phoneRange.start);
@@ -7924,11 +8834,16 @@
             const defaultPhoneText = Number.isFinite(phoneRangeStart) && Number.isFinite(phoneRangeEnd)
                 ? `${fmtReceiverScanFreq(phoneRangeStart)} to ${fmtReceiverScanFreq(phoneRangeEnd)}`
                 : `${bandLabel} Phone anchors`;
-            const defaultNote = `RX0 scans ${bandLabel} CW anchors while RX1 scans ${bandLabel} Phone from ${defaultPhoneText}. After the CW anchor sweep, RX0 records the best CW hit for 60s. RX2-RX7 stay on the fixed digital plan.`;
+            const defaultNote = scanMode === "cw"
+                ? `RX0 scans ${bandLabel} CW anchors and records each confirmed CW hit for 60s. RX1 stays idle while RX2-RX7 stay on the fixed digital plan.`
+                : scanMode === "phone"
+                    ? `RX1 scans ${bandLabel} PHONE with 12 kHz IQ windows across ${defaultPhoneText} and looks for confirmed 2-3 kHz phone clusters. RX0 stays idle while RX2-RX7 stay on the fixed digital plan.`
+                    : `RX0 scans ${bandLabel} CW anchors while RX1 scans ${bandLabel} Phone with 12 kHz IQ windows across ${defaultPhoneText} and looks for confirmed 2-3 kHz phone clusters. After the CW anchor sweep, RX0 records each CW hit for 60s. RX2-RX7 stay on the fixed digital plan.`;
             if (noteEl) {
+                const followupStatus = safeText(followup && followup.status, "idle").toLowerCase();
                 noteEl.textContent = scan.last_error
                     ? `Receiver Scan warning: ${safeText(scan.last_error, "unknown error")}`
-                    : ((followup && safeText(followup.status, "idle") !== "idle")
+                    : ((followup && !["idle", "inactive"].includes(followupStatus))
                         ? safeText(followup.summary, defaultNote)
                         : defaultNote);
             }
@@ -7938,9 +8853,104 @@
             setReceiverScanStatusText(stateText);
             const lanes = scan.lanes && typeof scan.lanes === "object" ? scan.lanes : {};
             const results = scan.results && typeof scan.results === "object" ? scan.results : {};
-            applyReceiverScanLane("cw", lanes.cw, Array.isArray(results.cw) ? results.cw : []);
-            applyReceiverScanLane("phone", lanes.phone, Array.isArray(results.phone) ? results.phone : []);
+            applyReceiverScanSmartCard(scan, lanes, results);
+            applyReceiverScanLane("cw", lanes.cw, Array.isArray(results.cw) ? results.cw : [], { mode: scanMode });
+            applyReceiverScanLane("phone", lanes.phone, Array.isArray(results.phone) ? results.phone : [], { mode: scanMode });
             syncReceiverScanControls(scan);
+        }
+
+        function applyNetMonitorStatus(status) {
+            if (!status || typeof status !== "object") return;
+            latestNetMonitorStatus = status;
+            if (netMonitorPendingAction === "start" && (status.running || status.activating || status.mode_active)) {
+                netMonitorPendingAction = "";
+            }
+            if (netMonitorPendingAction === "stop" && !status.running && !status.activating) {
+                netMonitorPendingAction = "";
+            }
+            if (netMonitorCapturePending && status.capture && status.capture.running) {
+                netMonitorCapturePending = false;
+            }
+            if (netMonitorCapturePending && status.capture && safeText(status.capture.status, "idle").toLowerCase() !== "idle") {
+                netMonitorCapturePending = false;
+            }
+
+            const capture = status.capture && typeof status.capture === "object" ? status.capture : null;
+            const transcript = capture && capture.transcription && typeof capture.transcription === "object" ? capture.transcription : null;
+
+            const modeEl = byId("net-monitor-mode-state");
+            if (modeEl) {
+                const modeLabel = safeText(status.mode_label, "NET Monitor");
+                modeEl.textContent = capture && capture.running
+                    ? (safeText(capture.status, "recording").toLowerCase() === "transcribing"
+                        ? "Transcribing caption audio"
+                        : "Recording candidate audio")
+                    : status.running
+                        ? `${modeLabel} monitoring`
+                        : (status.activating ? `${modeLabel} starting` : "Idle");
+            }
+
+            const targets = Array.isArray(status.target_freqs_mhz) ? status.target_freqs_mhz : [];
+            const windowEl = byId("net-monitor-window");
+            if (windowEl) {
+                windowEl.textContent = targets.length
+                    ? `${fmtReceiverScanFreq(Math.min(...targets))} to ${fmtReceiverScanFreq(Math.max(...targets))}`
+                    : "--";
+            }
+
+            const currentEl = byId("net-monitor-current");
+            if (currentEl) {
+                currentEl.textContent = Number.isFinite(Number(status.current_freq_mhz))
+                    ? fmtReceiverScanFreq(status.current_freq_mhz)
+                    : "--";
+            }
+
+            const captionCandidateEl = byId("net-monitor-caption-candidate");
+            if (captionCandidateEl) {
+                captionCandidateEl.textContent = formatNetMonitorCandidate(status.caption_candidate);
+            }
+
+            const lastCycleEl = byId("net-monitor-last-cycle");
+            if (lastCycleEl) {
+                lastCycleEl.textContent = fmtReceiverScanStamp(status.last_cycle_finished_ts || status.last_started_ts);
+            }
+
+            const cycleStateEl = byId("net-monitor-cycle-state");
+            if (cycleStateEl) {
+                cycleStateEl.textContent = safeText(status.current_note, safeText(status.status, "idle"));
+            }
+
+            const captureStateEl = byId("net-monitor-capture-state");
+            if (captureStateEl) {
+                captureStateEl.textContent = capture
+                    ? safeText(capture.summary, safeText(capture.status, "idle"))
+                    : "Idle";
+            }
+
+            const transcriptStateEl = byId("net-monitor-transcript-state");
+            if (transcriptStateEl) {
+                transcriptStateEl.textContent = transcript
+                    ? safeText(transcript.summary, safeText(transcript.status, "idle"))
+                    : "Idle";
+            }
+
+            const noteEl = byId("net-monitor-note");
+            if (noteEl) {
+                const defaultNote = "Monitors 14.295, 14.300, 14.305, and 14.310 on RX1 with rolling signal levels to guide future audio captioning.";
+                noteEl.textContent = status.last_error
+                    ? `NET Monitor warning: ${safeText(status.last_error, "unknown error")}`
+                    : safeText(status.current_note, defaultNote);
+            }
+
+            setNetMonitorStatusText(
+                status.running
+                    ? "running"
+                    : (status.activating ? "starting" : safeText(status.status, "idle")),
+            );
+            renderNetMonitorCapture(status);
+            renderNetMonitorTranscript(status);
+            renderNetMonitorHistory(status);
+            syncNetMonitorControls(status);
         }
 
         async function deactivateReceiverScanMode(options = {}) {
@@ -7955,6 +8965,22 @@
                 syncReceiverScanControls();
                 if (!options.quiet) throw err;
                 console.warn("receiver scan deactivate failed", err);
+                return null;
+            }
+        }
+
+        async function deactivateNetMonitorMode(options = {}) {
+            netMonitorPendingAction = "stop";
+            syncNetMonitorControls();
+            try {
+                const result = await postJson("/net_monitor/deactivate", {});
+                applyNetMonitorStatus(result);
+                return result;
+            } catch (err) {
+                netMonitorPendingAction = "";
+                syncNetMonitorControls();
+                if (!options.quiet) throw err;
+                console.warn("net monitor deactivate failed", err);
                 return null;
             }
         }
@@ -8035,20 +9061,47 @@
             applyAutoModeVisibility(storedMode === "auto");
         }
 
-        async function applyReceiversScanMode() {
-            setAutomationStatus("starting Receiver Scan...");
+        async function applyReceiversScanMode(band = null, role = null) {
+            await deactivateNetMonitorMode({ quiet: true });
+            const targetBand = normalizeReceiverScanBand(
+                band || (latestReceiverScanStatus && latestReceiverScanStatus.band),
+                "40m",
+            );
+            const targetRole = normalizeReceiverScanControlRole(
+                role,
+                receiverScanPendingSource || receiverScanActiveSource || "smart",
+            ) || "smart";
+            if (!receiverScanPendingSource) receiverScanPendingSource = targetRole;
+            if (!receiverScanActiveSource) receiverScanActiveSource = receiverScanPendingSource;
+            setAutomationStatus(`starting ${receiverScanRoleLabel(targetRole)}...`);
             setReceiversBusy(true, "Preparing Receiver Scan...");
             receiverScanPendingAction = "start";
+            receiverScanPendingBand = targetBand;
             syncReceiverScanControls();
             try {
-                const result = await postJson("/receiver_scan/start", {});
+                const result = targetRole === "smart"
+                    ? (band
+                        ? await postJson("/receiver_scan/start", { band: targetBand })
+                        : await postJson("/receiver_scan/start", {}))
+                    : (band
+                        ? await postJson("/receiver_scan/start", { band: targetBand, mode: targetRole })
+                        : await postJson("/receiver_scan/start", { mode: targetRole }));
+                const startedBand = normalizeReceiverScanBand(result && result.band, targetBand);
+                const bandMismatch = !!band && startedBand !== targetBand;
                 applyReceiverScanStatus(result);
-                setAutomationStatus(result && result.running
-                    ? "Receiver Scan active - RX0 CW / RX1 Phone"
-                    : "Receiver Scan ready");
+                setAutomationStatus(bandMismatch
+                    ? `Receiver Scan started on ${startedBand}. Restart the backend to load ${targetBand} band selection.`
+                    : (result && result.running
+                        ? `${receiverScanRoleLabel(targetRole)} active - ${targetBand}`
+                        : `${receiverScanRunLabel(targetRole)} ready`));
                 refresh();
             } catch (err) {
                 receiverScanPendingAction = "";
+                receiverScanPendingBand = "";
+                receiverScanPendingSource = "";
+                if (!(latestReceiverScanStatus && (latestReceiverScanStatus.running || latestReceiverScanStatus.mode_active))) {
+                    receiverScanActiveSource = "";
+                }
                 syncReceiverScanControls();
                 setAutomationStatus(`scan mode failed: ${String((err && err.message) || err)}`);
             } finally {
@@ -8056,18 +9109,85 @@
             }
         }
 
-        async function stopReceiverScanRun() {
-            setAutomationStatus("stopping Receiver Scan...");
+        async function applyNetMonitorMode() {
+            setAutomationStatus("starting 20m NET monitor...");
+            setReceiversBusy(true, "Preparing 20m NET monitor...");
+            netMonitorPendingAction = "start";
+            syncNetMonitorControls();
+            try {
+                await deactivateReceiverScanMode({ quiet: true });
+                setReceiversMode("scan");
+                applyAutoModeVisibility(false);
+                if (typeof window.kiwiProSetView === "function") window.kiwiProSetView("receiver-scan", true);
+                const result = await postJson("/net_monitor/start", {});
+                applyNetMonitorStatus(result);
+                setAutomationStatus(result && (result.running || result.activating)
+                    ? "20m NET monitor active"
+                    : "20m NET monitor ready");
+                refresh();
+            } catch (err) {
+                netMonitorPendingAction = "";
+                syncNetMonitorControls();
+                setAutomationStatus(`NET monitor failed: ${String((err && err.message) || err)}`);
+            } finally {
+                setReceiversBusy(false);
+            }
+        }
+
+        async function stopNetMonitorRun() {
+            setAutomationStatus("stopping 20m NET monitor...");
+            netMonitorPendingAction = "stop";
+            syncNetMonitorControls();
+            try {
+                const result = await postJson("/net_monitor/deactivate", {});
+                applyNetMonitorStatus(result);
+                setAutomationStatus("20m NET monitor stopped");
+            } catch (err) {
+                netMonitorPendingAction = "";
+                syncNetMonitorControls();
+                setAutomationStatus(`NET monitor stop failed: ${String((err && err.message) || err)}`);
+            }
+        }
+
+        async function captureNetMonitorCandidate() {
+            setAutomationStatus("capturing NET monitor candidate audio...");
+            setReceiversBusy(true, "Recording candidate audio...");
+            netMonitorCapturePending = true;
+            syncNetMonitorControls();
+            try {
+                const result = await postJson("/net_monitor/capture", { duration_s: NET_MONITOR_CAPTURE_DURATION_S });
+                netMonitorCapturePending = false;
+                applyNetMonitorStatus(result);
+                setAutomationStatus(result && result.capture && result.capture.running
+                    ? "Recording candidate audio"
+                    : safeText(result && result.capture && result.capture.summary, "Candidate audio captured"));
+                refresh();
+            } catch (err) {
+                netMonitorCapturePending = false;
+                syncNetMonitorControls();
+                setAutomationStatus(`NET monitor capture failed: ${String((err && err.message) || err)}`);
+            } finally {
+                setReceiversBusy(false);
+            }
+        }
+
+        async function stopReceiverScanRun(options = {}) {
+            if (!options.quiet) setAutomationStatus("stopping Receiver Scan...");
             receiverScanPendingAction = "stop";
             syncReceiverScanControls();
             try {
                 const result = await postJson("/receiver_scan/stop", {});
                 applyReceiverScanStatus(result);
-                setAutomationStatus("Receiver Scan stopping...");
+                if (!options.quiet) setAutomationStatus("Receiver Scan stopping...");
+                return result;
             } catch (err) {
                 receiverScanPendingAction = "";
+                receiverScanPendingSource = "";
                 syncReceiverScanControls();
-                setAutomationStatus(`Receiver Scan stop failed: ${String((err && err.message) || err)}`);
+                if (!options.quiet) {
+                    setAutomationStatus(`Receiver Scan stop failed: ${String((err && err.message) || err)}`);
+                }
+                return null;
             }
         }
 
@@ -9150,10 +10270,15 @@
             const autoModeBtn = byId("auto-mode-enabled");
             const scanModeBtn = byId("scan-mode-btn");
             const manualModeBtn = byId("manual-mode-btn");
-            const receiverScanStartBtn = byId("receiver-scan-start");
-            const receiverScanStopBtn = byId("receiver-scan-stop");
+            const netMonitorStartBtn = byId("net-monitor-start");
+            const netMonitorCaptureBtn = byId("net-monitor-capture");
+            const receiverScanSmartStartBtn = byId("receiver-scan-smart-start");
+            const receiverScanSmartBand = byId("receiver-scan-smart-band");
+            const receiverScanCwStartBtn = byId("receiver-scan-cw-start");
+            const receiverScanPhoneStartBtn = byId("receiver-scan-phone-start");
             if (autoModeBtn) {
                 autoModeBtn.addEventListener("click", async () => {
+                    await deactivateNetMonitorMode({ quiet: true });
                     await deactivateReceiverScanMode({ quiet: true });
                     setReceiversMode("auto");
                     applyAutoModeVisibility(true);
@@ -9161,35 +10286,103 @@
                 });
             }
             if (scanModeBtn) {
-                scanModeBtn.addEventListener("click", () => {
+                scanModeBtn.addEventListener("click", async () => {
+                    const selectedBandValue = readSelectedReceiverScanBand();
+                    receiverScanPendingSource = receiverScanActiveSource || "smart";
+                    receiverScanActiveSource = receiverScanPendingSource;
                     setReceiversMode("scan");
                     applyAutoModeVisibility(false);
                     if (typeof window.kiwiProSetView === "function") window.kiwiProSetView("receiver-scan", true);
-                    applyReceiversScanMode();
+                    await applyReceiversScanMode(RECEIVER_SCAN_BANDS.includes(selectedBandValue) ? selectedBandValue : null, receiverScanPendingSource);
+                });
+            }
+            async function runReceiverScanControl(controlRole) {
+                const targetRole = normalizeReceiverScanControlRole(controlRole, "smart") || "smart";
+                const selectedBandValue = safeText(receiverScanSmartBand && receiverScanSmartBand.value, "").trim();
+                if (!RECEIVER_SCAN_BANDS.includes(selectedBandValue)) {
+                    setUnsupportedReceiverScanBandStatus(targetRole, selectedBandValue);
+                    return;
+                }
+
+                const scan = latestReceiverScanStatus;
+                const activeBand = currentReceiverScanBand(scan);
+                const selectedRole = normalizeReceiverScanControlRole(receiverScanActiveSource, "");
+                const runningRole = normalizeReceiverScanControlRole(scan && scan.scan_mode, receiverScanActiveSource || "smart") || "smart";
+                const runningSameBand = !!(scan && scan.running && activeBand === selectedBandValue);
+
+                if (selectedRole !== targetRole) {
+                    receiverScanPendingSource = "";
+                    receiverScanActiveSource = targetRole;
+                    syncReceiverScanControls(scan);
+                    focusReceiverScanLane(targetRole);
+                    return;
+                }
+
+                if (runningSameBand && runningRole === targetRole) {
+                    receiverScanPendingSource = targetRole;
+                    syncReceiverScanControls(scan);
+                    await stopReceiverScanRun();
+                    return;
+                }
+
+                if (scan && scan.running) {
+                    receiverScanPendingSource = targetRole;
+                    receiverScanActiveSource = targetRole;
+                    const stopResult = await stopReceiverScanRun({ quiet: true });
+                    if (!stopResult && latestReceiverScanStatus && latestReceiverScanStatus.running) return;
+                } else {
+                    receiverScanPendingSource = targetRole;
+                    receiverScanActiveSource = targetRole;
+                }
+
+                setReceiversMode("scan");
+                applyAutoModeVisibility(false);
+                if (typeof window.kiwiProSetView === "function") window.kiwiProSetView("receiver-scan", true);
+                await applyReceiversScanMode(selectedBandValue, targetRole);
+                focusReceiverScanLane(targetRole);
+            }
+
+            if (receiverScanSmartStartBtn) {
+                receiverScanSmartStartBtn.addEventListener("click", async () => {
+                    await runReceiverScanControl("smart");
+                });
+            }
+            if (receiverScanCwStartBtn) {
+                receiverScanCwStartBtn.addEventListener("click", async () => {
+                    await runReceiverScanControl("cw");
+                });
+            }
+            if (receiverScanPhoneStartBtn) {
+                receiverScanPhoneStartBtn.addEventListener("click", async () => {
+                    await runReceiverScanControl("phone");
                 });
             }
             if (manualModeBtn) {
                 manualModeBtn.addEventListener("click", async () => {
+                    await deactivateNetMonitorMode({ quiet: true });
                     await deactivateReceiverScanMode({ quiet: true });
                     setReceiversMode("manual");
                     applyAutoModeVisibility(false);
                     applyAutoModeEnabled(false);
                 });
             }
-            if (receiverScanStartBtn) {
-                receiverScanStartBtn.addEventListener("click", () => {
-                    setReceiversMode("scan");
-                    applyAutoModeVisibility(false);
-                    if (typeof window.kiwiProSetView === "function") window.kiwiProSetView("receiver-scan", true);
-                    applyReceiversScanMode();
+            if (netMonitorStartBtn) {
+                netMonitorStartBtn.addEventListener("click", () => {
+                    const status = latestNetMonitorStatus;
+                    if (status && (status.running || status.activating)) {
+                        stopNetMonitorRun();
+                        return;
+                    }
+                    applyNetMonitorMode();
                 });
             }
-            if (receiverScanStopBtn) {
-                receiverScanStopBtn.addEventListener("click", () => {
-                    stopReceiverScanRun();
+            if (netMonitorCaptureBtn) {
+                netMonitorCaptureBtn.addEventListener("click", () => {
+                    captureNetMonitorCandidate();
                 });
             }
             syncReceiverScanControls();
+            syncNetMonitorControls();
 
             configAutosaveIds.forEach((id) => {
                 const el = byId(id);
@@ -10018,7 +11211,7 @@
             const layout = byId("main-layout");
             const receivers = byId("receivers");
             const rightCol = layout ? layout.querySelector(".right-col") : null;
-            const rightPanels = ["assignments", "faults", "receiver-scan", "messages", "map", "active-receivers", "settings", "system"]
+            const rightPanels = ["assignments", "faults", "receiver-scan", "net-monitor", "messages", "map", "active-receivers", "settings", "system"]
                 .map((id) => byId(id))
                 .filter(Boolean);
             const validIds = new Set(["overview", "receivers", "assignments", "faults", "receiver-scan", "messages", "map", "active-receivers", "settings", "system"]);
@@ -10101,7 +11294,7 @@
                     let anyRightPanelVisible = false;
                     rightPanels.forEach((panel) => {
                         const panelId = panel && panel.id ? panel.id : "";
-                        const panelVisible = panelId === navId;
+                        const panelVisible = panelId === navId || (panelId === "net-monitor" && navId === "receiver-scan");
                         show(panel, panelVisible);
                         anyRightPanelVisible = anyRightPanelVisible || panelVisible;
                     });
@@ -11537,14 +12730,15 @@
                 const deltaP = pollDecodeDelta().catch(() => null);
                 const chartP = getJson("/decodes/chart", TIMEOUT).catch(() => null);
                 const receiverScanP = getJson("/receiver_scan/status", TIMEOUT).catch(() => null);
+                const netMonitorP = getJson("/net_monitor/status", TIMEOUT).catch(() => null);
 
                 // Apply core data the instant each endpoint responds — don't wait for all.
                 let appliedHealth = false, appliedStatus = false;
                 healthP.then(d => { if (d) { appliedHealth = true; applyHealth(d); updateDecodeStreamChip(); } });
                 statusP.then(d => { if (d) { appliedStatus = true; applyStatus(d); } });
 
-                const [health, status, version, deltaInfo, chartData, receiverScan] = await Promise.all([
-                    healthP, statusP, versionP, deltaP, chartP, receiverScanP,
+                const [health, status, version, deltaInfo, chartData, receiverScan, netMonitor] = await Promise.all([
+                    healthP, statusP, versionP, deltaP, chartP, receiverScanP, netMonitorP,
                 ]);
 
                 // Both core endpoints unreachable — server not yet ready.
@@ -11581,6 +12775,7 @@
                 if (!appliedStatus) applyStatus(status);
                 if (chartData) applyChartData(chartData);
                 if (receiverScan) applyReceiverScanStatus(receiverScan);
+                if (netMonitor) applyNetMonitorStatus(netMonitor);
                 if (version && typeof version === "object") {
                     applyVersion(version);
                 }
@@ -11635,6 +12830,7 @@
         runStartupStep("initSystemPanel", () => initSystemPanel());
         runStartupStep("initSystemCardToggles", () => initSystemCardToggles());
         runStartupStep("initDashboardPanelToggles", () => initDashboardPanelToggles());
+        runStartupStep("initReceiverScanResultCardToggles", () => initReceiverScanResultCardToggles());
         runStartupStep("decorateUiIcons", () => decorateUiIcons());
         runStartupStep("startDecodeWebSocket", () => startDecodeWebSocket());
         runStartupStep("renderRecentDecodePanel", () => renderRecentDecodePanel());
