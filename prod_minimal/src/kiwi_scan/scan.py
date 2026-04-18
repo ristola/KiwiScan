@@ -4,7 +4,7 @@ import json
 import math
 import threading
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -36,11 +36,27 @@ class Detection:
     bandplan: str | None
     peak_power: float
     freq_mhz: float
+    candidate_type: str = "UNKNOWN"
     ssb_detect: bool = False
     # Optional SSB/voice heuristics (present when ssb_detect/ssb_only is enabled)
     occ_bw_hz: float | None = None
     occ_frac: float | None = None
     voice_score: float | None = None
+    narrow_peak_count: int | None = None
+    narrow_peak_span_hz: float | None = None
+    keying_score: float | None = None
+    steady_tone_score: float | None = None
+    freq_stability_hz: float | None = None
+    envelope_variance: float | None = None
+    speech_envelope_score: float | None = None
+    sweep_score: float | None = None
+    centroid_drift_hz: float | None = None
+    observed_frames: int | None = None
+    active_fraction: float | None = None
+    cadence_score: float | None = None
+    keying_edge_count: int | None = None
+    has_on_off_keying: bool | None = None
+    amplitude_span_db: float | None = None
 
 
 def guess_signal_type(*, width_hz: float) -> str:
@@ -58,6 +74,434 @@ def guess_signal_type(*, width_hz: float) -> str:
     if w <= 1500.0:
         return "medium"  # many utility/digital signals
     return "wide"  # voice-ish (SSB/AM) or wide modes
+
+
+def _finite_metric(value: object) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    return number
+
+
+def classify_candidate_type(
+    *,
+    width_hz: object | None,
+    type_guess: object | None = None,
+    bandplan_label: object | None = None,
+    voice_score: object | None = None,
+    occ_frac: object | None = None,
+    speech_score: object | None = None,
+    sweep_score: object | None = None,
+    keying_score: object | None = None,
+    cadence_score: object | None = None,
+    narrow_peak_count: object | None = None,
+    envelope_variance: object | None = None,
+    has_on_off_keying: object | None = None,
+) -> str:
+    """Classify a detection into a generic candidate layer before final mode mapping."""
+
+    width = _finite_metric(width_hz)
+    voice = _finite_metric(voice_score)
+    occupancy = _finite_metric(occ_frac)
+    speech = _finite_metric(speech_score)
+    sweep = _finite_metric(sweep_score)
+    keying = _finite_metric(keying_score)
+    cadence = _finite_metric(cadence_score)
+    narrow_peaks = max(0, int(round(_finite_metric(narrow_peak_count) or 0.0)))
+    envelope_var = _finite_metric(envelope_variance)
+    on_off_keying = bool(has_on_off_keying) if has_on_off_keying is not None else False
+    type_hint = str(type_guess or "").strip().lower()
+    bandplan_hint = str(bandplan_label or "").strip().lower()
+    voice_envelope_detected = envelope_var is not None and envelope_var >= 0.12
+    strong_voice = (
+        width is not None
+        and width >= 1_500.0
+        and (
+            (speech is not None and speech >= 0.42)
+            or (
+                voice is not None
+                and voice >= 0.40
+                and voice_envelope_detected
+            )
+            or (
+                speech is not None
+                and speech >= 0.28
+                and voice_envelope_detected
+                and (voice is None or voice >= 0.18)
+            )
+            or (
+                occupancy is not None
+                and occupancy >= 0.55
+                and voice_envelope_detected
+            )
+        )
+    )
+    digital_cluster = (
+        width is not None
+        and narrow_peaks > 4
+        and width <= 1_800.0
+        and (speech is None or speech < 0.34)
+        and (voice is None or voice < 0.40)
+        and not voice_envelope_detected
+    )
+    wide_digital_cluster = (
+        width is not None
+        and narrow_peaks > 6
+        and width <= 2_400.0
+        and bandplan_hint in {"cw", "rtty", "ft8", "ft4", "wspr", "all modes"}
+        and (speech is None or speech < 0.30)
+        and (voice is None or voice < 0.35)
+        and not voice_envelope_detected
+    )
+
+    if any(token in type_hint for token in ("sstv", "image", "fax")) or (
+        sweep is not None and sweep >= 0.55 and (speech is None or speech < 0.45)
+    ):
+        return "WIDEBAND_IMAGE"
+
+    if strong_voice:
+        return "WIDEBAND_VOICE"
+
+    if any(token in type_hint for token in ("phone", "ssb")):
+        if strong_voice or (
+            width is not None
+            and width >= 1_500.0
+            and voice is not None
+            and voice >= 0.28
+            and voice_envelope_detected
+            and (
+                (speech is not None and speech >= 0.20)
+                or (occupancy is not None and occupancy >= 0.35)
+            )
+        ):
+            return "WIDEBAND_VOICE"
+
+    if digital_cluster or wide_digital_cluster:
+        return "DIGITAL_CLUSTER"
+
+    if width is None or width <= 0.0:
+        return "UNKNOWN"
+
+    width_guess = guess_signal_type(width_hz=float(width))
+    keying_level = float(keying or 0.0)
+    cadence_level = float(cadence or 0.0)
+
+    if width_guess == "very_narrow":
+        if on_off_keying or keying_level >= 0.28:
+            return "NARROW_SINGLE"
+        return "NARROW_MULTI"
+
+    if width_guess == "narrow":
+        if (on_off_keying or (keying_level >= 0.32 and cadence_level >= 0.18)) and (speech is None or speech < 0.16) and (sweep is None or sweep < 0.16):
+            return "NARROW_SINGLE"
+        return "NARROW_MULTI"
+
+    if width_guess == "medium":
+        if strong_voice and width >= 1_200.0:
+            return "WIDEBAND_VOICE"
+        return "MEDIUM_DIGITAL"
+
+    if strong_voice:
+        return "WIDEBAND_VOICE"
+    if speech is not None and speech >= 0.32 and width >= 1_500.0 and voice_envelope_detected:
+        return "WIDEBAND_VOICE"
+    if occupancy is not None and occupancy >= 0.45 and width >= 1_800.0 and voice_envelope_detected:
+        return "WIDEBAND_VOICE"
+    if 1_800.0 <= width <= 3_600.0:
+        if sweep is not None and sweep >= 0.55 and (speech is None or speech < 0.45):
+            return "WIDEBAND_IMAGE"
+        if strong_voice:
+            return "WIDEBAND_VOICE"
+        return "WIDEBAND_IMAGE"
+    if bandplan_hint == "phone" and width >= 2_000.0 and strong_voice:
+        return "WIDEBAND_VOICE"
+    return "UNKNOWN"
+
+
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
+
+
+def _mean(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    return float(sum(values)) / float(len(values))
+
+
+def _stddev(values: list[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    avg = _mean(values)
+    variance = sum((float(value) - avg) ** 2 for value in values) / float(len(values))
+    return math.sqrt(max(0.0, variance))
+
+
+def _weighted_centroid_hz(items: list[dict[str, float]]) -> float:
+    if not items:
+        return 0.0
+    weights = [max(0.1, float(item.get("rel_db") or 0.0) + 0.1) for item in items]
+    total = sum(weights)
+    if total <= 0.0:
+        return _mean([float(item.get("freq_hz") or 0.0) for item in items])
+    return sum(float(item.get("freq_hz") or 0.0) * weight for item, weight in zip(items, weights)) / total
+
+
+def _describe_peaks(*, frame: WaterfallFrame, noise_floor: float, peaks: list) -> list[dict[str, float]]:
+    described: list[dict[str, float]] = []
+    if not peaks:
+        return described
+    for peak in peaks:
+        width_hz = float(peak_width_hz(frame=frame, bin_low=peak.bin_low, bin_high=peak.bin_high))
+        freq_hz = float(
+            bin_to_hz(
+                center_freq_hz=frame.center_freq_hz,
+                span_hz=frame.span_hz,
+                n_bins=len(frame.power_bins),
+                bin_center=float(peak.bin_center),
+            )
+        )
+        described.append(
+            {
+                "bin_center": float(peak.bin_center),
+                "freq_hz": freq_hz,
+                "width_hz": width_hz,
+                "rel_db": float(peak.peak_power) - float(noise_floor),
+            }
+        )
+    return described
+
+
+def _peak_cluster_context(
+    peak_details: list[dict[str, float]],
+    *,
+    center_hz: float,
+    cluster_window_hz: float = 3_200.0,
+    narrow_width_hz: float = 120.0,
+) -> dict[str, float]:
+    if not peak_details:
+        return {
+            "narrow_peak_count": 0.0,
+            "narrow_peak_span_hz": 0.0,
+            "centroid_hz": float(center_hz),
+        }
+    half = float(cluster_window_hz) / 2.0
+    local = [
+        item
+        for item in peak_details
+        if abs(float(item.get("freq_hz") or 0.0) - float(center_hz)) <= half
+    ]
+    if not local:
+        return {
+            "narrow_peak_count": 0.0,
+            "narrow_peak_span_hz": 0.0,
+            "centroid_hz": float(center_hz),
+        }
+    narrow = [item for item in local if float(item.get("width_hz") or 0.0) <= float(narrow_width_hz)]
+    narrow_freqs = [float(item.get("freq_hz") or 0.0) for item in narrow]
+    return {
+        "narrow_peak_count": float(len(narrow)),
+        "narrow_peak_span_hz": float(max(narrow_freqs) - min(narrow_freqs)) if len(narrow_freqs) >= 2 else 0.0,
+        "centroid_hz": float(_weighted_centroid_hz(local)),
+    }
+
+
+@dataclass
+class _TemporalPeakTrack:
+    bin_center: float
+    first_seen_frame: int
+    last_frame: int
+    last_seen_frame: int
+    last_active: bool = False
+    match_count: int = 0
+    observed_frames: int = 0
+    active_frames: int = 0
+    transition_count: int = 0
+    rel_db_samples: list[float] = field(default_factory=list)
+    center_hz_samples: list[float] = field(default_factory=list)
+    width_hz_samples: list[float] = field(default_factory=list)
+    narrow_peak_counts: list[float] = field(default_factory=list)
+    narrow_peak_spans_hz: list[float] = field(default_factory=list)
+    centroid_hz_samples: list[float] = field(default_factory=list)
+
+
+class _TemporalFeatureTracker:
+    def __init__(self, *, tolerance_bins: float = 2.5, expiry_frames: int = 8) -> None:
+        self.tolerance_bins = float(tolerance_bins)
+        self.expiry_frames = int(expiry_frames)
+        self._tracks: list[_TemporalPeakTrack] = []
+
+    def _match_track(self, *, bin_center: float, frame_index: int) -> _TemporalPeakTrack:
+        candidates = [
+            track
+            for track in self._tracks
+            if abs(float(track.bin_center) - float(bin_center)) <= self.tolerance_bins
+            and (int(frame_index) - int(track.last_seen_frame)) <= self.expiry_frames
+        ]
+        if candidates:
+            return min(candidates, key=lambda track: abs(float(track.bin_center) - float(bin_center)))
+        track = _TemporalPeakTrack(
+            bin_center=float(bin_center),
+            first_seen_frame=int(frame_index),
+            last_frame=int(frame_index) - 1,
+            last_seen_frame=int(frame_index) - 1,
+        )
+        self._tracks.append(track)
+        return track
+
+    def _record_inactive(self, track: _TemporalPeakTrack, *, frame_index: int) -> None:
+        if int(track.last_frame) >= int(frame_index):
+            return
+        if bool(track.last_active):
+            track.transition_count += 1
+        track.observed_frames += 1
+        track.rel_db_samples.append(0.0)
+        track.last_active = False
+        track.last_frame = int(frame_index)
+
+    def _record_active(
+        self,
+        track: _TemporalPeakTrack,
+        *,
+        frame_index: int,
+        peak_detail: dict[str, float],
+        cluster_context: dict[str, float],
+    ) -> None:
+        if int(track.last_frame) < int(frame_index) - 1:
+            for missed_frame in range(int(track.last_frame) + 1, int(frame_index)):
+                self._record_inactive(track, frame_index=int(missed_frame))
+        if track.observed_frames > 0 and not bool(track.last_active):
+            track.transition_count += 1
+        track.observed_frames += 1
+        track.active_frames += 1
+        track.match_count += 1
+        track.last_active = True
+        track.last_frame = int(frame_index)
+        track.last_seen_frame = int(frame_index)
+        track.bin_center = (float(track.bin_center) + float(peak_detail.get("bin_center") or 0.0)) / 2.0
+        track.rel_db_samples.append(float(peak_detail.get("rel_db") or 0.0))
+        track.center_hz_samples.append(float(peak_detail.get("freq_hz") or 0.0))
+        track.width_hz_samples.append(float(peak_detail.get("width_hz") or 0.0))
+        track.narrow_peak_counts.append(float(cluster_context.get("narrow_peak_count") or 0.0))
+        track.narrow_peak_spans_hz.append(float(cluster_context.get("narrow_peak_span_hz") or 0.0))
+        track.centroid_hz_samples.append(float(cluster_context.get("centroid_hz") or peak_detail.get("freq_hz") or 0.0))
+
+    def update(self, *, frame_index: int, peak_details: list[dict[str, float]]) -> None:
+        matched_ids: set[int] = set()
+        for peak_detail in peak_details:
+            track = self._match_track(bin_center=float(peak_detail.get("bin_center") or 0.0), frame_index=int(frame_index))
+            cluster_context = _peak_cluster_context(peak_details, center_hz=float(peak_detail.get("freq_hz") or 0.0))
+            self._record_active(
+                track,
+                frame_index=int(frame_index),
+                peak_detail=peak_detail,
+                cluster_context=cluster_context,
+            )
+            matched_ids.add(id(track))
+
+        for track in list(self._tracks):
+            if id(track) in matched_ids:
+                continue
+            if int(frame_index) > int(track.last_frame):
+                self._record_inactive(track, frame_index=int(frame_index))
+
+        self._tracks = [
+            track
+            for track in self._tracks
+            if (int(frame_index) - int(track.last_seen_frame)) <= self.expiry_frames
+        ]
+
+    def summarize_for_bin(self, *, bin_center: float) -> dict[str, float | int | bool]:
+        candidates = [
+            track for track in self._tracks if abs(float(track.bin_center) - float(bin_center)) <= self.tolerance_bins
+        ]
+        if not candidates:
+            return {}
+        track = min(candidates, key=lambda item: abs(float(item.bin_center) - float(bin_center)))
+        if track.observed_frames <= 0:
+            return {}
+
+        amplitude_over_time = [max(0.0, float(value)) for value in track.rel_db_samples]
+        state_threshold_db = 6.0
+        signal_states = [float(value) > state_threshold_db for value in amplitude_over_time]
+        keying_edge_count = sum(
+            1
+            for index in range(1, len(signal_states))
+            if bool(signal_states[index]) != bool(signal_states[index - 1])
+        )
+        has_on_off_keying = keying_edge_count > 3
+        active_fraction = (
+            float(sum(1 for state in signal_states if state)) / float(len(signal_states))
+            if signal_states
+            else 0.0
+        )
+        rel_active = [
+            float(value)
+            for value, state in zip(amplitude_over_time, signal_states)
+            if state and float(value) > 0.0
+        ]
+        amplitude_span_db = (
+            max(0.0, _percentile(rel_active, 90.0) - _percentile(rel_active, 10.0))
+            if len(rel_active) >= 2
+            else 0.0
+        )
+        envelope_variance = _stddev(rel_active) / max(1.0, _mean(rel_active)) if rel_active else 0.0
+        freq_stability_hz = _stddev([float(value) for value in track.center_hz_samples])
+        narrow_peak_count = max((int(round(value)) for value in track.narrow_peak_counts), default=0)
+        narrow_peak_span_hz = max((float(value) for value in track.narrow_peak_spans_hz), default=0.0)
+        centroid_series = [float(value) for value in track.centroid_hz_samples]
+        centroid_drift_hz = (max(centroid_series) - min(centroid_series)) if len(centroid_series) >= 2 else 0.0
+        centroid_diffs = [
+            float(centroid_series[index + 1]) - float(centroid_series[index])
+            for index in range(len(centroid_series) - 1)
+        ]
+        total_motion = sum(abs(value) for value in centroid_diffs)
+        monotonicity = abs(sum(centroid_diffs)) / total_motion if total_motion > 0.0 else 0.0
+        frame_support = _clamp01(float(track.observed_frames) / 5.0)
+        transition_score = _clamp01(float(keying_edge_count) / 6.0)
+        balance_score = _clamp01(1.0 - (abs(active_fraction - 0.5) / 0.5))
+        stability_score = _clamp01(1.0 - (freq_stability_hz / 40.0))
+        envelope_score = _clamp01(envelope_variance / 0.35)
+        amplitude_variation_score = _clamp01(float(amplitude_span_db) / 10.0)
+        cadence_score = _clamp01((0.65 * transition_score) + (0.35 * balance_score)) * frame_support
+        sweep_span_score = _clamp01(float(centroid_drift_hz) / 1_500.0)
+        sweep_score = _clamp01((0.55 * sweep_span_score) + (0.45 * monotonicity)) * frame_support
+        speech_envelope_score = _clamp01(
+            (0.45 * envelope_score)
+            + (0.25 * _clamp01(float(centroid_drift_hz) / 900.0))
+            + (0.30 * (1.0 - monotonicity))
+        ) * frame_support
+        keying_score = _clamp01(
+            (0.50 * transition_score)
+            + (0.20 * balance_score)
+            + (0.20 * stability_score)
+            + (0.10 * amplitude_variation_score)
+        ) * frame_support
+        steady_tone_score = _clamp01(
+            (0.50 * (1.0 - transition_score))
+            + (0.30 * _clamp01(active_fraction / 0.95))
+            + (0.20 * stability_score)
+        ) * frame_support
+
+        return {
+            "observed_frames": float(track.observed_frames),
+            "active_fraction": float(active_fraction),
+            "narrow_peak_count": float(narrow_peak_count),
+            "narrow_peak_span_hz": float(narrow_peak_span_hz),
+            "freq_stability_hz": float(freq_stability_hz),
+            "envelope_variance": float(envelope_variance),
+            "speech_envelope_score": float(speech_envelope_score),
+            "sweep_score": float(sweep_score),
+            "keying_score": float(keying_score),
+            "steady_tone_score": float(steady_tone_score),
+            "keying_edge_count": int(keying_edge_count),
+            "has_on_off_keying": bool(has_on_off_keying),
+            "amplitude_span_db": float(amplitude_span_db),
+            "centroid_drift_hz": float(centroid_drift_hz),
+            "cadence_score": float(cadence_score),
+        }
 
 
 def peak_width_hz(*, frame: WaterfallFrame, bin_low: int, bin_high: int) -> float:
@@ -364,6 +808,7 @@ def run_scan(
     ssb_adaptive_spread_gain: float = 0.35,
     ssb_adaptive_spread_offset_db: float = 2.5,
     ssb_adaptive_spread_target_db: float = 55.0,
+    acceptable_rx_chans: tuple[int, ...] | list[int] | None = None,
 ) -> int:
     if phone_only:
         # Display bandplan-derived range so the user knows what is being kept.
@@ -388,6 +833,10 @@ def run_scan(
     tracker = PersistenceTracker(
         tolerance_bins=tolerance_bins,
         required_hits=required_hits,
+        expiry_frames=expiry_frames,
+    )
+    temporal_tracker = _TemporalFeatureTracker(
+        tolerance_bins=tolerance_bins,
         expiry_frames=expiry_frames,
     )
 
@@ -430,6 +879,8 @@ def run_scan(
             threshold_db=threshold_db,
             min_width_bins=min_width_bins,
         )
+        peak_details = _describe_peaks(frame=frame, noise_floor=float(noise), peaks=peaks)
+        temporal_tracker.update(frame_index=frame.frame_index, peak_details=peak_details)
 
         if bool(ssb_only):
             if not frame.power_bins:
@@ -520,6 +971,13 @@ def run_scan(
                         bandplan=bp,
                         peak_power=float(noise) + float(rel_bp),
                         freq_mhz=float(freq0 / 1e6),
+                        candidate_type=classify_candidate_type(
+                            width_hz=float(occ_bw_hz) if float(occ_bw_hz) > 0 else float(width_hz_bp),
+                            type_guess=combine_type_hints(width_guess=width_guess, bandplan_label=bp),
+                            bandplan_label=bp,
+                            voice_score=float(voice_score),
+                            occ_frac=float(occ_frac),
+                        ),
                         ssb_detect=True,
                         occ_bw_hz=float(occ_bw_hz),
                         occ_frac=float(occ_frac),
@@ -540,6 +998,7 @@ def run_scan(
                             "width_bins": det.width_bins,
                             "width_hz": det.width_hz,
                             "type_guess": det.type_guess,
+                            "candidate_type": det.candidate_type,
                             "bandplan": det.bandplan,
                             "peak_power": det.peak_power,
                             "noise_floor": det.noise_floor,
@@ -764,6 +1223,22 @@ def run_scan(
             if phone_only and bp != "Phone":
                 continue
 
+            occ_bw_hz: float | None = None
+            occ_frac: float | None = None
+            voice_score: float | None = None
+            temporal_summary = temporal_tracker.summarize_for_bin(bin_center=float(p.bin_center))
+            if frame.power_bins:
+                occ_bw_hz0, _occ_bins0, occ_frac0, voice_score0 = _ssb_voice_metrics(
+                    frame=frame,
+                    noise_floor=float(noise),
+                    center_hz=float(freq_hz),
+                    window_hz=max(2400.0, float(width_hz) if float(width_hz) > 0 else 2400.0),
+                    occ_thresh_db=float(ssb_occ_thresh_db),
+                )
+                occ_bw_hz = float(occ_bw_hz0) if float(occ_bw_hz0) > 0 else (float(width_hz) if float(width_hz) > 0 else None)
+                occ_frac = float(occ_frac0)
+                voice_score = float(voice_score0)
+
             width_guess = str(guess_signal_type(width_hz=float(width_hz)))
             det = Detection(
                 t_unix=time.time(),
@@ -779,6 +1254,38 @@ def run_scan(
                 freq_mhz=float(
                     freq_hz / 1e6
                 ),
+                candidate_type=classify_candidate_type(
+                    width_hz=occ_bw_hz if occ_bw_hz is not None else float(width_hz),
+                    type_guess=combine_type_hints(width_guess=width_guess, bandplan_label=bp),
+                    bandplan_label=bp,
+                    voice_score=voice_score,
+                    occ_frac=occ_frac,
+                    speech_score=temporal_summary.get("speech_envelope_score"),
+                    sweep_score=temporal_summary.get("sweep_score"),
+                    keying_score=temporal_summary.get("keying_score"),
+                    cadence_score=temporal_summary.get("cadence_score"),
+                    narrow_peak_count=temporal_summary.get("narrow_peak_count"),
+                    envelope_variance=temporal_summary.get("envelope_variance"),
+                    has_on_off_keying=temporal_summary.get("has_on_off_keying"),
+                ),
+                occ_bw_hz=occ_bw_hz,
+                occ_frac=occ_frac,
+                voice_score=voice_score,
+                narrow_peak_count=int(temporal_summary.get("narrow_peak_count") or 0),
+                narrow_peak_span_hz=float(temporal_summary.get("narrow_peak_span_hz") or 0.0),
+                keying_score=float(temporal_summary.get("keying_score") or 0.0),
+                steady_tone_score=float(temporal_summary.get("steady_tone_score") or 0.0),
+                freq_stability_hz=float(temporal_summary.get("freq_stability_hz") or 0.0),
+                envelope_variance=float(temporal_summary.get("envelope_variance") or 0.0),
+                speech_envelope_score=float(temporal_summary.get("speech_envelope_score") or 0.0),
+                sweep_score=float(temporal_summary.get("sweep_score") or 0.0),
+                centroid_drift_hz=float(temporal_summary.get("centroid_drift_hz") or 0.0),
+                observed_frames=int(temporal_summary.get("observed_frames") or 0),
+                active_fraction=float(temporal_summary.get("active_fraction") or 0.0),
+                cadence_score=float(temporal_summary.get("cadence_score") or 0.0),
+                keying_edge_count=int(temporal_summary.get("keying_edge_count") or 0),
+                has_on_off_keying=bool(temporal_summary.get("has_on_off_keying")),
+                amplitude_span_db=float(temporal_summary.get("amplitude_span_db") or 0.0),
             )
             print(
                 f"DETECT frame={det.frame_index} f={det.freq_mhz:.4f}MHz bin={det.bin_center:.1f} "
@@ -815,11 +1322,27 @@ def run_scan(
                         "width_bins": det.width_bins,
                         "width_hz": det.width_hz,
                         "type_guess": det.type_guess,
+                        "candidate_type": det.candidate_type,
                         "bandplan": det.bandplan,
                         "peak_power": det.peak_power,
                         "noise_floor": det.noise_floor,
                         "rel_db": rel_db,
                         "s_est": s_est,
+                        "occ_bw_hz": det.occ_bw_hz,
+                        "occ_frac": det.occ_frac,
+                        "voice_score": det.voice_score,
+                        "narrow_peak_count": det.narrow_peak_count,
+                        "narrow_peak_span_hz": det.narrow_peak_span_hz,
+                        "keying_score": det.keying_score,
+                        "steady_tone_score": det.steady_tone_score,
+                        "freq_stability_hz": det.freq_stability_hz,
+                        "envelope_variance": det.envelope_variance,
+                        "speech_envelope_score": det.speech_envelope_score,
+                        "sweep_score": det.sweep_score,
+                        "centroid_drift_hz": det.centroid_drift_hz,
+                        "observed_frames": det.observed_frames,
+                        "active_fraction": det.active_fraction,
+                        "cadence_score": det.cadence_score,
                     }
                     evt_f.write(json.dumps(evt, sort_keys=True) + "\n")
                     evt_f.flush()
@@ -877,6 +1400,7 @@ def run_scan(
                                 rx_wait_interval_s=rx_wait_interval_s,
                                 rx_wait_max_retries=rx_wait_max_retries,
                                 modulation=str(status_modulation),
+                                acceptable_rx_chans=acceptable_rx_chans,
                                 ws_timestamp=ws_timestamp,
                                 hold_event=status_stop_event,
                                 ready_event=status_ready_event,
@@ -906,6 +1430,7 @@ def run_scan(
                         rx_wait_interval_s=rx_wait_interval_s,
                         rx_wait_max_retries=rx_wait_max_retries,
                         modulation=str(status_modulation),
+                        acceptable_rx_chans=acceptable_rx_chans,
                         ws_timestamp=ws_timestamp,
                     )
                     if not ok:
@@ -941,8 +1466,11 @@ def run_scan(
                     debug=debug,
                     debug_messages=debug_messages,
                     status_modulation=str(status_modulation),
+                    acceptable_rx_chans=acceptable_rx_chans,
                     ws_timestamp=ws_timestamp,
                 )
+                if frames_seen == 0 and stop_reason is None:
+                    raise TimeoutError("waterfall exited before first frame")
                 break
             except KiwiCampRejected as e:
                 if rx_chan is None:
@@ -1171,6 +1699,10 @@ def run_sweep(
                 required_hits=required_hits,
                 expiry_frames=expiry_frames,
             )
+            temporal_tracker = _TemporalFeatureTracker(
+                tolerance_bins=tolerance_bins,
+                expiry_frames=expiry_frames,
+            )
             did_record = False
             step_best: dict[str, float] | None = None
 
@@ -1181,6 +1713,8 @@ def run_sweep(
                     threshold_db=threshold_db,
                     min_width_bins=min_width_bins,
                 )
+                peak_details = _describe_peaks(frame=frame, noise_floor=float(noise), peaks=peaks)
+                temporal_tracker.update(frame_index=frame.frame_index, peak_details=peak_details)
 
                 # Track instantaneous strongest bin for sweep-wide top-N.
                 if frame.power_bins:
@@ -1210,6 +1744,10 @@ def run_sweep(
                         q = int(round(float(freq0) / qhz))
                         prev = top_map.get(q)
                         if prev is None or rel_db0 > float(prev["rel_db"]):
+                            top_type_guess = combine_type_hints(
+                                width_guess=str(guess_signal_type(width_hz=float(width_hz0))),
+                                bandplan_label=bandplan_label(float(freq0)),
+                            )
                             top_map[q] = {
                                 "freq_mhz": float(freq0 / 1e6),
                                 "s_est": float(s_est0),
@@ -1217,8 +1755,10 @@ def run_sweep(
                                 "width_hz": float(width_hz0),
                                 "width_bins": int(width_bins0),
                                 "bandplan": bandplan_label(float(freq0)),
-                                "type_guess": combine_type_hints(
-                                    width_guess=str(guess_signal_type(width_hz=float(width_hz0))),
+                                "type_guess": top_type_guess,
+                                "candidate_type": classify_candidate_type(
+                                    width_hz=float(width_hz0),
+                                    type_guess=top_type_guess,
                                     bandplan_label=bandplan_label(float(freq0)),
                                 ),
                             }
@@ -1299,6 +1839,22 @@ def run_sweep(
                     if not cache.allow(q, now=now):
                         continue
 
+                    occ_bw_hz: float | None = None
+                    occ_frac: float | None = None
+                    voice_score: float | None = None
+                    temporal_summary = temporal_tracker.summarize_for_bin(bin_center=float(p.bin_center))
+                    if frame.power_bins:
+                        occ_bw_hz0, _occ_bins0, occ_frac0, voice_score0 = _ssb_voice_metrics(
+                            frame=frame,
+                            noise_floor=float(noise),
+                            center_hz=float(freq_hz),
+                            window_hz=max(2400.0, float(width_hz) if float(width_hz) > 0 else 2400.0),
+                            occ_thresh_db=float(ssb_occ_thresh_db),
+                        )
+                        occ_bw_hz = float(occ_bw_hz0) if float(occ_bw_hz0) > 0 else (float(width_hz) if float(width_hz) > 0 else None)
+                        occ_frac = float(occ_frac0)
+                        voice_score = float(voice_score0)
+
                     det = Detection(
                         t_unix=now,
                         frame_index=frame.frame_index,
@@ -1314,6 +1870,41 @@ def run_sweep(
                         bandplan=bp,
                         peak_power=float(p.peak_power),
                         freq_mhz=float(freq_hz / 1e6),
+                        candidate_type=classify_candidate_type(
+                            width_hz=occ_bw_hz if occ_bw_hz is not None else float(width_hz),
+                            type_guess=combine_type_hints(
+                                width_guess=str(guess_signal_type(width_hz=float(width_hz))),
+                                bandplan_label=bp,
+                            ),
+                            bandplan_label=bp,
+                            voice_score=voice_score,
+                            occ_frac=occ_frac,
+                            speech_score=temporal_summary.get("speech_envelope_score"),
+                            sweep_score=temporal_summary.get("sweep_score"),
+                            keying_score=temporal_summary.get("keying_score"),
+                            cadence_score=temporal_summary.get("cadence_score"),
+                            narrow_peak_count=temporal_summary.get("narrow_peak_count"),
+                            envelope_variance=temporal_summary.get("envelope_variance"),
+                            has_on_off_keying=temporal_summary.get("has_on_off_keying"),
+                        ),
+                        occ_bw_hz=occ_bw_hz,
+                        occ_frac=occ_frac,
+                        voice_score=voice_score,
+                        narrow_peak_count=int(temporal_summary.get("narrow_peak_count") or 0),
+                        narrow_peak_span_hz=float(temporal_summary.get("narrow_peak_span_hz") or 0.0),
+                        keying_score=float(temporal_summary.get("keying_score") or 0.0),
+                        steady_tone_score=float(temporal_summary.get("steady_tone_score") or 0.0),
+                        freq_stability_hz=float(temporal_summary.get("freq_stability_hz") or 0.0),
+                        envelope_variance=float(temporal_summary.get("envelope_variance") or 0.0),
+                        speech_envelope_score=float(temporal_summary.get("speech_envelope_score") or 0.0),
+                        sweep_score=float(temporal_summary.get("sweep_score") or 0.0),
+                        centroid_drift_hz=float(temporal_summary.get("centroid_drift_hz") or 0.0),
+                        observed_frames=int(temporal_summary.get("observed_frames") or 0),
+                        active_fraction=float(temporal_summary.get("active_fraction") or 0.0),
+                        cadence_score=float(temporal_summary.get("cadence_score") or 0.0),
+                        keying_edge_count=int(temporal_summary.get("keying_edge_count") or 0),
+                        has_on_off_keying=bool(temporal_summary.get("has_on_off_keying")),
+                        amplitude_span_db=float(temporal_summary.get("amplitude_span_db") or 0.0),
                     )
                     print(
                         f"DETECT f={det.freq_mhz:.4f}MHz w={det.width_hz:.0f}Hz({det.width_bins}b) "
@@ -1339,6 +1930,7 @@ def run_sweep(
                             "width_hz": float(det.width_hz),
                             "width_bins": int(det.width_bins),
                             "type_guess": str(det.type_guess),
+                            "candidate_type": str(det.candidate_type),
                             "bandplan": det.bandplan,
                         }
                     if overall_best is None or rel_db > float(overall_best["rel_db"]):
@@ -1349,6 +1941,7 @@ def run_sweep(
                             "width_hz": float(det.width_hz),
                             "width_bins": int(det.width_bins),
                             "type_guess": str(det.type_guess),
+                            "candidate_type": str(det.candidate_type),
                             "bandplan": det.bandplan,
                         }
 
@@ -1367,6 +1960,7 @@ def run_sweep(
                                 "width_hz": float(det.width_hz),
                                 "width_bins": int(det.width_bins),
                                 "type_guess": str(det.type_guess),
+                                "candidate_type": str(det.candidate_type),
                                 "bandplan": det.bandplan,
                             }
 
@@ -1402,6 +1996,14 @@ def run_sweep(
                                             width_guess="ssb_bandpower",
                                             bandplan_label=bp,
                                         ),
+                                        "candidate_type": classify_candidate_type(
+                                            width_hz=float(width_hz_bp),
+                                            type_guess=combine_type_hints(
+                                                width_guess="ssb_bandpower",
+                                                bandplan_label=bp,
+                                            ),
+                                            bandplan_label=bp,
+                                        ),
                                         "bandplan": bp,
                                     }
 
@@ -1416,11 +2018,27 @@ def run_sweep(
                                 "width_bins": det.width_bins,
                                 "width_hz": det.width_hz,
                                 "type_guess": det.type_guess,
+                                "candidate_type": det.candidate_type,
                                 "bandplan": det.bandplan,
                                 "peak_power": det.peak_power,
                                 "noise_floor": det.noise_floor,
                                 "rel_db": rel_db,
                                 "s_est": s_est,
+                                "occ_bw_hz": det.occ_bw_hz,
+                                "occ_frac": det.occ_frac,
+                                "voice_score": det.voice_score,
+                                "narrow_peak_count": det.narrow_peak_count,
+                                "narrow_peak_span_hz": det.narrow_peak_span_hz,
+                                "keying_score": det.keying_score,
+                                "steady_tone_score": det.steady_tone_score,
+                                "freq_stability_hz": det.freq_stability_hz,
+                                "envelope_variance": det.envelope_variance,
+                                "speech_envelope_score": det.speech_envelope_score,
+                                "sweep_score": det.sweep_score,
+                                "centroid_drift_hz": det.centroid_drift_hz,
+                                "observed_frames": det.observed_frames,
+                                "active_fraction": det.active_fraction,
+                                "cadence_score": det.cadence_score,
                             }
                             evt_f.write(json.dumps(evt, sort_keys=True) + "\n")
                             evt_f.flush()
@@ -1464,6 +2082,7 @@ def run_sweep(
                             rx_wait_timeout_s=rx_wait_timeout_s,
                             rx_wait_interval_s=rx_wait_interval_s,
                             rx_wait_max_retries=rx_wait_max_retries,
+                            acceptable_rx_chans=acceptable_rx_chans,
                         )
                         if not ok:
                             raise KiwiCampRejected(requested_rx=int(rx_chan), response="tune failed")
@@ -1480,6 +2099,7 @@ def run_sweep(
                         min_duration_s=float(status_hold_s) if float(status_hold_s) > 0 else None,
                         debug=debug,
                         debug_messages=debug_messages,
+                        acceptable_rx_chans=acceptable_rx_chans,
                     )
                     break
                 except KiwiCampRejected as e:

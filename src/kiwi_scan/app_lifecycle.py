@@ -81,6 +81,7 @@ def register_lifecycle(
     rx_monitor: object | None = None,
     auto_set_loop: object | None = None,
     smart_scheduler: object | None = None,
+    net_monitor: object | None = None,
     set_decodes_loop: Callable[[Optional[asyncio.AbstractEventLoop]], None],
     set_loop: Callable[[Optional[asyncio.AbstractEventLoop]], None],
 ) -> None:
@@ -158,6 +159,11 @@ def register_lifecycle(
         try:
             mgr.stop()  # type: ignore[attr-defined]
         finally:
+            if net_monitor is not None:
+                try:
+                    net_monitor.deactivate()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
             if rx_monitor is not None:
                 try:
                     rx_monitor.stop()  # type: ignore[attr-defined]

@@ -127,6 +127,13 @@ def test_receiver_worker_env_helpers_clamp_and_fallback(monkeypatch) -> None:
     assert _ReceiverWorker._env_int("KIWISCAN_RX_CHAN_OFFSET", 0, min_v=-64, max_v=64) == 64
 
 
+def test_mode_requires_digital_accepts_combo_digital_modes() -> None:
+    assert ReceiverManager._mode_requires_digital("FT4 / FT8 / WSPR") is True
+    assert ReceiverManager._mode_requires_digital("FT4 / WSPR") is True
+    assert ReceiverManager._mode_requires_digital("FT4 / FT8") is True
+    assert ReceiverManager._mode_requires_digital("SSB") is False
+
+
 def test_health_summary_marks_silent_receiver_when_heartbeat_is_recent(monkeypatch) -> None:
     manager = _make_manager()
     manager._assignments = {

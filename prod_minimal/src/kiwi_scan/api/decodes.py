@@ -58,6 +58,10 @@ _valid_bands = ("10m", "12m", "15m", "17m", "20m", "30m", "40m", "60m", "80m", "
 _station_coords: tuple[float, float] | None | bool = None  # None=not loaded yet
 
 
+def _decode_visible(payload: Dict[str, Any]) -> bool:
+    return bool(payload.get("grid"))
+
+
 def _get_station_coords() -> Optional[tuple[float, float]]:
     """Return (lat, lon) from config.json, cached after first successful load."""
     global _station_coords
@@ -719,7 +723,7 @@ def prune_decode_buffer(allowed_bands: Optional[set[str]]) -> None:
         filtered = [
             d
             for d in _decode_buffer
-            if d.get("band") in allowed_bands and d.get("grid")
+            if d.get("band") in allowed_bands and _decode_visible(d)
         ]
         _decode_buffer.clear()
         _decode_buffer.extend(filtered)
@@ -1075,7 +1079,7 @@ def get_decodes(since: int = 0):
         items = [
             d for d in list(_decode_buffer)
             if int(d.get("id", 0)) > int(since or 0)
-            and d.get("grid")
+            and _decode_visible(d)
         ]
         latest = _decode_seq
     return {"latest": latest, "items": items}

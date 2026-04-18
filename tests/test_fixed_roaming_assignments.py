@@ -79,6 +79,27 @@ def test_fixed_roaming_payload_night_uses_only_night_roaming_pool() -> None:
     assert set(payload.get("selected_bands", [])) <= {"60m", "80m", "160m"}
 
 
+def test_fixed_roaming_payload_passes_current_roaming_to_smart_scheduler(monkeypatch) -> None:
+    loop = AutoSetLoop()
+
+    class _SmartSchedulerStub:
+        def __init__(self) -> None:
+            self.calls: list[tuple[list[str], list[str]]] = []
+
+        def rank_roaming_bands(self, available_bands: list[str], current_roaming: list[str]) -> list[str]:
+            self.calls.append((list(available_bands), list(current_roaming)))
+            return ["15m", "12m", "10m"]
+
+    scheduler = _SmartSchedulerStub()
+    loop.set_smart_scheduler(scheduler)
+    monkeypatch.setattr(loop, "_current_roaming_bands", lambda: ["10m", "12m"])
+
+    payload = loop._build_fixed_roaming_payload({}, "day")
+
+    assert scheduler.calls == [(["10m", "12m", "15m"], ["10m", "12m"])]
+    assert payload.get("selected_bands") == ["15m", "12m"]
+
+
 def test_fixed_mode_only_uses_rx0_rx1_for_roaming(monkeypatch) -> None:
     monkeypatch.delenv("KIWISCAN_AUTOSET_MAX_RX", raising=False)
     monkeypatch.setattr(
@@ -448,6 +469,86 @@ def test_ws4010_phone_profile_maps_to_ft8_schedule(monkeypatch) -> None:
     assert saved
     assert "ft8" in saved[-1]["scheduleProfiles"]
     assert "phone" not in saved[-1]["scheduleProfiles"]
+
+
+def test_force_reassign_skips_when_external_hold_active(monkeypatch) -> None:
+    loop = AutoSetLoop()
+    loop.pause_for_external("receiver_scan")
+
+    monkeypatch.setattr(loop, "_load_settings", lambda: {"fixedModeEnabled": True})
+    monkeypatch.setattr(
+        loop,
+        "_build_payload",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("build should not be called")),
+    )
+
+    posted: list[dict] = []
+    monkeypatch.setattr(loop, "_post_auto_set", lambda payload: posted.append(dict(payload)))
+
+    loop.force_reassign()
+
+    assert posted == []
+    assert loop.status()["external_hold_reason"] == "receiver_scan"
+
+
+def test_force_reassign_posts_payload_when_not_held(monkeypatch) -> None:
+    loop = AutoSetLoop()
+    loop._last_apply_signature = "sig"
+    loop._last_schedule_key = ("ft8", "00-04")
+    loop._last_applied_band_config = "bands"
+
+    monkeypatch.setattr(loop, "_load_settings", lambda: {"fixedModeEnabled": True})
+    monkeypatch.setattr(loop, "_current_schedule_key", lambda _settings: ("ft8", "00-04"))
+    monkeypatch.setattr(loop, "_build_payload", lambda _settings, schedule_key=None: {"enabled": True, "schedule_key": schedule_key})
+
+    posted: list[dict] = []
+    monkeypatch.setattr(loop, "_post_auto_set", lambda payload: posted.append(dict(payload)))
+
+    loop.force_reassign()
+
+    assert posted == [{"enabled": True, "schedule_key": ("ft8", "00-04"), "force": True}]
+    assert loop._last_apply_signature is None
+    assert loop._last_schedule_key is None
+    assert loop._last_applied_band_config is None
+
+
+def test_run_reapplies_when_scored_band_config_changes_without_schedule_change(monkeypatch) -> None:
+    loop = AutoSetLoop()
+    loop._did_startup_apply = True
+    loop._last_schedule_key = ("fixed", "day")
+    loop._last_apply_signature = "sig"
+    loop._last_applied_band_config = json.dumps(
+        {"bands": ["10m", "12m"], "modes": {"10m": "FT8", "12m": "FT8", "15m": "FT8"}, "closed": []},
+        separators=(",", ":"),
+    )
+    loop._recovery_backoff_until_ts = 0.0
+
+    settings = {"headlessEnabled": True, "fixedModeEnabled": True}
+    payload = {
+        "enabled": True,
+        "mode": "ft8",
+        "block": "day",
+        "selected_bands": ["10m", "15m"],
+        "band_modes": {"10m": "FT8", "12m": "FT8", "15m": "FT8"},
+    }
+
+    monkeypatch.setattr(loop, "_load_settings", lambda: settings)
+    monkeypatch.setattr(loop, "_current_schedule_key", lambda _settings: ("fixed", "day"))
+    monkeypatch.setattr(loop, "_apply_signature", lambda _settings, _schedule_key: "sig")
+    monkeypatch.setattr(loop, "_fixed_health_state", lambda: ("healthy", []))
+    monkeypatch.setattr(loop, "_roaming_health_state", lambda: ("healthy", []))
+    monkeypatch.setattr(loop, "_build_payload", lambda _settings, schedule_key=None: dict(payload))
+
+    posted: list[dict] = []
+    monkeypatch.setattr(loop, "_post_auto_set", lambda posted_payload: posted.append(dict(posted_payload)))
+    monkeypatch.setattr(loop, "_wait_for_notification", lambda timeout_s=None: loop._stop.set())
+
+    loop._run()
+
+    assert posted == [payload]
+    assert loop._last_schedule_key == ("fixed", "day")
+    assert loop._last_apply_signature == "sig"
+    assert loop._last_applied_band_config == loop._band_config_signature(payload)
 
 
 def test_non_fixed_payload_ignores_schedule_block_for_assignments(monkeypatch) -> None:

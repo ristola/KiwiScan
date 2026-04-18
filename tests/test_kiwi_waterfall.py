@@ -81,3 +81,28 @@ def test_set_receiver_frequency_succeeds_without_rx_chan_message() -> None:
     sent = list(_FakeKiwiStream.last_instance.sent)
     assert "SET ident_user=DEBUG_RX0" in sent
     assert "SET mod=iq low_cut=-6000 high_cut=6000 freq=14025.000" in sent
+
+
+class _FakeAltAssignedKiwiStream(_FakeKiwiStream):
+    def run(self) -> None:
+        if self._sample_rate is None:
+            self._process_msg_param("rx_chan", "1")
+            self._process_msg_param("sample_rate", "12000")
+
+
+def test_set_receiver_frequency_accepts_alternate_reserved_rx() -> None:
+    ok = _set_receiver_frequency_once(
+        KiwiSDRStream=_FakeAltAssignedKiwiStream,
+        host="kiwi.local",
+        port=8073,
+        rx_chan=0,
+        freq_hz=14.025e6,
+        password=None,
+        user="DEBUG_RX0",
+        timeout_s=1.0,
+        hold_s=0.0,
+        modulation="iq",
+        acceptable_rx_chans=(0, 1),
+    )
+
+    assert ok is True

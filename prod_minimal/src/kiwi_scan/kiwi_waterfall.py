@@ -155,6 +155,7 @@ def set_receiver_frequency(
     rx_wait_interval_s: float = 2.0,
     rx_wait_max_retries: int = 0,
     modulation: str = "usb",
+    acceptable_rx_chans: Sequence[int] | None = None,
     ws_timestamp: int | None = None,
     hold_event: object | None = None,
     ready_event: object | None = None,
@@ -179,6 +180,7 @@ def set_receiver_frequency(
                 timeout_s=float(timeout_s),
                 hold_s=float(hold_s),
                 modulation=str(modulation),
+                acceptable_rx_chans=acceptable_rx_chans,
                 ws_timestamp=ws_timestamp,
                 hold_event=hold_event,
                 ready_event=ready_event,
@@ -232,6 +234,7 @@ def _set_receiver_frequency_once(
     timeout_s: float,
     hold_s: float,
     modulation: str,
+    acceptable_rx_chans: Sequence[int] | None = None,
     ws_timestamp: int | None = None,
     hold_event: object | None = None,
     ready_event: object | None = None,
@@ -327,6 +330,12 @@ def _set_receiver_frequency_once(
 
     assigned_rx: list[int | None] = [None]
     tuned: list[bool] = [False]
+    acceptable_rx_set = {
+        int(candidate)
+        for candidate in (
+            acceptable_rx_chans if acceptable_rx_chans is not None else (int(rx_chan),)
+        )
+    }
 
     try:
         orig_process = s._process_msg_param  # type: ignore[attr-defined]
@@ -341,7 +350,7 @@ def _set_receiver_frequency_once(
 
             # Before the client performs its SND setup (triggered by sample_rate),
             # ensure we are on the requested receiver.
-            if name == "sample_rate" and assigned_rx[0] is not None and int(assigned_rx[0]) != int(rx_chan):
+            if name == "sample_rate" and assigned_rx[0] is not None and int(assigned_rx[0]) not in acceptable_rx_set:
                 raise _KiwiAssignedRxMismatch(requested_rx=int(rx_chan), assigned_rx=int(assigned_rx[0]))
 
             return orig_process(name, value)
@@ -369,7 +378,7 @@ def _set_receiver_frequency_once(
                 break
             # SND setup will call set_freq() and begin streaming. We treat this
             # as "tuned" once we have a sample_rate (i.e. setup completed).
-            if s._sample_rate is not None and (assigned_rx[0] is None or int(assigned_rx[0]) == int(rx_chan)):  # type: ignore[attr-defined]
+            if s._sample_rate is not None and (assigned_rx[0] is None or int(assigned_rx[0]) in acceptable_rx_set):  # type: ignore[attr-defined]
                 tuned[0] = True
                 break
 
@@ -428,6 +437,7 @@ def subscribe_waterfall(
     debug: bool = False,
     debug_messages: bool = False,
     status_modulation: str = "usb",
+    acceptable_rx_chans: Sequence[int] | None = None,
     ws_timestamp: int | None = None,
 ) -> None:
     """Subscribe to a KiwiSDR waterfall and call `on_frame` per frame.
@@ -453,6 +463,14 @@ def subscribe_waterfall(
     start_time = time.time()
     assigned_rx: list[int | None] = [None]
     required_rx = rx_chan
+    acceptable_rx_set = {
+        int(candidate)
+        for candidate in (
+            acceptable_rx_chans
+            if acceptable_rx_chans is not None
+            else (() if rx_chan is None else (int(rx_chan),))
+        )
+    }
 
     class _WF(KiwiSDRStream):  # type: ignore[misc]
         def __init__(self) -> None:
@@ -685,7 +703,7 @@ def subscribe_waterfall(
             # Before the client starts waterfall setup (triggered by wf_setup),
             # ensure we're assigned the requested receiver.
             if name == "wf_setup" and required_rx is not None and assigned_rx[0] is not None:
-                if int(assigned_rx[0]) != int(required_rx):
+                if acceptable_rx_set and int(assigned_rx[0]) not in acceptable_rx_set:
                     rx_error = True
                     rx_response = f"assigned_rx={int(assigned_rx[0])}"
                     raise _KiwiAssignedRxMismatch(requested_rx=int(required_rx), assigned_rx=int(assigned_rx[0]))

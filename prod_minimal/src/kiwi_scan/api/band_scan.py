@@ -116,6 +116,10 @@ def make_router(*, mgr: object, band_scanner: object) -> APIRouter:
 	def band_scan_status():
 		return band_scanner.status()  # type: ignore[attr-defined]
 
+	@router.get("/band_scan/results")
+	def band_scan_results():
+		return band_scanner.results()  # type: ignore[attr-defined]
+
 	@router.post("/band_scan/stop")
 	def stop_band_scan():
 		return band_scanner.stop()  # type: ignore[attr-defined]

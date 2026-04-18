@@ -3,7 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Body
 
 
-def make_router(*, mgr: object, net_monitor: object, receiver_scan: object | None = None) -> APIRouter:
+def make_router(
+    *,
+    mgr: object,
+    net_monitor: object,
+    receiver_scan: object | None = None,
+) -> APIRouter:
     router = APIRouter()
 
     @router.post("/net_monitor/start")
@@ -22,11 +27,12 @@ def make_router(*, mgr: object, net_monitor: object, receiver_scan: object | Non
             if request.get("max_cycles") is not None:
                 max_cycles = int(request.get("max_cycles"))
 
-        if receiver_scan is not None and hasattr(receiver_scan, "deactivate"):
-            try:
-                receiver_scan.deactivate()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+        for service in (receiver_scan,):
+            if service is not None and hasattr(service, "deactivate"):
+                try:
+                    service.deactivate()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
 
         with mgr.lock:  # type: ignore[attr-defined]
             host = str(mgr.host)  # type: ignore[attr-defined]

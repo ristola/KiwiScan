@@ -3,7 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Body
 
 
-def make_router(*, mgr: object, receiver_scan: object, net_monitor: object | None = None) -> APIRouter:
+def make_router(
+    *,
+    mgr: object,
+    receiver_scan: object,
+    net_monitor: object | None = None,
+) -> APIRouter:
     router = APIRouter()
 
     def _manager_state(*, scan_band: str | None = None) -> tuple[str, int, str | None, float]:
@@ -28,11 +33,12 @@ def make_router(*, mgr: object, receiver_scan: object, net_monitor: object | Non
             requested_band = str(request.get("band"))
         if isinstance(request, dict) and request.get("mode") is not None:
             requested_mode = str(request.get("mode"))
-        if net_monitor is not None and hasattr(net_monitor, "deactivate"):
-            try:
-                net_monitor.deactivate()  # type: ignore[attr-defined]
-            except Exception:
-                pass
+        for service in (net_monitor,):
+            if service is not None and hasattr(service, "deactivate"):
+                try:
+                    service.deactivate()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
         host, port, password, threshold_db = _manager_state(scan_band=requested_band)
         start_kwargs = {
             "host": host,

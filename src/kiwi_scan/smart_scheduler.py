@@ -64,6 +64,26 @@ _FT8_BLOCK_STARTS: tuple[int, ...] = (0, 4, 8, 10, 16, 20)
 # ---------------------------------------------------------------------------
 
 _SCORE_WEIGHT: Dict[str, float] = {"OPEN": 3.0, "MARGINAL": 1.0, "CLOSED": 0.0}
+_DAY_ROAMING_BANDS: frozenset[str] = frozenset({"10m", "12m", "15m"})
+_NIGHT_ROAMING_BANDS: frozenset[str] = frozenset({"60m", "80m", "160m"})
+_ROAMING_LOW_DECODES_PER_HOUR_DEFAULT = 3
+_ROAMING_LOW_DECODES_PER_HOUR_DAY = 3
+_ROAMING_LOW_DECODES_PER_HOUR_NIGHT = 1
+_ROAMING_LOW_RATE_PENALTY = 18.0
+_ROAMING_EXPLORATION_BONUS = 12.0
+
+
+def _mode_supplies_propagation_evidence(mode_label: str) -> bool:
+    norm = str(mode_label or "").strip().upper()
+    return any(token in norm for token in _DIGITAL_MODES)
+
+
+def _roaming_probe_score(decode_rate_per_hour: int, threshold_per_hour: int) -> int:
+    rate = max(0, int(decode_rate_per_hour))
+    threshold = max(1, int(threshold_per_hour))
+    if rate <= 0:
+        return 0
+    return min(25, max(1, int(round((rate / threshold) * 15.0))))
 
 
 def _compute_band_score(
@@ -172,7 +192,7 @@ def _empirical_from_health(health: Dict[str, Any]) -> Dict[str, str]:
         if not band:
             continue
         mode = str(ch.get("mode") or "").strip().upper()
-        if mode not in _DIGITAL_MODES:
+        if not _mode_supplies_propagation_evidence(mode):
             continue
         # Skip stalled / inactive channels — they don't have valid SNR data.
         health_state = str(ch.get("health_state") or "").lower()
@@ -220,6 +240,7 @@ class SmartScheduler:
         self._last_check_ts: Optional[float] = None
         self._last_merged: Dict[str, str] = {}
         self._last_health_overall: str = "unknown"
+        self._last_roaming_decision: Dict[str, Any] = {}
 
     # ------------------------------------------------------------------
     # Persistence helpers
@@ -509,11 +530,13 @@ class SmartScheduler:
             empirical = dict(self._empirical)
             last_check_ts = self._last_check_ts
             health_overall = str(self._last_health_overall)
+            roaming_decision = dict(self._last_roaming_decision)
 
         overrides = self._load_overrides()
         allowed = self._allowed_bands()
         local_dt = datetime.now().astimezone()
         season = season_for_date(local_dt)
+        roaming_health = self._current_roaming_health_snapshot(list(_DAY_ROAMING_BANDS | _NIGHT_ROAMING_BANDS))
 
         merged = self._compute_merged(empirical, "ft8", local_dt)
         try:
@@ -535,6 +558,14 @@ class SmartScheduler:
                 source = "seasonal"
             seasonal_val = str(seasonal.get(band, "UNKNOWN")).upper()
             next_chg = _next_seasonal_change_for_band(band, seasonal_val, local_dt, mode="ft8")
+            score = None
+            if band in empirical:
+                score = _compute_band_score(band, merged_val, season, "ft8", local_dt)
+            elif band in roaming_health["bands"]:
+                score = _roaming_probe_score(
+                    int(roaming_health["decode_rates"].get(band, 0) or 0),
+                    self._roaming_low_decode_threshold([band]),
+                )
             conditions[band] = {
                 "merged": merged_val,
                 "seasonal": seasonal_val,
@@ -543,7 +574,7 @@ class SmartScheduler:
                 "source": source,
                 "next_seasonal_change_in_s": int(next_chg[0]) if next_chg else None,
                 "next_seasonal_condition": next_chg[1] if next_chg else None,
-                "score": _compute_band_score(band, merged_val, season, "ft8", local_dt),
+                "score": score,
             }
 
         return {
@@ -552,14 +583,15 @@ class SmartScheduler:
             "last_check_ts": last_check_ts,
             "interval_s": self._interval_s(),
             "mode": "ft8",
+            "roaming_decision": roaming_decision,
             "conditions": conditions,
             "closed_bands": sorted(b for b, c in merged.items() if c == "CLOSED" and b in allowed),
             "open_bands": sorted(b for b, c in merged.items() if c == "OPEN" and b in allowed),
             "marginal_bands": sorted(b for b, c in merged.items() if c == "MARGINAL" and b in allowed),
             "allowed_bands": sorted(allowed),
         }
+
     def _compute_smart_score(self, band: str, recent_decodes: list[Dict[str, Any]], current_roaming: list[str]) -> float:
-        import math
         from datetime import datetime, timezone
         
         band_decodes = [d for d in recent_decodes if d.get("band") == band]
@@ -653,19 +685,100 @@ class SmartScheduler:
         """Rank available bands using the smart score.
         Calculates all variables: live_activity, unique calls, snr, distance, setup, etc.
         """
-        # Fetch decodes from the last 15 minutes
         try:
-            from kiwi_scan.api.decodes import get_recent_decodes
             recent_decodes = get_recent_decodes(900)
         except Exception:
             recent_decodes = []
-            
+
+        current_roaming = [str(band).strip() for band in current_roaming if str(band).strip()]
+        roaming_health = self._current_roaming_health_snapshot(available_bands)
+        if not current_roaming:
+            current_roaming = list(roaming_health["bands"])
+        low_decode_threshold = self._roaming_low_decode_threshold(available_bands)
+        low_rate_bands = {
+            str(band)
+            for band, rate in roaming_health["decode_rates"].items()
+            if int(rate) <= int(low_decode_threshold)
+        }
+
         ranked = []
         for band in available_bands:
             score = self._compute_smart_score(band, recent_decodes, current_roaming)
+            if band in current_roaming and band in low_rate_bands:
+                score -= float(_ROAMING_LOW_RATE_PENALTY)
+            elif current_roaming and low_rate_bands and band not in current_roaming:
+                score += float(_ROAMING_EXPLORATION_BONUS)
             # Add a tiny tie-breaker
             ranked.append((score, band))
             
         # Sort descending by score
         ranked.sort(key=lambda x: x[0], reverse=True)
-        return [band for score, band in ranked]
+        ranked_bands = [band for score, band in ranked]
+        selected_bands = ranked_bands[: min(2, len(ranked_bands))]
+        promoted_bands = [band for band in selected_bands if band not in current_roaming]
+        displaced_bands = [band for band in current_roaming if band not in selected_bands]
+        decision = {
+            "available_bands": list(available_bands),
+            "current_roaming": list(current_roaming),
+            "ranked_bands": ranked_bands,
+            "selected_bands": selected_bands,
+            "decode_rates_per_hour": dict(roaming_health["decode_rates"]),
+            "low_decode_threshold_per_hour": int(low_decode_threshold),
+            "low_rate_bands": sorted(low_rate_bands),
+            "promoted_bands": promoted_bands,
+            "displaced_bands": displaced_bands,
+            "updated_ts": time.time(),
+        }
+        with self._lock:
+            self._last_roaming_decision = decision
+        if low_rate_bands or promoted_bands or displaced_bands:
+            logger.info(
+                "SmartScheduler: roaming rebalance quiet=%s promoted=%s displaced=%s selected=%s",
+                sorted(low_rate_bands),
+                promoted_bands,
+                displaced_bands,
+                selected_bands,
+            )
+        return ranked_bands
+
+    def _roaming_low_decode_threshold(self, available_bands: list[str]) -> int:
+        normalized_bands = {
+            str(band).strip()
+            for band in available_bands
+            if str(band).strip()
+        }
+        if normalized_bands and normalized_bands.issubset(_DAY_ROAMING_BANDS):
+            return int(_ROAMING_LOW_DECODES_PER_HOUR_DAY)
+        if normalized_bands and normalized_bands.issubset(_NIGHT_ROAMING_BANDS):
+            return int(_ROAMING_LOW_DECODES_PER_HOUR_NIGHT)
+        return int(_ROAMING_LOW_DECODES_PER_HOUR_DEFAULT)
+
+    def _current_roaming_health_snapshot(self, available_bands: list[str]) -> Dict[str, Any]:
+        try:
+            health = self._receiver_mgr.health_summary()
+        except Exception:
+            return {"bands": [], "decode_rates": {}}
+
+        channels = health.get("channels") if isinstance(health, dict) else {}
+        if not isinstance(channels, dict):
+            return {"bands": [], "decode_rates": {}}
+
+        allowed_bands = {str(band).strip() for band in available_bands if str(band).strip()}
+        current_bands: list[str] = []
+        decode_rates: Dict[str, int] = {}
+        seen: set[str] = set()
+        for rx in (0, 1):
+            channel = channels.get(str(rx))
+            if not isinstance(channel, dict):
+                continue
+            band = str(channel.get("band") or "").strip()
+            if not band or (allowed_bands and band not in allowed_bands):
+                continue
+            if band not in seen:
+                current_bands.append(band)
+                seen.add(band)
+            try:
+                decode_rates[band] = max(decode_rates.get(band, 0), int(channel.get("decode_rate_per_hour") or 0))
+            except Exception:
+                decode_rates.setdefault(band, 0)
+        return {"bands": current_bands, "decode_rates": decode_rates}

@@ -291,13 +291,14 @@ class AutoSetLoop:
         band_modes: Dict[str, str] = {str(r["band"]): str(r["mode"]) for r in roaming if str(r["band"]).strip().lower() not in _fixed_bands}
         selected_bands: list[str] = []
         num_roaming_slots = 2
+        current_roaming = self._current_roaming_bands()
 
         fixed_health_state, _sick_fixed = self._fixed_health_state()
         if self._smart_scheduler is not None:
             try:
                 ranked_bands = self._smart_scheduler.rank_roaming_bands(
                     available_bands=list(roaming_pool),
-                    current_roaming=[],
+                    current_roaming=list(current_roaming),
                 )
                 selected_bands = [b for b in ranked_bands if b in band_modes][:num_roaming_slots]
             except Exception:
@@ -323,6 +324,37 @@ class AutoSetLoop:
             "band_modes": band_modes,
         }
         return payload
+
+    def _current_roaming_bands(self) -> list[str]:
+        """Return the currently active RX0/RX1 roaming bands from /health/rx."""
+        port_raw = str(os.environ.get("PORT", "4020") or "4020").strip()
+        try:
+            port = int(port_raw)
+        except Exception:
+            port = 4020
+        try:
+            url = f"http://127.0.0.1:{port}/health/rx"
+            with urllib.request.urlopen(url, timeout=2.0) as resp:
+                data = json.loads(resp.read(1024 * 1024).decode("utf-8", errors="ignore"))
+        except Exception:
+            return []
+        if not isinstance(data, dict) or bool(data.get("_from_cache")):
+            return []
+        channels = data.get("channels")
+        if not isinstance(channels, dict):
+            return []
+        current: list[str] = []
+        seen: set[str] = set()
+        for rx in (0, 1):
+            ch = channels.get(str(rx))
+            if not isinstance(ch, dict):
+                continue
+            band = str(ch.get("band") or "").strip()
+            if not band or band in seen:
+                continue
+            current.append(band)
+            seen.add(band)
+        return current
 
     @staticmethod
     def _current_schedule_key(settings: Dict[str, Any]) -> tuple[str, str]:
@@ -591,6 +623,8 @@ class AutoSetLoop:
                 or self._last_schedule_key != schedule_key
                 or self._last_apply_signature != apply_signature
             )
+            payload: Dict[str, Any] | None = None
+            new_band_config: str | None = None
 
             # Even when nothing logically changed, verify fixed receivers are still live.
             # This recovers from unexpected restarts or external kicks without waiting for
@@ -649,6 +683,17 @@ class AutoSetLoop:
                         )
                         force_health_recovery = True
                         should_apply = True
+                if not should_apply:
+                    with self._state_lock:
+                        last_band_config = self._last_applied_band_config
+                    payload = self._build_payload(settings, schedule_key=schedule_key)
+                    new_band_config = self._band_config_signature(payload)
+                    if new_band_config != last_band_config:
+                        logger.info(
+                            "Auto-set loop: scored band config changed for %s — applying updated assignments",
+                            schedule_key,
+                        )
+                        should_apply = True
             elif _in_recovery_backoff:
                 logger.debug(
                     "Auto-set loop: skipping health check — recovery backoff active for %.0fs more",
@@ -659,13 +704,15 @@ class AutoSetLoop:
                 with self._state_lock:
                     self._last_run_ts = time.time()
                     last_applied_band_config = self._last_applied_band_config
-                payload = self._build_payload(settings, schedule_key=schedule_key)
+                if payload is None:
+                    payload = self._build_payload(settings, schedule_key=schedule_key)
                 # Force-flag health-recovery applies so the endpoint's dedup cache
                 # doesn't suppress the re-kick when an identical payload was recently
                 # used but failed to connect all workers.
                 if force_health_recovery:
                     payload["force"] = True
-                new_band_config = self._band_config_signature(payload)
+                if new_band_config is None:
+                    new_band_config = self._band_config_signature(payload)
                 # If only the time block changed but the resulting band/mode config is
                 # identical to what was last applied, skip the reassign entirely.
                 if (
@@ -760,9 +807,19 @@ class AutoSetLoop:
         15-second deduplication window.  The loop's own signature cache is also cleared so
         the next scheduled cycle re-evaluates from a clean state.
 
-        No-ops when Auto Mode (fixedModeEnabled) is OFF so that SmartScheduler
-        condition-change callbacks don't undo the user's Manual selection.
+        No-ops when Auto Mode (fixedModeEnabled) is OFF or an external hold is
+        active so SmartScheduler condition-change callbacks don't override
+        receiver-scan / net-monitor receiver reservations.
         """
+        with self._state_lock:
+            external_hold_reason = self._external_hold_reason
+        if external_hold_reason:
+            logger.debug(
+                "force_reassign skipped — external hold active (%s)",
+                external_hold_reason,
+            )
+            return
+
         settings = self._load_settings()
         if not self._safe_bool(settings.get("fixedModeEnabled"), default=True):
             logger.debug("force_reassign skipped — Auto Mode is OFF")

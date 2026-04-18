@@ -1630,7 +1630,7 @@ class ReceiverManager:
     @staticmethod
     def _mode_requires_digital(mode_label: str) -> bool:
         norm = str(mode_label or "").strip().upper()
-        return norm in {"FT4", "FT8", "FT4 / FT8", "FT4/FT8", "FT8 / FT4", "FT8/FT4", "WSPR"}
+        return any(token in norm for token in {"FT4", "FT8", "WSPR"})
 
     @staticmethod
     def _mode_is_wspr(mode_label: str) -> bool:
