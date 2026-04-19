@@ -26,12 +26,32 @@ class _MgrStub:
 class _ReceiverMgrStub:
     def __init__(self) -> None:
         self.last_assignments: dict[int, ReceiverAssignment] = {}
+        self.apply_calls = 0
 
     def dependency_report(self) -> dict:
         return {}
 
     def apply_assignments(self, _host: str, _port: int, assignments: dict[int, ReceiverAssignment]) -> None:
+        self.apply_calls += 1
         self.last_assignments = dict(assignments)
+
+
+class _AutoSetLoopStatusStub:
+    def __init__(self, hold_reason: str | None = None) -> None:
+        self._hold_reason = hold_reason
+
+    def status(self) -> dict[str, object]:
+        return {"external_hold_reason": self._hold_reason}
+
+
+class _AutoSetLoopDirectHoldStub:
+    def __init__(self, hold_reason: str | None = None, status_reason: str | None = None) -> None:
+        self._state_lock = threading.Lock()
+        self._external_hold_reason = hold_reason
+        self._status_reason = status_reason
+
+    def status(self) -> dict[str, object]:
+        return {"external_hold_reason": self._status_reason}
 
 
 class _LoopResponse:
@@ -203,6 +223,96 @@ def test_fixed_mode_only_uses_rx0_rx1_for_roaming(monkeypatch) -> None:
         assert assignment.band == band
         assert assignment.mode_label == mode_label
         assert assignment.ignore_slot_check is True  # fixed workers float to any Kiwi slot
+
+
+def test_auto_set_suppressed_while_external_hold_active(monkeypatch) -> None:
+    monkeypatch.delenv("KIWISCAN_AUTOSET_MAX_RX", raising=False)
+
+    mgr = _MgrStub()
+    receiver_mgr = _ReceiverMgrStub()
+    app = FastAPI()
+    app.include_router(
+        make_router(
+            mgr=mgr,
+            receiver_mgr=receiver_mgr,
+            auto_set_loop=_AutoSetLoopStatusStub("receiver_scan"),
+            band_order=["10m", "12m", "15m", "17m", "20m", "30m", "40m", "60m", "80m", "160m"],
+            band_freqs_hz={
+                "10m": 28_074_000.0,
+                "15m": 21_074_000.0,
+            },
+            band_ft4_freqs_hz={},
+            band_wspr_freqs_hz={},
+        )
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/auto_set_receivers",
+        json={
+            "enabled": True,
+            "force": True,
+            "mode": "ft8",
+            "block": "day",
+            "selected_bands": ["15m", "10m"],
+            "band_modes": {
+                "15m": "FT8",
+                "10m": "FT8",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["held"] is True
+    assert payload["hold_reason"] == "receiver_scan"
+    assert receiver_mgr.apply_calls == 0
+    assert receiver_mgr.last_assignments == {}
+
+
+def test_auto_set_suppressed_while_direct_hold_flag_is_active(monkeypatch) -> None:
+    monkeypatch.delenv("KIWISCAN_AUTOSET_MAX_RX", raising=False)
+
+    mgr = _MgrStub()
+    receiver_mgr = _ReceiverMgrStub()
+    app = FastAPI()
+    app.include_router(
+        make_router(
+            mgr=mgr,
+            receiver_mgr=receiver_mgr,
+            auto_set_loop=_AutoSetLoopDirectHoldStub("caption_monitor", None),
+            band_order=["10m", "12m", "15m", "17m", "20m", "30m", "40m", "60m", "80m", "160m"],
+            band_freqs_hz={
+                "10m": 28_074_000.0,
+                "15m": 21_074_000.0,
+            },
+            band_ft4_freqs_hz={},
+            band_wspr_freqs_hz={},
+        )
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/auto_set_receivers",
+        json={
+            "enabled": True,
+            "force": True,
+            "mode": "ft8",
+            "block": "day",
+            "selected_bands": ["15m", "10m"],
+            "band_modes": {
+                "15m": "FT8",
+                "10m": "FT8",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["held"] is True
+    assert payload["hold_reason"] == "caption_monitor"
+    assert receiver_mgr.apply_calls == 0
+    assert receiver_mgr.last_assignments == {}
 
 
 def test_fixed_mode_roaming_drops_bands_reserved_by_fixed_assignments(monkeypatch) -> None:

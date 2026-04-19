@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
 import os
 import shlex
@@ -230,7 +231,7 @@ class _ReceiverWorker(threading.Thread):
         sideband: Optional[str] = None,
         decode_callback: Optional[Callable[[dict], None]] = None,
         on_restart: Optional[Callable[[int, str, str, float, int], None]] = None,
-        on_activity: Optional[Callable[[int, str, str, str, Optional[float]], None]] = None,
+        on_activity: Optional[Callable[[int, str, str, str, Optional[float], Optional[float]], None]] = None,
         initial_rx_chan_adjust: int = 0,
         ignore_slot_check: bool = False,
     ) -> None:
@@ -911,6 +912,21 @@ class _ReceiverWorker(threading.Thread):
                     return None
             return None
 
+        def _decode_line_audio_hz(msg: str) -> Optional[float]:
+            text = str(msg or "").strip()
+            if not text.startswith("D:"):
+                return None
+            parts = text.split()
+            if len(parts) < 6:
+                return None
+            mode_name = str(parts[1] or "").strip().upper()
+            if mode_name in {"FT8", "FT4", "JT9", "JT65"}:
+                try:
+                    return float(parts[5])
+                except Exception:
+                    return None
+            return None
+
         def _reader() -> None:
             if proc.stdout is None:
                 return
@@ -934,9 +950,10 @@ class _ReceiverWorker(threading.Thread):
                 if not msg.startswith("D:"):
                     continue
                 snr_db = _decode_line_snr(msg)
+                audio_freq_hz = _decode_line_audio_hz(msg)
                 if self._on_activity is not None:
                     try:
-                        self._on_activity(self._rx, self._band, mode, "decode", snr_db)
+                        self._on_activity(self._rx, self._band, mode, "decode", snr_db, audio_freq_hz)
                     except Exception:
                         pass
                 if self._decode_callback is not None:
@@ -1468,6 +1485,27 @@ class ReceiverManager:
     def _stale_recovery_mismatch_window_s(self) -> float:
         return self._env_float("KIWISCAN_STALE_RECOVERY_MISMATCH_WINDOW_S", 20.0, min_v=5.0, max_v=300.0)
 
+    def _stale_recovery_narrowband_window_s(self) -> float:
+        return self._env_float("KIWISCAN_STALE_RECOVERY_NARROWBAND_WINDOW_S", 150.0, min_v=60.0, max_v=900.0)
+
+    def _stale_recovery_narrowband_baseline_window_s(self) -> float:
+        return self._env_float("KIWISCAN_STALE_RECOVERY_NARROWBAND_BASELINE_WINDOW_S", 600.0, min_v=180.0, max_v=3600.0)
+
+    def _stale_recovery_narrowband_min_decodes(self) -> int:
+        return self._env_int("KIWISCAN_STALE_RECOVERY_NARROWBAND_MIN_DECODES", 8, min_v=2, max_v=200)
+
+    def _stale_recovery_narrowband_max_span_hz(self) -> float:
+        return self._env_float("KIWISCAN_STALE_RECOVERY_NARROWBAND_MAX_SPAN_HZ", 450.0, min_v=50.0, max_v=3000.0)
+
+    def _stale_recovery_narrowband_min_baseline_span_hz(self) -> float:
+        return self._env_float("KIWISCAN_STALE_RECOVERY_NARROWBAND_MIN_BASELINE_SPAN_HZ", 1200.0, min_v=100.0, max_v=4000.0)
+
+    def _stale_recovery_narrowband_min_baseline_rate_per_min(self) -> float:
+        return self._env_float("KIWISCAN_STALE_RECOVERY_NARROWBAND_MIN_BASELINE_RATE_PER_MIN", 8.0, min_v=1.0, max_v=300.0)
+
+    def _stale_recovery_narrowband_rate_ratio(self) -> float:
+        return self._env_float("KIWISCAN_STALE_RECOVERY_NARROWBAND_RATE_RATIO", 0.5, min_v=0.1, max_v=1.0)
+
     def _mismatch_autokick_enabled(self) -> bool:
         return self._env_bool("KIWISCAN_MISMATCH_AUTOKICK_ENABLED", True)
 
@@ -1644,6 +1682,11 @@ class ReceiverManager:
         return str(mode_label or "").strip().upper() == "WSPR"
 
     @staticmethod
+    def _mode_supports_narrowband_stale_detection(mode_label: str) -> bool:
+        norm = str(mode_label or "").strip().upper()
+        return norm in {"FT8", "FT4", "JT9", "JT65"}
+
+    @staticmethod
     def _find_wsprd_path() -> str:
         direct = shutil.which("wsprd")
         if direct:
@@ -1795,7 +1838,15 @@ class ReceiverManager:
                 "updated_unix": float(self._restart_last_unix),
             }
 
-    def _on_worker_activity(self, rx: int, band: str, mode_label: str, event_type: str, snr_db: Optional[float] = None) -> None:
+    def _on_worker_activity(
+        self,
+        rx: int,
+        band: str,
+        mode_label: str,
+        event_type: str,
+        snr_db: Optional[float] = None,
+        audio_freq_hz: Optional[float] = None,
+    ) -> None:
         now = time.time()
         with self._lock:
             current = dict(self._activity_by_rx.get(int(rx), {}))
@@ -1822,6 +1873,28 @@ class ReceiverManager:
                 _total_by_mode: dict = dict(current.get("_decode_total_by_mode", {}) or {})
                 _total_by_mode[mode_label] = int(_total_by_mode.get(mode_label, 0) or 0) + 1
                 current["_decode_total_by_mode"] = _total_by_mode
+                if isinstance(audio_freq_hz, (float, int)):
+                    audio_freq_value = float(audio_freq_hz)
+                    if math.isfinite(audio_freq_value):
+                        current["audio_freq_last_hz"] = audio_freq_value
+                        audio_history_s = (
+                            self._stale_recovery_narrowband_baseline_window_s()
+                            + self._stale_recovery_narrowband_window_s()
+                            + 60.0
+                        )
+                        audio_cutoff = now - max(120.0, audio_history_s)
+                        audio_points: list[tuple[float, float]] = []
+                        for sample in list(current.get("_decode_audio_points", []) or []):
+                            try:
+                                sample_ts, sample_freq = sample
+                                sample_ts_f = float(sample_ts)
+                                sample_freq_f = float(sample_freq)
+                            except Exception:
+                                continue
+                            if sample_ts_f >= audio_cutoff and math.isfinite(sample_freq_f):
+                                audio_points.append((sample_ts_f, sample_freq_f))
+                        audio_points.append((float(now), audio_freq_value))
+                        current["_decode_audio_points"] = audio_points
             if event_type == "decode" and isinstance(snr_db, (float, int)):
                 snr_value = float(snr_db)
                 current["snr_last_db"] = snr_value
@@ -2005,7 +2078,7 @@ class ReceiverManager:
                 except Exception:
                     kiwi_user_age_s = None
 
-                stale_reason = reason in {"stalled_no_decoder_output", "kiwi_assignment_mismatch"}
+                stale_reason = reason in {"stalled_no_decoder_output", "kiwi_assignment_mismatch", "narrow_decode_span"}
                 age_samples = [v for v in (decoder_age_s, kiwi_user_age_s) if isinstance(v, (float, int))]
                 generic_age_ok = (not age_samples) or (max(float(v) for v in age_samples) >= min_age_s)
 
@@ -2022,6 +2095,8 @@ class ReceiverManager:
                             first_seen_unix = float(now)
                         mismatch_age_s = max(0.0, now - first_seen_unix)
                         stale_age_ok = bool(generic_age_ok or mismatch_age_s >= mismatch_window_s)
+                    elif reason == "narrow_decode_span":
+                        stale_age_ok = int(ch.get("decode_audio_window_samples", 0) or 0) >= self._stale_recovery_narrowband_min_decodes()
 
                     is_candidate = bool(is_stalled and stale_reason and stale_age_ok)
 
@@ -2345,6 +2420,12 @@ class ReceiverManager:
                 "decode_rate_per_min": 0,
                 "decode_rate_per_hour": 0,
                 "decode_rates_by_mode": {},
+                "audio_freq_last_hz": None,
+                "decode_audio_window_samples": 0,
+                "decode_audio_span_hz": None,
+                "decode_audio_baseline_samples": 0,
+                "decode_audio_baseline_span_hz": None,
+                "is_narrowband_suspect": False,
                 "propagation_state": "unknown",
                 "health_state": "inactive",
                 "status_level": "healthy",
@@ -2555,6 +2636,16 @@ class ReceiverManager:
                 "decode_rate_per_min": 0,
                 "decode_rate_per_hour": 0,
                 "decode_rates_by_mode": {},
+                "audio_freq_last_hz": (
+                    float(activity.get("audio_freq_last_hz"))
+                    if isinstance(activity.get("audio_freq_last_hz"), (int, float))
+                    else None
+                ),
+                "decode_audio_window_samples": 0,
+                "decode_audio_span_hz": None,
+                "decode_audio_baseline_samples": 0,
+                "decode_audio_baseline_span_hz": None,
+                "is_narrowband_suspect": False,
                 "propagation_state": "unknown",
                 "health_state": "healthy" if (observed_slot is not None or worker_alive) else "inactive",
                 "status_level": "healthy",
@@ -2966,6 +3057,42 @@ class ReceiverManager:
                 for m, mts in _decode_ts_by_mode.items()
                 if mts
             }
+            decode_audio_window_s = self._stale_recovery_narrowband_window_s()
+            decode_audio_baseline_window_s = self._stale_recovery_narrowband_baseline_window_s()
+            decode_audio_baseline_duration_s = max(1.0, decode_audio_baseline_window_s - decode_audio_window_s)
+            decode_audio_cutoff = now - decode_audio_baseline_window_s
+            decode_audio_current_cutoff = now - decode_audio_window_s
+            decode_audio_points: list[tuple[float, float]] = []
+            for sample in list(activity.get("_decode_audio_points", []) or []):
+                try:
+                    sample_ts, sample_freq = sample
+                    sample_ts_f = float(sample_ts)
+                    sample_freq_f = float(sample_freq)
+                except Exception:
+                    continue
+                if sample_ts_f >= decode_audio_cutoff and math.isfinite(sample_freq_f):
+                    decode_audio_points.append((sample_ts_f, sample_freq_f))
+
+            def _span_hz(values: list[float]) -> float | None:
+                if not values:
+                    return None
+                if len(values) == 1:
+                    return 0.0
+                return max(values) - min(values)
+
+            decode_audio_window_values = [freq for ts, freq in decode_audio_points if ts >= decode_audio_current_cutoff]
+            decode_audio_baseline_values = [
+                freq
+                for ts, freq in decode_audio_points
+                if decode_audio_cutoff <= ts < decode_audio_current_cutoff
+            ]
+            decode_audio_window_samples = len(decode_audio_window_values)
+            decode_audio_baseline_samples = len(decode_audio_baseline_values)
+            decode_audio_span_hz = _span_hz(decode_audio_window_values)
+            decode_audio_baseline_span_hz = _span_hz(decode_audio_baseline_values)
+            decode_audio_window_rate_per_min = (60.0 * float(decode_audio_window_samples) / float(max(1.0, decode_audio_window_s)))
+            decode_audio_baseline_rate_per_min = (60.0 * float(decode_audio_baseline_samples) / float(decode_audio_baseline_duration_s))
+            audio_freq_last_hz = _to_float(activity.get("audio_freq_last_hz"))
 
             stall_threshold_s = self._stall_threshold_seconds(mode_label)
             silent_threshold_s = self._silent_threshold_seconds(mode_label)
@@ -2994,6 +3121,24 @@ class ReceiverManager:
 
             if is_digital and assignment is not None:
                 decoder_missing = (decoder_output_age_s is None) or (decoder_output_age_s > stall_threshold_s)
+                narrowband_suspect = False
+                if (
+                    self._mode_supports_narrowband_stale_detection(mode_label)
+                    and visible_on_kiwi
+                    and not decoder_missing
+                    and decode_audio_window_samples >= self._stale_recovery_narrowband_min_decodes()
+                    and decode_audio_baseline_samples >= self._stale_recovery_narrowband_min_decodes()
+                    and decode_audio_span_hz is not None
+                    and decode_audio_baseline_span_hz is not None
+                ):
+                    narrowband_suspect = bool(
+                        decode_audio_span_hz <= self._stale_recovery_narrowband_max_span_hz()
+                        and decode_audio_baseline_span_hz >= self._stale_recovery_narrowband_min_baseline_span_hz()
+                        and decode_audio_baseline_rate_per_min >= self._stale_recovery_narrowband_min_baseline_rate_per_min()
+                        and decode_audio_window_rate_per_min <= (
+                            decode_audio_baseline_rate_per_min * self._stale_recovery_narrowband_rate_ratio()
+                        )
+                    )
                 expected_label_keys = {
                     str(label or "").strip().upper()
                     for label in expected_labels
@@ -3062,6 +3207,9 @@ class ReceiverManager:
                 elif visible_on_kiwi and decoder_missing:
                     health_state = "stalled"
                     last_reason = "stalled_no_decoder_output"
+                elif narrowband_suspect:
+                    health_state = "stalled"
+                    last_reason = "narrow_decode_span"
                 elif visible_on_kiwi and decode_age_s is not None and decode_age_s > silent_threshold_s:
                     health_state = "silent"
                     if not last_reason:
@@ -3136,6 +3284,12 @@ class ReceiverManager:
                 "decode_rate_per_min": decode_rate_per_min,
                 "decode_rate_per_hour": decode_rate_per_hour,
                 "decode_rates_by_mode": decode_rates_by_mode,
+                "audio_freq_last_hz": audio_freq_last_hz,
+                "decode_audio_window_samples": decode_audio_window_samples,
+                "decode_audio_span_hz": decode_audio_span_hz,
+                "decode_audio_baseline_samples": decode_audio_baseline_samples,
+                "decode_audio_baseline_span_hz": decode_audio_baseline_span_hz,
+                "is_narrowband_suspect": last_reason == "narrow_decode_span",
                 "propagation_state": propagation_state,
                 "health_state": health_state,
                 "status_level": status_level,

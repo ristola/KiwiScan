@@ -60,12 +60,20 @@ class _AutoSetLoopStub:
 class _InlineThread:
     def __init__(self, target) -> None:
         self._target = target
+        self._alive = False
 
     def start(self) -> None:
-        self._target()
+        self._alive = True
+        try:
+            self._target()
+        finally:
+            self._alive = False
 
     def join(self, timeout: float | None = None) -> None:
         return None
+
+    def is_alive(self) -> bool:
+        return bool(self._alive)
 
 
 def test_caption_monitor_records_lsb_chunks_for_7179(monkeypatch, tmp_path: Path) -> None:
@@ -139,7 +147,9 @@ def test_caption_monitor_records_lsb_chunks_for_7179(monkeypatch, tmp_path: Path
     assert [req.rx_chan for req in record_calls] == [3, 3]
     assert receiver_mgr.kick_calls == [
         ("kiwi.local", 8073, (3,), False),
-        ("kiwi.local", 8073, (3,), False),
+    ]
+    assert receiver_mgr.wait_clear_calls == [
+        ("kiwi.local", 8073, (3,), 0.75, 4.0),
     ]
     assert auto_set_loop.pause_calls == ["caption_monitor"]
     assert auto_set_loop.resume_calls == ["caption_monitor"]

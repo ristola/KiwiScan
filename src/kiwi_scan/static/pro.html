@@ -6710,14 +6710,26 @@
             const scan = latestReceiverScanStatus && typeof latestReceiverScanStatus === "object"
                 ? latestReceiverScanStatus
                 : null;
-            if (!scan || scan.running || !Array.isArray(scan.reserved_receivers)) return new Set();
-            const scanPrepared = getCurrentReceiversMode() === "scan" || !!scan.mode_active;
-            if (!scanPrepared) return new Set();
+            if (!scan || scan.running || !scan.mode_active || !Array.isArray(scan.reserved_receivers)) return new Set();
             return new Set(
                 scan.reserved_receivers
                     .map((rx) => Number(rx))
                     .filter((rxNum) => Number.isFinite(rxNum) && rxNum >= 0)
             );
+        }
+
+        function syncReceiversModeFromBackendState() {
+            const receiverScanActive = !!(latestReceiverScanStatus && (latestReceiverScanStatus.running || latestReceiverScanStatus.mode_active));
+            const netMonitorActive = !!(latestNetMonitorStatus && (latestNetMonitorStatus.running || latestNetMonitorStatus.activating || latestNetMonitorStatus.mode_active));
+            const captionMonitorActive = !!(latestCaptionMonitorStatus && (latestCaptionMonitorStatus.running || latestCaptionMonitorStatus.starting));
+            if (receiverScanActive || netMonitorActive || captionMonitorActive) {
+                setReceiversMode("scan", { persist: false });
+                applyAutoModeVisibility(false);
+                return;
+            }
+            const fixedEnabled = !(latestAutomationSettings && latestAutomationSettings.fixedModeEnabled === false);
+            setReceiversMode(fixedEnabled ? "auto" : "manual", { persist: false });
+            applyAutoModeVisibility(fixedEnabled);
         }
 
         function buildActiveReceiverRows(kiwiUsers, rawKiwiUsers) {
@@ -10285,10 +10297,7 @@
                 receiverScanPendingSource = "";
             }
             if (!receiverScanActiveSource && (scan.running || scan.mode_active)) receiverScanActiveSource = resolvedSource;
-            if (scan.mode_active) {
-                setReceiversMode("scan", { persist: false });
-                applyAutoModeVisibility(false);
-            }
+            syncReceiversModeFromBackendState();
             const scanMode = normalizeReceiverScanControlRole(scan && scan.scan_mode, receiverScanActiveSource || "smart") || "smart";
             const noteEl = byId("receiver-scan-note");
             const followup = scan.cw_followup && typeof scan.cw_followup === "object" ? scan.cw_followup : null;
@@ -10421,6 +10430,7 @@
                     ? "running"
                     : (status.activating ? "starting" : safeText(status.status, "idle")),
             );
+            syncReceiversModeFromBackendState();
             renderNetMonitorCapture(status);
             renderNetMonitorTranscript(status);
             renderNetMonitorHistory(status);
@@ -10521,6 +10531,7 @@
                     ? "running"
                     : (status.starting ? "starting" : safeText(status.status, "idle")),
             );
+            syncReceiversModeFromBackendState();
             renderCaptionMonitorCapture(status);
             renderCaptionMonitorTranscript(status);
             renderCaptionMonitorHistory(status);
@@ -11885,8 +11896,6 @@
                 applyAutoModeVisibility(false);
                 if (typeof window.kiwiProSetView === "function") window.kiwiProSetView("receiver-scan", true);
 
-                await saveAutomationSection({ autosave: true });
-
                 const prepared = await postJson("/receiver_scan/prepare", {});
                 applyReceiverScanStatus(prepared);
 
@@ -11896,6 +11905,7 @@
                 setAutomationStatus("Scan mode ready — RX0/RX1 held unassigned while RX2-RX7 stay assigned. Choose a scan to start.");
                 refresh();
             } catch (err) {
+                syncReceiversModeFromBackendState();
                 setAutomationStatus(`scan mode preparation failed: ${String((err && err.message) || err)}`);
             } finally {
                 setReceiversBusy(false);

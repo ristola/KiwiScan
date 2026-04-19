@@ -294,10 +294,38 @@ def _save_automation_settings(payload: Dict[str, object]) -> None:
         pass
 
 
+def _external_hold_reason(auto_set_loop: object | None) -> str | None:
+    if auto_set_loop is None:
+        return None
+
+    state_lock = getattr(auto_set_loop, "_state_lock", None)
+    if state_lock is not None:
+        try:
+            with state_lock:
+                reason = str(getattr(auto_set_loop, "_external_hold_reason", "") or "").strip()
+                if reason:
+                    return reason
+        except Exception:
+            pass
+
+    if hasattr(auto_set_loop, "status"):
+        try:
+            loop_status = auto_set_loop.status()  # type: ignore[attr-defined]
+            if isinstance(loop_status, dict):
+                reason = str(loop_status.get("external_hold_reason") or "").strip()
+                if reason:
+                    return reason
+        except Exception:
+            pass
+
+    return None
+
+
 def make_router(
     *,
     mgr: object,
     receiver_mgr: object,
+    auto_set_loop: object | None = None,
     band_order: List[str],
     band_freqs_hz: Dict[str, float],
     band_ft4_freqs_hz: Dict[str, float],
@@ -335,6 +363,8 @@ def make_router(
             raise HTTPException(status_code=400, detail="mode must be 'ft8'")
         mode = "ft8"
 
+        external_hold_reason = _external_hold_reason(auto_set_loop) if enabled else None
+
         local_dt = datetime.now().astimezone()
         season = season_for_date(local_dt)
         try:
@@ -345,6 +375,21 @@ def make_router(
         block = str(payload.get("block") or "").strip()
         if not block or block not in table.blocks:
             block = block_for_hour(local_dt.hour, mode="ft8")
+
+        if enabled and external_hold_reason:
+            logger.info(
+                "auto_set_receivers suppressed because external hold is active (%s)",
+                external_hold_reason,
+            )
+            return {
+                "enabled": True,
+                "mode": mode,
+                "season": season,
+                "block": block,
+                "held": True,
+                "hold_reason": external_hold_reason,
+                "assignments": [],
+            }
 
         settings = _load_automation_settings()
 

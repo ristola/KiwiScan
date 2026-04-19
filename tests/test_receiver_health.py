@@ -260,6 +260,50 @@ def test_health_summary_healthy_when_worker_visible_at_offset_slot(monkeypatch) 
     assert channel["is_stalled"] is False
 
 
+def test_health_summary_marks_narrowband_decode_collapse_as_stalled(monkeypatch) -> None:
+    manager = _make_manager()
+    manager._assignments = {
+        4: ReceiverAssignment(rx=4, band="40m", freq_hz=7_074_000.0, mode_label="FT8")
+    }
+    manager._active_host = "kiwi.local"
+    manager._active_port = 8073
+    _set_users_payload(
+        monkeypatch,
+        [
+            {"i": 4, "n": "FIXED_40M_FT8", "t": "0:10:00"},
+        ],
+    )
+
+    now = time.time()
+    baseline_ts = [now - 600.0 + (idx * 5.0) for idx in range(90)]
+    current_ts = [now - 120.0 + (idx * 12.0) for idx in range(10)]
+    baseline_freqs = [250.0 + float((idx * 137) % 2500) for idx in range(len(baseline_ts))]
+    current_freqs = [288.0, 301.0, 290.0, 296.0, 287.0, 303.0, 292.0, 299.0, 289.0, 300.0]
+    all_ts = baseline_ts + current_ts
+    all_freqs = baseline_freqs + current_freqs
+    manager._activity_by_rx[4] = {
+        "last_decoder_output_unix": now - 2.0,
+        "last_decode_unix": now - 2.0,
+        "decode_total": len(all_ts),
+        "decode_timestamps": all_ts,
+        "_decode_ts_by_mode": {"FT8": all_ts},
+        "_decode_total_by_mode": {"FT8": len(all_ts)},
+        "audio_freq_last_hz": current_freqs[-1],
+        "_decode_audio_points": list(zip(all_ts, all_freqs)),
+    }
+
+    summary = manager.health_summary()
+
+    channel = summary["channels"]["4"]
+    assert channel["health_state"] == "stalled"
+    assert channel["last_reason"] == "narrow_decode_span"
+    assert channel["is_stalled"] is True
+    assert channel["is_narrowband_suspect"] is True
+    assert channel["decode_audio_window_samples"] == len(current_ts)
+    assert channel["decode_audio_span_hz"] is not None and channel["decode_audio_span_hz"] <= 20.0
+    assert channel["decode_audio_baseline_span_hz"] is not None and channel["decode_audio_baseline_span_hz"] >= 1200.0
+
+
 def test_health_summary_recognizes_compact_fixed_dual_mode_label(monkeypatch) -> None:
     manager = _make_manager()
     manager._assignments = {

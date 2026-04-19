@@ -477,28 +477,9 @@ class CaptionMonitorService:
         except TranscriberUnavailable as exc:
             summary = f"Transcription unavailable: {exc}"
             self._set_transcription_error(
-                summary=summary,
-                chunk_index=chunk_index,
-                wav_path=wav_path,
-                capture_finished_ts=capture_finished_ts,
-                transcription_started_ts=transcription_started_ts,
-            )
-        except Exception as exc:
-            if wav_path is not None:
-                summary = f"Transcription failed: {type(exc).__name__}: {exc}"
                 self._set_transcription_error(
-                    summary=summary,
-                    chunk_index=chunk_index,
-                    wav_path=wav_path,
-                    capture_finished_ts=capture_finished_ts,
-                    transcription_started_ts=transcription_started_ts,
-                )
-            else:
-                summary = f"Caption capture failed: {type(exc).__name__}: {exc}"
-                self._set_capture_error(summary=summary, wav_path=wav_path)
-
-    def _set_capture_error(self, *, summary: str, wav_path: Path | None) -> None:
-        with self._lock:
+            summary = f"Caption capture failed: {type(exc).__name__}: {exc}"
+            self._set_capture_error(summary=summary, wav_path=wav_path)
             self._last_error = summary
             self._capture = {
                 **self._capture,

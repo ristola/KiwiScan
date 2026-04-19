@@ -687,6 +687,7 @@ app.include_router(
     make_auto_set_router(
         mgr=mgr,
         receiver_mgr=receiver_mgr,
+        auto_set_loop=auto_set_loop,
         band_order=BAND_ORDER,
         band_freqs_hz=BAND_FREQS_HZ,
         band_ft4_freqs_hz=BAND_FT4_FREQS_HZ,

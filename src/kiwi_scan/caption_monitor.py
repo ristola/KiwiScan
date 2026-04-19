@@ -99,9 +99,22 @@ class CaptionMonitorService:
         self._chunk_count = 0
         self._history: list[dict[str, Any]] = []
         self._capture: dict[str, Any] = self._idle_capture_state()
+        self._transcription_threads: list[threading.Thread] = []
 
     def _spawn_thread(self, *, name: str, target: Callable[[], None]) -> threading.Thread:
         return threading.Thread(name=name, target=target, daemon=True)
+
+    def _prune_transcription_threads(self) -> None:
+        with self._lock:
+            self._transcription_threads = [thread for thread in self._transcription_threads if thread.is_alive()]
+
+    def _wait_for_transcriptions(self) -> None:
+        with self._lock:
+            threads = list(self._transcription_threads)
+        for thread in threads:
+            thread.join()
+        with self._lock:
+            self._transcription_threads = []
 
     def _clear_reserved_slot(self, *, host: str, port: int, rx_chan: int) -> None:
         kick = getattr(self._receiver_mgr, "_run_admin_kick_all", None)
@@ -244,6 +257,7 @@ class CaptionMonitorService:
             self._chunk_count = 0
             self._history = []
             self._capture = self._idle_capture_state()
+            self._transcription_threads = []
 
         thread = self._spawn_thread(
             name="caption-monitor",
@@ -289,9 +303,11 @@ class CaptionMonitorService:
                     f"Capturing {self._chunk_duration_s}s chunks on {float(self._freq_khz or 0.0):.2f} kHz {self._sideband}"
                 )
 
+            self._clear_reserved_slot(host=host, port=port, rx_chan=int(self._rx_chan))
+
             while not self._stop_requested.is_set():
                 chunk_index = int(self._chunk_count) + 1
-                self._capture_chunk(
+                chunk_artifact = self._capture_chunk(
                     host=host,
                     port=port,
                     password=password,
@@ -299,6 +315,10 @@ class CaptionMonitorService:
                 )
                 with self._lock:
                     self._chunk_count = chunk_index
+                if chunk_artifact is None:
+                    break
+                self._start_transcription(chunk_artifact)
+                self._prune_transcription_threads()
                 self._write_session_summary(self._session_id)
 
                 if self._max_chunks > 0 and chunk_index >= self._max_chunks:
@@ -311,6 +331,7 @@ class CaptionMonitorService:
                 self._last_error = f"Caption monitor failed: {exc}"
                 self._current_note = self._last_error
         finally:
+            self._wait_for_transcriptions()
             with self._lock:
                 self._starting = False
                 self._running = False
@@ -329,7 +350,7 @@ class CaptionMonitorService:
         port: int,
         password: str | None,
         chunk_index: int,
-    ) -> None:
+    ) -> dict[str, Any] | None:
         freq_khz = float(self._freq_khz or 0.0)
         sideband = str(self._sideband or "USB")
         duration_s = int(self._chunk_duration_s)
@@ -337,6 +358,14 @@ class CaptionMonitorService:
         session_id = self._session_id or time.strftime("caption_monitor_%Y%m%d_%H%M%S")
         chunk_dir = self._output_root / session_id / f"chunk_{chunk_index:03d}"
         summary = f"Recording chunk {chunk_index} on {freq_khz:.2f} kHz {sideband}"
+        started_ts = time.time()
+
+        with self._lock:
+            current_transcription = self._capture.get("transcription")
+            if not isinstance(current_transcription, dict):
+                current_transcription = self._idle_transcription_state()
+            else:
+                current_transcription = dict(current_transcription)
 
         with self._lock:
             self._capture = {
@@ -348,22 +377,16 @@ class CaptionMonitorService:
                 "duration_s": duration_s,
                 "recording_path": str(chunk_dir),
                 "wav_path": None,
-                "started_ts": time.time(),
+                "started_ts": started_ts,
                 "finished_ts": None,
                 "summary": summary,
-                "transcription": {
-                    **self._idle_transcription_state(),
-                    "summary": f"Transcript will start after chunk {chunk_index} capture completes",
-                },
+                "transcription": current_transcription,
             }
             self._current_note = summary
 
         wav_path: Path | None = None
         capture_finished_ts: float | None = None
-        transcription_started_ts: float | None = None
-        entry: dict[str, Any] | None = None
         try:
-            self._clear_reserved_slot(host=host, port=port, rx_chan=rx_chan)
             run_record(
                 RecordRequest(
                     host=host,
@@ -382,26 +405,77 @@ class CaptionMonitorService:
                 raise FileNotFoundError("Caption capture completed but no WAV file was found")
 
             capture_finished_ts = time.time()
-            transcription_started_ts = time.time()
             with self._lock:
                 self._capture = {
                     **self._capture,
-                    "status": "transcribing",
-                    "running": True,
+                    "status": "captured",
+                    "running": False,
                     "wav_path": str(wav_path),
                     "finished_ts": capture_finished_ts,
-                    "summary": f"Captured chunk {chunk_index}. Starting transcript",
-                    "transcription": {
-                        **self._idle_transcription_state(),
-                        "status": "running",
-                        "running": True,
-                        "model": self.TRANSCRIBE_MODEL_NAME,
-                        "started_ts": transcription_started_ts,
-                        "summary": f"Transcribing {wav_path.name} with {self.TRANSCRIBE_MODEL_NAME}",
-                    },
+                    "summary": f"Captured chunk {chunk_index}",
                 }
                 self._current_note = self._capture["summary"]
+            return {
+                "chunk_index": int(chunk_index),
+                "freq_khz": freq_khz,
+                "sideband": sideband,
+                "duration_s": duration_s,
+                "wav_path": wav_path,
+                "started_ts": started_ts,
+                "capture_finished_ts": capture_finished_ts,
+            }
+        except RecorderUnavailable as exc:
+            summary = f"Caption capture unavailable: {exc}"
+            self._set_capture_error(summary=summary, wav_path=wav_path)
+        except Exception as exc:
+            summary = f"Caption capture failed: {type(exc).__name__}: {exc}"
+            self._set_capture_error(summary=summary, wav_path=wav_path)
+        return None
 
+    def _start_transcription(self, chunk_artifact: dict[str, Any]) -> None:
+        thread = self._spawn_thread(
+            name=f"caption-transcribe-{int(chunk_artifact.get('chunk_index') or 0):03d}",
+            target=lambda: self._transcribe_chunk(chunk_artifact),
+        )
+        with self._lock:
+            self._transcription_threads.append(thread)
+        thread.start()
+
+    def _transcribe_chunk(self, chunk_artifact: dict[str, Any]) -> None:
+        chunk_index = int(chunk_artifact.get("chunk_index") or 0)
+        freq_khz = float(chunk_artifact.get("freq_khz") or 0.0)
+        sideband = str(chunk_artifact.get("sideband") or "USB")
+        duration_s = int(chunk_artifact.get("duration_s") or 0)
+        wav_path = chunk_artifact.get("wav_path")
+        capture_started_ts = chunk_artifact.get("started_ts")
+        capture_finished_ts = chunk_artifact.get("capture_finished_ts")
+        if not isinstance(wav_path, Path):
+            self._set_transcription_error(
+                summary=f"Transcription failed: chunk {chunk_index} WAV path missing",
+                chunk_index=chunk_index,
+                wav_path=None,
+                capture_finished_ts=capture_finished_ts if isinstance(capture_finished_ts, float) else None,
+                transcription_started_ts=None,
+            )
+            return
+
+        transcription_started_ts = time.time()
+        with self._lock:
+            self._capture = {
+                **self._capture,
+                "transcription": {
+                    **self._idle_transcription_state(),
+                    "status": "running",
+                    "running": True,
+                    "model": self.TRANSCRIBE_MODEL_NAME,
+                    "started_ts": transcription_started_ts,
+                    "summary": f"Transcribing {wav_path.name} with {self.TRANSCRIBE_MODEL_NAME}",
+                },
+            }
+            if not bool(self._capture.get("running")):
+                self._current_note = self._capture["transcription"]["summary"]
+
+        try:
             transcript = transcribe_audio(
                 wav_path,
                 model_name=self.TRANSCRIBE_MODEL_NAME,
@@ -437,7 +511,7 @@ class CaptionMonitorService:
                 "used_preprocessed_audio": used_preprocessed_audio,
                 "attempt_count": attempt_count,
                 "text": transcript_text,
-                "started_ts": self._capture.get("started_ts"),
+                "started_ts": capture_started_ts,
                 "finished_ts": time.time(),
                 "summary": transcript_summary,
             }
@@ -447,11 +521,6 @@ class CaptionMonitorService:
                     self._history = self._history[-self.DEFAULT_HISTORY_LIMIT :]
                 self._capture = {
                     **self._capture,
-                    "status": "complete",
-                    "running": False,
-                    "wav_path": str(wav_path),
-                    "finished_ts": capture_finished_ts,
-                    "summary": f"Captured chunk {chunk_index}",
                     "transcription": {
                         "status": "complete",
                         "running": False,
@@ -471,32 +540,29 @@ class CaptionMonitorService:
                         "summary": transcript_summary,
                     },
                 }
-                self._current_note = transcript_summary
-        except RecorderUnavailable as exc:
-            summary = f"Caption capture unavailable: {exc}"
-            self._set_capture_error(summary=summary, wav_path=wav_path)
+                if not bool(self._capture.get("running")):
+                    self._current_note = transcript_summary
         except TranscriberUnavailable as exc:
             summary = f"Transcription unavailable: {exc}"
             self._set_transcription_error(
                 summary=summary,
                 chunk_index=chunk_index,
                 wav_path=wav_path,
-                capture_finished_ts=capture_finished_ts,
+                capture_finished_ts=capture_finished_ts if isinstance(capture_finished_ts, float) else None,
                 transcription_started_ts=transcription_started_ts,
             )
         except Exception as exc:
-            if wav_path is not None:
-                summary = f"Transcription failed: {type(exc).__name__}: {exc}"
-                self._set_transcription_error(
-                    summary=summary,
-                    chunk_index=chunk_index,
-                    wav_path=wav_path,
-                    capture_finished_ts=capture_finished_ts,
-                    transcription_started_ts=transcription_started_ts,
-                )
-            else:
-                summary = f"Caption capture failed: {type(exc).__name__}: {exc}"
-                self._set_capture_error(summary=summary, wav_path=wav_path)
+            summary = f"Transcription failed: {type(exc).__name__}: {exc}"
+            self._set_transcription_error(
+                summary=summary,
+                chunk_index=chunk_index,
+                wav_path=wav_path,
+                capture_finished_ts=capture_finished_ts if isinstance(capture_finished_ts, float) else None,
+                transcription_started_ts=transcription_started_ts,
+            )
+        finally:
+            self._write_session_summary(self._session_id)
+            self._prune_transcription_threads()
 
     def _set_capture_error(self, *, summary: str, wav_path: Path | None) -> None:
         with self._lock:
