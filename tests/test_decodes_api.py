@@ -81,3 +81,127 @@ def test_prune_decode_buffer_discards_events_without_grid() -> None:
 
     items = decodes_api.get_recent_decodes(900)
     assert items == []
+
+
+def test_published_decode_stats_track_band_mode_counts() -> None:
+    decodes_api.publish_decode(
+        {
+            "timestamp": "16:16:22",
+            "frequency_mhz": 7.074,
+            "mode": "FT8",
+            "callsign": "K1ABC",
+            "grid": "FN31",
+            "message": "CQ K1ABC FN31",
+            "band": "40m",
+            "rx": 4,
+        }
+    )
+    decodes_api.publish_decode(
+        {
+            "timestamp": "16:16:23",
+            "frequency_mhz": 7.074,
+            "mode": "FT8",
+            "callsign": "K2XYZ",
+            "grid": "EM12",
+            "message": "CQ K2XYZ EM12",
+            "band": "40m",
+            "rx": 4,
+        }
+    )
+
+    stats = decodes_api.get_published_decode_stats_by_rx()
+
+    assert stats["4"]["bands"]["40m"]["decode_total"] == 2
+    assert stats["4"]["bands"]["40m"]["decode_rates_by_mode"]["FT8"]["decode_total"] == 2
+    assert stats["4"]["bands"]["40m"]["decode_rate_per_min"] == 2
+    assert stats["4"]["bands"]["40m"]["decode_rate_per_hour"] == 2
+
+
+def test_decodes_chart_omits_in_progress_bucket(monkeypatch) -> None:
+    app = FastAPI()
+    app.include_router(decodes_api.router)
+    client = TestClient(app)
+
+    monkeypatch.setattr(decodes_api.time, "time", lambda: 100.0)
+    decodes_api.publish_decode(
+        {
+            "timestamp": "16:16:22",
+            "frequency_mhz": 7.074,
+            "mode": "FT8",
+            "callsign": "K1ABC",
+            "grid": "FN31",
+            "message": "CQ K1ABC FN31",
+            "band": "40m",
+            "rx": 4,
+        }
+    )
+
+    first_response = client.get("/decodes/chart")
+
+    assert first_response.status_code == 200
+    assert first_response.json()["buckets"] == []
+
+    monkeypatch.setattr(decodes_api.time, "time", lambda: 116.0)
+    decodes_api.publish_decode(
+        {
+            "timestamp": "16:16:38",
+            "frequency_mhz": 14.074,
+            "mode": "FT8",
+            "callsign": "K2XYZ",
+            "grid": "EM12",
+            "message": "CQ K2XYZ EM12",
+            "band": "20m",
+            "rx": 2,
+        }
+    )
+
+    second_response = client.get("/decodes/chart")
+    body = second_response.json()
+
+    assert second_response.status_code == 200
+    assert body["bucket_s"] == 15.0
+    assert body["buckets"] == [
+        {
+            "ts": 90.0,
+            "bands": {
+                "40m": {
+                    "total": 1,
+                    "breakdown": {"RX4|FT8": 1},
+                }
+            },
+        }
+    ]
+
+
+def test_reset_decode_metrics_clears_chart_history(monkeypatch) -> None:
+    monkeypatch.setattr(decodes_api.time, "time", lambda: 100.0)
+    decodes_api.publish_decode(
+        {
+            "timestamp": "16:16:22",
+            "frequency_mhz": 7.074,
+            "mode": "FT8",
+            "callsign": "K1ABC",
+            "grid": "FN31",
+            "message": "CQ K1ABC FN31",
+            "band": "40m",
+            "rx": 4,
+        }
+    )
+
+    monkeypatch.setattr(decodes_api.time, "time", lambda: 116.0)
+    decodes_api.publish_decode(
+        {
+            "timestamp": "16:16:38",
+            "frequency_mhz": 14.074,
+            "mode": "FT8",
+            "callsign": "K2XYZ",
+            "grid": "EM12",
+            "message": "CQ K2XYZ EM12",
+            "band": "20m",
+            "rx": 2,
+        }
+    )
+
+    decodes_api.reset_decode_metrics()
+
+    assert decodes_api.get_decodes_chart() == {"bucket_s": 15.0, "buckets": []}

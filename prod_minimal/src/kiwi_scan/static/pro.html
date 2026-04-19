@@ -3831,6 +3831,7 @@
         .assign-band-axis span {
             text-align: center;
             white-space: nowrap;
+            font-size: 0.6rem;
         }
 
         .assign-band-axis span:first-child {
@@ -4065,6 +4066,10 @@
             background: rgba(15, 23, 42, 0.04);
             color: #7b8794;
             -webkit-text-fill-color: #7b8794;
+        }
+
+        .decode-mode-btn.is-hidden {
+            display: none;
         }
 
         .decode-mode-btn[data-mode="WSPR"] {
@@ -5990,6 +5995,7 @@
         let pausedBandChartSnapshot = null;
         let decodeRateWarmupCycles = 2;
         let latestChannelsMap = {};
+        let latestPublishedDecodeStatsByRx = {};
         let latestAssignments = {};
         let latestAssignmentsSource = "";
         let lastRateTickMs = Date.now();
@@ -6068,7 +6074,7 @@
         let chartBucketMs = 15000;  // updated from server /decodes/chart bucket_s
         const BAND_CHART_PALETTE = ["#0ea5a0", "#f59e0b", "#60a5fa", "#f43f5e", "#a855f7", "#22c55e", "#eab308", "#06b6d4", "#f97316", "#8b5cf6"];
         const BAND_COLOR_OVERRIDES = { "160m": "#f472b6" };
-        const RX_COLORS = ["#ef4444", "#22c55e", "#eab308", "#f97316", "#60a5fa", "#4ade80", "#f472b6", "#a855f7"];
+        const RX_COLORS = ["#ef4444", "#22c55e", "#eab308", "#f97316", "#60a5fa", "#facc15", "#f472b6", "#a855f7"];
         function rxColor(rxNum) { const n = Number(rxNum); return (Number.isFinite(n) && n >= 0 && n < RX_COLORS.length) ? RX_COLORS[n] : "#94a3b8"; }
         const RECENT_DECODE_LIMIT = 5000;
         const RECENT_DECODE_RENDER_LIMIT = 5000;
@@ -6098,6 +6104,7 @@
         const DECODE_SORT_DEFAULT = { key: "time", direction: "desc" };
         let recentDecodeItems = [];
         let recentDecodeIds = new Set();
+        let decodeSeenModes = new Set();
         let recentDecodePanelRenderPending = false;
         let propagationMapRenderPending = false;
         let decodeSelectedModes = new Set(MAP_MODE_FILTERS);
@@ -7624,19 +7631,25 @@
         function updateDecodeModeToolbar() {
             const container = byId("decode-mode-toolbar");
             if (!container) return;
+            const seenModes = getSeenDecodeModes();
             container.querySelectorAll(".decode-mode-btn[data-mode]").forEach((btn) => {
                 const value = String(btn.dataset.mode || "").toUpperCase();
+                const visible = seenModes.includes(value);
                 const active = decodeSelectedModes.has(value);
+                btn.classList.toggle("is-hidden", !visible);
                 btn.classList.toggle("inactive", !active);
-                btn.setAttribute("aria-pressed", active ? "true" : "false");
+                btn.setAttribute("aria-pressed", visible && active ? "true" : "false");
             });
         }
 
         function toggleDecodeModeSelection(mode) {
             const value = String(mode || "").toUpperCase();
             if (!MAP_MODE_FILTERS.includes(value)) return;
+            const seenModes = getSeenDecodeModes();
+            if (!seenModes.includes(value)) return;
             if (decodeSelectedModes.has(value)) {
-                if (decodeSelectedModes.size <= 1) return;
+                const activeSeenModes = seenModes.filter((modeName) => decodeSelectedModes.has(modeName));
+                if (activeSeenModes.length <= 1) return;
                 decodeSelectedModes.delete(value);
             } else {
                 decodeSelectedModes.add(value);
@@ -7829,6 +7842,7 @@
         function renderRecentDecodePanel() {
             const list = byId("decode-message-list");
             const meta = byId("decode-panel-meta");
+            updateDecodeModeToolbar();
             if (!list) return;
             const filtered = recentDecodeItems.filter((item) => {
                 if (!decodeSelectedModes.has(String(item && item.mode || "").toUpperCase())) return false;
@@ -7843,8 +7857,13 @@
             const rows = applyDecodeListFilters(recentDecodeItems).slice(0, RECENT_DECODE_RENDER_LIMIT);
             if (meta) {
                 const latest = latestItem ? formatDecodeClockText(latestItem) : "--";
-                const activeModes = MAP_MODE_FILTERS.filter((mode) => decodeSelectedModes.has(mode));
-                const modeText = activeModes.length === MAP_MODE_FILTERS.length ? "All modes" : activeModes.join(", ");
+                const seenModes = getSeenDecodeModes();
+                const activeModes = seenModes.filter((mode) => decodeSelectedModes.has(mode));
+                const modeText = !seenModes.length
+                    ? "No decoded modes"
+                    : activeModes.length === seenModes.length
+                        ? "All decoded modes"
+                        : (activeModes.length ? activeModes.join(", ") : "No modes selected");
                 const extraFilters = [decodeCqOnly ? "CQ only" : "", decodeDxOnly ? "DX only" : "", decodeUniqueCallsigns ? "unique calls" : ""].filter(Boolean);
                 const filterText = extraFilters.length ? ` · ${extraFilters.join(" · ")}` : "";
                 meta.textContent = rows.length ? `${rows.length} recent decodes · ${modeText}${filterText} · latest ${latest}` : `No recent decodes for ${modeText}${filterText}`;
@@ -8462,6 +8481,7 @@
                 snr: Number.isFinite(Number(item.snr)) ? Number(item.snr) : null,
                 receivedAt: Date.now(),
             };
+            if (MAP_MODE_FILTERS.includes(normalized.mode)) decodeSeenModes.add(normalized.mode);
             recordDecodeSnr(normalized);
             recentDecodeItems.push(normalized);
             if (recentDecodeItems.length > RECENT_DECODE_LIMIT) {
@@ -12293,9 +12313,9 @@
             return pad.concat(clipped);
         }
 
-        function getChartTimeLabels(sampleCount, tickCount = 5, latestSampleTs = null) {
+        function getChartTimeLabels(sampleCount, tickCount = null, latestSampleTs = null) {
             const count = Math.max(0, Number(sampleCount) || 0);
-            const ticks = Math.max(2, Number(tickCount) || 5);
+            const ticks = Math.max(0, Number(tickCount ?? count) || count);
             if (!count) return new Array(ticks).fill("");
 
             const intervalMs = Math.max(1000, chartBucketMs);
@@ -12303,12 +12323,13 @@
             const oldestSampleTs = effectiveLatestSampleTs - Math.max(0, (count - 1) * intervalMs);
             const labels = [];
             for (let i = 0; i < ticks; i++) {
-                const idx = count > 1
+                const idx = count > 1 && ticks > 1
                     ? Math.max(0, Math.min(count - 1, Math.round((i * (count - 1)) / Math.max(1, ticks - 1))))
-                    : 0;
+                    : Math.max(0, Math.min(count - 1, i));
                 const sampleTs = oldestSampleTs + (idx * intervalMs);
                 const d = new Date(sampleTs);
-                labels.push(`${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`);
+                const seconds = String(d.getSeconds()).padStart(2, "0");
+                labels.push(seconds);
             }
             return labels;
         }
@@ -12325,16 +12346,91 @@
             return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
         }
 
+        function getCadenceMarkerRows(oldestSampleTs, latestSampleTs, cadencePhaseByMode = {}) {
+            const startTs = Number(oldestSampleTs || 0);
+            const endTs = Number(latestSampleTs || 0);
+            if (!(endTs >= startTs)) return [];
+
+            const cadenceDefs = [
+                { mode: "FT4", color: "#22c55e", periodMs: 7500 },
+                { mode: "FT8", color: "#3b82f6", periodMs: 15000 },
+                { mode: "WSPR", color: "#a855f7", periodMs: 120000 },
+            ];
+            const byTs = new Map();
+            for (const cadence of cadenceDefs) {
+                const periodMs = Number(cadence.periodMs || 0);
+                if (!(periodMs > 0)) continue;
+                const rawPhaseMs = Number(cadencePhaseByMode[cadence.mode] || 0);
+                const phaseMs = ((rawPhaseMs % periodMs) + periodMs) % periodMs;
+                let ts = phaseMs;
+                if (ts < startTs) {
+                    ts += Math.ceil((startTs - ts) / periodMs) * periodMs;
+                }
+                for (; ts <= endTs; ts += periodMs) {
+                    const key = String(Math.round(ts));
+                    const row = byTs.get(key) || { ts, markers: [] };
+                    row.markers.push(cadence);
+                    byTs.set(key, row);
+                }
+            }
+            return Array.from(byTs.values()).sort((left, right) => left.ts - right.ts);
+        }
+
+        function drawCadencePointers(ctx, opts) {
+            const oldestSampleTs = Number(opts && opts.oldestSampleTs || 0);
+            const latestSampleTs = Number(opts && opts.latestSampleTs || 0);
+            const leftPad = Number(opts && opts.leftPad || 0);
+            const graphW = Number(opts && opts.graphW || 0);
+            const baselineY = Number(opts && opts.baselineY || 0);
+            const markerAreaBottom = Number(opts && opts.markerAreaBottom || 0);
+            const cadencePhaseByMode = opts && typeof opts.cadencePhaseByMode === "object" ? opts.cadencePhaseByMode : {};
+            if (!(latestSampleTs > oldestSampleTs) || !(graphW > 0) || !(markerAreaBottom > baselineY)) return;
+
+            const rows = getCadenceMarkerRows(oldestSampleTs, latestSampleTs, cadencePhaseByMode);
+            if (!rows.length) return;
+
+            const triHalfWidth = 3.5;
+            const triHeight = 4.5;
+            const stackGap = 1.5;
+            const maxStacks = Math.max(1, Math.floor((markerAreaBottom - baselineY - 2) / (triHeight + stackGap)));
+            const timeSpan = latestSampleTs - oldestSampleTs;
+
+            ctx.save();
+            for (const row of rows) {
+                const ratio = timeSpan > 0 ? ((row.ts - oldestSampleTs) / timeSpan) : 0;
+                const x = leftPad + Math.max(0, Math.min(1, ratio)) * graphW;
+                row.markers.slice(0, maxStacks).forEach((marker, stackIdx) => {
+                    const tipY = baselineY + 4 + (stackIdx * (triHeight + stackGap));
+                    const baseY = tipY + triHeight;
+                    if (baseY > markerAreaBottom) return;
+                    ctx.fillStyle = marker.color;
+                    ctx.beginPath();
+                    ctx.moveTo(x, tipY);
+                    ctx.lineTo(x - triHalfWidth, baseY);
+                    ctx.lineTo(x + triHalfWidth, baseY);
+                    ctx.closePath();
+                    ctx.fill();
+                });
+            }
+            ctx.restore();
+        }
+
         function renderAssignmentsBandAxis(sampleCount, latestSampleTs = null) {
             const axis = byId("assign-band-chart-axis");
             if (!axis) return;
             const count = Math.max(0, Number(sampleCount) || 0);
             if (!count) {
+                axis.style.gridTemplateColumns = "repeat(5, minmax(0, 1fr))";
                 axis.innerHTML = "<span></span><span></span><span></span><span></span><span></span>";
                 return;
             }
-            const labels = getChartTimeLabels(count, 5, latestSampleTs);
+            const labels = getChartTimeLabels(count, count, latestSampleTs);
+            axis.style.gridTemplateColumns = `repeat(${Math.max(1, labels.length)}, minmax(0, 1fr))`;
             axis.innerHTML = labels.map((label) => `<span>${escapeHtml(label)}</span>`).join("");
+        }
+
+        function getSeenDecodeModes() {
+            return MAP_MODE_FILTERS.filter((mode) => decodeSeenModes.has(mode));
         }
 
         function compareBandLabels(a, b) {
@@ -12467,7 +12563,7 @@
             const leftPad = 34;
             const rightPad = 8;
             const topPad = 8;
-            const bottomPad = 38;
+            const bottomPad = 48;
             const graphW = w - leftPad - rightPad;
             const graphH = h - topPad - bottomPad;
             ctx.clearRect(0, 0, w, h);
@@ -12489,6 +12585,28 @@
                 breakdowns: getBandBreakdownSamples(band, windowSamples, bandBreakdownSource),
             }));
             const sampleCount = series[0] && Array.isArray(series[0].samples) ? series[0].samples.length : 0;
+            const oldestSampleTs = latestSampleTs - (Math.max(0, sampleCount - 1) * Math.max(1000, chartBucketMs));
+            const cadencePhaseByMode = {};
+            if (sampleCount > 0) {
+                const intervalMs = Math.max(1000, chartBucketMs);
+                const modeBucketTsByMode = {};
+                for (let idx = 0; idx < sampleCount; idx += 1) {
+                    const sampleTs = oldestSampleTs + (idx * intervalMs);
+                    for (const entry of series) {
+                        const breakdown = (entry.breakdowns[idx] && typeof entry.breakdowns[idx] === "object") ? entry.breakdowns[idx] : {};
+                        for (const key of Object.keys(breakdown)) {
+                            const parts = String(key).split("|");
+                            const modeName = String(parts[1] || "").trim().toUpperCase();
+                            if (modeName === "WSPR") {
+                                modeBucketTsByMode.WSPR = sampleTs;
+                            }
+                        }
+                    }
+                }
+                if (Number.isFinite(Number(modeBucketTsByMode.WSPR))) {
+                    cadencePhaseByMode.WSPR = ((Number(modeBucketTsByMode.WSPR) % 120000) + 120000) % 120000;
+                }
+            }
             const stackedSampleTotals = Array.from(
                 { length: sampleCount },
                 (_, idx) => series.reduce((sum, entry) => sum + Math.max(0, Number(entry.samples[idx] || 0)), 0),
@@ -12528,7 +12646,7 @@
                 ctx.fillText(String(v), leftPad - 6, y);
             }
 
-            const xTickCount = 5;
+            const xTickCount = Math.max(2, sampleCount);
             ctx.strokeStyle = "rgba(219, 231, 240, 0.18)";
             for (let i = 0; i < xTickCount; i++) {
                 const x = leftPad + (graphW * i) / Math.max(1, xTickCount - 1);
@@ -12616,6 +12734,16 @@
                 }
             }
 
+            drawCadencePointers(ctx, {
+                oldestSampleTs,
+                latestSampleTs,
+                leftPad,
+                graphW,
+                baselineY: topPad + graphH,
+                markerAreaBottom: h - 28,
+                cadencePhaseByMode,
+            });
+
             renderAssignmentsBandAxis(sampleCount, latestSampleTs);
 
             const tooltip = byId("assign-band-chart-tooltip");
@@ -12634,7 +12762,9 @@
                     const meta = row && row.meta ? String(row.meta) : fallbackParts.slice(1, 3).join(" ");
                     const snr = row && row.snr ? String(row.snr) : (fallbackParts[3] || "");
                     const right = row && row.right ? String(row.right) : "0";
-                    return `<div class="tt-row"><div class="tt-main"><span class="tt-rx">${escapeHtml(rx)}</span>${meta ? `<span class="tt-meta">${escapeHtml(meta)}</span>` : ""}${snr ? `<span class="tt-snr">${escapeHtml(snr)}</span>` : ""}</div><strong class="tt-count">${escapeHtml(right)}</strong></div>`;
+                    const color = row && row.color ? String(row.color) : "";
+                    const styleAttr = color ? ` style="color:${escapeHtml(color)}"` : "";
+                    return `<div class="tt-row"><div class="tt-main"${styleAttr}><span class="tt-rx">${escapeHtml(rx)}</span>${meta ? `<span class="tt-meta">${escapeHtml(meta)}</span>` : ""}${snr ? `<span class="tt-snr">${escapeHtml(snr)}</span>` : ""}</div><strong class="tt-count"${styleAttr}>${escapeHtml(right)}</strong></div>`;
                 };
                 const body = rows.length
                     ? `<div class="tt-body">${rows.map((row) => renderRow(row)).join("")}</div>`
@@ -12736,6 +12866,7 @@
                                 meta: `${seriesEntry.band} ${mode}`,
                                 snr: snrText,
                                 right: `${decodeCount} dec`,
+                                color: seriesEntry.color,
                                 count: decodeCount,
                             });
                         }
@@ -12751,11 +12882,12 @@
                                 meta: `${closestSeries.band} ${String(safeText(item.mode, "?")).toUpperCase()}`,
                                 snr: safeText(item.snrText, "--"),
                                 right: `${count} dec`,
+                                color: closestSeries.color,
                                 count,
                             });
                         }
                     } else {
-                        rows.push({ rx: closestSeries.band, right: `${count} dec`, count });
+                        rows.push({ rx: closestSeries.band, right: `${count} dec`, color: closestSeries.color, count });
                     }
                 }
                 rows.sort((a, b) => {
@@ -13550,12 +13682,19 @@
                     const modeAgg = {};
                     for (const r of bandRows) {
                         const rch = latestChannelsMap[String(r.rxNum)] || {};
-                        const byMode = rch.decode_rates_by_mode || {};
+                        const publishedRxStats = latestPublishedDecodeStatsByRx[String(r.rxNum)] || {};
+                        const publishedBandStats = (publishedRxStats.bands && typeof publishedRxStats.bands === "object")
+                            ? (publishedRxStats.bands[String(r.band)] || {})
+                            : {};
+                        const publishedByMode = (publishedBandStats.decode_rates_by_mode && typeof publishedBandStats.decode_rates_by_mode === "object")
+                            ? publishedBandStats.decode_rates_by_mode
+                            : {};
+                        const fallbackByMode = rch.decode_rates_by_mode || {};
                         const subModes = String(r.mode || "").split(" / ").map((m) => m.trim()).filter(Boolean);
                         if (subModes.length > 1) {
                             for (const m of subModes) {
                                 if (!modeAgg[m]) { modeAgg[m] = { pm: null, ph: null, tot: null }; modeOrder.push(m); }
-                                const ms = byMode[m] || {};
+                                const ms = publishedByMode[m] || fallbackByMode[m] || {};
                                 if (ms.decode_rate_per_min != null) modeAgg[m].pm = (modeAgg[m].pm ?? 0) + Number(ms.decode_rate_per_min);
                                 if (ms.decode_rate_per_hour != null) modeAgg[m].ph = (modeAgg[m].ph ?? 0) + Number(ms.decode_rate_per_hour);
                                 if (ms.decode_total != null) modeAgg[m].tot = (modeAgg[m].tot ?? 0) + Number(ms.decode_total);
@@ -13563,9 +13702,12 @@
                         } else {
                             const m = subModes[0] || r.mode;
                             if (!modeAgg[m]) { modeAgg[m] = { pm: null, ph: null, tot: null }; modeOrder.push(m); }
-                            if (rch.decode_rate_per_min != null) modeAgg[m].pm = (modeAgg[m].pm ?? 0) + Number(rch.decode_rate_per_min);
-                            if (rch.decode_rate_per_hour != null) modeAgg[m].ph = (modeAgg[m].ph ?? 0) + Number(rch.decode_rate_per_hour);
-                            if (rch.decode_total != null) modeAgg[m].tot = (modeAgg[m].tot ?? 0) + Number(rch.decode_total);
+                            if (publishedBandStats.decode_rate_per_min != null) modeAgg[m].pm = (modeAgg[m].pm ?? 0) + Number(publishedBandStats.decode_rate_per_min);
+                            else if (rch.decode_rate_per_min != null) modeAgg[m].pm = (modeAgg[m].pm ?? 0) + Number(rch.decode_rate_per_min);
+                            if (publishedBandStats.decode_rate_per_hour != null) modeAgg[m].ph = (modeAgg[m].ph ?? 0) + Number(publishedBandStats.decode_rate_per_hour);
+                            else if (rch.decode_rate_per_hour != null) modeAgg[m].ph = (modeAgg[m].ph ?? 0) + Number(rch.decode_rate_per_hour);
+                            if (publishedBandStats.decode_total != null) modeAgg[m].tot = (modeAgg[m].tot ?? 0) + Number(publishedBandStats.decode_total);
+                            else if (rch.decode_total != null) modeAgg[m].tot = (modeAgg[m].tot ?? 0) + Number(rch.decode_total);
                         }
                     }
                     const MODE_SORT_ORDER = ["FT4", "FT8", "WSPR", "SSB"];
@@ -14075,6 +14217,9 @@
             setServerChip("Online", endpoint);
             latestAssignmentsSource = safeText(s.assignments_source, "");
             latestAssignments = s.assignments || {};
+            latestPublishedDecodeStatsByRx = (s.published_decode_stats_by_rx && typeof s.published_decode_stats_by_rx === "object")
+                ? s.published_decode_stats_by_rx
+                : {};
             renderAssignments(latestAssignments);
             renderAssignmentBalance(latestAssignments);
             if (latestSystemInfo) renderSystemPanel(latestSystemInfo);
@@ -14103,6 +14248,20 @@
                 counts[band] = Number(counts[band] || 0) + 1;
             }
 
+            const publishedCounts = {};
+            let publishedDecodeTotal = 0;
+            for (const rxStats of Object.values(latestPublishedDecodeStatsByRx || {})) {
+                const bands = rxStats && typeof rxStats === "object" && rxStats.bands && typeof rxStats.bands === "object"
+                    ? rxStats.bands
+                    : {};
+                for (const [band, bandStats] of Object.entries(bands)) {
+                    const decodeTotal = Math.max(0, Number(bandStats && bandStats.decode_total) || 0);
+                    if (!decodeTotal) continue;
+                    publishedCounts[band] = Number(publishedCounts[band] || 0) + decodeTotal;
+                    publishedDecodeTotal += decodeTotal;
+                }
+            }
+
             const h = health && typeof health === "object" ? health : {};
             const healthChannels = Object.values((h.channels && typeof h.channels === "object") ? h.channels : {});
             const healthCounts = {};
@@ -14112,8 +14271,7 @@
                 if (!band || !Number.isFinite(value)) continue;
                 healthCounts[band] = Number(healthCounts[band] || 0) + Math.max(0, Math.round(value));
             }
-            const healthDecodeTotal = Object.values(healthCounts).reduce((sum, value) => sum + Number(value || 0), 0);
-            const busiestCounts = healthDecodeTotal > 0 ? healthCounts : counts;
+            const busiestCounts = publishedDecodeTotal > 0 ? publishedCounts : counts;
             let busiestBand = "None";
             let busiestSlots = 0;
             for (const [band, n] of Object.entries(busiestCounts)) {
@@ -14122,7 +14280,7 @@
                     busiestSlots = n;
                 }
             }
-            const totalDecodes = healthDecodeTotal > 0 ? healthDecodeTotal : recentDecodeTotal;
+            const totalDecodes = publishedDecodeTotal > 0 ? publishedDecodeTotal : recentDecodeTotal;
             const reasonCounts = h.reason_counts && typeof h.reason_counts === "object" ? h.reason_counts : {};
             const totalFaultReasons = Object.values(reasonCounts).reduce((acc, v) => acc + Number(v || 0), 0);
             const unstable = Number(h.unstable_receivers || 0);

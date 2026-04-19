@@ -33,6 +33,7 @@ _decode_lock = threading.Lock()
 _decode_seq = 0
 _decode_buffer: deque[Dict] = deque(maxlen=5000)
 _decode_times: deque[float] = deque(maxlen=5000)
+_published_decode_stats_by_rx: Dict[int, Dict[str, Any]] = {}
 
 # Server-side band activity chart buckets: fixed 15-second wall-clock intervals so the
 # data is accurate regardless of browser tab visibility or polling throttling.
@@ -56,6 +57,78 @@ _valid_bands = ("10m", "12m", "15m", "17m", "20m", "30m", "40m", "60m", "80m", "
 # Station coordinates for distance-to-decode calculations.
 # Loaded once from outputs/config.json; False means unavailable / load failed.
 _station_coords: tuple[float, float] | None | bool = None  # None=not loaded yet
+
+
+def _update_published_decode_stats(payload: Dict[str, Any], now: float) -> None:
+    band = str(payload.get("band") or "").strip()
+    if not band or band.lower() == "control":
+        return
+    rx_raw = payload.get("rx")
+    try:
+        rx = int(rx_raw)
+    except Exception:
+        return
+    mode = str(payload.get("mode") or "?").strip().upper() or "?"
+    cutoff_1h = now - 3600.0
+
+    current = dict(_published_decode_stats_by_rx.get(rx, {}) or {})
+    bands = dict(current.get("bands") or {})
+    band_entry = dict(bands.get(band, {}) or {})
+
+    timestamps = [float(ts) for ts in list(band_entry.get("decode_timestamps") or []) if float(ts) >= cutoff_1h]
+    timestamps.append(float(now))
+    band_entry["decode_timestamps"] = timestamps
+    band_entry["decode_total"] = int(band_entry.get("decode_total", 0) or 0) + 1
+
+    ts_by_mode = {
+        str(key): [float(ts) for ts in list(value or []) if float(ts) >= cutoff_1h]
+        for key, value in dict(band_entry.get("_decode_ts_by_mode") or {}).items()
+    }
+    mode_timestamps = list(ts_by_mode.get(mode, []) or [])
+    mode_timestamps.append(float(now))
+    ts_by_mode[mode] = mode_timestamps
+    band_entry["_decode_ts_by_mode"] = ts_by_mode
+
+    totals_by_mode = dict(band_entry.get("_decode_total_by_mode") or {})
+    totals_by_mode[mode] = int(totals_by_mode.get(mode, 0) or 0) + 1
+    band_entry["_decode_total_by_mode"] = totals_by_mode
+
+    bands[band] = band_entry
+    current["bands"] = bands
+    _published_decode_stats_by_rx[rx] = current
+
+
+def get_published_decode_stats_by_rx() -> Dict[str, Dict[str, Any]]:
+    with _decode_lock:
+        now = time.time()
+        out: Dict[str, Dict[str, Any]] = {}
+        for rx, raw in _published_decode_stats_by_rx.items():
+            current = dict(raw or {})
+            bands_raw = dict(current.get("bands") or {})
+            band_stats: Dict[str, Dict[str, Any]] = {}
+            for band, band_raw in bands_raw.items():
+                band_entry = dict(band_raw or {})
+                timestamps = [float(ts) for ts in list(band_entry.get("decode_timestamps") or []) if float(ts) >= now - 3600.0]
+                ts_by_mode = {
+                    str(key): [float(ts) for ts in list(value or []) if float(ts) >= now - 3600.0]
+                    for key, value in dict(band_entry.get("_decode_ts_by_mode") or {}).items()
+                }
+                totals_by_mode = dict(band_entry.get("_decode_total_by_mode") or {})
+                band_stats[str(band)] = {
+                    "decode_total": int(band_entry.get("decode_total", 0) or 0),
+                    "decode_rate_per_min": sum(1 for ts in timestamps if ts >= now - 60.0),
+                    "decode_rate_per_hour": len(timestamps),
+                    "decode_rates_by_mode": {
+                        str(mode): {
+                            "decode_total": int(totals_by_mode.get(mode, 0) or 0),
+                            "decode_rate_per_min": sum(1 for ts in mode_timestamps if ts >= now - 60.0),
+                            "decode_rate_per_hour": len(mode_timestamps),
+                        }
+                        for mode, mode_timestamps in ts_by_mode.items()
+                    },
+                }
+            out[str(int(rx))] = {"bands": band_stats}
+        return out
 
 
 def _decode_visible(payload: Dict[str, Any]) -> bool:
@@ -963,6 +1036,7 @@ def publish_decode(payload: Dict) -> None:
         cutoff = now - 300.0
         while _decode_times and _decode_times[0] < cutoff:
             _decode_times.popleft()
+        _update_published_decode_stats(payload, now)
 
     _chart_ingest(payload, now)
 
@@ -1062,11 +1136,15 @@ def get_decode_metrics() -> Dict[str, float | int]:
 
 
 def reset_decode_metrics() -> Dict[str, int]:
-    global _decode_seq
+    global _decode_seq, _chart_running
     with _decode_lock:
         _decode_seq = 0
         _decode_buffer.clear()
         _decode_times.clear()
+        _published_decode_stats_by_rx.clear()
+    with _chart_lock:
+        _chart_buckets.clear()
+        _chart_running = {}
     return {
         "total_decodes": 0,
         "buffer_size": 0,
@@ -1115,13 +1193,9 @@ def _chart_ingest(payload: Dict, now: float) -> None:
 
 @router.get("/decodes/chart")
 def get_decodes_chart():
-    """Return server-side band activity time series (fixed 15s buckets)."""
+    """Return completed server-side band activity buckets (fixed 15s slots)."""
     with _chart_lock:
         completed = list(_chart_buckets)
-        running = dict(_chart_running) if _chart_running else None
-        running_bands = {}
-        if running:
-            running_bands = {k: dict(v) for k, v in running.get("bands", {}).items()}
 
     result: List[Dict] = []
     for b in completed:
@@ -1133,17 +1207,6 @@ def get_decodes_chart():
                     "breakdown": dict(breakdown),
                 }
                 for band, breakdown in b.get("bands", {}).items()
-            },
-        })
-    if running:
-        result.append({
-            "ts": running["ts"],
-            "bands": {
-                band: {
-                    "total": sum(breakdown.values()),
-                    "breakdown": dict(breakdown),
-                }
-                for band, breakdown in running_bands.items()
             },
         })
     return {"bucket_s": _CHART_BUCKET_S, "buckets": result}

@@ -8,7 +8,12 @@ from types import SimpleNamespace
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from kiwi_scan.api import decodes as decodes_api
 from kiwi_scan.api import decodes_status as decodes_status_api
+
+
+def setup_function() -> None:
+    decodes_api.reset_decode_metrics()
 
 
 class _UrlResponse:
@@ -51,6 +56,19 @@ class _ReceiverMgrStub:
 
 
 def test_decodes_status_accepts_compact_live_labels(monkeypatch) -> None:
+    decodes_api.publish_decode(
+        {
+            "timestamp": "16:16:22",
+            "frequency_mhz": 7.074,
+            "mode": "FT8",
+            "callsign": "K1ABC",
+            "grid": "FN31",
+            "message": "CQ K1ABC FN31",
+            "band": "40m",
+            "rx": 5,
+        }
+    )
+
     payload = [
         {"i": 0, "n": "ROAM212MFT8", "f": 24915000.0, "t": "0:14:52"},
         {"i": 2, "n": "FIXED20MFT8", "f": 14077000.0, "t": "0:17:38"},
@@ -88,6 +106,8 @@ def test_decodes_status_accepts_compact_live_labels(monkeypatch) -> None:
     assert body["assignments"]["3"] == {"band": "20m", "mode": "WSPR", "freq_hz": 14095600.0}
     assert body["assignments"]["5"] == {"band": "40m", "mode": "FT4", "freq_hz": 7043050.0}
     assert body["assignments"]["7"] == {"band": "17m", "mode": "FT8", "freq_hz": 18102300.0}
+    assert body["published_decode_stats_by_rx"]["5"]["bands"]["40m"]["decode_total"] == 1
+    assert body["published_decode_stats_by_rx"]["5"]["bands"]["40m"]["decode_rates_by_mode"]["FT8"]["decode_total"] == 1
 
 
 def test_decodes_status_returns_cached_payload_when_lock_is_busy(monkeypatch) -> None:

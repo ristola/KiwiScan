@@ -10,6 +10,8 @@ from typing import Dict
 
 from fastapi import APIRouter
 
+from .decodes import get_published_decode_stats_by_rx
+
 
 def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path) -> APIRouter:
     """Create router for decode process status.
@@ -408,6 +410,7 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
             "assignments_host": live_host,
             "assignments_port": live_port,
             "assignments_mismatch_rxs": mismatch_rxs,
+            "published_decode_stats_by_rx": get_published_decode_stats_by_rx(),
             "logs": logs,
             "af2udp": str(af2udp_path),
             "ft8modem": str(ft8modem_path),
