@@ -48,12 +48,22 @@ class _ReceiverScanStub:
         return {"ok": True}
 
 
+class _CaptionMonitorStub:
+    def __init__(self) -> None:
+        self.deactivate_calls = 0
+
+    def deactivate(self):
+        self.deactivate_calls += 1
+        return {"ok": True}
+
+
 def test_net_monitor_start_deactivates_receiver_scan_and_passes_options() -> None:
     app = FastAPI()
     manager = _ManagerStub()
     net_monitor = _NetMonitorStub()
     receiver_scan = _ReceiverScanStub()
-    app.include_router(make_router(mgr=manager, net_monitor=net_monitor, receiver_scan=receiver_scan))
+    caption_monitor = _CaptionMonitorStub()
+    app.include_router(make_router(mgr=manager, net_monitor=net_monitor, receiver_scan=receiver_scan, caption_monitor=caption_monitor))
     client = TestClient(app)
 
     response = client.post("/net_monitor/start", json={"max_cycles": 1, "cycle_sleep_s": 3.5})
@@ -61,6 +71,7 @@ def test_net_monitor_start_deactivates_receiver_scan_and_passes_options() -> Non
     assert response.status_code == 200
     assert response.json()["ok"] is True
     assert receiver_scan.deactivate_calls == 1
+    assert caption_monitor.deactivate_calls == 1
     assert net_monitor.start_calls == [
         {
             "host": "kiwi.local",

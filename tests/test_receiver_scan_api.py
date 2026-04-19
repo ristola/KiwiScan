@@ -41,17 +41,28 @@ class _ReceiverScanStub:
         return {"ok": True}
 
 
+class _CaptionMonitorStub:
+    def __init__(self) -> None:
+        self.deactivate_calls = 0
+
+    def deactivate(self):
+        self.deactivate_calls += 1
+        return {"ok": True}
+
+
 def test_receiver_scan_start_uses_threshold_for_scan_band() -> None:
     app = FastAPI()
     manager = _ManagerStub()
     receiver_scan = _ReceiverScanStub()
-    app.include_router(make_router(mgr=manager, receiver_scan=receiver_scan))
+    caption_monitor = _CaptionMonitorStub()
+    app.include_router(make_router(mgr=manager, receiver_scan=receiver_scan, caption_monitor=caption_monitor))
     client = TestClient(app)
 
     response = client.post("/receiver_scan/start")
 
     assert response.status_code == 200
     assert response.json()["ok"] is True
+    assert caption_monitor.deactivate_calls == 1
     assert receiver_scan.start_calls == [
         {
             "host": "kiwi.local",
@@ -66,13 +77,15 @@ def test_receiver_scan_start_uses_requested_band_threshold() -> None:
     app = FastAPI()
     manager = _ManagerStub()
     receiver_scan = _ReceiverScanStub()
-    app.include_router(make_router(mgr=manager, receiver_scan=receiver_scan))
+    caption_monitor = _CaptionMonitorStub()
+    app.include_router(make_router(mgr=manager, receiver_scan=receiver_scan, caption_monitor=caption_monitor))
     client = TestClient(app)
 
     response = client.post("/receiver_scan/start", json={"band": "20m"})
 
     assert response.status_code == 200
     assert response.json()["ok"] is True
+    assert caption_monitor.deactivate_calls == 1
     assert receiver_scan.start_calls == [
         {
             "host": "kiwi.local",

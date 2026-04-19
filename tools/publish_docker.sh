@@ -6,22 +6,48 @@ PYPROJECT="$ROOT_DIR/pyproject.toml"
 SOURCE_IMAGE="kiwiscan-local:latest"
 TARGET_REPO="n4ldr/kiwiscan"
 DO_BUILD=0
+DO_VERSION=1
 DO_LATEST=1
+EXTRA_TAGS=()
 
 usage() {
   cat <<'EOF'
-Usage: tools/publish_docker.sh [--build] [--source-image IMAGE] [--repo NAME] [--no-latest]
+Usage: tools/publish_docker.sh [--build] [--source-image IMAGE] [--repo NAME] [--no-version] [--no-latest] [--tag TAG ...]
 
 Tags the current local KiwiScan image with the version from pyproject.toml,
-then pushes the versioned tag and, by default, the latest tag to Docker Hub.
+then pushes the selected tags to Docker Hub.
 
 Options:
   --build               Build the local source image before tagging and pushing
   --source-image IMAGE  Local image to publish (default: kiwiscan-local:latest)
   --repo NAME           Target repo (default: n4ldr/kiwiscan)
-  --no-latest           Push only the versioned tag
+  --no-version          Skip pushing the version tag from pyproject.toml
+  --no-latest           Skip pushing the latest tag
+  --tag TAG             Push an additional explicit tag; repeat as needed
   -h, --help            Show this help
 EOF
+}
+
+append_unique_tag() {
+  local candidate="$1"
+  local existing
+
+  for existing in "${PUBLISH_TAGS[@]:-}"; do
+    if [[ "$existing" == "$candidate" ]]; then
+      return 0
+    fi
+  done
+
+  PUBLISH_TAGS+=("$candidate")
+}
+
+validate_tag() {
+  local candidate="$1"
+
+  if [[ ! "$candidate" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+    echo "Error: invalid Docker tag: $candidate" >&2
+    exit 2
+  fi
 }
 
 while [[ $# -gt 0 ]]; do
@@ -38,9 +64,21 @@ while [[ $# -gt 0 ]]; do
       TARGET_REPO="${2:-}"
       shift 2
       ;;
+    --no-version)
+      DO_VERSION=0
+      shift
+      ;;
     --no-latest)
       DO_LATEST=0
       shift
+      ;;
+    --tag)
+      if [[ -z "${2:-}" ]]; then
+        echo "Error: --tag requires a value" >&2
+        exit 2
+      fi
+      EXTRA_TAGS+=("$2")
+      shift 2
       ;;
     -h|--help)
       usage
@@ -90,18 +128,29 @@ if ! docker image inspect "$SOURCE_IMAGE" >/dev/null 2>&1; then
   exit 2
 fi
 
-VERSION_TAG="$TARGET_REPO:$VERSION"
-LATEST_TAG="$TARGET_REPO:latest"
+PUBLISH_TAGS=()
 
-docker tag "$SOURCE_IMAGE" "$VERSION_TAG"
-docker push "$VERSION_TAG"
-
-if [[ "$DO_LATEST" == "1" ]]; then
-  docker tag "$SOURCE_IMAGE" "$LATEST_TAG"
-  docker push "$LATEST_TAG"
+if [[ "$DO_VERSION" == "1" ]]; then
+  append_unique_tag "$VERSION"
 fi
 
-echo "Published $VERSION_TAG"
 if [[ "$DO_LATEST" == "1" ]]; then
-  echo "Published $LATEST_TAG"
+  append_unique_tag "latest"
 fi
+
+for extra_tag in "${EXTRA_TAGS[@]}"; do
+  validate_tag "$extra_tag"
+  append_unique_tag "$extra_tag"
+done
+
+if [[ "${#PUBLISH_TAGS[@]}" -eq 0 ]]; then
+  echo "Error: no tags selected. Use the defaults or provide --tag." >&2
+  exit 2
+fi
+
+for publish_tag in "${PUBLISH_TAGS[@]}"; do
+  full_tag="$TARGET_REPO:$publish_tag"
+  docker tag "$SOURCE_IMAGE" "$full_tag"
+  docker push "$full_tag"
+  echo "Published $full_tag"
+done

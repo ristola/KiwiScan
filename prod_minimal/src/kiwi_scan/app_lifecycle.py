@@ -79,6 +79,7 @@ def register_lifecycle(
     mgr: object,
     receiver_mgr: object,
     rx_monitor: object | None = None,
+    caption_monitor: object | None = None,
     auto_set_loop: object | None = None,
     smart_scheduler: object | None = None,
     net_monitor: object | None = None,
@@ -159,6 +160,11 @@ def register_lifecycle(
         try:
             mgr.stop()  # type: ignore[attr-defined]
         finally:
+            if caption_monitor is not None:
+                try:
+                    caption_monitor.deactivate()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
             if net_monitor is not None:
                 try:
                     net_monitor.deactivate()  # type: ignore[attr-defined]

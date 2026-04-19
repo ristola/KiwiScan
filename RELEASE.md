@@ -55,9 +55,32 @@ What this does:
 - pushes the versioned tag
 - pushes `n4ldr/kiwiscan:latest` unless `--no-latest` is used
 
+Before any push, log in to Docker Hub on the publishing machine:
+
+```bash
+docker login
+```
+
+Publish tester-only tags without moving the immutable release tag or `latest`:
+
+```bash
+cd /opt/ShackMate/kiwi_scan
+./tools/publish_docker.sh --build --no-version --no-latest \
+  --tag test-latest \
+  --tag test-20260418
+```
+
+What this does:
+- builds `kiwiscan-local:latest`
+- tags it as `n4ldr/kiwiscan:test-latest`
+- tags it as `n4ldr/kiwiscan:test-20260418`
+- pushes only those tester tags
+
 Tag policy:
 - `n4ldr/kiwiscan:<version>` should remain the immutable release snapshot for that version.
 - `n4ldr/kiwiscan:latest` may move ahead of the newest numbered release when main-branch follow-up fixes are published.
+- `n4ldr/kiwiscan:test-latest` is the rolling tester tag.
+- `n4ldr/kiwiscan:test-YYYYMMDD` is a reproducible tester snapshot for a specific build date.
 
 Recommended release sequence:
 1. Bump and commit the app version with `./tools/release_commit.sh`

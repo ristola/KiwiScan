@@ -8,6 +8,7 @@ def make_router(
     mgr: object,
     net_monitor: object,
     receiver_scan: object | None = None,
+    caption_monitor: object | None = None,
 ) -> APIRouter:
     router = APIRouter()
 
@@ -27,7 +28,7 @@ def make_router(
             if request.get("max_cycles") is not None:
                 max_cycles = int(request.get("max_cycles"))
 
-        for service in (receiver_scan,):
+        for service in (receiver_scan, caption_monitor):
             if service is not None and hasattr(service, "deactivate"):
                 try:
                     service.deactivate()  # type: ignore[attr-defined]

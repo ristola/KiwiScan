@@ -1763,6 +1763,34 @@
             color: var(--muted);
         }
 
+        .caption-monitor-aggregate-text {
+            white-space: pre-wrap;
+        }
+
+        .caption-stream-entry {
+            border-bottom: 1px solid color-mix(in srgb, var(--line), transparent 20%);
+            padding: 8px 0;
+            display: grid;
+            gap: 4px;
+        }
+
+        .caption-stream-entry:last-child {
+            border-bottom: 0;
+            padding-bottom: 0;
+        }
+
+        .caption-stream-entry-meta {
+            font-size: 0.72rem;
+            color: var(--muted);
+        }
+
+        .caption-stream-entry-text {
+            font-size: 0.84rem;
+            color: var(--ink);
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
         .net-monitor-transcript-text {
             white-space: pre-wrap;
         }
@@ -3056,6 +3084,92 @@
             color: var(--muted);
             font-size: 0.82rem;
             min-height: 1.2em;
+        }
+
+        .caption-drawer {
+            position: fixed;
+            top: 84px;
+            right: 18px;
+            bottom: 18px;
+            width: min(440px, calc(100vw - 28px));
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            background: color-mix(in srgb, var(--panel), white 6%);
+            box-shadow: var(--shadow);
+            z-index: 80;
+            display: grid;
+            grid-template-rows: auto 1fr;
+            transform: translateX(calc(100% + 24px));
+            opacity: 0;
+            pointer-events: none;
+            transition: transform 180ms ease, opacity 180ms ease;
+        }
+
+        .caption-drawer.is-open {
+            transform: translateX(0);
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .caption-drawer-head {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .caption-drawer-title-wrap {
+            min-width: 0;
+            flex: 1 1 auto;
+            display: grid;
+            gap: 4px;
+        }
+
+        .caption-drawer-title {
+            font-size: 0.94rem;
+            font-weight: 700;
+            color: var(--ink);
+        }
+
+        .caption-drawer-meta,
+        .caption-drawer-note {
+            font-size: 0.78rem;
+            color: var(--muted);
+        }
+
+        .caption-drawer-body {
+            min-height: 0;
+            overflow: auto;
+            display: grid;
+            align-content: start;
+            gap: 10px;
+            padding: 14px;
+        }
+
+        .caption-drawer-text {
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: color-mix(in srgb, var(--panel), white 18%);
+            padding: 12px;
+            color: var(--ink);
+            font-size: 0.9rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .caption-drawer-text.is-empty {
+            color: var(--muted);
+        }
+
+        @media (max-width: 900px) {
+            .caption-drawer {
+                top: 70px;
+                right: 10px;
+                bottom: 10px;
+                width: calc(100vw - 20px);
+            }
         }
 
         .bc-action-note {
@@ -5185,6 +5299,121 @@
                             <div class="control-status" id="net-monitor-status">NET Monitor: idle</div>
                         </div>
                     </article>
+                    <article class="panel panel-collapsible" id="caption-monitor" data-panel-card="caption-monitor">
+                        <div class="panel-hdr">
+                            <h2 data-icon="audio">Live Caption Monitor</h2>
+                            <div class="panel-hdr-actions">
+                                <button class="action-btn-sm" id="caption-monitor-start" type="button" data-icon="audio"
+                                    aria-pressed="false" aria-busy="false">Start Captions</button>
+                                <button class="action-btn-sm" id="caption-drawer-toggle" type="button"
+                                    data-icon="messages" aria-expanded="false">Text Window</button>
+                                <button class="panel-toggle" type="button" aria-expanded="true"
+                                    aria-label="Collapse Live Caption Monitor">
+                                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                                        <path d="m6 9 6 6 6-6"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="panel-body">
+                            <div class="receiver-scan-summary-grid">
+                                <article class="receiver-scan-stat">
+                                    <div class="summary-k">Mode</div>
+                                    <div class="summary-v" id="caption-monitor-mode-state">Idle</div>
+                                </article>
+                                <article class="receiver-scan-stat">
+                                    <div class="summary-k">Frequency</div>
+                                    <div class="summary-v" id="caption-monitor-frequency">7179.00 kHz</div>
+                                </article>
+                                <article class="receiver-scan-stat">
+                                    <div class="summary-k">Sideband</div>
+                                    <div class="summary-v" id="caption-monitor-sideband">LSB</div>
+                                </article>
+                                <article class="receiver-scan-stat">
+                                    <div class="summary-k">Chunk</div>
+                                    <div class="summary-v" id="caption-monitor-chunk">15s</div>
+                                </article>
+                                <article class="receiver-scan-stat">
+                                    <div class="summary-k">Last Chunk</div>
+                                    <div class="summary-v" id="caption-monitor-last-finished">--</div>
+                                </article>
+                            </div>
+                            <p class="band-sched-hint" id="caption-monitor-note" style="margin:0;">
+                                Records rolling audio chunks continuously on a selected phone frequency until you press
+                                Stop Captions, and appends each completed transcript chunk to a live caption stream.
+                            </p>
+                            <div class="control-grid">
+                                <label class="control-field">Frequency (kHz)
+                                    <input id="caption-monitor-freq" type="number" min="0" step="0.01" value="7179.00"
+                                        inputmode="decimal" />
+                                </label>
+                                <label class="control-field">Receiver
+                                    <select id="caption-monitor-rx">
+                                        <option value="0">RX0</option>
+                                        <option value="1">RX1</option>
+                                        <option value="2">RX2</option>
+                                        <option value="3">RX3</option>
+                                        <option value="4">RX4</option>
+                                        <option value="5">RX5</option>
+                                        <option value="6">RX6</option>
+                                        <option value="7">RX7</option>
+                                    </select>
+                                </label>
+                                <label class="control-field">Chunk Seconds
+                                    <input id="caption-monitor-duration" type="number" min="1" max="120" step="1"
+                                        value="15" inputmode="numeric" />
+                                </label>
+                                <div class="control-field" style="grid-column: 1 / -1;">Auto Sideband
+                                    <div class="receiver-scan-followup-text" id="caption-monitor-sideband-hint">Auto
+                                        sideband: LSB</div>
+                                </div>
+                            </div>
+                            <section class="receiver-scan-lane-card"
+                                aria-labelledby="caption-monitor-transcript-heading">
+                                <div class="receiver-scan-lane-head">
+                                    <div class="settings-subcard-title" id="caption-monitor-transcript-heading">Latest
+                                        Transcript</div>
+                                    <div class="receiver-scan-lane-status" id="caption-monitor-transcript-state">Idle
+                                    </div>
+                                </div>
+                                <ul class="receiver-scan-list" id="caption-monitor-transcript-summary">
+                                    <li>No transcript generated yet.</li>
+                                </ul>
+                                <div class="receiver-scan-followup">
+                                    <div class="receiver-scan-followup-label">Rolling Caption Text</div>
+                                    <div class="receiver-scan-followup-text caption-monitor-aggregate-text"
+                                        id="caption-monitor-aggregate-text">Caption
+                                        text will accumulate here while monitoring runs.</div>
+                                </div>
+                            </section>
+                            <section class="receiver-scan-lane-card" aria-labelledby="caption-monitor-history-heading">
+                                <div class="receiver-scan-lane-head">
+                                    <div class="settings-subcard-title" id="caption-monitor-history-heading">Live Text
+                                        Feed</div>
+                                    <div class="receiver-scan-lane-status" id="caption-monitor-history-state">Idle</div>
+                                </div>
+                                <ul class="receiver-scan-list" id="caption-monitor-history">
+                                    <li>No live caption text yet.</li>
+                                </ul>
+                            </section>
+                            <div class="control-status" id="caption-monitor-status">Caption Monitor: idle</div>
+                        </div>
+                    </article>
+                    <aside class="caption-drawer" id="caption-text-drawer" aria-hidden="true">
+                        <div class="caption-drawer-head">
+                            <div class="caption-drawer-title-wrap">
+                                <div class="caption-drawer-title">Live Caption Text</div>
+                                <div class="caption-drawer-meta" id="caption-drawer-meta">Idle</div>
+                            </div>
+                            <button class="action-btn-sm" id="caption-drawer-close" type="button">Hide</button>
+                        </div>
+                        <div class="caption-drawer-body" id="caption-drawer-body">
+                            <div class="caption-drawer-note">Continuous mode appends each completed transcript chunk
+                                until you press Stop Captions.</div>
+                            <div class="caption-drawer-text is-empty" id="caption-drawer-text">Caption text will appear
+                                here as each chunk completes.</div>
+                        </div>
+                    </aside>
                     <article class="panel panel-collapsible panel-full" id="messages" data-panel-card="messages">
                         <div class="panel-hdr">
                             <h2 data-icon="messages">Decoded Messages</h2>
@@ -5238,17 +5467,17 @@
                                         <span class="decode-feed-sort-chevron decode-feed-sort-chevron-down"></span>
                                     </span>
                                 </button>
-                                <button type="button" class="decode-feed-sort" data-sort-key="mode"
-                                    data-sort-direction="none" aria-label="Sort by Mode ascending">
-                                    <span class="decode-feed-sort-label">Mode</span>
+                                <button type="button" class="decode-feed-sort" data-sort-key="band"
+                                    data-sort-direction="none" aria-label="Sort by Band ascending">
+                                    <span class="decode-feed-sort-label">Band</span>
                                     <span class="decode-feed-sort-icon" aria-hidden="true">
                                         <span class="decode-feed-sort-chevron decode-feed-sort-chevron-up"></span>
                                         <span class="decode-feed-sort-chevron decode-feed-sort-chevron-down"></span>
                                     </span>
                                 </button>
-                                <button type="button" class="decode-feed-sort" data-sort-key="band"
-                                    data-sort-direction="none" aria-label="Sort by Band ascending">
-                                    <span class="decode-feed-sort-label">Band</span>
+                                <button type="button" class="decode-feed-sort" data-sort-key="mode"
+                                    data-sort-direction="none" aria-label="Sort by Mode ascending">
+                                    <span class="decode-feed-sort-label">Mode</span>
                                     <span class="decode-feed-sort-icon" aria-hidden="true">
                                         <span class="decode-feed-sort-chevron decode-feed-sort-chevron-up"></span>
                                         <span class="decode-feed-sort-chevron decode-feed-sort-chevron-down"></span>
@@ -7592,8 +7821,8 @@
                 return `<div class="decode-feed-row" data-mode="${escapeHtml(mode)}">
                     <span class="decode-feed-cell">${escapeHtml(formatDecodeClockText(item))}</span>
                     <span class="decode-feed-cell">${escapeHtml(formatDecodeFreqText(item))}</span>
-                    <span class="decode-feed-cell">${escapeHtml(mode)}</span>
                     <span class="decode-feed-cell">${escapeHtml(band)}</span>
+                    <span class="decode-feed-cell">${escapeHtml(mode)}</span>
                     <span class="decode-feed-cell">${Number.isFinite(item.snr) ? (item.snr >= 0 ? "+" : "") + item.snr : "--"}</span>
                     <span class="decode-feed-cell">${escapeHtml(call)}</span>
                     <span class="decode-feed-cell">${escapeHtml(grid)}</span>
@@ -8517,6 +8746,11 @@
             if (el) el.textContent = `NET Monitor: ${text}`;
         }
 
+        function setCaptionMonitorStatusText(text) {
+            const el = byId("caption-monitor-status");
+            if (el) el.textContent = `Caption Monitor: ${text}`;
+        }
+
         let latestReceiverScanStatus = null;
         let receiverScanPendingAction = "";
         let receiverScanPendingBand = "";
@@ -8533,6 +8767,11 @@
         let netMonitorPendingAction = "";
         let netMonitorCapturePending = false;
         const NET_MONITOR_CAPTURE_DURATION_S = 20;
+        let latestCaptionMonitorStatus = null;
+        let captionMonitorPendingAction = "";
+        const CAPTION_MONITOR_DEFAULT_FREQ_KHZ = 7179.0;
+        const CAPTION_MONITOR_DEFAULT_CHUNK_S = 15;
+        let captionDrawerOpen = false;
 
         function receiverScanBandsForRole(role) {
             const resolvedRole = normalizeReceiverScanControlRole(role, "smart") || "smart";
@@ -8952,6 +9191,136 @@
             return Number.isFinite(mhz) ? `${mhz.toFixed(3)} MHz` : "--";
         }
 
+        function fmtCaptionFreqKHz(value) {
+            const khz = Number(value);
+            return Number.isFinite(khz) ? `${khz.toFixed(2)} kHz` : "--";
+        }
+
+        function resolveCaptionSideband(freqKHz) {
+            const khz = Number(freqKHz);
+            if (!Number.isFinite(khz) || khz <= 0) return "--";
+            if (khz >= 10100 && khz < 10150) return "N/A";
+            if (khz >= 5250 && khz < 5450) return "USB";
+            return khz < 10000 ? "LSB" : "USB";
+        }
+
+        function readCaptionMonitorControls() {
+            const freqInput = byId("caption-monitor-freq");
+            const rxInput = byId("caption-monitor-rx");
+            const durationInput = byId("caption-monitor-duration");
+            const freqKHz = Number(freqInput && freqInput.value);
+            const rxChan = Number(rxInput && rxInput.value);
+            const durationS = Number(durationInput && durationInput.value);
+            return {
+                freqKHz: Number.isFinite(freqKHz) ? freqKHz : CAPTION_MONITOR_DEFAULT_FREQ_KHZ,
+                rxChan: Number.isFinite(rxChan) ? Math.max(0, Math.round(rxChan)) : 0,
+                durationS: Number.isFinite(durationS) ? Math.max(1, Math.round(durationS)) : CAPTION_MONITOR_DEFAULT_CHUNK_S,
+            };
+        }
+
+        function applyCaptionDrawerOpen(open) {
+            captionDrawerOpen = !!open;
+            const drawer = byId("caption-text-drawer");
+            const toggle = byId("caption-drawer-toggle");
+            if (drawer) {
+                drawer.classList.toggle("is-open", captionDrawerOpen);
+                drawer.setAttribute("aria-hidden", captionDrawerOpen ? "false" : "true");
+            }
+            if (toggle) {
+                toggle.setAttribute("aria-expanded", captionDrawerOpen ? "true" : "false");
+                setReceiverScanButtonLabel(toggle, captionDrawerOpen ? "Hide Text" : "Text Window");
+            }
+        }
+
+        function renderCaptionDrawer(status = latestCaptionMonitorStatus) {
+            const metaEl = byId("caption-drawer-meta");
+            const textEl = byId("caption-drawer-text");
+            const bodyEl = byId("caption-drawer-body");
+            if (!metaEl || !textEl) return;
+            const text = buildCaptionMonitorStreamText(status);
+            const chunkCount = Number(status && status.chunk_count);
+            metaEl.textContent = [
+                status && status.running ? "Continuous live captions" : safeText(status && status.status, "idle"),
+                fmtCaptionFreqKHz(status && status.freq_khz),
+                safeText(status && status.sideband, "--"),
+                Number.isFinite(chunkCount) && chunkCount > 0 ? `${Math.round(chunkCount)} chunk${Math.round(chunkCount) === 1 ? "" : "s"}` : "",
+            ].filter(Boolean).join(" | ");
+            const nextText = text || "Caption text will appear here as each chunk completes.";
+            const changed = textEl.textContent !== nextText;
+            if (changed && text && !captionDrawerOpen) {
+                applyCaptionDrawerOpen(true);
+            }
+            textEl.textContent = nextText;
+            textEl.classList.toggle("is-empty", !text);
+            if (changed && captionDrawerOpen && bodyEl) {
+                bodyEl.scrollTop = bodyEl.scrollHeight;
+            }
+        }
+
+        function buildCaptionMonitorStreamText(status = latestCaptionMonitorStatus) {
+            const items = Array.isArray(status && status.history) ? status.history : [];
+            const historyText = items.slice(0, 10)
+                .map((item) => safeText(item && item.text, safeText(item && item.summary, "")).trim())
+                .filter(Boolean)
+                .reverse();
+            if (historyText.length) {
+                return historyText.join("\n\n");
+            }
+            const aggregateText = safeText(status && status.aggregate_text, "").trim();
+            if (aggregateText) return aggregateText;
+            const capture = status && status.capture && typeof status.capture === "object" ? status.capture : null;
+            const transcript = capture && capture.transcription && typeof capture.transcription === "object" ? capture.transcription : null;
+            return safeText(transcript && transcript.text, "").trim();
+        }
+
+        function syncCaptionMonitorControls(status = latestCaptionMonitorStatus) {
+            const button = byId("caption-monitor-start");
+            const freqInput = byId("caption-monitor-freq");
+            const rxInput = byId("caption-monitor-rx");
+            const durationInput = byId("caption-monitor-duration");
+            const sidebandHintEl = byId("caption-monitor-sideband-hint");
+            const controls = readCaptionMonitorControls();
+            const previewSideband = resolveCaptionSideband(controls.freqKHz);
+            const running = !!(status && status.running);
+            const starting = !!(status && status.starting);
+            const pendingStart = captionMonitorPendingAction === "start";
+            const pendingStop = captionMonitorPendingAction === "stop";
+            const invalidConfig = !Number.isFinite(Number(controls.freqKHz)) || controls.freqKHz <= 0 || previewSideband === "N/A";
+
+            [freqInput, rxInput, durationInput].forEach((el) => {
+                if (!el) return;
+                el.disabled = pendingStart || pendingStop || running || starting;
+            });
+
+            if (button) {
+                button.classList.toggle("is-busy", pendingStart || pendingStop);
+                button.classList.toggle("is-active", !pendingStart && !pendingStop && (running || starting));
+                button.classList.remove("is-error", "is-success");
+                button.disabled = (pendingStart || pendingStop) || (!(running || starting) && invalidConfig);
+                button.setAttribute("aria-pressed", (pendingStart || pendingStop || running || starting) ? "true" : "false");
+                button.setAttribute("aria-busy", (pendingStart || pendingStop) ? "true" : "false");
+                setReceiverScanButtonLabel(
+                    button,
+                    pendingStart
+                        ? "Starting captions..."
+                        : pendingStop
+                            ? "Stopping..."
+                            : (running || starting)
+                                ? "Stop Captions"
+                                : "Start Captions",
+                );
+            }
+
+            if (sidebandHintEl) {
+                sidebandHintEl.textContent = previewSideband === "N/A"
+                    ? "30m phone is not allowed. Choose another voice frequency."
+                    : previewSideband === "--"
+                        ? "Enter a valid frequency to compute sideband."
+                        : `Auto sideband: ${previewSideband}`;
+                sidebandHintEl.classList.toggle("is-invalid", previewSideband === "N/A");
+            }
+        }
+
         function fmtReceiverScanStamp(value) {
             const ts = Number(value);
             if (!Number.isFinite(ts) || ts <= 0) return "--";
@@ -9116,6 +9485,120 @@
                                 </div>
                             `).join("")}
                         </div>
+                    </li>
+                `;
+            }).join("");
+        }
+
+        function renderCaptionMonitorCapture(status = latestCaptionMonitorStatus) {
+            const el = byId("caption-monitor-capture-summary");
+            if (!el) return;
+            const capture = status && status.capture && typeof status.capture === "object" ? status.capture : null;
+            if (!capture || safeText(capture.status, "idle").toLowerCase() === "idle") {
+                el.innerHTML = "<li>No caption audio captured yet.</li>";
+                return;
+            }
+            const freqText = fmtCaptionFreqKHz(capture.freq_khz);
+            const durationS = Number(capture.duration_s);
+            const chunkIndex = Number(capture.chunk_index);
+            const wavPath = safeText(capture.wav_path, "");
+            const wavName = wavPath ? wavPath.split("/").pop() : "--";
+            el.innerHTML = `
+                <li class="receiver-scan-list-item">
+                    <div class="receiver-scan-list-head">
+                        <span class="receiver-scan-pill ${receiverScanStatusClass(capture && capture.status)}">${escapeHtml(safeText(capture && capture.status, "idle").toUpperCase())}</span>
+                        <span class="mono">${escapeHtml(freqText)}</span>
+                        <span>${escapeHtml(Number.isFinite(chunkIndex) ? `Chunk ${Math.round(chunkIndex)}` : "Chunk --")}</span>
+                    </div>
+                    <div class="receiver-scan-list-summary">${escapeHtml(safeText(capture.summary, "No caption audio captured yet"))}</div>
+                    <div class="receiver-scan-list-meta">Finished ${escapeHtml(fmtReceiverScanStamp(capture.finished_ts || capture.started_ts))}</div>
+                    <div class="receiver-scan-metrics">
+                        ${[
+                    ["Frequency", freqText],
+                    ["Mode", safeText(capture.sideband, "--")],
+                    ["Duration", Number.isFinite(durationS) ? `${Math.round(durationS)}s` : "--"],
+                    ["WAV", wavName],
+                ].map(([label, value]) => `
+                            <div class="receiver-scan-metric">
+                                <div class="receiver-scan-metric-label">${escapeHtml(String(label))}</div>
+                                <div class="receiver-scan-metric-value">${escapeHtml(String(value))}</div>
+                            </div>
+                        `).join("")}
+                    </div>
+                </li>
+            `;
+        }
+
+        function renderCaptionMonitorTranscript(status = latestCaptionMonitorStatus) {
+            const summaryEl = byId("caption-monitor-transcript-summary");
+            const textEl = byId("caption-monitor-aggregate-text");
+            if (!summaryEl || !textEl) return;
+            const capture = status && status.capture && typeof status.capture === "object" ? status.capture : null;
+            const transcript = capture && capture.transcription && typeof capture.transcription === "object" ? capture.transcription : null;
+            const transcriptStatus = safeText(transcript && transcript.status, "idle").toLowerCase();
+            const streamText = buildCaptionMonitorStreamText(status);
+            if (!transcript || (transcriptStatus === "idle" && !streamText && !safeText(transcript.text, ""))) {
+                summaryEl.innerHTML = "<li>No transcript generated yet.</li>";
+                textEl.textContent = "Caption text will accumulate here while monitoring runs.";
+                return;
+            }
+            const transcriptText = safeText(transcript.text, "");
+            const modelText = safeText(transcript.model, "--");
+            const languageText = safeText(transcript.language, "--");
+            const textPath = safeText(transcript.text_path, "");
+            const jsonPath = safeText(transcript.json_path, "");
+            const textName = textPath ? textPath.split("/").pop() : "--";
+            const jsonName = jsonPath ? jsonPath.split("/").pop() : "--";
+            const segmentCount = Number(transcript.segment_count);
+            summaryEl.innerHTML = `
+                <li class="receiver-scan-list-item">
+                    <div class="receiver-scan-list-head">
+                        <span class="receiver-scan-pill ${receiverScanStatusClass(transcript && transcript.status)}">${escapeHtml(safeText(transcript && transcript.status, "idle").toUpperCase())}</span>
+                        <span class="mono">${escapeHtml(languageText)}</span>
+                        <span>${escapeHtml(modelText)}</span>
+                    </div>
+                    <div class="receiver-scan-list-summary">${escapeHtml(safeText(transcript.summary, "No transcript generated yet"))}</div>
+                    <div class="receiver-scan-list-meta">Finished ${escapeHtml(fmtReceiverScanStamp(transcript.finished_ts || transcript.started_ts))}</div>
+                    <div class="receiver-scan-metrics">
+                        ${[
+                    ["Language", languageText],
+                    ["Model", modelText],
+                    ["Segments", Number.isFinite(segmentCount) ? String(Math.round(segmentCount)) : "--"],
+                    ["TXT", textName],
+                    ["JSON", jsonName],
+                ].map(([label, value]) => `
+                            <div class="receiver-scan-metric">
+                                <div class="receiver-scan-metric-label">${escapeHtml(String(label))}</div>
+                                <div class="receiver-scan-metric-value">${escapeHtml(String(value))}</div>
+                            </div>
+                        `).join("")}
+                    </div>
+                </li>
+            `;
+            textEl.textContent = streamText || transcriptText || "No recognizable speech returned from the transcript model.";
+        }
+
+        function renderCaptionMonitorHistory(status = latestCaptionMonitorStatus) {
+            const el = byId("caption-monitor-history");
+            if (!el) return;
+            const items = Array.isArray(status && status.history) ? status.history : [];
+            if (!items.length) {
+                el.innerHTML = "<li>No live caption text yet.</li>";
+                return;
+            }
+            el.innerHTML = items.slice(0, 10).map((item) => {
+                const chunkIndex = Number(item && item.chunk_index);
+                const metaBits = [
+                    Number.isFinite(chunkIndex) ? `Chunk ${Math.round(chunkIndex)}` : "Chunk --",
+                    fmtCaptionFreqKHz(item && item.freq_khz),
+                    safeText(item && item.sideband, "--"),
+                    fmtReceiverScanStamp(item && item.finished_ts),
+                ].filter(Boolean);
+                const text = safeText(item && item.text, safeText(item && item.summary, "No transcript text yet")) || "No transcript text yet";
+                return `
+                    <li class="caption-stream-entry">
+                        <div class="caption-stream-entry-meta">${escapeHtml(metaBits.join(" | "))}</div>
+                        <div class="caption-stream-entry-text">${escapeHtml(text)}</div>
                     </li>
                 `;
             }).join("");
@@ -9892,6 +10375,107 @@
             syncNetMonitorControls(status);
         }
 
+        function applyCaptionMonitorStatus(status) {
+            if (!status || typeof status !== "object") return;
+            latestCaptionMonitorStatus = status;
+            if (captionMonitorPendingAction === "start" && (status.running || status.starting)) {
+                captionMonitorPendingAction = "";
+            }
+            if (captionMonitorPendingAction === "stop" && !status.running && !status.starting) {
+                captionMonitorPendingAction = "";
+            }
+
+            const capture = status.capture && typeof status.capture === "object" ? status.capture : null;
+            const transcript = capture && capture.transcription && typeof capture.transcription === "object" ? capture.transcription : null;
+            const controls = readCaptionMonitorControls();
+
+            const modeEl = byId("caption-monitor-mode-state");
+            if (modeEl) {
+                modeEl.textContent = capture && capture.running
+                    ? (safeText(capture.status, "recording").toLowerCase() === "transcribing"
+                        ? "Transcribing"
+                        : "Recording")
+                    : status.running
+                        ? "Live captioning"
+                        : (status.starting ? "Starting" : "Idle");
+            }
+
+            const freqEl = byId("caption-monitor-frequency");
+            if (freqEl) {
+                freqEl.textContent = fmtCaptionFreqKHz(status.freq_khz != null ? status.freq_khz : controls.freqKHz);
+            }
+
+            const sidebandEl = byId("caption-monitor-sideband");
+            if (sidebandEl) {
+                const previewSideband = resolveCaptionSideband(controls.freqKHz);
+                sidebandEl.textContent = safeText(status.sideband, previewSideband === "N/A" ? "--" : previewSideband || "--");
+            }
+
+            const chunkEl = byId("caption-monitor-chunk");
+            if (chunkEl) {
+                const chunkDurationS = Number(status.chunk_duration_s);
+                const chunkCount = Number(status.chunk_count);
+                const maxChunks = Number(status.max_chunks);
+                const chunkBits = [];
+                if (Number.isFinite(chunkDurationS)) chunkBits.push(`${Math.round(chunkDurationS)}s`);
+                else chunkBits.push(`${controls.durationS}s`);
+                chunkBits.push(maxChunks > 0 ? `${Math.round(maxChunks)} total` : "continuous");
+                if (Number.isFinite(chunkCount) && chunkCount > 0) chunkBits.push(`${Math.round(chunkCount)} done`);
+                chunkEl.textContent = chunkBits.join(" • ");
+            }
+
+            const lastFinishedEl = byId("caption-monitor-last-finished");
+            if (lastFinishedEl) {
+                const latestEntry = status.latest_entry && typeof status.latest_entry === "object" ? status.latest_entry : null;
+                lastFinishedEl.textContent = fmtReceiverScanStamp(
+                    latestEntry && latestEntry.finished_ts != null
+                        ? latestEntry.finished_ts
+                        : (status.last_finished_ts || (capture && (capture.finished_ts || capture.started_ts))),
+                );
+            }
+
+            const captureStateEl = byId("caption-monitor-capture-state");
+            if (captureStateEl) {
+                captureStateEl.textContent = capture
+                    ? safeText(capture.summary, safeText(capture.status, "idle"))
+                    : "Idle";
+            }
+
+            const transcriptStateEl = byId("caption-monitor-transcript-state");
+            if (transcriptStateEl) {
+                transcriptStateEl.textContent = transcript
+                    ? safeText(transcript.summary, safeText(transcript.status, "idle"))
+                    : "Idle";
+            }
+
+            const historyStateEl = byId("caption-monitor-history-state");
+            if (historyStateEl) {
+                const historyCount = Array.isArray(status.history) ? status.history.length : 0;
+                historyStateEl.textContent = historyCount > 0
+                    ? `${historyCount} chunk${historyCount === 1 ? "" : "s"}`
+                    : safeText(status.status, "idle");
+            }
+
+            const noteEl = byId("caption-monitor-note");
+            if (noteEl) {
+                const defaultNote = "Records rolling audio chunks continuously on a selected phone frequency until you press Stop Captions, and appends each completed transcript chunk to a live caption stream.";
+                noteEl.textContent = status.last_error
+                    ? `Caption Monitor warning: ${safeText(status.last_error, "unknown error")}`
+                    : safeText(status.current_note, defaultNote);
+            }
+
+            setCaptionMonitorStatusText(
+                status.running
+                    ? "running"
+                    : (status.starting ? "starting" : safeText(status.status, "idle")),
+            );
+            renderCaptionMonitorCapture(status);
+            renderCaptionMonitorTranscript(status);
+            renderCaptionMonitorHistory(status);
+            renderCaptionDrawer(status);
+            syncCaptionMonitorControls(status);
+        }
+
         async function deactivateReceiverScanMode(options = {}) {
             receiverScanPendingAction = "stop";
             syncReceiverScanControls();
@@ -9920,6 +10504,22 @@
                 syncNetMonitorControls();
                 if (!options.quiet) throw err;
                 console.warn("net monitor deactivate failed", err);
+                return null;
+            }
+        }
+
+        async function deactivateCaptionMonitorMode(options = {}) {
+            captionMonitorPendingAction = "stop";
+            syncCaptionMonitorControls();
+            try {
+                const result = await postJson("/caption/deactivate", {});
+                applyCaptionMonitorStatus(result);
+                return result;
+            } catch (err) {
+                captionMonitorPendingAction = "";
+                syncCaptionMonitorControls();
+                if (!options.quiet) throw err;
+                console.warn("caption monitor deactivate failed", err);
                 return null;
             }
         }
@@ -10002,6 +10602,7 @@
 
         async function applyReceiversScanMode(band = null, role = null) {
             await deactivateNetMonitorMode({ quiet: true });
+            await deactivateCaptionMonitorMode({ quiet: true });
             const targetRole = normalizeReceiverScanControlRole(
                 role,
                 receiverScanPendingSource || receiverScanActiveSource || "smart",
@@ -10052,6 +10653,7 @@
             syncNetMonitorControls();
             try {
                 await deactivateReceiverScanMode({ quiet: true });
+                await deactivateCaptionMonitorMode({ quiet: true });
                 setReceiversMode("scan");
                 applyAutoModeVisibility(false);
                 if (typeof window.kiwiProSetView === "function") window.kiwiProSetView("receiver-scan", true);
@@ -10082,6 +10684,64 @@
                 netMonitorPendingAction = "";
                 syncNetMonitorControls();
                 setAutomationStatus(`NET monitor stop failed: ${String((err && err.message) || err)}`);
+            }
+        }
+
+        async function applyCaptionMonitorMode() {
+            const controls = readCaptionMonitorControls();
+            const sideband = resolveCaptionSideband(controls.freqKHz);
+            if (!Number.isFinite(Number(controls.freqKHz)) || controls.freqKHz <= 0) {
+                setAutomationStatus("caption monitor requires a valid frequency");
+                syncCaptionMonitorControls();
+                return;
+            }
+            if (sideband === "N/A") {
+                setAutomationStatus("30m phone is not allowed; choose another voice frequency");
+                syncCaptionMonitorControls();
+                return;
+            }
+            setAutomationStatus(`starting captions on ${controls.freqKHz.toFixed(2)} kHz ${sideband.toLowerCase()}...`);
+            setReceiversBusy(true, "Preparing live captions...");
+            captionMonitorPendingAction = "start";
+            syncCaptionMonitorControls();
+            try {
+                await deactivateReceiverScanMode({ quiet: true });
+                await deactivateNetMonitorMode({ quiet: true });
+                setReceiversMode("scan");
+                applyAutoModeVisibility(false);
+                if (typeof window.kiwiProSetView === "function") window.kiwiProSetView("receiver-scan", true);
+                const result = await postJson("/caption/start", {
+                    freq_khz: controls.freqKHz,
+                    rx_chan: controls.rxChan,
+                    chunk_duration_s: controls.durationS,
+                    max_chunks: 0,
+                });
+                applyCaptionMonitorStatus(result);
+                setAutomationStatus(result && (result.running || result.starting)
+                    ? `Captions active on ${fmtCaptionFreqKHz(result.freq_khz || controls.freqKHz)}`
+                    : "Caption monitor ready");
+                refresh();
+            } catch (err) {
+                captionMonitorPendingAction = "";
+                syncCaptionMonitorControls();
+                setAutomationStatus(`caption monitor failed: ${String((err && err.message) || err)}`);
+            } finally {
+                setReceiversBusy(false);
+            }
+        }
+
+        async function stopCaptionMonitorRun() {
+            setAutomationStatus("stopping live captions...");
+            captionMonitorPendingAction = "stop";
+            syncCaptionMonitorControls();
+            try {
+                const result = await postJson("/caption/stop", {});
+                applyCaptionMonitorStatus(result);
+                setAutomationStatus("Caption monitor stopping after the current chunk");
+            } catch (err) {
+                captionMonitorPendingAction = "";
+                syncCaptionMonitorControls();
+                setAutomationStatus(`caption monitor stop failed: ${String((err && err.message) || err)}`);
             }
         }
 
@@ -11143,6 +11803,55 @@
             }
         }
 
+        async function prepareReceiversScanMode() {
+            setAutomationStatus("preparing scan mode...");
+            setReceiversBusy(true, "Clearing RX0/RX1 assignments...");
+            try {
+                await deactivateCaptionMonitorMode({ quiet: true });
+                await deactivateNetMonitorMode({ quiet: true });
+                await deactivateReceiverScanMode({ quiet: true });
+                setReceiversMode("scan");
+                applyAutoModeVisibility(false);
+                if (typeof window.kiwiProSetView === "function") window.kiwiProSetView("receiver-scan", true);
+
+                await saveAutomationSection({ autosave: true });
+
+                const mode = "ft8";
+                const sched = await getJson(`/schedule?mode=${encodeURIComponent(mode)}`);
+                const block = safeText(sched && sched.block, "");
+                if (!block) throw new Error("missing schedule block");
+
+                let bandModes = {};
+                const bsGrid = readBandScheduleFromGrid();
+                if (bsGrid && bsGrid.ft8 && bsGrid.ft8[block]) {
+                    bandModes = bsGrid.ft8[block].bandModes || {};
+                } else {
+                    for (const band of MAP_BAND_OPTIONS) {
+                        bandModes[band] = "FT8";
+                    }
+                }
+
+                await postJson("/auto_set_receivers", {
+                    enabled: true,
+                    mode,
+                    block,
+                    selected_bands: [],
+                    band_modes: bandModes,
+                    force: true,
+                });
+
+                receiverScanPendingAction = "";
+                receiverScanPendingBand = "";
+                syncReceiverScanControls();
+                setAutomationStatus("Scan mode ready — RX0/RX1 released. Choose a scan to start.");
+                refresh();
+            } catch (err) {
+                setAutomationStatus(`scan mode preparation failed: ${String((err && err.message) || err)}`);
+            } finally {
+                setReceiversBusy(false);
+            }
+        }
+
         function initConfigAutomationControls() {
             applyStoredReceiversModePreference();
             const cfgReload = byId("cfg-reload");
@@ -11242,12 +11951,19 @@
             const manualModeBtn = byId("manual-mode-btn");
             const netMonitorStartBtn = byId("net-monitor-start");
             const netMonitorCaptureBtn = byId("net-monitor-capture");
+            const captionMonitorStartBtn = byId("caption-monitor-start");
+            const captionDrawerToggleBtn = byId("caption-drawer-toggle");
+            const captionDrawerCloseBtn = byId("caption-drawer-close");
+            const captionMonitorFreqInput = byId("caption-monitor-freq");
+            const captionMonitorRxInput = byId("caption-monitor-rx");
+            const captionMonitorDurationInput = byId("caption-monitor-duration");
             const receiverScanSmartStartBtn = byId("receiver-scan-smart-start");
             const receiverScanSmartBand = byId("receiver-scan-smart-band");
             const receiverScanCwStartBtn = byId("receiver-scan-cw-start");
             const receiverScanPhoneStartBtn = byId("receiver-scan-phone-start");
             if (autoModeBtn) {
                 autoModeBtn.addEventListener("click", async () => {
+                    await deactivateCaptionMonitorMode({ quiet: true });
                     await deactivateNetMonitorMode({ quiet: true });
                     await deactivateReceiverScanMode({ quiet: true });
                     setReceiversMode("auto");
@@ -11257,17 +11973,7 @@
             }
             if (scanModeBtn) {
                 scanModeBtn.addEventListener("click", async () => {
-                    const selectedBandValue = readSelectedReceiverScanBand();
-                    receiverScanPendingSource = receiverScanActiveSource || "smart";
-                    receiverScanActiveSource = receiverScanPendingSource;
-                    const selectedRole = normalizeReceiverScanControlRole(receiverScanPendingSource, "smart") || "smart";
-                    setReceiversMode("scan");
-                    applyAutoModeVisibility(false);
-                    if (typeof window.kiwiProSetView === "function") window.kiwiProSetView("receiver-scan", true);
-                    await applyReceiversScanMode(
-                        receiverScanBandsForRole(selectedRole).includes(selectedBandValue) ? selectedBandValue : null,
-                        selectedRole,
-                    );
+                    await prepareReceiversScanMode();
                 });
             }
             async function runReceiverScanControl(controlRole) {
@@ -11333,6 +12039,7 @@
             }
             if (manualModeBtn) {
                 manualModeBtn.addEventListener("click", async () => {
+                    await deactivateCaptionMonitorMode({ quiet: true });
                     await deactivateNetMonitorMode({ quiet: true });
                     await deactivateReceiverScanMode({ quiet: true });
                     setReceiversMode("manual");
@@ -11355,8 +12062,43 @@
                     captureNetMonitorCandidate();
                 });
             }
+            if (captionMonitorStartBtn) {
+                captionMonitorStartBtn.addEventListener("click", () => {
+                    const status = latestCaptionMonitorStatus;
+                    if (status && (status.running || status.starting)) {
+                        stopCaptionMonitorRun();
+                        return;
+                    }
+                    applyCaptionMonitorMode();
+                });
+            }
+            if (captionDrawerToggleBtn) {
+                captionDrawerToggleBtn.addEventListener("click", () => {
+                    applyCaptionDrawerOpen(!captionDrawerOpen);
+                });
+            }
+            if (captionDrawerCloseBtn) {
+                captionDrawerCloseBtn.addEventListener("click", () => {
+                    applyCaptionDrawerOpen(false);
+                });
+            }
+            [captionMonitorFreqInput, captionMonitorRxInput, captionMonitorDurationInput].forEach((el) => {
+                if (!el) return;
+                const eventName = el.tagName === "SELECT" ? "change" : "input";
+                el.addEventListener(eventName, () => {
+                    syncCaptionMonitorControls();
+                });
+                if (eventName !== "change") {
+                    el.addEventListener("change", () => {
+                        syncCaptionMonitorControls();
+                    });
+                }
+            });
             syncReceiverScanControls();
             syncNetMonitorControls();
+            syncCaptionMonitorControls();
+            applyCaptionDrawerOpen(false);
+            renderCaptionDrawer();
 
             configAutosaveIds.forEach((id) => {
                 const el = byId(id);
@@ -13714,14 +14456,15 @@
                 const receiverScanP = getJson("/receiver_scan/status", TIMEOUT).catch(() => null);
                 const bandScanResultsP = getJson("/band_scan/results", TIMEOUT).catch(() => null);
                 const netMonitorP = getJson("/net_monitor/status", TIMEOUT).catch(() => null);
+                const captionMonitorP = getJson("/caption/status", TIMEOUT).catch(() => null);
 
                 // Apply core data the instant each endpoint responds — don't wait for all.
                 let appliedHealth = false, appliedStatus = false;
                 healthP.then(d => { if (d) { appliedHealth = true; applyHealth(d); updateDecodeStreamChip(); } });
                 statusP.then(d => { if (d) { appliedStatus = true; applyStatus(d); } });
 
-                const [health, status, version, deltaInfo, chartData, receiverScan, bandScanResults, netMonitor] = await Promise.all([
-                    healthP, statusP, versionP, deltaP, chartP, receiverScanP, bandScanResultsP, netMonitorP,
+                const [health, status, version, deltaInfo, chartData, receiverScan, bandScanResults, netMonitor, captionMonitor] = await Promise.all([
+                    healthP, statusP, versionP, deltaP, chartP, receiverScanP, bandScanResultsP, netMonitorP, captionMonitorP,
                 ]);
 
                 // Both core endpoints unreachable — server not yet ready.
@@ -13760,6 +14503,7 @@
                 if (receiverScan) applyReceiverScanStatus(receiverScan);
                 if (bandScanResults) renderBandScanResults(bandScanResults);
                 if (netMonitor) applyNetMonitorStatus(netMonitor);
+                if (captionMonitor) applyCaptionMonitorStatus(captionMonitor);
                 if (version && typeof version === "object") {
                     applyVersion(version);
                 }

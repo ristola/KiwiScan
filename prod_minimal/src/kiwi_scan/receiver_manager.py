@@ -211,6 +211,9 @@ class ReceiverAssignment:
 
 
 class _ReceiverWorker(threading.Thread):
+    _DIGITAL_USB_LOW_CUT_HZ = 0
+    _DIGITAL_USB_HIGH_CUT_HZ = 3100
+
     def __init__(
         self,
         *,
@@ -754,6 +757,10 @@ class _ReceiverWorker(threading.Thread):
             return "FT4"
         return "FT8"
 
+    @classmethod
+    def _digital_usb_cut_args(cls) -> str:
+        return f"-L {int(cls._DIGITAL_USB_LOW_CUT_HZ)} -H {int(cls._DIGITAL_USB_HIGH_CUT_HZ)}"
+
     @staticmethod
     def _decoder_keep_wavs_enabled() -> bool:
         return _ReceiverWorker._env_bool("KIWISCAN_FT8MODEM_KEEP", False)
@@ -1119,7 +1126,7 @@ class _ReceiverWorker(threading.Thread):
                         )
                         pipeline_cmd = (
                             f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-                            f"-s {self._host} -p {self._port} -f {freq_khz} -m usb "
+                            f"-s {self._host} -p {self._port} -f {freq_khz} -m usb {self._digital_usb_cut_args()} "
                             f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                             f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
                                 f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
@@ -1158,7 +1165,7 @@ class _ReceiverWorker(threading.Thread):
                     )
                     pipeline_cmd = (
                         f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-                        f"-s {self._host} -p {self._port} -f {freq_khz} -m usb "
+                        f"-s {self._host} -p {self._port} -f {freq_khz} -m usb {self._digital_usb_cut_args()} "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
                             f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
@@ -1201,7 +1208,7 @@ class _ReceiverWorker(threading.Thread):
                     )
                     pipeline_cmd = (
                         f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-                        f"-s {self._host} -p {self._port} -f {wspr_freq_khz} -m usb "
+                        f"-s {self._host} -p {self._port} -f {wspr_freq_khz} -m usb {self._digital_usb_cut_args()} "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
                             f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
@@ -1213,7 +1220,7 @@ class _ReceiverWorker(threading.Thread):
                 udp_sender_cmd = self._udp_audio_sender_cmd(udp_port=udp_port, af2udp_path=af2udp_path)
                 pipeline_cmd = (
                     f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-                    f"-s {self._host} -p {self._port} -f {freq_khz} -m usb "
+                    f"-s {self._host} -p {self._port} -f {freq_khz} -m usb {self._digital_usb_cut_args()} "
                     f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                     f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
                         f"-t raw -r 48000 -e signed -b 16 -c 1 - | "

@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 
-
-THIRTY_M_BAND = (10100.0, 10150.0)
-SIXTY_M_BAND = (5250.0, 5450.0)
+from ..voice_mode import resolve_voice_sideband
 
 
 def make_router(*, monitor: object) -> APIRouter:
@@ -29,21 +27,10 @@ def make_router(*, monitor: object) -> APIRouter:
         except Exception:
             rx_chan = 0
 
-        if THIRTY_M_BAND[0] <= freq_khz < THIRTY_M_BAND[1]:
-            raise HTTPException(status_code=400, detail="30m has no phone operation")
-
-        sideband = str(payload.get("sideband") or "").strip().upper()
-        if sideband not in {"LSB", "USB"}:
-            if sideband:
-                raise HTTPException(status_code=400, detail="sideband must be LSB or USB")
-
-        if SIXTY_M_BAND[0] <= freq_khz < SIXTY_M_BAND[1]:
-            sideband = "USB"
-        else:
-            expected_sideband = "LSB" if freq_khz < 10000 else "USB"
-            sideband = sideband or expected_sideband
-            if sideband != expected_sideband:
-                sideband = expected_sideband
+        try:
+            sideband = resolve_voice_sideband(freq_khz, payload.get("sideband"))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
         monitor.start(freq_khz=freq_khz, sideband=sideband, rx_chan=rx_chan)  # type: ignore[attr-defined]
         return {"ok": True}

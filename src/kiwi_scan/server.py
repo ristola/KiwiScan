@@ -28,6 +28,7 @@ from pathlib import Path
 from .discovery import FT8_WATERHOLES
 from .receiver_manager import ReceiverManager
 from .band_scanner import BandScanner
+from .caption_monitor import CaptionMonitorService
 from .net_monitor import NetMonitorService
 from .receiver_scan import ReceiverScanService
 from .discovery_manager import DiscoveryManager
@@ -42,6 +43,7 @@ from .api.decodes import (
 )
 from .api.decodes_status import make_router as make_decodes_status_router
 from .api.band_scan import make_router as make_band_scan_router
+from .api.caption import make_router as make_caption_router
 from .api.net_monitor import make_router as make_net_monitor_router
 from .api.receiver_scan import make_router as make_receiver_scan_router
 from .api.config import make_router as make_config_router
@@ -643,6 +645,7 @@ receiver_scan = ReceiverScanService(
     band_scanner=band_scanner,
 )
 net_monitor = NetMonitorService(receiver_mgr=receiver_mgr, auto_set_loop=auto_set_loop)
+caption_monitor = CaptionMonitorService(receiver_mgr=receiver_mgr, auto_set_loop=auto_set_loop)
 
 # SmartScheduler: merges seasonal tables + live propagation evidence + user pins
 # into a band-condition map.  Fires force_reassign() when conditions change so
@@ -663,6 +666,7 @@ app.include_router(
         mgr=mgr,
         net_monitor=net_monitor,
         receiver_scan=receiver_scan,
+        caption_monitor=caption_monitor,
     )
 )
 app.include_router(
@@ -670,6 +674,7 @@ app.include_router(
         mgr=mgr,
         receiver_scan=receiver_scan,
         net_monitor=net_monitor,
+        caption_monitor=caption_monitor,
     )
 )
 try:
@@ -689,6 +694,15 @@ app.include_router(
     )
 )
 app.include_router(make_rx_monitor_router(monitor=rx_monitor))
+app.include_router(
+    make_caption_router(
+        mgr=mgr,
+        caption_monitor=caption_monitor,
+        receiver_scan=receiver_scan,
+        net_monitor=net_monitor,
+        rx_monitor=rx_monitor,
+    )
+)
 app.include_router(make_admin_router(auto_set_loop=auto_set_loop, receiver_mgr=receiver_mgr))
 app.include_router(make_automation_router(auto_set_loop=auto_set_loop))
 app.include_router(
@@ -721,6 +735,7 @@ register_lifecycle(
     mgr=mgr,
     receiver_mgr=receiver_mgr,
     rx_monitor=rx_monitor,
+    caption_monitor=caption_monitor,
     auto_set_loop=auto_set_loop,
     smart_scheduler=smart_scheduler,
     net_monitor=net_monitor,

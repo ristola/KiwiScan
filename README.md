@@ -174,6 +174,26 @@ Build first, then publish:
 ./tools/publish_docker.sh --build
 ```
 
+Before pushing to Docker Hub, authenticate once on the machine doing the publish:
+
+```zsh
+docker login
+```
+
+Publish rolling and date-stamped test images for external testers without moving the release tags:
+
+```zsh
+./tools/publish_docker.sh --build --no-version --no-latest \
+	--tag test-latest \
+	--tag test-20260418
+```
+
+Smoke-test a published test image directly from Docker Hub:
+
+```zsh
+docker run --rm -p 4020:4020 n4ldr/kiwiscan:test-latest
+```
+
 If you build manually instead of using Compose, keep the default local release tag:
 
 ```zsh
@@ -183,6 +203,8 @@ docker build -t kiwiscan-local:latest .
 Docker tag note:
 - Use `n4ldr/kiwiscan:<version>` when you want an immutable released image.
 - Use `n4ldr/kiwiscan:latest` when you want the newest published main-branch image; it may move past the most recent numbered release.
+- Use `n4ldr/kiwiscan:test-latest` for the current rolling tester build.
+- Use `n4ldr/kiwiscan:test-YYYYMMDD` when you want a reproducible test snapshot.
 
 Container smoke test:
 
@@ -315,6 +337,9 @@ Receiver watchdog note:
 - SSB Waterfall meta now shows `Active RX` (fixed receiver or auto/fallback) from live `/band_scan/status` progress, making scan receiver behavior easy to verify without relying only on Kiwi admin page frequency lines.
 - SSB Waterfall includes `Copy Status JSON` to copy the latest `/band_scan/status` snapshot for troubleshooting and sharing.
 - `/band_scan/status` now includes `last_progress`, so even after a scan ends (`running=false`) you can still verify the most recent center frequency and RX selection/fallback behavior.
+- Band Scan now also writes a grouped results artifact `outputs/band_scans/band_scan_results_<band>_<timestamp>.json` alongside the raw per-run scan report.
+- `GET /band_scan/results` returns the latest grouped Band Scan results payload, including the persisted report path and selection-friendly discovered frequencies for follow-up tuning or automation.
+- Pro Console `Receiver Scan` now includes a `Band Scan Results JSON` card with `Refresh JSON`, `Copy JSON`, and `Open JSON` actions backed by `/band_scan/results`.
 - SSB Waterfall meta includes `Last Scan` (time, last center frequency, and RX mode/fallback) for quick at-a-glance verification without opening JSON.
 - SSB Waterfall controls include an `RX` selector (`Auto` or fixed `RX0..RX7`) used by both `Quick Scout` and full `Start PHONE Scan` requests.
 - Default SSB Waterfall RX mode is `RX0` (not `Auto`) so scan activity remains pinned to a visible receiver unless you explicitly change to `Auto`.
