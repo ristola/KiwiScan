@@ -4336,6 +4336,10 @@
             cursor: pointer;
         }
 
+        .map-filter-chip.is-hidden {
+            display: none !important;
+        }
+
         .map-age-filter {
             appearance: auto;
         }
@@ -4884,7 +4888,7 @@
                                 <button class="action-btn topbar-menu-btn" id="topbar-menu-open-settings" type="button"
                                     data-icon="settings">Open Settings</button>
                                 <button class="action-btn topbar-menu-btn" id="topbar-menu-reload-host" type="button"
-                                    data-icon="refresh">Reload Host</button>
+                                    data-icon="refresh">Restart Container</button>
                                 <button class="action-btn topbar-menu-btn" id="topbar-menu-discover-host" type="button"
                                     data-icon="search">Discover Kiwi</button>
                             </div>
@@ -5586,13 +5590,14 @@
                     </article>
                     <article class="panel panel-collapsible panel-full" id="active-receivers"
                         data-panel-card="active-receivers">
-                        <div id="rx-busy-overlay" class="rx-busy-overlay" hidden aria-label="Applying receiver changes">
+                        <div id="rx-busy-overlay" class="rx-busy-overlay" hidden
+                            aria-label="Setting up receiver assignments">
                             <svg class="rx-busy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                 <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
                                 <path d="M21 3v5h-5" />
                             </svg>
-                            <span class="rx-busy-label" id="rx-busy-label">Applying…</span>
+                            <span class="rx-busy-label" id="rx-busy-label">Setting up Receiver Assignments !</span>
                         </div>
                         <div class="panel-hdr">
                             <h2 data-icon="users">Active Receivers</h2>
@@ -6701,12 +6706,27 @@
             return buildManagedReceiverLabel(prefix, band, mode) || `(connecting RX${safeText(rx, "--")})`;
         }
 
+        function getPreparedScanReservedReceiverSet() {
+            const scan = latestReceiverScanStatus && typeof latestReceiverScanStatus === "object"
+                ? latestReceiverScanStatus
+                : null;
+            if (!scan || scan.running || !Array.isArray(scan.reserved_receivers)) return new Set();
+            const scanPrepared = getCurrentReceiversMode() === "scan" || !!scan.mode_active;
+            if (!scanPrepared) return new Set();
+            return new Set(
+                scan.reserved_receivers
+                    .map((rx) => Number(rx))
+                    .filter((rxNum) => Number.isFinite(rxNum) && rxNum >= 0)
+            );
+        }
+
         function buildActiveReceiverRows(kiwiUsers, rawKiwiUsers) {
             const autoModeEnabled = readSelectBool(
                 "auto-mode-enabled",
                 latestAutomationSettings && latestAutomationSettings.fixedModeEnabled !== false,
             );
             const scanModeActive = !!(latestReceiverScanStatus && (latestReceiverScanStatus.mode_active || latestReceiverScanStatus.running));
+            const scanPreparedReserved = getPreparedScanReservedReceiverSet();
             const managedModeActive = autoModeEnabled || scanModeActive;
             const hasReceiverContext = Boolean(
                 Object.keys(latestChannelsMap || {}).length
@@ -6749,7 +6769,8 @@
                     }
                 });
             }
-            if (scanModeActive && Array.isArray(latestReceiverScanStatus && latestReceiverScanStatus.reserved_receivers)) {
+            scanPreparedReserved.forEach((rxNum) => managedRxSet.add(rxNum));
+            if (latestReceiverScanStatus && latestReceiverScanStatus.running && Array.isArray(latestReceiverScanStatus.reserved_receivers)) {
                 latestReceiverScanStatus.reserved_receivers.forEach((rx) => {
                     const rxNum = Number(rx);
                     if (Number.isFinite(rxNum) && rxNum >= 0) managedRxSet.add(rxNum);
@@ -6773,11 +6794,24 @@
                     const rawUser = Number.isFinite(liveKiwiRx)
                         ? (rawUsersByRx.get(liveKiwiRx) || rawUserBySlot)
                         : rawUserBySlot;
+                    const isScanReserved = scanPreparedReserved.has(rxNum);
                     const synthesizedName = buildExpectedActiveReceiverName(rxNum, assignment, channel);
                     const channelDisplayName = safeText(channel && channel.display_name, "");
                     const managedName = safeText(systemUser.name, "");
                     const rawName = safeText(rawUser.name, "");
                     const freqHz = Number((assignment && assignment.freq_hz) || NaN);
+                    if (isScanReserved) {
+                        return {
+                            rx: rxNum,
+                            name: "Reserved for Scan",
+                            display_name: "Reserved for Scan",
+                            freq_khz: null,
+                            mode: "--",
+                            connected_seconds: null,
+                            active: true,
+                            fixed: false,
+                        };
+                    }
                     const connected = Boolean(
                         channel.active
                         || channel.visible_on_kiwi
@@ -8209,11 +8243,28 @@
             el.textContent = `Bands: ${bandLabel} | Modes: ${modeLabel || "None"} | Age: ${ageLabel}`;
         }
 
+        function getAvailableMapBands() {
+            const seen = new Set();
+            for (const point of mapPoints.values()) {
+                if (!point || typeof point !== "object") continue;
+                const band = String(point.band || "").trim().toUpperCase();
+                if (!band || !MAP_BAND_OPTIONS.includes(band.toLowerCase())) continue;
+                seen.add(band);
+            }
+            return MAP_BAND_OPTIONS.filter((band) => seen.has(String(band || "").trim().toUpperCase()));
+        }
+
         function updateMapBandFilterButtons() {
             const container = byId("map-band-filters");
             if (!container) return;
+            const availableBands = getAvailableMapBands();
+            if (mapSelectedBand !== "ALL" && !availableBands.includes(mapSelectedBand)) {
+                mapSelectedBand = "ALL";
+            }
             container.querySelectorAll(".map-filter-chip").forEach((btn) => {
                 const value = String(btn.dataset.value || "ALL");
+                const visible = value === "ALL" || availableBands.includes(value.toLowerCase());
+                btn.classList.toggle("is-hidden", !visible);
                 btn.classList.toggle("active", value === mapSelectedBand);
             });
         }
@@ -8277,6 +8328,7 @@
             const countEl = byId("map-count");
             const updatedEl = byId("map-updated");
             const metaEl = byId("map-panel-meta");
+            updateMapBandFilterButtons();
             updateMapModeFilterButtons();
             updateMapFilterSummary();
             const entries = getVisibleMapEntries();
@@ -10546,7 +10598,7 @@
             _rxBusyManual = busy;
             const labelEl = byId("rx-busy-label");
             if (labelEl && label) labelEl.textContent = label;
-            else if (labelEl && busy && !label) labelEl.textContent = "Applying\u2026";
+            else if (labelEl && busy && !label) labelEl.textContent = "Setting up Receiver Assignments !";
             _updateRxBusyOverlay();
         }
 
@@ -11289,9 +11341,14 @@
                 currentUiDensity || UI_DENSITY_DEFAULT_MODE,
             );
             const bsGrid = readBandScheduleFromGrid();
+            const currentMode = getCurrentReceiversMode();
             const payload = {
                 ...snapshot,
-                fixedModeEnabled: readSelectBool("auto-mode-enabled", true),
+                fixedModeEnabled: currentMode === "manual"
+                    ? false
+                    : currentMode === "auto"
+                        ? true
+                        : (typeof snapshot.fixedModeEnabled === "boolean" ? snapshot.fixedModeEnabled : true),
                 uiThemeMode,
                 uiThemeNightHour,
                 uiThemeHourOffset,
@@ -11776,12 +11833,16 @@
         }
 
         async function applyAutoModeEnabled(enabled) {
+            const transitioningFromScan = !!(latestReceiverScanStatus && latestReceiverScanStatus.mode_active);
             setAutomationStatus(enabled ? "enabling Auto Mode..." : "disabling Auto Mode...");
             setReceiversBusy(true);
             try {
                 // Persist the mode selection first so backend loops and force-reassign
                 // read the same fixed/manual state the user just selected.
                 await saveAutomationSection({ autosave: true });
+                await deactivateCaptionMonitorMode({ quiet: true });
+                await deactivateNetMonitorMode({ quiet: true });
+                await deactivateReceiverScanMode({ quiet: true });
                 if (!enabled) {
                     await postJson("/auto_set_receivers", { enabled: false });
                     setAutomationStatus("Auto Mode OFF — waiting for receivers to stop...");
@@ -11789,11 +11850,21 @@
                     setAutomationStatus(result.ok ? "Auto Mode OFF — all receivers stopped" : result.message);
                     refresh();
                 } else {
-                    // Apply fixed (5) + roaming (2) immediately via the headless path.
+                    // Apply fixed + roaming immediately via the headless path.
                     await postJson("/admin/force-reassign", {});
-                    setAutomationStatus("Auto Mode ON — waiting for receivers to reconnect...");
+                    setAutomationStatus(
+                        transitioningFromScan
+                            ? "Auto Mode ON — adding RX0/RX1 roaming receivers..."
+                            : "Auto Mode ON — waiting for receivers to reconnect..."
+                    );
                     const result = await waitForAutoModeTransition(true);
-                    setAutomationStatus(result.ok ? "Auto Mode ON — fixed + roaming receivers applied" : result.message);
+                    setAutomationStatus(
+                        result.ok
+                            ? (transitioningFromScan
+                                ? "Auto Mode ON — RX0/RX1 roaming receivers added"
+                                : "Auto Mode ON — fixed + roaming receivers applied")
+                            : result.message
+                    );
                     refresh();
                 }
             } catch (err) {
@@ -11816,34 +11887,13 @@
 
                 await saveAutomationSection({ autosave: true });
 
-                const mode = "ft8";
-                const sched = await getJson(`/schedule?mode=${encodeURIComponent(mode)}`);
-                const block = safeText(sched && sched.block, "");
-                if (!block) throw new Error("missing schedule block");
-
-                let bandModes = {};
-                const bsGrid = readBandScheduleFromGrid();
-                if (bsGrid && bsGrid.ft8 && bsGrid.ft8[block]) {
-                    bandModes = bsGrid.ft8[block].bandModes || {};
-                } else {
-                    for (const band of MAP_BAND_OPTIONS) {
-                        bandModes[band] = "FT8";
-                    }
-                }
-
-                await postJson("/auto_set_receivers", {
-                    enabled: true,
-                    mode,
-                    block,
-                    selected_bands: [],
-                    band_modes: bandModes,
-                    force: true,
-                });
+                const prepared = await postJson("/receiver_scan/prepare", {});
+                applyReceiverScanStatus(prepared);
 
                 receiverScanPendingAction = "";
                 receiverScanPendingBand = "";
                 syncReceiverScanControls();
-                setAutomationStatus("Scan mode ready — RX0/RX1 released. Choose a scan to start.");
+                setAutomationStatus("Scan mode ready — RX0/RX1 held unassigned while RX2-RX7 stay assigned. Choose a scan to start.");
                 refresh();
             } catch (err) {
                 setAutomationStatus(`scan mode preparation failed: ${String((err && err.message) || err)}`);
@@ -11963,12 +12013,9 @@
             const receiverScanPhoneStartBtn = byId("receiver-scan-phone-start");
             if (autoModeBtn) {
                 autoModeBtn.addEventListener("click", async () => {
-                    await deactivateCaptionMonitorMode({ quiet: true });
-                    await deactivateNetMonitorMode({ quiet: true });
-                    await deactivateReceiverScanMode({ quiet: true });
                     setReceiversMode("auto");
                     applyAutoModeVisibility(true);
-                    applyAutoModeEnabled(true);
+                    await applyAutoModeEnabled(true);
                 });
             }
             if (scanModeBtn) {
@@ -12039,12 +12086,9 @@
             }
             if (manualModeBtn) {
                 manualModeBtn.addEventListener("click", async () => {
-                    await deactivateCaptionMonitorMode({ quiet: true });
-                    await deactivateNetMonitorMode({ quiet: true });
-                    await deactivateReceiverScanMode({ quiet: true });
                     setReceiversMode("manual");
                     applyAutoModeVisibility(false);
-                    applyAutoModeEnabled(false);
+                    await applyAutoModeEnabled(false);
                 });
             }
             if (netMonitorStartBtn) {
@@ -12928,7 +12972,7 @@
             const layout = byId("main-layout");
             const receivers = byId("receivers");
             const rightCol = layout ? layout.querySelector(".right-col") : null;
-            const rightPanels = ["assignments", "faults", "receiver-scan", "net-monitor", "messages", "map", "active-receivers", "settings", "system"]
+            const rightPanels = ["assignments", "faults", "receiver-scan", "net-monitor", "caption-monitor", "messages", "map", "active-receivers", "settings", "system"]
                 .map((id) => byId(id))
                 .filter(Boolean);
             const validIds = new Set(["overview", "receivers", "assignments", "faults", "receiver-scan", "messages", "map", "active-receivers", "settings", "system"]);
@@ -13011,11 +13055,12 @@
                     let anyRightPanelVisible = false;
                     rightPanels.forEach((panel) => {
                         const panelId = panel && panel.id ? panel.id : "";
-                        const panelVisible = panelId === navId || (panelId === "net-monitor" && navId === "receiver-scan");
+                        const panelVisible = panelId === navId || ((panelId === "net-monitor" || panelId === "caption-monitor") && navId === "receiver-scan");
                         show(panel, panelVisible);
                         anyRightPanelVisible = anyRightPanelVisible || panelVisible;
                     });
                     show(rightCol, anyRightPanelVisible);
+                    if (navId !== "receiver-scan") applyCaptionDrawerOpen(false);
                 }
 
                 if (navId === "overview" ? !!overviewTopicPrefs.messages : navId === "messages") {
@@ -13138,7 +13183,15 @@
 
             if (reloadHostBtn) {
                 reloadHostBtn.addEventListener("click", async () => {
-                    await loadConfigSection();
+                    setMenuActionState(reloadHostBtn, "busy");
+                    let ok = false;
+                    try {
+                        const resp = await fetch("/admin/runtime/restart", { method: "POST" });
+                        ok = !!resp.ok;
+                    } catch (_err) {
+                        ok = false;
+                    }
+                    flashMenuActionState(reloadHostBtn, ok ? "success" : "error");
                     setMenuOpen(true);
                 });
             }
@@ -13372,6 +13425,7 @@
             );
             const currentMode = getCurrentReceiversMode();
             const scanModeActive = currentMode === "scan" || !!(latestReceiverScanStatus && latestReceiverScanStatus.mode_active);
+            const scanPreparedReserved = getPreparedScanReservedReceiverSet();
             const kiwi = latestSystemInfo && latestSystemInfo.kiwi && typeof latestSystemInfo.kiwi === "object"
                 ? latestSystemInfo.kiwi
                 : {};
@@ -13388,10 +13442,11 @@
             // decodes/status assignments may be keyed by Kiwi physical slot numbers when
             // source=kiwi_users, causing RX badge mismatches after startup slot remapping.
             const healthChannelEntries = Object.entries(latestChannelsMap)
-                .filter(([, ch]) => ch && ch.band && ch.mode);
+                .filter(([rx, ch]) => ch && ch.band && ch.mode && !scanPreparedReserved.has(Number(rx)));
             const sourceRows = healthChannelEntries.length
                 ? healthChannelEntries.map(([rx, ch]) => [rx, { band: ch.band, mode: ch.mode }])
-                : (assignments && typeof assignments === "object" ? Object.entries(assignments) : []);
+                : ((assignments && typeof assignments === "object" ? Object.entries(assignments) : [])
+                    .filter(([rx]) => !scanPreparedReserved.has(Number(rx))));
             const list = sourceRows
                 .filter(([, item]) => item && typeof item === "object")
                 .map(([rx, item]) => ({
@@ -13405,6 +13460,14 @@
                     if (Number.isFinite(a.rxNum) && Number.isFinite(b.rxNum)) return a.rxNum - b.rxNum;
                     return String(a.rxLabel).localeCompare(String(b.rxLabel));
                 });
+            const assignedRxNums = new Set(
+                list
+                    .map((row) => Number(row.rxNum))
+                    .filter((rxNum) => Number.isFinite(rxNum))
+            );
+            const reservedScanRows = scanModeActive
+                ? Array.from(scanPreparedReserved).filter((rxNum) => !assignedRxNums.has(rxNum)).sort((a, b) => a - b)
+                : [];
 
             const bandColorMap = makeBandColorMap(list.map((r) => r.band));
             _bandChartLiveBands = list.map((r) => r.band);
@@ -13446,7 +13509,6 @@
             cardEl.innerHTML = "";
             for (const band of MAP_BAND_OPTIONS) {
                 const bandRows = list.filter((r) => r.band === band);
-                const color = colorMap[band] || "#94a3b8";
                 const card = document.createElement("div");
                 card.className = "rx-card";
                 if (!bandRows.length) {
@@ -13516,6 +13578,16 @@
                 }
                 cardEl.append(card);
             }
+            if (reservedScanRows.length) {
+                const reserveCard = document.createElement("div");
+                reserveCard.className = "rx-card";
+                reserveCard.dataset.level = "healthy";
+                const reservePills = reservedScanRows.map((rxNum) => {
+                    return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span class="rx-id-pill" style="color:${rxColor(rxNum)}">RX${rxNum}</span><span style="font-size:0.72rem;font-weight:600;color:var(--muted)">Unassigned</span></div>`;
+                }).join("");
+                reserveCard.innerHTML = `<div class="rx-top"><div style="display:flex;flex-direction:column;gap:2px;width:100%"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px"><span class="rx-band-label" style="font-size:1rem;font-weight:800">Scan Reserve</span><div style="display:flex;align-items:flex-start;gap:4px;flex-wrap:wrap;flex-shrink:0">${reservePills}</div></div>${iconLine("heart", "State/Health", "rx-state-line", "reserved", "#94a3b8")}</div></div><p class="kv"><span class="rx-decode-rates" style="display:block;margin-top:4px;line-height:1.6;color:var(--muted)">RX0 and RX1 are reserved for Scan Mode and remain unassigned until a scan starts.</span></p>`;
+                cardEl.append(reserveCard);
+            }
             if (!assignmentsBandChartPaused) renderAssignmentsBandChart(_bandChartLiveBands, _bandChartLiveColorMap);
         }
 
@@ -13543,6 +13615,7 @@
             );
             const currentMode = getCurrentReceiversMode();
             const scanModeActive = currentMode === "scan" || !!(latestReceiverScanStatus && latestReceiverScanStatus.mode_active);
+            const scanPreparedReserved = getPreparedScanReservedReceiverSet();
             if (!(autoModeEnabled || scanModeActive)) {
                 targets.forEach((el) => {
                     el.innerHTML = '<div class="balance-item"><div class="balance-band">none</div><div class="balance-value">0</div></div>';
@@ -13550,10 +13623,14 @@
                 return;
             }
 
-            const healthRows = Object.values(latestChannelsMap || {}).filter((item) => item && typeof item === "object" && item.band);
+            const healthRows = Object.entries(latestChannelsMap || {})
+                .filter(([rx, item]) => item && typeof item === "object" && item.band && !scanPreparedReserved.has(Number(rx)))
+                .map(([, item]) => item);
             const rows = healthRows.length
                 ? healthRows
-                : (assignments && typeof assignments === "object" ? Object.values(assignments) : []);
+                : ((assignments && typeof assignments === "object" ? Object.entries(assignments) : [])
+                    .filter(([rx]) => !scanPreparedReserved.has(Number(rx)))
+                    .map(([, item]) => item));
             const counts = {};
             for (const item of rows) {
                 if (!item || typeof item !== "object") continue;
@@ -13943,7 +14020,7 @@
                 _rxBusyAutoKick = wasAutoKickRecent;
                 const labelEl = byId("rx-busy-label");
                 if (labelEl && !_rxBusyManual && !_rxBusyMismatch) {
-                    labelEl.textContent = unstable > 0 ? "Stabilizing\u2026" : (wasAutoKickRecent ? "Reassigning\u2026" : "Applying\u2026");
+                    labelEl.textContent = unstable > 0 ? "Stabilizing\u2026" : (wasAutoKickRecent ? "Reassigning\u2026" : "Setting up Receiver Assignments !");
                 }
                 _updateRxBusyOverlay();
             }
@@ -13999,7 +14076,7 @@
                 _rxBusyMismatch = hasMismatch;
                 const labelEl = byId("rx-busy-label");
                 if (labelEl && !_rxBusyManual && !_rxBusyAutoKick) {
-                    labelEl.textContent = hasMismatch ? "Slots settling\u2026" : "Applying\u2026";
+                    labelEl.textContent = hasMismatch ? "Slots settling\u2026" : "Setting up Receiver Assignments !";
                 }
                 _updateRxBusyOverlay();
             }

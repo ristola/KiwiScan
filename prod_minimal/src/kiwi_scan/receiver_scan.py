@@ -230,7 +230,8 @@ class ReceiverScanService:
     PHONE_ACTIVITY_MIN_SCORE = 45
     RECEIVER_MANAGER_SETTLE_TIMEOUT_S = 30.0
     RECEIVER_MANAGER_SETTLE_POLL_INTERVAL_S = 0.1
-    RECEIVER_MANAGER_LOCK_TIMEOUT_S = 1.0
+    RECEIVER_MANAGER_LOCK_TIMEOUT_S = 8.0
+    RECEIVER_MANAGER_RECOVERY_TIMEOUT_S = 10.0
     SMART_SCAN_RX_CHAN = 0
     SMART_SCAN_SPAN_HZ = 12_000.0
     SMART_SCAN_STEP_HZ = 8_000.0
@@ -1954,31 +1955,75 @@ class ReceiverScanService:
             except Exception:
                 logger.exception("Receiver Scan failed waiting for reserved RX%s clear", int(rx_chan))
 
-    def _clear_reserved_slots(self, *, host: str, port: int) -> None:
-        for rx_chan in self._reserved_receivers_for_mode():
-            self._clear_reserved_slot(host=host, port=int(port), rx_chan=int(rx_chan))
+    def _clear_reserved_slots(
+        self,
+        *,
+        host: str,
+        port: int,
+        wait_for_clear: bool = True,
+        stable_secs: float = 0.75,
+        timeout_s: float = 4.0,
+    ) -> None:
+        reserved_slots = [int(rx_chan) for rx_chan in self._reserved_receivers_for_mode()]
+        if not reserved_slots:
+            return
+
+        kick = getattr(self._receiver_mgr, "_run_admin_kick_all", None)
+        wait_clear = getattr(self._receiver_mgr, "_wait_for_kiwi_slots_clear", None)
+
+        if callable(kick):
+            try:
+                kick(
+                    host=host,
+                    port=int(port),
+                    kick_only_slots=list(reserved_slots),
+                    allow_fallback_kick_all=False,
+                )
+            except Exception:
+                logger.exception(
+                    "Receiver Scan failed clearing reserved RXs %s",
+                    ", ".join(str(slot) for slot in reserved_slots),
+                )
+
+        if wait_for_clear and callable(wait_clear):
+            try:
+                wait_clear(
+                    host=host,
+                    port=int(port),
+                    slots=set(reserved_slots),
+                    stable_secs=float(stable_secs),
+                    timeout_s=float(timeout_s),
+                )
+            except Exception:
+                logger.exception(
+                    "Receiver Scan failed waiting for reserved RXs %s clear",
+                    ", ".join(str(slot) for slot in reserved_slots),
+                )
 
     def _prepare_smart_window_attempt(self, window_index: int, center_freq_hz: float, attempt: int, *, host: str, port: int) -> None:
         del window_index, center_freq_hz, attempt
         self._clear_reserved_slots(host=host, port=int(port))
 
-    def _wait_for_receiver_manager_settle(self) -> bool:
+    def _wait_for_receiver_manager_settle(self, *, timeout_s: float | None = None) -> bool:
         startup_event = getattr(self._receiver_mgr, "_startup_eviction_active", None)
         if startup_event is None or not hasattr(startup_event, "is_set"):
             return True
 
         started_wait_s = time.time()
-        timeout_s = max(0.0, float(self.RECEIVER_MANAGER_SETTLE_TIMEOUT_S))
-        deadline = started_wait_s + timeout_s
+        resolved_timeout_s = max(
+            0.0,
+            float(self.RECEIVER_MANAGER_SETTLE_TIMEOUT_S if timeout_s is None else timeout_s),
+        )
+        deadline = started_wait_s + resolved_timeout_s
         waited = False
         while bool(startup_event.is_set()):
             waited = True
             if self._stop_requested.is_set():
                 return False
-            if timeout_s > 0.0 and time.time() >= deadline:
+            if resolved_timeout_s > 0.0 and time.time() >= deadline:
                 logger.warning(
                     "Receiver Scan aborting because receiver manager startup is still active after %.1fs",
-                    timeout_s,
+                    resolved_timeout_s,
                 )
                 return False
             time.sleep(max(0.0, float(self.RECEIVER_MANAGER_SETTLE_POLL_INTERVAL_S)))
@@ -1990,13 +2035,16 @@ class ReceiverScanService:
             )
         return True
 
-    def _wait_for_receiver_manager_lock(self) -> bool:
+    def _wait_for_receiver_manager_lock(self, *, timeout_s: float | None = None) -> bool:
         manager_lock = getattr(self._receiver_mgr, "_lock", None)
         if manager_lock is None or not hasattr(manager_lock, "acquire") or not hasattr(manager_lock, "release"):
             return True
 
-        timeout_s = max(0.0, float(self.RECEIVER_MANAGER_LOCK_TIMEOUT_S))
-        deadline = time.time() + timeout_s
+        resolved_timeout_s = max(
+            0.0,
+            float(self.RECEIVER_MANAGER_LOCK_TIMEOUT_S if timeout_s is None else timeout_s),
+        )
+        deadline = time.time() + resolved_timeout_s
         while True:
             acquired = False
             try:
@@ -2010,13 +2058,30 @@ class ReceiverScanService:
                 return True
             if self._stop_requested.is_set():
                 return False
-            if timeout_s > 0.0 and time.time() >= deadline:
+            if resolved_timeout_s > 0.0 and time.time() >= deadline:
                 logger.warning(
                     "Receiver Scan aborting because receiver manager lock stayed busy for %.1fs",
-                    timeout_s,
+                    resolved_timeout_s,
                 )
                 return False
             time.sleep(max(0.0, float(self.RECEIVER_MANAGER_SETTLE_POLL_INTERVAL_S)))
+
+    def _restore_fixed_assignments_best_effort(self, *, host: str, port: int) -> bool:
+        recovery_timeout_s = max(0.0, float(self.RECEIVER_MANAGER_RECOVERY_TIMEOUT_S))
+        assignments = self._build_fixed_assignments()
+        if not assignments:
+            return False
+        if not self._wait_for_receiver_manager_settle(timeout_s=recovery_timeout_s):
+            return False
+        if not self._wait_for_receiver_manager_lock(timeout_s=recovery_timeout_s):
+            return False
+        self._receiver_mgr.apply_assignments(  # type: ignore[attr-defined]
+            host,
+            int(port),
+            assignments,
+            allow_starting_from_empty_full_reset=False,
+        )
+        return True
 
     def _enter_mode(self, *, host: str, port: int) -> None:
         paused_external = False
@@ -2037,7 +2102,7 @@ class ReceiverScanService:
                 raise RuntimeError(
                     f"Receiver manager is busy applying assignments after {float(self.RECEIVER_MANAGER_LOCK_TIMEOUT_S):.1f}s"
                 )
-            self._clear_reserved_slots(host=host, port=int(port))
+            self._clear_reserved_slots(host=host, port=int(port), wait_for_clear=False)
             assignments = self._build_fixed_assignments()
             self._receiver_mgr.apply_assignments(  # type: ignore[attr-defined]
                 host,
@@ -2049,6 +2114,13 @@ class ReceiverScanService:
                 self._mode_active = True
                 self._release_requested = False
         except Exception:
+            if paused_external:
+                try:
+                    restored = self._restore_fixed_assignments_best_effort(host=host, port=int(port))
+                    if restored:
+                        logger.info("Receiver Scan restored fixed receivers after activation failure")
+                except Exception:
+                    logger.exception("Receiver Scan failed restoring fixed receivers after activation failure")
             if paused_external and self._auto_set_loop is not None:
                 try:
                     self._auto_set_loop.resume_from_external(self.HOLD_REASON)
@@ -2412,6 +2484,72 @@ class ReceiverScanService:
         thread.start()
         payload = self.status()
         return payload
+
+    def prepare(
+        self,
+        *,
+        host: str,
+        port: int,
+        band: str | None = None,
+        mode: str | None = None,
+    ) -> dict[str, Any]:
+        selected_mode = self.normalize_scan_mode(mode, fallback=self.scan_mode if mode is None else None)
+        if selected_mode is None:
+            payload = self.status()
+            payload["ok"] = False
+            payload["status"] = "error"
+            payload["last_error"] = f"Unsupported receiver scan mode: {mode}"
+            return payload
+        supported_bands = self._supported_bands_for_mode(selected_mode)
+        selected_band = self.normalize_band(
+            band,
+            fallback=self.band if band is None else None,
+            supported_bands=supported_bands,
+        )
+        if selected_band is None:
+            default_band = self.normalize_band(self.DEFAULT_BAND, supported_bands=supported_bands)
+            selected_band = default_band or (supported_bands[0] if supported_bands else None)
+        if selected_band is None:
+            payload = self.status()
+            payload["ok"] = False
+            payload["status"] = "error"
+            payload["last_error"] = f"Unsupported receiver scan band: {band}"
+            return payload
+        if selected_mode == "smart" and not self._smart_band_scan_available():
+            payload = self.status()
+            payload["ok"] = False
+            payload["status"] = "error"
+            payload["last_error"] = "SMART band scan engine is not available"
+            return payload
+
+        with self._lock:
+            if self._running or self._activating:
+                payload = self.status()
+                payload["ok"] = False
+                return payload
+            self._band = selected_band
+            self._scan_mode = selected_mode
+            self._stop_requested.clear()
+            self._release_requested = False
+            self._last_error = None
+            self._results = {"smart": [], "cw": [], "phone": []}
+            self._smart_report_path = None
+            self._lanes = self._initial_lanes(scan_mode=selected_mode)
+            self._cw_followup = self._initial_cw_followup(scan_mode=selected_mode)
+
+        try:
+            self._enter_mode(host=host, port=int(port))
+        except Exception as exc:
+            logger.exception("Receiver Scan prepare failed")
+            self._leave_mode()
+            with self._lock:
+                self._last_error = f"Receiver Scan prepare failed: {exc}"
+            payload = self.status()
+            payload["ok"] = False
+            payload["status"] = "error"
+            return payload
+
+        return self.status()
 
     def stop(self) -> dict[str, Any]:
         with self._lock:

@@ -289,6 +289,19 @@ class AutoSetLoop:
         _fixed_bands = {str(a["band"]).strip().lower() for a in _FIXED_ASSIGNMENTS}
         roaming_pool = [str(r["band"]) for r in roaming if str(r["band"]).strip().lower() not in _fixed_bands]
         band_modes: Dict[str, str] = {str(r["band"]): str(r["mode"]) for r in roaming if str(r["band"]).strip().lower() not in _fixed_bands}
+        closed_bands: list[str] = []
+        if self._smart_scheduler is not None:
+            try:
+                closed_lookup = {
+                    str(band).strip()
+                    for band in self._smart_scheduler.get_closed_bands("ft8")
+                    if str(band).strip()
+                }
+                roaming_pool = [band for band in roaming_pool if band not in closed_lookup]
+                band_modes = {band: mode for band, mode in band_modes.items() if band not in closed_lookup}
+                closed_bands = sorted(closed_lookup)
+            except Exception:
+                closed_bands = []
         selected_bands: list[str] = []
         num_roaming_slots = 2
         current_roaming = self._current_roaming_bands()
@@ -323,6 +336,8 @@ class AutoSetLoop:
             "selected_bands": selected_bands,
             "band_modes": band_modes,
         }
+        if closed_bands:
+            payload["closed_bands"] = closed_bands
         return payload
 
     def _current_roaming_bands(self) -> list[str]:

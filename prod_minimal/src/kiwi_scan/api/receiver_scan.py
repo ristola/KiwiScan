@@ -53,6 +53,31 @@ def make_router(
             start_kwargs["mode"] = requested_mode
         return receiver_scan.start(**start_kwargs)  # type: ignore[attr-defined]
 
+    @router.post("/receiver_scan/prepare")
+    def prepare_receiver_scan(request: dict[str, object] | None = Body(default=None)):
+        requested_band = None
+        requested_mode = None
+        if isinstance(request, dict) and request.get("band") is not None:
+            requested_band = str(request.get("band"))
+        if isinstance(request, dict) and request.get("mode") is not None:
+            requested_mode = str(request.get("mode"))
+        for service in (net_monitor, caption_monitor):
+            if service is not None and hasattr(service, "deactivate"):
+                try:
+                    service.deactivate()  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+        host, port, _password, _threshold_db = _manager_state(scan_band=requested_band)
+        prepare_kwargs = {
+            "host": host,
+            "port": port,
+        }
+        if requested_band is not None:
+            prepare_kwargs["band"] = requested_band
+        if requested_mode is not None:
+            prepare_kwargs["mode"] = requested_mode
+        return receiver_scan.prepare(**prepare_kwargs)  # type: ignore[attr-defined]
+
     @router.get("/receiver_scan/status")
     def receiver_scan_status():
         return receiver_scan.status()  # type: ignore[attr-defined]

@@ -26,10 +26,15 @@ class _ReceiverScanStub:
 
     def __init__(self) -> None:
         self.start_calls: list[dict[str, object]] = []
+        self.prepare_calls: list[dict[str, object]] = []
 
     def start(self, **kwargs):
         self.start_calls.append(dict(kwargs))
         return {"ok": True}
+
+    def prepare(self, **kwargs):
+        self.prepare_calls.append(dict(kwargs))
+        return {"ok": True, "mode_active": True, "fixed_receivers": [2, 3, 4, 5, 6, 7]}
 
     def status(self):
         return {"ok": True}
@@ -95,3 +100,25 @@ def test_receiver_scan_start_uses_requested_band_threshold() -> None:
             "band": "20m",
         }
     ]
+
+
+def test_receiver_scan_prepare_reserves_scan_slots_without_starting_scan() -> None:
+    app = FastAPI()
+    manager = _ManagerStub()
+    receiver_scan = _ReceiverScanStub()
+    caption_monitor = _CaptionMonitorStub()
+    app.include_router(make_router(mgr=manager, receiver_scan=receiver_scan, caption_monitor=caption_monitor))
+    client = TestClient(app)
+
+    response = client.post("/receiver_scan/prepare")
+
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert caption_monitor.deactivate_calls == 1
+    assert receiver_scan.prepare_calls == [
+        {
+            "host": "kiwi.local",
+            "port": 8073,
+        }
+    ]
+    assert receiver_scan.start_calls == []

@@ -4,13 +4,56 @@ import json
 import os
 import plistlib
 import re
+import signal
 import subprocess
+import threading
+import time
 import urllib.request
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 
 from ..ws4010_server import restart_ws4010
+
+
+def _runtime_mode() -> str:
+    requested = str(os.environ.get("KIWISCAN_UPDATE_MODE", "") or "").strip().lower()
+    if requested in {"host", "container"}:
+        return requested
+    try:
+        if Path("/.dockerenv").exists():
+            return "container"
+    except Exception:
+        pass
+    try:
+        cgroup = Path("/proc/1/cgroup")
+        if cgroup.exists():
+            raw = cgroup.read_text(encoding="utf-8", errors="ignore").lower()
+            if any(token in raw for token in ("docker", "containerd", "kubepods", "podman")):
+                return "container"
+    except Exception:
+        pass
+    return "host"
+
+
+def _schedule_runtime_restart(delay_s: float = 0.15) -> dict[str, object]:
+    current_pid = os.getpid()
+    mode = _runtime_mode()
+
+    def _restart() -> None:
+        try:
+            time.sleep(max(0.0, float(delay_s)))
+            os.kill(current_pid, signal.SIGTERM)
+        except Exception:
+            pass
+
+    threading.Thread(target=_restart, daemon=True, name="kiwi-runtime-restart").start()
+    return {
+        "ok": True,
+        "mode": mode,
+        "status": "restarting_container" if mode == "container" else "restarting_runtime",
+        "pid": int(current_pid),
+    }
 
 
 def _launchd_candidates() -> list[dict[str, str]]:
@@ -378,6 +421,10 @@ def make_router(*, auto_set_loop: object | None = None, receiver_mgr: object | N
 
         threading.Thread(target=_bg, daemon=True, name="force-reassign-bg").start()
         return {"ok": True, "status": "reassigning"}
+
+    @router.post("/admin/runtime/restart")
+    def restart_runtime_endpoint() -> dict:
+        return _schedule_runtime_restart()
 
     @router.post("/admin/restart-receivers")
     async def restart_receivers_endpoint(request: Request) -> dict:

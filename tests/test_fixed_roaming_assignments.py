@@ -100,6 +100,32 @@ def test_fixed_roaming_payload_passes_current_roaming_to_smart_scheduler(monkeyp
     assert payload.get("selected_bands") == ["15m", "12m"]
 
 
+def test_fixed_roaming_payload_excludes_closed_bands(monkeypatch) -> None:
+    loop = AutoSetLoop()
+
+    class _SmartSchedulerStub:
+        def __init__(self) -> None:
+            self.calls: list[tuple[list[str], list[str]]] = []
+
+        def get_closed_bands(self, _mode: str = "ft8") -> set[str]:
+            return {"10m"}
+
+        def rank_roaming_bands(self, available_bands: list[str], current_roaming: list[str]) -> list[str]:
+            self.calls.append((list(available_bands), list(current_roaming)))
+            return ["15m", "12m"]
+
+    scheduler = _SmartSchedulerStub()
+    loop.set_smart_scheduler(scheduler)
+    monkeypatch.setattr(loop, "_current_roaming_bands", lambda: ["10m", "12m"])
+
+    payload = loop._build_fixed_roaming_payload({}, "day")
+
+    assert scheduler.calls == [(["12m", "15m"], ["10m", "12m"])]
+    assert payload.get("selected_bands") == ["15m", "12m"]
+    assert payload.get("band_modes") == {"12m": "FT8", "15m": "FT8"}
+    assert payload.get("closed_bands") == ["10m"]
+
+
 def test_fixed_mode_only_uses_rx0_rx1_for_roaming(monkeypatch) -> None:
     monkeypatch.delenv("KIWISCAN_AUTOSET_MAX_RX", raising=False)
     monkeypatch.setattr(

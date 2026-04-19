@@ -16,6 +16,7 @@ def _make_ui_client() -> TestClient:
 def _assert_dashboard_core(html: str) -> None:
     required_snippets = [
         'id="receiver-scan"',
+        'id="caption-monitor"',
         'id="receiver-scan-smart-start"',
         'id="receiver-scan-cw-start"',
         'id="receiver-scan-phone-start"',
@@ -28,8 +29,13 @@ def _assert_dashboard_core(html: str) -> None:
         'id="net-monitor-transcript-state"',
         'function applyReceiverScanStatus(scan)',
         'function applyNetMonitorStatus(status)',
+        'function getPreparedScanReservedReceiverSet()',
+        'const rightPanels = ["assignments", "faults", "receiver-scan", "net-monitor", "caption-monitor", "messages", "map", "active-receivers", "settings", "system"]',
+        'const panelVisible = panelId === navId || ((panelId === "net-monitor" || panelId === "caption-monitor") && navId === "receiver-scan")',
         'function renderBandScanResults(results = latestBandScanResults)',
         'function syncNetMonitorControls(status = latestNetMonitorStatus)',
+        'if (latestReceiverScanStatus && latestReceiverScanStatus.running && Array.isArray(latestReceiverScanStatus.reserved_receivers)) {',
+        'display_name: "Reserved for Scan"',
         'getJson("/receiver_scan/status", TIMEOUT)',
         'getJson("/net_monitor/status", TIMEOUT)',
         'getJson("/band_scan/results", TIMEOUT)',
