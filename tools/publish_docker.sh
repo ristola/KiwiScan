@@ -138,10 +138,12 @@ if [[ "$DO_LATEST" == "1" ]]; then
   append_unique_tag "latest"
 fi
 
-for extra_tag in "${EXTRA_TAGS[@]}"; do
-  validate_tag "$extra_tag"
-  append_unique_tag "$extra_tag"
-done
+if [[ "${#EXTRA_TAGS[@]}" -gt 0 ]]; then
+  for extra_tag in "${EXTRA_TAGS[@]}"; do
+    validate_tag "$extra_tag"
+    append_unique_tag "$extra_tag"
+  done
+fi
 
 if [[ "${#PUBLISH_TAGS[@]}" -eq 0 ]]; then
   echo "Error: no tags selected. Use the defaults or provide --tag." >&2
