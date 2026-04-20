@@ -389,6 +389,30 @@ class _ReceiverWorker(threading.Thread):
                 continue
         return None
 
+    def _prepare_decoder_temp_root(self, udp_port: int, mode: str) -> Optional[Path]:
+        temp_root = self._resolve_ft8modem_temp_root()
+        if temp_root is None:
+            return None
+        mode_key = re.sub(r"[^a-z0-9]+", "_", str(mode or "").strip().lower()).strip("_") or "decoder"
+        decoder_root = temp_root / f"rx{self._rx}_{mode_key}_{int(udp_port)}"
+        if self._decoder_keep_wavs_enabled():
+            decoder_root = decoder_root / f"run_{int(time.time() * 1000)}"
+        else:
+            try:
+                shutil.rmtree(decoder_root, ignore_errors=True)
+            except Exception:
+                pass
+        try:
+            decoder_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        except Exception:
+            return None
+        try:
+            if decoder_root.is_dir() and os.access(str(decoder_root), os.W_OK | os.X_OK):
+                return decoder_root
+        except Exception:
+            pass
+        return None
+
     def _use_python_udp_sender(self) -> bool:
         return self._env_bool("KIWISCAN_USE_PY_UDP_AUDIO", False)
 
@@ -836,9 +860,9 @@ class _ReceiverWorker(threading.Thread):
         ft8modem_path = self._resolve_tool_path("ft8modem", self._ft8modem_path)
         if ft8modem_path is None:
             return
-        temp_root = self._resolve_ft8modem_temp_root()
+        temp_root = self._prepare_decoder_temp_root(udp_port, mode)
         if temp_root is None:
-            logger.warning("ft8modem temp root unavailable (tried /tmp/ft8modem, /var/tmp/ft8modem)")
+            logger.warning("ft8modem temp root unavailable for rx=%s mode=%s udp=%s", self._rx, mode, udp_port)
             return
         try:
             subprocess.run(

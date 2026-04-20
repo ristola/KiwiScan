@@ -191,3 +191,157 @@ def test_decodes_status_accepts_readable_live_labels_with_mix_and_all(monkeypatc
     assert body["assignments"]["3"] == {"band": "20m", "mode": "WSPR", "freq_hz": 14095600.0}
     assert body["assignments"]["5"] == {"band": "40m", "mode": "MIX", "freq_hz": 7043050.0}
     assert body["assignments"]["7"] == {"band": "17m", "mode": "ALL", "freq_hz": 18102300.0}
+
+
+def test_decodes_status_exposes_decoder_crash_tails_for_rx_logs(monkeypatch, tmp_path) -> None:
+    payload = [
+        {"i": 2, "n": "FIXED_20m_MIX", "f": 14077000.0, "t": "0:02:15"},
+    ]
+
+    def _fake_urlopen(req, timeout=0.5):
+        return _UrlResponse(payload)
+
+    monkeypatch.setattr(decodes_status_api.urllib.request, "urlopen", _fake_urlopen)
+    monkeypatch.setattr(
+        decodes_status_api,
+        "Path",
+        lambda value: tmp_path if str(value) == "/tmp" else Path(value),
+    )
+
+    (tmp_path / "ft8modem_rx2_ft8.log").write_text(
+        "START 2026-04-20 00:28:13 CMD: /usr/local/bin/ft8modem -t /tmp/ft8modem -r 48000 FT8 udp:3102\n"
+        "terminate called after throwing an instance of 'std::runtime_error'\n"
+        "what(): Could not create temporary folder: /tmp/ft8modem/ft8modem/\n"
+        "EXIT -6\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "ft8modem_rx2_ft4.log").write_text(
+        "MODE: FT4\nD: FT4 1776659332  13  0.2 1547 +  CQ CO8LY FL20\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "kiwi_rx2_pipeline.log").write_text(
+        "START 2026-04-20 00:28:13 CMD: iq_splitter pipeline\n",
+        encoding="utf-8",
+    )
+
+    app = FastAPI()
+    app.include_router(
+        decodes_status_api.make_router(
+            receiver_mgr=_ReceiverMgrStub(),
+            af2udp_path=Path("/tmp/af2udp"),
+            ft8modem_path=Path("/tmp/ft8modem"),
+        )
+    )
+    client = TestClient(app)
+
+    response = client.get("/decodes/status")
+    assert response.status_code == 200
+
+    body = response.json()
+    log_entry = next(item for item in body["logs"] if item["rx"] == 2)
+    assert log_entry["decoder_ft8_exists"] is True
+    assert log_entry["decoder_ft8_size"] > 0
+    assert log_entry["decoder_ft8_tail"][-2:] == [
+        "what(): Could not create temporary folder: /tmp/ft8modem/ft8modem/",
+        "EXIT -6",
+    ]
+    assert log_entry["decoder_ft4_tail"][-1] == "D: FT4 1776659332  13  0.2 1547 +  CQ CO8LY FL20"
+    assert log_entry["pipeline_tail"] == ["START 2026-04-20 00:28:13 CMD: iq_splitter pipeline"]
+
+
+def test_decodes_status_shows_rx2_crash_then_mixed_mode_recovery(monkeypatch, tmp_path) -> None:
+    payload = [
+        {"i": 2, "n": "FIXED_20m_MIX", "f": 14077000.0, "t": "0:02:15"},
+    ]
+
+    def _fake_urlopen(req, timeout=0.5):
+        return _UrlResponse(payload)
+
+    monkeypatch.setattr(decodes_status_api.urllib.request, "urlopen", _fake_urlopen)
+    monkeypatch.setattr(
+        decodes_status_api,
+        "Path",
+        lambda value: tmp_path if str(value) == "/tmp" else Path(value),
+    )
+
+    ft8_log = tmp_path / "ft8modem_rx2_ft8.log"
+    ft4_log = tmp_path / "ft8modem_rx2_ft4.log"
+    pipeline_log = tmp_path / "kiwi_rx2_pipeline.log"
+
+    ft8_log.write_text(
+        "START 2026-04-20 00:28:13 CMD: /usr/local/bin/ft8modem -t /tmp/ft8modem -r 48000 FT8 udp:3102\n"
+        "terminate called after throwing an instance of 'std::runtime_error'\n"
+        "what(): Could not create temporary folder: /tmp/ft8modem/ft8modem/\n"
+        "EXIT -6\n",
+        encoding="utf-8",
+    )
+    ft4_log.write_text(
+        "MODE: FT4\nD: FT4 1776659332  13  0.2 1547 +  CQ CO8LY FL20\n",
+        encoding="utf-8",
+    )
+    pipeline_log.write_text(
+        "START 2026-04-20 00:28:13 CMD: iq_splitter pipeline\n",
+        encoding="utf-8",
+    )
+
+    app = FastAPI()
+    app.include_router(
+        decodes_status_api.make_router(
+            receiver_mgr=_ReceiverMgrStub(),
+            af2udp_path=Path("/tmp/af2udp"),
+            ft8modem_path=Path("/tmp/ft8modem"),
+        )
+    )
+    client = TestClient(app)
+
+    first = client.get("/decodes/status")
+    assert first.status_code == 200
+    first_body = first.json()
+    first_log_entry = next(item for item in first_body["logs"] if item["rx"] == 2)
+    assert first_log_entry["decoder_ft8_tail"][-1] == "EXIT -6"
+    assert "2" not in first_body["published_decode_stats_by_rx"]
+
+    decodes_api.publish_decode(
+        {
+            "timestamp": "00:28:15",
+            "frequency_mhz": 14.077,
+            "mode": "FT8",
+            "callsign": "NO9D",
+            "grid": "EM54",
+            "message": "CQ NO9D EM54",
+            "band": "20m",
+            "rx": 2,
+        }
+    )
+    decodes_api.publish_decode(
+        {
+            "timestamp": "00:28:22",
+            "frequency_mhz": 14.077,
+            "mode": "FT4",
+            "callsign": "CO8LY",
+            "grid": "FL20",
+            "message": "CQ CO8LY FL20",
+            "band": "20m",
+            "rx": 2,
+        }
+    )
+
+    ft8_log.write_text(
+        "START 2026-04-20 00:28:13 CMD: /usr/local/bin/ft8modem -t /tmp/ft8modem/rx2_ft8_3102 -r 48000 FT8 udp:3102\n"
+        "MODE: FT8\n"
+        "D: FT8 1776659295 -14  0.2 2175 ~  CQ NO9D EM54\n",
+        encoding="utf-8",
+    )
+    ft4_log.write_text(
+        "MODE: FT4\nD: FT4 1776659332  13  0.2 1547 +  CQ CO8LY FL20\n",
+        encoding="utf-8",
+    )
+
+    second = client.get("/decodes/status")
+    assert second.status_code == 200
+    second_body = second.json()
+    second_log_entry = next(item for item in second_body["logs"] if item["rx"] == 2)
+    assert second_log_entry["decoder_ft8_tail"][-1] == "D: FT8 1776659295 -14  0.2 2175 ~  CQ NO9D EM54"
+    assert second_body["published_decode_stats_by_rx"]["2"]["bands"]["20m"]["decode_total"] == 2
+    assert second_body["published_decode_stats_by_rx"]["2"]["bands"]["20m"]["decode_rates_by_mode"]["FT8"]["decode_total"] == 1
+    assert second_body["published_decode_stats_by_rx"]["2"]["bands"]["20m"]["decode_rates_by_mode"]["FT4"]["decode_total"] == 1

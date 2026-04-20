@@ -131,6 +131,107 @@ def test_receiver_worker_digital_usb_cut_args_match_ft8_decoder_window() -> None
     assert _ReceiverWorker._digital_usb_cut_args() == "-L 0 -H 3100"
 
 
+def test_receiver_worker_decoder_temp_roots_are_isolated_by_mode_and_port(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("KIWISCAN_FT8MODEM_TMP", str(tmp_path / "ft8modem"))
+
+    worker = _make_worker()
+
+    ft8_root = worker._prepare_decoder_temp_root(3102, "FT8")
+    ft4_root = worker._prepare_decoder_temp_root(3202, "FT4")
+
+    assert ft8_root is not None
+    assert ft4_root is not None
+    assert ft8_root != ft4_root
+    assert ft8_root.name == "rx2_ft8_3102"
+    assert ft4_root.name == "rx2_ft4_3202"
+
+
+def test_receiver_worker_decoder_temp_root_clears_stale_state_when_keep_disabled(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("KIWISCAN_FT8MODEM_TMP", str(tmp_path / "ft8modem"))
+    monkeypatch.setenv("KIWISCAN_FT8MODEM_KEEP", "0")
+
+    worker = _make_worker()
+    stale_root = tmp_path / "ft8modem" / "rx2_ft8_3102"
+    stale_nested = stale_root / "ft8modem"
+    stale_nested.mkdir(parents=True)
+    stale_file = stale_nested / "stale.wav"
+    stale_file.write_text("stale", encoding="utf-8")
+
+    decoder_root = worker._prepare_decoder_temp_root(3102, "FT8")
+
+    assert decoder_root == stale_root
+    assert decoder_root.exists()
+    assert not stale_file.exists()
+
+
+def test_receiver_worker_decoder_temp_root_uses_unique_run_dirs_when_keep_enabled(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("KIWISCAN_FT8MODEM_TMP", str(tmp_path / "ft8modem"))
+    monkeypatch.setenv("KIWISCAN_FT8MODEM_KEEP", "1")
+
+    worker = _make_worker()
+    timestamps = iter([1000.0, 1001.0])
+    monkeypatch.setattr(receiver_manager.time, "time", lambda: next(timestamps))
+
+    first_root = worker._prepare_decoder_temp_root(3102, "FT8")
+    second_root = worker._prepare_decoder_temp_root(3102, "FT8")
+
+    assert first_root is not None
+    assert second_root is not None
+    assert first_root != second_root
+    assert first_root.parent == second_root.parent == tmp_path / "ft8modem" / "rx2_ft8_3102"
+    assert first_root.name == "run_1000000"
+    assert second_root.name == "run_1001000"
+
+
+def test_receiver_worker_start_decoder_uses_prepared_temp_root_and_keep_flag(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("KIWISCAN_FT8MODEM_KEEP", "1")
+
+    worker = _make_worker()
+    temp_root = tmp_path / "ft8modem" / "rx2_ft8_3102" / "run_1234"
+    temp_root.mkdir(parents=True)
+    monkeypatch.setattr(worker, "_prepare_decoder_temp_root", lambda udp_port, mode: temp_root)
+    monkeypatch.setattr(worker, "_resolve_tool_path", lambda name, fallback: Path("/usr/local/bin/ft8modem"))
+
+    popen_calls: list[dict[str, object]] = []
+    run_calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        run_calls.append(list(cmd))
+        return SimpleNamespace(returncode=0)
+
+    class _FakeProc:
+        def __init__(self) -> None:
+            self.stdout = []
+            self.stdin = SimpleNamespace()
+
+        def wait(self) -> int:
+            return 0
+
+    def fake_popen(cmd, **kwargs):
+        popen_calls.append({"cmd": list(cmd), "kwargs": kwargs})
+        return _FakeProc()
+
+    monkeypatch.setattr(receiver_manager.subprocess, "run", fake_run)
+    monkeypatch.setattr(receiver_manager.subprocess, "Popen", fake_popen)
+
+    worker._start_decoder(3102, "FT8")
+
+    assert run_calls == [["pkill", "-f", "ft8modem.*udp:3102"]]
+    assert len(popen_calls) == 1
+    assert popen_calls[0]["cmd"] == [
+        "/usr/local/bin/ft8modem",
+        "-t",
+        str(temp_root),
+        "-k",
+        "-r",
+        "48000",
+        "FT8",
+        "udp:3102",
+    ]
+    assert popen_calls[0]["kwargs"]["env"] is None
+    worker._decoder_threads[-1].join(timeout=1.0)
+
+
 def test_mode_requires_digital_accepts_combo_digital_modes() -> None:
     assert ReceiverManager._mode_requires_digital("FT4 / FT8 / WSPR") is True
     assert ReceiverManager._mode_requires_digital("FT4 / WSPR") is True

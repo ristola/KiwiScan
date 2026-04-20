@@ -117,6 +117,54 @@ def test_published_decode_stats_track_band_mode_counts() -> None:
     assert stats["4"]["bands"]["40m"]["decode_rate_per_hour"] == 2
 
 
+def test_published_decode_stats_track_mixed_modes_on_same_rx_and_band(monkeypatch) -> None:
+    timeline = iter([1000.0, 1010.0, 1070.0])
+    monkeypatch.setattr(decodes_api.time, "time", lambda: next(timeline))
+
+    decodes_api.publish_decode(
+        {
+            "timestamp": "16:16:22",
+            "frequency_mhz": 14.077,
+            "mode": "FT8",
+            "callsign": "NO9D",
+            "grid": "EM54",
+            "message": "CQ NO9D EM54",
+            "band": "20m",
+            "rx": 2,
+        }
+    )
+    decodes_api.publish_decode(
+        {
+            "timestamp": "16:16:32",
+            "frequency_mhz": 14.077,
+            "mode": "FT4",
+            "callsign": "CO8LY",
+            "grid": "FL20",
+            "message": "CQ CO8LY FL20",
+            "band": "20m",
+            "rx": 2,
+        }
+    )
+
+    stats = decodes_api.get_published_decode_stats_by_rx()
+
+    assert stats["2"]["bands"]["20m"]["decode_total"] == 2
+    assert stats["2"]["bands"]["20m"]["decode_rate_per_min"] == 1
+    assert stats["2"]["bands"]["20m"]["decode_rate_per_hour"] == 2
+    assert stats["2"]["bands"]["20m"]["decode_rates_by_mode"] == {
+        "FT8": {
+            "decode_total": 1,
+            "decode_rate_per_min": 0,
+            "decode_rate_per_hour": 1,
+        },
+        "FT4": {
+            "decode_total": 1,
+            "decode_rate_per_min": 1,
+            "decode_rate_per_hour": 1,
+        },
+    }
+
+
 def test_decodes_chart_omits_in_progress_bucket(monkeypatch) -> None:
     app = FastAPI()
     app.include_router(decodes_api.router)
