@@ -595,6 +595,12 @@
             color: #fff;
         }
 
+        .topbar-mode-btn[aria-pressed="true"][data-mode="auto"][data-current-mode="semi"] {
+            background: #f59e0b;
+            border-color: #f59e0b;
+            color: #fff7ed;
+        }
+
         /* Scan — red solid fill */
         .topbar-mode-btn[aria-pressed="true"][data-mode="scan"] {
             background: #ef4444;
@@ -3670,6 +3676,200 @@
             background: #fff;
         }
 
+        .fault-log-groups {
+            display: grid;
+            gap: 12px;
+        }
+
+        .fault-log-section {
+            display: grid;
+            gap: 7px;
+        }
+
+        .fault-log-section-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--muted);
+            font-size: 0.77rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .fault-log-section-title strong {
+            color: var(--ink);
+            font-size: 0.85rem;
+            letter-spacing: 0.01em;
+            text-transform: none;
+        }
+
+        .fault-log-list {
+            gap: 8px;
+        }
+
+        .fault-log-entry {
+            display: grid;
+            gap: 5px;
+        }
+
+        .fault-log-entry--fault {
+            border-color: color-mix(in srgb, var(--fault), white 68%);
+            background: color-mix(in srgb, var(--fault), white 95%);
+            color: var(--fault);
+        }
+
+        .fault-log-entry--warning {
+            border-color: color-mix(in srgb, var(--warn), white 66%);
+            background: color-mix(in srgb, var(--warn), white 95%);
+            color: var(--warn);
+        }
+
+        .fault-log-entry--healthy {
+            border-color: color-mix(in srgb, var(--ok), white 72%);
+            background: color-mix(in srgb, var(--ok), white 96%);
+            color: var(--ok);
+        }
+
+        .fault-log-top {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            gap: 7px;
+        }
+
+        .fault-log-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            flex: 0 0 18px;
+        }
+
+        .fault-log-icon .ui-icon {
+            width: 18px;
+            height: 18px;
+            color: currentColor;
+        }
+
+        .fault-log-type {
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .fault-log-subject {
+            font-size: 0.91rem;
+            font-weight: 700;
+        }
+
+        .fault-log-badge {
+            display: inline-flex;
+            align-items: center;
+            border: 1px solid currentColor;
+            border-radius: 999px;
+            padding: 2px 7px;
+            font-size: 0.68rem;
+            font-weight: 900;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            line-height: 1;
+        }
+
+        .fault-log-badge--new {
+            background: color-mix(in srgb, var(--accent), white 92%);
+            color: color-mix(in srgb, var(--accent), var(--ink) 28%);
+        }
+
+        .fault-log-badge--changed {
+            background: color-mix(in srgb, var(--warn), white 92%);
+            color: var(--warn);
+        }
+
+        .fault-log-message {
+            font-size: 0.84rem;
+            line-height: 1.45;
+        }
+
+        .fault-log-meta {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.76rem;
+            font-weight: 700;
+            opacity: 0.88;
+        }
+
+        .fault-log-meta-time {
+            letter-spacing: 0.01em;
+        }
+
+        .fault-log-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 7px;
+            margin-top: 2px;
+        }
+
+        .fault-log-jump {
+            border: 1px solid currentColor;
+            border-radius: 999px;
+            background: transparent;
+            color: inherit;
+            font: inherit;
+            font-size: 0.74rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            padding: 4px 9px;
+            cursor: pointer;
+        }
+
+        .fault-log-jump:hover {
+            background: color-mix(in srgb, currentColor, transparent 92%);
+        }
+
+        .summary-v.summary-v-stack {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 7px;
+            align-items: center;
+        }
+
+        .fault-load-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            padding: 3px 10px;
+            background: #fff;
+            font-size: 0.86rem;
+            font-weight: 800;
+            letter-spacing: 0.01em;
+        }
+
+        .fault-load-pill--fault {
+            border-color: color-mix(in srgb, var(--fault), white 68%);
+            background: color-mix(in srgb, var(--fault), white 95%);
+            color: var(--fault);
+        }
+
+        .fault-load-pill--warning {
+            border-color: color-mix(in srgb, var(--warn), white 66%);
+            background: color-mix(in srgb, var(--warn), white 95%);
+            color: var(--warn);
+        }
+
+        .fault-load-pill--reason {
+            border-color: color-mix(in srgb, var(--accent), white 72%);
+            background: color-mix(in srgb, var(--accent), white 94%);
+            color: color-mix(in srgb, var(--accent), var(--ink) 34%);
+        }
+
         .assign-table-wrap {
             border: 1px solid var(--line);
             border-radius: 10px;
@@ -3795,10 +3995,48 @@
             flex-wrap: wrap;
         }
 
+        .assign-band-chart-header-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            min-width: 0;
+        }
+
+        .assign-band-chart-range {
+            color: #35556f;
+            font: 700 0.82rem/1.3 "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            letter-spacing: 0;
+            text-transform: none;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
         .assign-band-chart-header-actions {
             display: inline-flex;
             align-items: center;
             gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .assign-band-chart-header-actions.is-empty {
+            display: none;
+        }
+
+        .assign-band-chart-header-actions .action-btn-sm {
+            transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+        }
+
+        .assign-band-chart-header-actions .action-btn-sm.is-active {
+            background: rgba(56, 189, 248, 0.16);
+            border-color: rgba(14, 165, 233, 0.35);
+            color: #0f3d56;
+        }
+
+        .assign-band-chart-header-actions .action-btn-sm.is-pressing {
+            transform: translateY(1px) scale(0.96);
+            box-shadow: inset 0 2px 6px rgba(15, 61, 86, 0.16);
         }
 
         #assign-band-chart {
@@ -3812,17 +4050,17 @@
             position: absolute;
             left: 34px;
             right: 8px;
-            bottom: 6px;
+            bottom: 14px;
             z-index: 2;
             display: grid;
             grid-template-columns: repeat(5, minmax(0, 1fr));
             gap: 0;
-            min-height: 22px;
-            padding: 6px 4px 0;
+            min-height: 18px;
+            padding: 2px 4px 0;
             border-top: 1px solid rgba(16, 42, 67, 0.14);
             background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(240, 247, 252, 0.92));
             color: #35556f;
-            font: 600 11px/1.2 "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font: 800 13px/1.2 "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
             opacity: 1;
             pointer-events: none;
             text-shadow: 0 1px 0 rgba(255, 255, 255, 0.9);
@@ -3831,7 +4069,8 @@
         .assign-band-axis span {
             text-align: center;
             white-space: nowrap;
-            font-size: 0.6rem;
+            font-size: 0.74rem;
+            font-weight: 800;
         }
 
         .assign-band-axis span:first-child {
@@ -4979,10 +5218,18 @@
                             <div id="assignments-band-cards" class="rx-grid"></div>
                             <div class="assign-band-chart-wrap">
                                 <div class="assign-band-chart-header">
-                                    <span>Decodes by Band</span>
+                                    <div class="assign-band-chart-header-meta">
+                                        <span>Decodes by Band</span>
+                                        <span id="assign-band-chart-range" class="assign-band-chart-range">Waiting for
+                                            chart history</span>
+                                    </div>
                                     <div class="assign-band-chart-header-actions">
-                                        <button class="action-btn-sm" id="assign-band-chart-toggle" type="button"
-                                            data-icon="pause" aria-pressed="false">Pause Graph</button>
+                                        <button class="action-btn-sm" id="assign-band-chart-back" type="button"
+                                            aria-label="Show older chart history">&larr;</button>
+                                        <button class="action-btn-sm" id="assign-band-chart-live" type="button"
+                                            aria-pressed="true" aria-label="Return chart to live view">Live</button>
+                                        <button class="action-btn-sm" id="assign-band-chart-forward" type="button"
+                                            aria-label="Show newer chart history">&rarr;</button>
                                     </div>
                                 </div>
                                 <canvas id="assign-band-chart" width="560" height="170"></canvas>
@@ -4999,7 +5246,7 @@
                             <div class="summary-v" id="summary-fault-load">--</div>
                             <canvas id="spark-fault-load" class="summary-spark" width="280" height="28"></canvas>
                         </article>
-                        <ul id="reasons" class="assign-list"></ul>
+                        <div id="reasons" class="fault-log-groups"></div>
                     </article>
                     <article class="panel panel-collapsible" id="receiver-scan" data-panel-card="receiver-scan">
                         <div class="panel-hdr">
@@ -5991,13 +6238,17 @@
         let _bandChartLastColorMap = {};
         let _bandChartLiveBands = [];
         let _bandChartLiveColorMap = {};
-        let assignmentsBandChartPaused = false;
-        let pausedBandChartSnapshot = null;
+        let bandChartTimestamps = [];
+        let bandChartViewportEndMs = null;
+        let lastBandChartWindowState = null;
         let decodeRateWarmupCycles = 2;
         let latestChannelsMap = {};
+        let latestFaultLogEntryFingerprints = new Map();
+        let hasFaultLogRendered = false;
         let latestPublishedDecodeStatsByRx = {};
         let latestAssignments = {};
         let latestAssignmentsSource = "";
+        const FAULT_LOG_NEW_WINDOW_S = 90;
         let lastRateTickMs = Date.now();
         let refreshTimer = null;
         let refreshIntervalMs = 2000;
@@ -6069,6 +6320,7 @@
         });
         const GRAPH_WINDOW_MIN_MS = 5 * 60 * 1000;
         const GRAPH_HISTORY_MAX_SAMPLES = 360;
+        const BAND_CHART_WINDOW_MS = 15 * 60 * 1000;
         const RECEIVER_ACTIVITY_WINDOW_MS = 60 * 60 * 1000;
         const BAND_ACTIVITY_HISTORY_MAX = GRAPH_HISTORY_MAX_SAMPLES;
         let chartBucketMs = 15000;  // updated from server /decodes/chart bucket_s
@@ -6145,48 +6397,228 @@
             }
         }
 
-        function captureAssignmentsBandChartSnapshot() {
-            pausedBandChartSnapshot = {
-                assignedBands: Array.isArray(_bandChartLiveBands) ? [..._bandChartLiveBands] : [],
-                bandColorMap: { ..._bandChartLiveColorMap },
-                bandActivityHistory: cloneJsonCompatible(bandActivityHistory, {}),
-                bandBreakdownHistory: cloneJsonCompatible(bandBreakdownHistory, {}),
-                currentBandAssignments: cloneJsonCompatible(currentBandAssignments, {}),
-                lastBandActivitySampleMs: Number(lastBandActivitySampleMs || Date.now()),
+        function isAssignmentsBandChartLive() {
+            return bandChartViewportEndMs == null;
+        }
+
+        function getAssignmentsBandChartWindowSamples() {
+            const intervalMs = Math.max(1000, chartBucketMs);
+            return Math.max(2, Math.min(GRAPH_HISTORY_MAX_SAMPLES, Math.ceil(BAND_CHART_WINDOW_MS / intervalMs) + 1));
+        }
+
+        function findBandChartTimestampIndexAtOrBefore(targetTs, timestamps = bandChartTimestamps) {
+            const values = Array.isArray(timestamps) ? timestamps : [];
+            let low = 0;
+            let high = values.length - 1;
+            let result = -1;
+            const target = Number(targetTs);
+            while (low <= high) {
+                const mid = Math.floor((low + high) / 2);
+                const candidate = Number(values[mid]);
+                if (!Number.isFinite(candidate)) {
+                    low = mid + 1;
+                    continue;
+                }
+                if (candidate <= target) {
+                    result = mid;
+                    low = mid + 1;
+                } else {
+                    high = mid - 1;
+                }
+            }
+            return result;
+        }
+
+        function buildSyntheticBandChartTimestamps(sampleCount, latestTs = null) {
+            const count = Math.max(0, Number(sampleCount) || 0);
+            if (!count) return [];
+            const intervalMs = Math.max(1000, chartBucketMs);
+            const endTs = Math.max(0, Number(latestTs ?? lastBandActivitySampleMs) || Date.now());
+            const startTs = endTs - Math.max(0, (count - 1) * intervalMs);
+            return Array.from({ length: count }, (_, idx) => startTs + (idx * intervalMs));
+        }
+
+        function getAssignmentsBandChartWindowState() {
+            const timestamps = Array.isArray(bandChartTimestamps) ? bandChartTimestamps : [];
+            const windowSamples = getAssignmentsBandChartWindowSamples();
+            if (!timestamps.length) {
+                return {
+                    available: false,
+                    isLive: true,
+                    windowSamples,
+                    startIndex: 0,
+                    endIndex: -1,
+                    startMs: null,
+                    endMs: null,
+                    oldestAvailableMs: null,
+                    latestAvailableMs: null,
+                    viewTimestamps: [],
+                    canStepBack: false,
+                    canStepForward: false,
+                };
+            }
+
+            const latestIndex = timestamps.length - 1;
+            const latestAvailableMs = Number(timestamps[latestIndex]);
+            const oldestAvailableMs = Number(timestamps[0]);
+            let endIndex = latestIndex;
+            let normalizedViewportEndMs = null;
+            if (bandChartViewportEndMs != null) {
+                endIndex = findBandChartTimestampIndexAtOrBefore(bandChartViewportEndMs, timestamps);
+                if (endIndex < 0) {
+                    endIndex = Math.min(latestIndex, Math.max(0, windowSamples - 1));
+                }
+                if (endIndex >= latestIndex) {
+                    endIndex = latestIndex;
+                } else {
+                    normalizedViewportEndMs = Number(timestamps[endIndex]);
+                }
+            }
+            if (bandChartViewportEndMs !== normalizedViewportEndMs) {
+                bandChartViewportEndMs = normalizedViewportEndMs;
+            }
+
+            const startIndex = Math.max(0, endIndex - windowSamples + 1);
+            const viewTimestamps = timestamps.slice(startIndex, endIndex + 1);
+            return {
+                available: true,
+                isLive: normalizedViewportEndMs == null,
+                windowSamples,
+                startIndex,
+                endIndex,
+                startMs: viewTimestamps.length ? Number(viewTimestamps[0]) : null,
+                endMs: viewTimestamps.length ? Number(viewTimestamps[viewTimestamps.length - 1]) : null,
+                oldestAvailableMs,
+                latestAvailableMs,
+                viewTimestamps,
+                canStepBack: startIndex > 0,
+                canStepForward: endIndex < latestIndex,
             };
         }
 
-        function updateAssignmentsBandChartToggle() {
-            const btn = byId("assign-band-chart-toggle");
-            if (!btn) return;
-            btn.textContent = assignmentsBandChartPaused ? "Resume Graph" : "Pause Graph";
-            btn.dataset.icon = assignmentsBandChartPaused ? "play" : "pause";
-            btn.setAttribute("aria-pressed", assignmentsBandChartPaused ? "true" : "false");
-            btn.setAttribute("aria-label", assignmentsBandChartPaused ? "Resume Receiver Graph" : "Pause Receiver Graph");
-            decorateUiIcons();
+        function formatBandChartTime(ts, { withDate = false, includeSeconds = true } = {}) {
+            const value = Number(ts);
+            if (!Number.isFinite(value) || value <= 0) return "--";
+            const date = new Date(value);
+            const hh = String(date.getHours()).padStart(2, "0");
+            const mm = String(date.getMinutes()).padStart(2, "0");
+            const ss = String(date.getSeconds()).padStart(2, "0");
+            const timeText = includeSeconds ? `${hh}:${mm}:${ss}` : `${hh}:${mm}`;
+            if (!withDate) return timeText;
+            const month = date.toLocaleString([], { month: "short" });
+            return `${month} ${String(date.getDate()).padStart(2, "0")} ${timeText}`;
         }
 
-        function setAssignmentsBandChartPaused(paused) {
-            assignmentsBandChartPaused = !!paused;
-            if (assignmentsBandChartPaused) {
-                captureAssignmentsBandChartSnapshot();
+        function formatBandChartAxisLabel(ts, previousTs = null) {
+            const value = Number(ts);
+            if (!Number.isFinite(value) || value <= 0) return "";
+            const current = new Date(value);
+            const previous = Number.isFinite(Number(previousTs)) ? new Date(Number(previousTs)) : null;
+            const sameDay = previous
+                && current.getFullYear() === previous.getFullYear()
+                && current.getMonth() === previous.getMonth()
+                && current.getDate() === previous.getDate();
+            const base = `${String(current.getHours()).padStart(2, "0")}:${String(current.getMinutes()).padStart(2, "0")}`;
+            if (sameDay) return base;
+            const month = current.toLocaleString([], { month: "short" });
+            return `${month} ${String(current.getDate()).padStart(2, "0")} ${base}`;
+        }
+
+        function formatBandChartRangeLabel(windowState) {
+            const state = windowState && typeof windowState === "object" ? windowState : getAssignmentsBandChartWindowState();
+            if (!state.available || !Number.isFinite(Number(state.startMs)) || !Number.isFinite(Number(state.endMs))) {
+                return "Waiting for chart history";
+            }
+            const startText = formatBandChartTime(state.startMs, { withDate: true });
+            const endText = formatBandChartTime(state.endMs, { withDate: true });
+            return state.isLive ? `${startText} - ${endText} Live` : `${startText} - ${endText}`;
+        }
+
+        function updateAssignmentsBandChartControls() {
+            const state = getAssignmentsBandChartWindowState();
+            lastBandChartWindowState = state;
+            const rangeEl = byId("assign-band-chart-range");
+            const actionsEl = document.querySelector(".assign-band-chart-header-actions");
+            const backBtn = byId("assign-band-chart-back");
+            const liveBtn = byId("assign-band-chart-live");
+            const forwardBtn = byId("assign-band-chart-forward");
+            let visibleCount = 0;
+
+            const setButtonVisibility = (btn, visible, disabled = false) => {
+                if (!btn) return;
+                btn.hidden = !visible;
+                btn.disabled = !visible || !!disabled;
+                btn.setAttribute("aria-hidden", visible ? "false" : "true");
+                if (visible) visibleCount += 1;
+            };
+
+            if (rangeEl) {
+                rangeEl.textContent = formatBandChartRangeLabel(state);
+                rangeEl.title = rangeEl.textContent;
+            }
+            setButtonVisibility(backBtn, state.canStepBack, false);
+            setButtonVisibility(forwardBtn, state.canStepForward, false);
+            if (liveBtn) {
+                setButtonVisibility(liveBtn, state.available && !state.isLive, false);
+                liveBtn.setAttribute("aria-pressed", state.isLive ? "true" : "false");
+                liveBtn.classList.toggle("is-active", state.isLive);
+            }
+            if (actionsEl) actionsEl.classList.toggle("is-empty", visibleCount === 0);
+        }
+
+        function triggerAssignmentsBandChartControlFeedback(btn) {
+            if (!btn || btn.hidden || btn.disabled) return;
+            btn.classList.remove("is-pressing");
+            void btn.offsetWidth;
+            btn.classList.add("is-pressing");
+            window.setTimeout(() => btn.classList.remove("is-pressing"), 140);
+        }
+
+        function stepAssignmentsBandChart(direction) {
+            const state = getAssignmentsBandChartWindowState();
+            if (!state.available) return;
+            const dir = Number(direction);
+            if (!(dir === -1 || dir === 1)) return;
+            const stepMs = BAND_CHART_WINDOW_MS;
+            if (dir < 0) {
+                if (!state.canStepBack) return;
+                bandChartViewportEndMs = Math.max(Number(state.oldestAvailableMs || 0), Number(state.endMs || 0) - stepMs);
             } else {
-                pausedBandChartSnapshot = null;
+                if (!state.canStepForward) {
+                    bandChartViewportEndMs = null;
+                } else {
+                    const latestAvailableMs = Number(state.latestAvailableMs || 0);
+                    const nextEndMs = Number(state.endMs || 0) + stepMs;
+                    bandChartViewportEndMs = nextEndMs >= latestAvailableMs ? null : nextEndMs;
+                }
             }
             bandChartHoverIndex = -1;
             renderAssignmentsBandChart(_bandChartLiveBands, _bandChartLiveColorMap);
-            updateAssignmentsBandChartToggle();
+        }
+
+        function jumpAssignmentsBandChartLive() {
+            if (isAssignmentsBandChartLive()) return;
+            bandChartViewportEndMs = null;
+            bandChartHoverIndex = -1;
+            renderAssignmentsBandChart(_bandChartLiveBands, _bandChartLiveColorMap);
         }
 
         function initAssignmentsBandChartControls() {
-            const btn = byId("assign-band-chart-toggle");
-            if (btn && btn.dataset.bound !== "1") {
+            const bindings = [
+                ["assign-band-chart-back", () => stepAssignmentsBandChart(-1)],
+                ["assign-band-chart-live", () => jumpAssignmentsBandChartLive()],
+                ["assign-band-chart-forward", () => stepAssignmentsBandChart(1)],
+            ];
+            bindings.forEach(([id, handler]) => {
+                const btn = byId(id);
+                if (!btn || btn.dataset.bound === "1") return;
                 btn.addEventListener("click", () => {
-                    setAssignmentsBandChartPaused(!assignmentsBandChartPaused);
+                    triggerAssignmentsBandChartControlFeedback(btn);
+                    handler();
                 });
                 btn.dataset.bound = "1";
-            }
-            updateAssignmentsBandChartToggle();
+            });
+            updateAssignmentsBandChartControls();
         }
 
         function normalizeMapViewMode(value, fallback = "map") {
@@ -6725,32 +7157,70 @@
             );
         }
 
+        function isManagedReceiversMode(mode) {
+            return ["auto", "semi", "scan"].includes(normalizeReceiversMode(mode, "auto"));
+        }
+
+        function getReservedManagedReceiverSet(mode = getCurrentReceiversMode()) {
+            const normalizedMode = normalizeReceiversMode(mode, "auto");
+            if (normalizedMode === "semi") return new Set([0, 1]);
+            if (normalizedMode !== "scan") return new Set();
+            const reserved = getPreparedScanReservedReceiverSet();
+            if (latestReceiverScanStatus && latestReceiverScanStatus.running && Array.isArray(latestReceiverScanStatus.reserved_receivers)) {
+                latestReceiverScanStatus.reserved_receivers.forEach((rx) => {
+                    const rxNum = Number(rx);
+                    if (Number.isFinite(rxNum) && rxNum >= 0) reserved.add(rxNum);
+                });
+            }
+            return reserved;
+        }
+
+        function getManagedReservedReceiverMeta(mode = getCurrentReceiversMode()) {
+            const normalizedMode = normalizeReceiversMode(mode, "auto");
+            if (normalizedMode === "semi") {
+                return {
+                    rowName: "Free to Use",
+                    cardTitle: "Semi Reserve",
+                    description: "RX0 and RX1 stay free in Semi Mode while RX2-RX7 remain assigned.",
+                };
+            }
+            return {
+                rowName: "Reserved for Scan",
+                cardTitle: "Scan Reserve",
+                description: "RX0 and RX1 are reserved for Scan Mode and remain unassigned until a scan starts.",
+            };
+        }
+
         function syncReceiversModeFromBackendState() {
             const receiverScanActive = !!(latestReceiverScanStatus && (latestReceiverScanStatus.running || latestReceiverScanStatus.mode_active));
             const netMonitorActive = !!(latestNetMonitorStatus && (latestNetMonitorStatus.running || latestNetMonitorStatus.activating || latestNetMonitorStatus.mode_active));
             const captionMonitorActive = !!(latestCaptionMonitorStatus && (latestCaptionMonitorStatus.running || latestCaptionMonitorStatus.starting));
             if (receiverScanActive || netMonitorActive || captionMonitorActive) {
                 setReceiversMode("scan", { persist: false });
-                applyAutoModeVisibility(false);
+                applyAutoModeVisibility("scan");
                 return;
             }
             const fixedEnabled = !(latestAutomationSettings && latestAutomationSettings.fixedModeEnabled === false);
-            setReceiversMode(fixedEnabled ? "auto" : "manual", { persist: false });
-            applyAutoModeVisibility(fixedEnabled);
+            const persistedMode = normalizeReceiversMode(
+                latestAutomationSettings && latestAutomationSettings.receiversMode,
+                fixedEnabled ? "auto" : "manual",
+            );
+            const nextMode = fixedEnabled
+                ? (persistedMode === "manual" ? "auto" : persistedMode)
+                : "manual";
+            setReceiversMode(nextMode, { persist: false });
+            applyAutoModeVisibility(nextMode);
         }
 
         function buildActiveReceiverRows(kiwiUsers, rawKiwiUsers) {
-            const autoModeEnabled = readSelectBool(
-                "auto-mode-enabled",
-                latestAutomationSettings && latestAutomationSettings.fixedModeEnabled !== false,
-            );
-            const scanModeActive = !!(latestReceiverScanStatus && (latestReceiverScanStatus.mode_active || latestReceiverScanStatus.running));
-            const scanPreparedReserved = getPreparedScanReservedReceiverSet();
-            const managedModeActive = autoModeEnabled || scanModeActive;
+            const currentMode = getCurrentReceiversMode();
+            const reservedManagedReceivers = getReservedManagedReceiverSet(currentMode);
+            const reservedManagedMeta = getManagedReservedReceiverMeta(currentMode);
+            const managedModeActive = isManagedReceiversMode(currentMode);
             const hasReceiverContext = Boolean(
                 Object.keys(latestChannelsMap || {}).length
                 || (latestAssignmentsSource !== "kiwi_users" && Object.keys(latestAssignments || {}).length)
-                || scanModeActive
+                || reservedManagedReceivers.size
             );
             const users = Array.isArray(kiwiUsers) ? kiwiUsers : [];
             const rawUsers = Array.isArray(rawKiwiUsers) ? rawKiwiUsers : [];
@@ -6788,13 +7258,7 @@
                     }
                 });
             }
-            scanPreparedReserved.forEach((rxNum) => managedRxSet.add(rxNum));
-            if (latestReceiverScanStatus && latestReceiverScanStatus.running && Array.isArray(latestReceiverScanStatus.reserved_receivers)) {
-                latestReceiverScanStatus.reserved_receivers.forEach((rx) => {
-                    const rxNum = Number(rx);
-                    if (Number.isFinite(rxNum) && rxNum >= 0) managedRxSet.add(rxNum);
-                });
-            }
+            reservedManagedReceivers.forEach((rxNum) => managedRxSet.add(rxNum));
 
             const managedRows = Array.from(managedRxSet)
                 .sort((a, b) => a - b)
@@ -6813,17 +7277,17 @@
                     const rawUser = Number.isFinite(liveKiwiRx)
                         ? (rawUsersByRx.get(liveKiwiRx) || rawUserBySlot)
                         : rawUserBySlot;
-                    const isScanReserved = scanPreparedReserved.has(rxNum);
+                    const isManagedReserved = reservedManagedReceivers.has(rxNum);
                     const synthesizedName = buildExpectedActiveReceiverName(rxNum, assignment, channel);
                     const channelDisplayName = safeText(channel && channel.display_name, "");
                     const managedName = safeText(systemUser.name, "");
                     const rawName = safeText(rawUser.name, "");
                     const freqHz = Number((assignment && assignment.freq_hz) || NaN);
-                    if (isScanReserved) {
+                    if (isManagedReserved) {
                         return {
                             rx: rxNum,
-                            name: "Reserved for Scan",
-                            display_name: "Reserved for Scan",
+                            name: reservedManagedMeta.rowName,
+                            display_name: reservedManagedMeta.rowName,
                             freq_khz: null,
                             mode: "--",
                             connected_seconds: null,
@@ -10637,8 +11101,23 @@
 
         function normalizeReceiversMode(mode, fallback = "auto") {
             const normalized = String(mode || "").trim().toLowerCase();
-            if (["auto", "manual", "scan"].includes(normalized)) return normalized;
-            return String(fallback || "auto").trim().toLowerCase() === "manual" ? "manual" : "auto";
+            if (["auto", "semi", "manual", "scan"].includes(normalized)) return normalized;
+            const normalizedFallback = String(fallback || "auto").trim().toLowerCase();
+            if (["auto", "semi", "manual", "scan"].includes(normalizedFallback)) return normalizedFallback;
+            return "auto";
+        }
+
+        function syncAutoModeButtonPresentation(mode) {
+            const btn = byId("auto-mode-enabled");
+            if (!btn) return;
+            const normalizedMode = normalizeReceiversMode(mode, "auto");
+            const isSemi = normalizedMode === "semi";
+            const labelEl = btn.querySelector(".topbar-mode-label");
+            const stateEl = btn.querySelector(".topbar-mode-state");
+            btn.dataset.currentMode = isSemi ? "semi" : "auto";
+            btn.setAttribute("aria-label", isSemi ? "Semi Auto Mode" : "Auto Mode");
+            if (labelEl) labelEl.textContent = isSemi ? "SEMI" : "AUTO";
+            if (stateEl) stateEl.textContent = "Digital";
         }
 
         function readStoredReceiversMode(fallback = "auto") {
@@ -10659,9 +11138,12 @@
 
         function setReceiversMode(mode, options = {}) {
             const normalizedMode = normalizeReceiversMode(mode);
+            syncAutoModeButtonPresentation(normalizedMode);
             ["auto-mode-enabled", "scan-mode-btn", "manual-mode-btn"].forEach((id) => {
                 const btn = byId(id);
-                if (btn) btn.setAttribute("aria-pressed", btn.dataset.mode === normalizedMode ? "true" : "false");
+                if (!btn) return;
+                const isAutoToggle = id === "auto-mode-enabled" && (normalizedMode === "auto" || normalizedMode === "semi");
+                btn.setAttribute("aria-pressed", isAutoToggle || btn.dataset.mode === normalizedMode ? "true" : "false");
             });
             if (options.persist !== false) storeReceiversMode(normalizedMode);
         }
@@ -10671,7 +11153,7 @@
             for (const id of ["auto-mode-enabled", "scan-mode-btn", "manual-mode-btn"]) {
                 const btn = byId(id);
                 if (btn && btn.getAttribute("aria-pressed") === "true") {
-                    return normalizeReceiversMode(btn.dataset.mode, fallback);
+                    return normalizeReceiversMode(btn.dataset.currentMode || btn.dataset.mode, fallback);
                 }
             }
             return fallback;
@@ -10680,7 +11162,7 @@
         function applyStoredReceiversModePreference() {
             const storedMode = readStoredReceiversMode("auto");
             setReceiversMode(storedMode);
-            applyAutoModeVisibility(storedMode === "auto");
+            applyAutoModeVisibility(storedMode);
         }
 
         async function applyReceiversScanMode(band = null, role = null) {
@@ -11322,9 +11804,12 @@
                 const nextOverviewTopics = normalizeOverviewTopicPrefs(a.overviewTopics, overviewTopicPrefs);
                 authoritativeUiThemeNightHour = nextNightHour;
                 authoritativeUiThemeHourOffset = nextHourOffset;
-                const fixedEnabled = a.fixedModeEnabled !== false;
-                setReceiversMode(fixedEnabled ? "auto" : "manual");
-                applyAutoModeVisibility(fixedEnabled);
+                const savedReceiversMode = normalizeReceiversMode(
+                    a && typeof a === "object" ? a.receiversMode : null,
+                    a.fixedModeEnabled !== false ? "auto" : "manual",
+                );
+                setReceiversMode(savedReceiversMode);
+                applyAutoModeVisibility(savedReceiversMode);
                 applyAndPersistUiPreferences(nextThemeMode, nextDensity, nextNightHour, nextHourOffset);
                 applyOverviewTopicPrefs(nextOverviewTopics);
                 // Render the band schedule grid; fetch the current block best-effort
@@ -11375,11 +11860,8 @@
             const currentMode = getCurrentReceiversMode();
             const payload = {
                 ...snapshot,
-                fixedModeEnabled: currentMode === "manual"
-                    ? false
-                    : currentMode === "auto"
-                        ? true
-                        : (typeof snapshot.fixedModeEnabled === "boolean" ? snapshot.fixedModeEnabled : true),
+                receiversMode: currentMode,
+                fixedModeEnabled: currentMode !== "manual",
                 uiThemeMode,
                 uiThemeNightHour,
                 uiThemeHourOffset,
@@ -11704,14 +12186,15 @@
             try {
                 // When Auto Mode is ON, use force-reassign so the backend builds the
                 // fixed+roaming payload from current settings (day/night roaming etc).
-                const fixedOn = readSelectBool("auto-mode-enabled", true);
+                const currentMode = getCurrentReceiversMode();
+                const fixedOn = currentMode === "auto" || currentMode === "semi";
                 if (fixedOn) {
                     await postJson("/admin/force-reassign", {});
                     // force-reassign returns instantly (background thread); keep overlay visible
                     // while workers stop, reconnect, and the Kiwi assigns new channels (~5 s).
                     setAutomationStatus("applying — waiting for receivers to reconnect…");
                     await new Promise(r => setTimeout(r, 5000));
-                    setAutomationStatus("applied (fixed+roaming mode)");
+                    setAutomationStatus(currentMode === "semi" ? "applied (fixed-only semi mode)" : "applied (fixed+roaming mode)");
                     refresh();
                     return;
                 }
@@ -11799,17 +12282,37 @@
             roamingLabel.title = details.join(" | ");
         }
 
-        function applyAutoModeVisibility(enabled) {
-            const mode = enabled ? "auto" : getCurrentReceiversMode();
+        function applyAutoModeVisibility(modeOrEnabled = getCurrentReceiversMode()) {
+            const mode = typeof modeOrEnabled === "string"
+                ? normalizeReceiversMode(modeOrEnabled, getCurrentReceiversMode())
+                : (modeOrEnabled ? "auto" : getCurrentReceiversMode());
             const content = byId("auto-mode-content");
             if (content) content.style.display = mode === "auto" ? "" : "none";
             const scanContent = byId("scan-mode-content");
             if (scanContent) scanContent.style.display = mode === "scan" ? "" : "none";
+            const receiverScanPanel = byId("receiver-scan");
+            if (receiverScanPanel) receiverScanPanel.hidden = mode !== "scan";
+            const receiverScanNavItem = document.querySelector('#side-nav a[data-nav="receiver-scan"]')?.parentElement;
+            if (receiverScanNavItem) receiverScanNavItem.hidden = mode !== "scan";
+            if (mode !== "scan" && currentSectionNavId === "receiver-scan" && typeof window.kiwiProSetView === "function") {
+                window.kiwiProSetView("overview", true);
+            }
             if (mode === "auto") applyAutoRoamingDecisionLabel();
         }
 
-        async function waitForAutoModeTransition(enabled, timeoutMs = 45000) {
+        function receiversModeStatusLabel(mode) {
+            const normalizedMode = normalizeReceiversMode(mode, "auto");
+            if (normalizedMode === "semi") return "Semi Mode";
+            if (normalizedMode === "scan") return "Scan Mode";
+            if (normalizedMode === "manual") return "Manual Mode";
+            return "Auto Mode";
+        }
+
+        async function waitForReceiversModeTransition(mode, timeoutMs = 45000) {
+            const normalizedMode = normalizeReceiversMode(mode, "manual");
             const deadline = Date.now() + Math.max(1000, Number(timeoutMs) || 45000);
+            const fixedRxNums = [2, 3, 4, 5, 6, 7];
+            const roamingRxNums = [0, 1];
             while (Date.now() < deadline) {
                 try {
                     const [health, system] = await Promise.all([
@@ -11832,7 +12335,25 @@
                         ? system.kiwi.raw_users
                         : [];
                     const rawAutoUsers = rawUsers.filter((user) => isManagedReceiverLabel(user && user.name));
-                    if (!enabled) {
+                    const channels = health && typeof health.channels === "object"
+                        ? health.channels
+                        : {};
+                    const activeManagedRx = new Set(
+                        Object.entries(channels)
+                            .filter(([rx, channel]) => {
+                                const rxNum = Number(rx);
+                                return Number.isFinite(rxNum)
+                                    && rxNum >= 0
+                                    && channel
+                                    && typeof channel === "object"
+                                    && (channel.active || channel.visible_on_kiwi);
+                            })
+                            .map(([rx]) => Number(rx))
+                    );
+                    const fixedReady = fixedRxNums.every((rxNum) => activeManagedRx.has(rxNum));
+                    const roamingReady = roamingRxNums.every((rxNum) => activeManagedRx.has(rxNum));
+                    const roamingClear = roamingRxNums.every((rxNum) => !activeManagedRx.has(rxNum));
+                    if (normalizedMode === "manual") {
                         if (activeReceivers === 0 && rawAutoUsers.length === 0) {
                             return { ok: true, conflict: false, message: "" };
                         }
@@ -11843,8 +12364,19 @@
                                 message: "Manual Mode engaged, but Kiwi still has AUTO users from another controller.",
                             };
                         }
+                    } else if (normalizedMode === "semi") {
+                        if (fixedReady && roamingClear) {
+                            return { ok: true, conflict: false, message: "" };
+                        }
+                        if (fixedReady && rawAutoUsers.length >= 6 && managedUsers.length < 6) {
+                            return {
+                                ok: false,
+                                conflict: true,
+                                message: "Semi Mode conflict: Kiwi slots are occupied by another AUTO controller.",
+                            };
+                        }
                     } else {
-                        if (activeReceivers >= 8 && managedUsers.length >= 8) {
+                        if (fixedReady && roamingReady) {
                             return { ok: true, conflict: false, message: "" };
                         }
                         if (activeReceivers >= 8 && rawAutoUsers.length >= 8 && managedUsers.length < 8) {
@@ -11863,10 +12395,13 @@
             return { ok: false, conflict: false, message: "Timed out waiting for Kiwi receiver transition." };
         }
 
-        async function applyAutoModeEnabled(enabled) {
+        async function applyAutoModeEnabled(modeOrEnabled) {
+            const targetMode = typeof modeOrEnabled === "string"
+                ? normalizeReceiversMode(modeOrEnabled, "manual")
+                : (modeOrEnabled ? "auto" : "manual");
             const transitioningFromScan = !!(latestReceiverScanStatus && latestReceiverScanStatus.mode_active);
-            setAutomationStatus(enabled ? "enabling Auto Mode..." : "disabling Auto Mode...");
-            setReceiversBusy(true);
+            setAutomationStatus(targetMode === "manual" ? "disabling receiver automation..." : `enabling ${receiversModeStatusLabel(targetMode).toLowerCase()}...`);
+            setReceiversBusy(true, targetMode === "semi" ? "Clearing RX0/RX1 assignments..." : undefined);
             try {
                 // Persist the mode selection first so backend loops and force-reassign
                 // read the same fixed/manual state the user just selected.
@@ -11874,32 +12409,43 @@
                 await deactivateCaptionMonitorMode({ quiet: true });
                 await deactivateNetMonitorMode({ quiet: true });
                 await deactivateReceiverScanMode({ quiet: true });
-                if (!enabled) {
+                if (targetMode === "manual") {
                     await postJson("/auto_set_receivers", { enabled: false });
-                    setAutomationStatus("Auto Mode OFF — waiting for receivers to stop...");
-                    const result = await waitForAutoModeTransition(false);
-                    setAutomationStatus(result.ok ? "Auto Mode OFF — all receivers stopped" : result.message);
+                    setAutomationStatus("Manual Mode ON — waiting for receivers to stop...");
+                    const result = await waitForReceiversModeTransition("manual");
+                    setAutomationStatus(result.ok ? "Manual Mode ON — all receivers stopped" : result.message);
                     refresh();
                 } else {
-                    // Apply fixed + roaming immediately via the headless path.
-                    await postJson("/admin/force-reassign", {});
-                    setAutomationStatus(
-                        transitioningFromScan
-                            ? "Auto Mode ON — adding RX0/RX1 roaming receivers..."
-                            : "Auto Mode ON — waiting for receivers to reconnect..."
-                    );
-                    const result = await waitForAutoModeTransition(true);
+                    if (targetMode === "semi") {
+                        await postJson("/admin/clear-roaming-receivers", {});
+                        setAutomationStatus(
+                            transitioningFromScan
+                                ? "Semi Mode ON — keeping fixed receivers active while RX0/RX1 stay free..."
+                                : "Semi Mode ON — clearing RX0/RX1 while fixed receivers stay assigned..."
+                        );
+                    } else {
+                        // Apply the persisted managed mode immediately via the headless path.
+                        await postJson("/admin/force-reassign", {});
+                        setAutomationStatus(
+                            transitioningFromScan
+                                ? "Auto Mode ON — adding RX0/RX1 roaming receivers..."
+                                : "Auto Mode ON — waiting for receivers to reconnect..."
+                        );
+                    }
+                    const result = await waitForReceiversModeTransition(targetMode);
                     setAutomationStatus(
                         result.ok
-                            ? (transitioningFromScan
-                                ? "Auto Mode ON — RX0/RX1 roaming receivers added"
-                                : "Auto Mode ON — fixed + roaming receivers applied")
+                            ? (targetMode === "semi"
+                                ? "Semi Mode ON — RX0/RX1 freed while fixed receivers remain assigned"
+                                : (transitioningFromScan
+                                    ? "Auto Mode ON — RX0/RX1 roaming receivers added"
+                                    : "Auto Mode ON — fixed + roaming receivers applied"))
                             : result.message
                     );
                     refresh();
                 }
             } catch (err) {
-                setAutomationStatus(`Auto Mode toggle failed: ${String((err && err.message) || err)}`);
+                setAutomationStatus(`${receiversModeStatusLabel(targetMode)} toggle failed: ${String((err && err.message) || err)}`);
             } finally {
                 setReceiversBusy(false);
             }
@@ -11913,7 +12459,7 @@
                 await deactivateNetMonitorMode({ quiet: true });
                 await deactivateReceiverScanMode({ quiet: true });
                 setReceiversMode("scan");
-                applyAutoModeVisibility(false);
+                applyAutoModeVisibility("scan");
                 if (typeof window.kiwiProSetView === "function") window.kiwiProSetView("receiver-scan", true);
 
                 const prepared = await postJson("/receiver_scan/prepare", {});
@@ -12043,9 +12589,10 @@
             const receiverScanPhoneStartBtn = byId("receiver-scan-phone-start");
             if (autoModeBtn) {
                 autoModeBtn.addEventListener("click", async () => {
-                    setReceiversMode("auto");
-                    applyAutoModeVisibility(true);
-                    await applyAutoModeEnabled(true);
+                    const targetMode = getCurrentReceiversMode() === "auto" ? "semi" : "auto";
+                    setReceiversMode(targetMode);
+                    applyAutoModeVisibility(targetMode);
+                    await applyAutoModeEnabled(targetMode);
                 });
             }
             if (scanModeBtn) {
@@ -12117,8 +12664,8 @@
             if (manualModeBtn) {
                 manualModeBtn.addEventListener("click", async () => {
                     setReceiversMode("manual");
-                    applyAutoModeVisibility(false);
-                    await applyAutoModeEnabled(false);
+                    applyAutoModeVisibility("manual");
+                    await applyAutoModeEnabled("manual");
                 });
             }
             if (netMonitorStartBtn) {
@@ -12266,28 +12813,59 @@
         }
 
         function applyChartData(data) {
-            if (!data || !Array.isArray(data.buckets) || !data.buckets.length) return;
             chartBucketMs = Math.max(1000, (Number(data.bucket_s) || 15) * 1000);
-            const buckets = data.buckets;
+            const normalizedBuckets = Array.isArray(data && data.buckets)
+                ? data.buckets
+                    .map((bucket) => ({
+                        tsMs: Number(bucket && bucket.ts) * 1000,
+                        bands: bucket && typeof bucket.bands === "object" ? bucket.bands : {},
+                    }))
+                    .filter((bucket) => Number.isFinite(bucket.tsMs) && bucket.tsMs > 0)
+                : [];
+            bandChartTimestamps = normalizedBuckets.map((bucket) => bucket.tsMs);
+            if (!normalizedBuckets.length) {
+                bandActivityHistory = {};
+                bandBreakdownHistory = {};
+                lastBandActivitySampleMs = Date.now();
+                bandChartViewportEndMs = null;
+                return;
+            }
             const allBands = new Set();
-            for (const b of buckets) {
+            for (const b of normalizedBuckets) {
                 for (const band of Object.keys(b.bands || {})) allBands.add(band);
             }
             const newActivity = {};
             const newBreakdown = {};
             for (const band of allBands) {
-                newActivity[band] = buckets.map((b) => {
+                newActivity[band] = normalizedBuckets.map((b) => {
                     const bdata = b.bands && b.bands[band];
                     return bdata ? Math.max(0, Number(bdata.total || 0)) : 0;
                 });
-                newBreakdown[band] = buckets.map((b) => {
+                newBreakdown[band] = normalizedBuckets.map((b) => {
                     const bdata = b.bands && b.bands[band];
                     return (bdata && bdata.breakdown && typeof bdata.breakdown === "object") ? { ...bdata.breakdown } : {};
                 });
             }
             bandActivityHistory = newActivity;
             bandBreakdownHistory = newBreakdown;
-            lastBandActivitySampleMs = (Number(buckets[buckets.length - 1].ts) || 0) * 1000 || Date.now();
+            lastBandActivitySampleMs = bandChartTimestamps[bandChartTimestamps.length - 1] || Date.now();
+            if (bandChartViewportEndMs != null) {
+                const latestAvailableTs = bandChartTimestamps[bandChartTimestamps.length - 1];
+                if (!(bandChartViewportEndMs < latestAvailableTs)) {
+                    bandChartViewportEndMs = null;
+                } else {
+                    const clampedIndex = findBandChartTimestampIndexAtOrBefore(bandChartViewportEndMs, bandChartTimestamps);
+                    if (clampedIndex < 0) {
+                        const earliestIndex = Math.min(
+                            bandChartTimestamps.length - 1,
+                            Math.max(0, getAssignmentsBandChartWindowSamples() - 1),
+                        );
+                        bandChartViewportEndMs = bandChartTimestamps[earliestIndex] || null;
+                    } else {
+                        bandChartViewportEndMs = bandChartTimestamps[clampedIndex];
+                    }
+                }
+            }
         }
 
         function getBandTrendSamples(band, windowSize = 14, historySource = null) {
@@ -12346,85 +12924,26 @@
             return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
         }
 
-        function getCadenceMarkerRows(oldestSampleTs, latestSampleTs, cadencePhaseByMode = {}) {
-            const startTs = Number(oldestSampleTs || 0);
-            const endTs = Number(latestSampleTs || 0);
-            if (!(endTs >= startTs)) return [];
-
-            const cadenceDefs = [
-                { mode: "FT4", color: "#22c55e", periodMs: 7500 },
-                { mode: "FT8", color: "#3b82f6", periodMs: 15000 },
-                { mode: "WSPR", color: "#a855f7", periodMs: 120000 },
-            ];
-            const byTs = new Map();
-            for (const cadence of cadenceDefs) {
-                const periodMs = Number(cadence.periodMs || 0);
-                if (!(periodMs > 0)) continue;
-                const rawPhaseMs = Number(cadencePhaseByMode[cadence.mode] || 0);
-                const phaseMs = ((rawPhaseMs % periodMs) + periodMs) % periodMs;
-                let ts = phaseMs;
-                if (ts < startTs) {
-                    ts += Math.ceil((startTs - ts) / periodMs) * periodMs;
-                }
-                for (; ts <= endTs; ts += periodMs) {
-                    const key = String(Math.round(ts));
-                    const row = byTs.get(key) || { ts, markers: [] };
-                    row.markers.push(cadence);
-                    byTs.set(key, row);
-                }
-            }
-            return Array.from(byTs.values()).sort((left, right) => left.ts - right.ts);
-        }
-
-        function drawCadencePointers(ctx, opts) {
-            const oldestSampleTs = Number(opts && opts.oldestSampleTs || 0);
-            const latestSampleTs = Number(opts && opts.latestSampleTs || 0);
-            const leftPad = Number(opts && opts.leftPad || 0);
-            const graphW = Number(opts && opts.graphW || 0);
-            const baselineY = Number(opts && opts.baselineY || 0);
-            const markerAreaBottom = Number(opts && opts.markerAreaBottom || 0);
-            const cadencePhaseByMode = opts && typeof opts.cadencePhaseByMode === "object" ? opts.cadencePhaseByMode : {};
-            if (!(latestSampleTs > oldestSampleTs) || !(graphW > 0) || !(markerAreaBottom > baselineY)) return;
-
-            const rows = getCadenceMarkerRows(oldestSampleTs, latestSampleTs, cadencePhaseByMode);
-            if (!rows.length) return;
-
-            const triHalfWidth = 3.5;
-            const triHeight = 4.5;
-            const stackGap = 1.5;
-            const maxStacks = Math.max(1, Math.floor((markerAreaBottom - baselineY - 2) / (triHeight + stackGap)));
-            const timeSpan = latestSampleTs - oldestSampleTs;
-
-            ctx.save();
-            for (const row of rows) {
-                const ratio = timeSpan > 0 ? ((row.ts - oldestSampleTs) / timeSpan) : 0;
-                const x = leftPad + Math.max(0, Math.min(1, ratio)) * graphW;
-                row.markers.slice(0, maxStacks).forEach((marker, stackIdx) => {
-                    const tipY = baselineY + 4 + (stackIdx * (triHeight + stackGap));
-                    const baseY = tipY + triHeight;
-                    if (baseY > markerAreaBottom) return;
-                    ctx.fillStyle = marker.color;
-                    ctx.beginPath();
-                    ctx.moveTo(x, tipY);
-                    ctx.lineTo(x - triHalfWidth, baseY);
-                    ctx.lineTo(x + triHalfWidth, baseY);
-                    ctx.closePath();
-                    ctx.fill();
-                });
-            }
-            ctx.restore();
-        }
-
-        function renderAssignmentsBandAxis(sampleCount, latestSampleTs = null) {
+        function renderAssignmentsBandAxis(viewTimestamps = []) {
             const axis = byId("assign-band-chart-axis");
             if (!axis) return;
-            const count = Math.max(0, Number(sampleCount) || 0);
-            if (!count) {
+            const timestamps = Array.isArray(viewTimestamps) ? viewTimestamps.filter((ts) => Number.isFinite(Number(ts))) : [];
+            if (!timestamps.length) {
                 axis.style.gridTemplateColumns = "repeat(5, minmax(0, 1fr))";
                 axis.innerHTML = "<span></span><span></span><span></span><span></span><span></span>";
                 return;
             }
-            const labels = getChartTimeLabels(count, count, latestSampleTs);
+            const tickCount = Math.max(2, Math.min(6, timestamps.length));
+            const labels = [];
+            let previousTs = null;
+            for (let idx = 0; idx < tickCount; idx += 1) {
+                const sampleIdx = tickCount > 1
+                    ? Math.max(0, Math.min(timestamps.length - 1, Math.round((idx * (timestamps.length - 1)) / (tickCount - 1))))
+                    : 0;
+                const sampleTs = Number(timestamps[sampleIdx]);
+                labels.push(formatBandChartAxisLabel(sampleTs, previousTs));
+                previousTs = sampleTs;
+            }
             axis.style.gridTemplateColumns = `repeat(${Math.max(1, labels.length)}, minmax(0, 1fr))`;
             axis.innerHTML = labels.map((label) => `<span>${escapeHtml(label)}</span>`).join("");
         }
@@ -12536,19 +13055,14 @@
             const ctx = canvas && canvas.getContext("2d");
             if (!ctx) return;
 
-            const pausedSnapshot = assignmentsBandChartPaused ? pausedBandChartSnapshot : null;
-            const bandHistorySource = pausedSnapshot && pausedSnapshot.bandActivityHistory ? pausedSnapshot.bandActivityHistory : bandActivityHistory;
-            const bandBreakdownSource = pausedSnapshot && pausedSnapshot.bandBreakdownHistory ? pausedSnapshot.bandBreakdownHistory : bandBreakdownHistory;
-            const assignmentSource = pausedSnapshot && pausedSnapshot.currentBandAssignments ? pausedSnapshot.currentBandAssignments : currentBandAssignments;
-            const latestSampleTs = pausedSnapshot && Number.isFinite(Number(pausedSnapshot.lastBandActivitySampleMs))
-                ? Number(pausedSnapshot.lastBandActivitySampleMs)
-                : Number(lastBandActivitySampleMs || Date.now());
-            const renderBands = pausedSnapshot && Array.isArray(pausedSnapshot.assignedBands)
-                ? pausedSnapshot.assignedBands
-                : assignedBands;
-            const renderBandColorMap = pausedSnapshot && pausedSnapshot.bandColorMap
-                ? pausedSnapshot.bandColorMap
-                : bandColorMap;
+            const bandHistorySource = bandActivityHistory;
+            const bandBreakdownSource = bandBreakdownHistory;
+            const assignmentSource = currentBandAssignments;
+            const windowState = getAssignmentsBandChartWindowState();
+            lastBandChartWindowState = windowState;
+            const latestSampleTs = Number(windowState.endMs || lastBandActivitySampleMs || Date.now());
+            const renderBands = assignedBands;
+            const renderBandColorMap = bandColorMap;
 
             _bandChartLastBands = Array.isArray(renderBands) ? [...renderBands] : [];
             _bandChartLastColorMap = { ...renderBandColorMap };
@@ -12563,7 +13077,7 @@
             const leftPad = 34;
             const rightPad = 8;
             const topPad = 8;
-            const bottomPad = 48;
+            const bottomPad = 34;
             const graphW = w - leftPad - rightPad;
             const graphH = h - topPad - bottomPad;
             ctx.clearRect(0, 0, w, h);
@@ -12572,41 +13086,36 @@
                 ctx.fillStyle = "#8da2b5";
                 ctx.font = "12px Space Grotesk";
                 ctx.fillText("No assigned bands", 10, 20);
-                renderAssignmentsBandAxis(0, latestSampleTs);
+                renderAssignmentsBandAxis(windowState.viewTimestamps);
+                updateAssignmentsBandChartControls();
                 return;
             }
 
-            const firstBandRaw = Array.isArray(bandHistorySource[bands[0]]) ? bandHistorySource[bands[0]] : [];
-            const windowSamples = Math.max(2, firstBandRaw.length || getChartWindowSamples());
+            const windowSamples = Math.max(2, windowState.viewTimestamps.length || getAssignmentsBandChartWindowSamples());
+            const plottedTimestamps = windowState.viewTimestamps.length
+                ? [...windowState.viewTimestamps]
+                : buildSyntheticBandChartTimestamps(windowSamples, latestSampleTs);
             const series = bands.map((band, idx) => ({
                 band,
                 color: renderBandColorMap[band] || BAND_CHART_PALETTE[idx % BAND_CHART_PALETTE.length],
-                samples: getBandTrendSamples(band, windowSamples, bandHistorySource),
-                breakdowns: getBandBreakdownSamples(band, windowSamples, bandBreakdownSource),
+                samples: (() => {
+                    const raw = Array.isArray(bandHistorySource[band]) ? bandHistorySource[band] : [];
+                    const sliced = windowState.available
+                        ? raw.slice(windowState.startIndex, windowState.endIndex + 1).map((value) => Math.max(0, Number(value) || 0))
+                        : [];
+                    const pad = Math.max(0, windowSamples - sliced.length);
+                    return new Array(pad).fill(0).concat(sliced);
+                })(),
+                breakdowns: (() => {
+                    const raw = Array.isArray(bandBreakdownSource[band]) ? bandBreakdownSource[band] : [];
+                    const sliced = windowState.available
+                        ? raw.slice(windowState.startIndex, windowState.endIndex + 1).map((row) => (row && typeof row === "object") ? row : {})
+                        : [];
+                    const pad = Math.max(0, windowSamples - sliced.length);
+                    return new Array(pad).fill(null).map(() => ({})).concat(sliced);
+                })(),
             }));
-            const sampleCount = series[0] && Array.isArray(series[0].samples) ? series[0].samples.length : 0;
-            const oldestSampleTs = latestSampleTs - (Math.max(0, sampleCount - 1) * Math.max(1000, chartBucketMs));
-            const cadencePhaseByMode = {};
-            if (sampleCount > 0) {
-                const intervalMs = Math.max(1000, chartBucketMs);
-                const modeBucketTsByMode = {};
-                for (let idx = 0; idx < sampleCount; idx += 1) {
-                    const sampleTs = oldestSampleTs + (idx * intervalMs);
-                    for (const entry of series) {
-                        const breakdown = (entry.breakdowns[idx] && typeof entry.breakdowns[idx] === "object") ? entry.breakdowns[idx] : {};
-                        for (const key of Object.keys(breakdown)) {
-                            const parts = String(key).split("|");
-                            const modeName = String(parts[1] || "").trim().toUpperCase();
-                            if (modeName === "WSPR") {
-                                modeBucketTsByMode.WSPR = sampleTs;
-                            }
-                        }
-                    }
-                }
-                if (Number.isFinite(Number(modeBucketTsByMode.WSPR))) {
-                    cadencePhaseByMode.WSPR = ((Number(modeBucketTsByMode.WSPR) % 120000) + 120000) % 120000;
-                }
-            }
+            const sampleCount = plottedTimestamps.length;
             const stackedSampleTotals = Array.from(
                 { length: sampleCount },
                 (_, idx) => series.reduce((sum, entry) => sum + Math.max(0, Number(entry.samples[idx] || 0)), 0),
@@ -12734,17 +13243,8 @@
                 }
             }
 
-            drawCadencePointers(ctx, {
-                oldestSampleTs,
-                latestSampleTs,
-                leftPad,
-                graphW,
-                baselineY: topPad + graphH,
-                markerAreaBottom: h - 28,
-                cadencePhaseByMode,
-            });
-
-            renderAssignmentsBandAxis(sampleCount, latestSampleTs);
+            renderAssignmentsBandAxis(plottedTimestamps);
+            updateAssignmentsBandChartControls();
 
             const tooltip = byId("assign-band-chart-tooltip");
             if (!tooltip) return;
@@ -12903,7 +13403,7 @@
                 const anchorCanvasY = hoverPoint && Number.isFinite(hoverPoint.y) ? hoverPoint.y : y;
                 const anchorX = canvas.offsetLeft + (anchorCanvasX / Math.max(1, w)) * rect.width;
                 const anchorY = canvas.offsetTop + (anchorCanvasY / Math.max(1, h)) * rect.height;
-                const sampleLabel = getChartSampleClockText(idx, nPts, latestSampleTs);
+                const sampleLabel = formatBandChartTime(plottedTimestamps[idx], { withDate: true });
                 const subtitle = `${bandCount || 1} band${bandCount === 1 ? "" : "s"} · ${rows.length} receiver${rows.length === 1 ? "" : "s"}`;
 
                 showTooltip(
@@ -13103,6 +13603,32 @@
             return { css: "fault", color: "#b91c1c" };
         }
 
+        function jumpToReceiverCard(rx) {
+            const rxKey = String(rx || "").trim();
+            if (!rxKey) return;
+            if (typeof window.kiwiProSetView === "function") {
+                window.kiwiProSetView("receivers", true);
+            }
+
+            const ensureVisibleAndScroll = () => {
+                let target = document.querySelector(`.rx-card[data-rx-key="${rxKey}"]`);
+                if (!target) {
+                    const levelSel = byId("rx-level-filter");
+                    if (levelSel && levelSel.value !== "all") {
+                        levelSel.value = "all";
+                        renderReceivers(latestChannelsMap);
+                        target = document.querySelector(`.rx-card[data-rx-key="${rxKey}"]`);
+                    }
+                }
+                if (!target) return;
+                target.scrollIntoView({ behavior: "smooth", block: "center" });
+                target.classList.add("flash-outline");
+                window.setTimeout(() => target.classList.remove("flash-outline"), 1800);
+            };
+
+            requestAnimationFrame(() => requestAnimationFrame(ensureVisibleAndScroll));
+        }
+
         function initSectionNav() {
             const links = Array.from(document.querySelectorAll("#side-nav a[data-nav]"));
             if (!links.length) return;
@@ -13132,6 +13658,7 @@
             };
 
             const isNavVisible = (navId) => {
+                if (navId === "receiver-scan") return getCurrentReceiversMode() === "scan";
                 if (!overviewLinkedNavIds.has(navId)) return true;
                 return !!overviewTopicPrefs[navId];
             };
@@ -13561,22 +14088,20 @@
         function renderAssignments(assignments) {
             const cardEl = byId("assignments-band-cards");
             if (!cardEl) return;
-            const autoModeEnabled = readSelectBool(
-                "auto-mode-enabled",
-                latestAutomationSettings && latestAutomationSettings.fixedModeEnabled !== false,
-            );
             const currentMode = getCurrentReceiversMode();
             const scanModeActive = currentMode === "scan" || !!(latestReceiverScanStatus && latestReceiverScanStatus.mode_active);
-            const scanPreparedReserved = getPreparedScanReservedReceiverSet();
+            const managedModeActive = isManagedReceiversMode(currentMode);
+            const reservedManagedReceivers = getReservedManagedReceiverSet(currentMode);
+            const reservedManagedMeta = getManagedReservedReceiverMeta(currentMode);
             const kiwi = latestSystemInfo && latestSystemInfo.kiwi && typeof latestSystemInfo.kiwi === "object"
                 ? latestSystemInfo.kiwi
                 : {};
-            if (!(autoModeEnabled || scanModeActive)) {
+            if (!managedModeActive) {
                 currentBandAssignments = {};
                 _bandChartLiveBands = [];
                 _bandChartLiveColorMap = {};
                 cardEl.innerHTML = `<div class="assign-empty">${currentMode === "scan" ? "Scan Mode" : "Manual Mode"} - no runtime assignments</div>`;
-                if (!assignmentsBandChartPaused) renderAssignmentsBandChart([]);
+                renderAssignmentsBandChart([]);
                 return;
             }
             // Always prefer health channel data: it is keyed by worker RX (0-7) and is
@@ -13584,11 +14109,11 @@
             // decodes/status assignments may be keyed by Kiwi physical slot numbers when
             // source=kiwi_users, causing RX badge mismatches after startup slot remapping.
             const healthChannelEntries = Object.entries(latestChannelsMap)
-                .filter(([rx, ch]) => ch && ch.band && ch.mode && !scanPreparedReserved.has(Number(rx)));
+                .filter(([rx, ch]) => ch && ch.band && ch.mode && !reservedManagedReceivers.has(Number(rx)));
             const sourceRows = healthChannelEntries.length
                 ? healthChannelEntries.map(([rx, ch]) => [rx, { band: ch.band, mode: ch.mode }])
                 : ((assignments && typeof assignments === "object" ? Object.entries(assignments) : [])
-                    .filter(([rx]) => !scanPreparedReserved.has(Number(rx))));
+                    .filter(([rx]) => !reservedManagedReceivers.has(Number(rx))));
             const list = sourceRows
                 .filter(([, item]) => item && typeof item === "object")
                 .map(([rx, item]) => ({
@@ -13607,8 +14132,8 @@
                     .map((row) => Number(row.rxNum))
                     .filter((rxNum) => Number.isFinite(rxNum))
             );
-            const reservedScanRows = scanModeActive
-                ? Array.from(scanPreparedReserved).filter((rxNum) => !assignedRxNums.has(rxNum)).sort((a, b) => a - b)
+            const reservedManagedRows = (scanModeActive || currentMode === "semi")
+                ? Array.from(reservedManagedReceivers).filter((rxNum) => !assignedRxNums.has(rxNum)).sort((a, b) => a - b)
                 : [];
 
             const bandColorMap = makeBandColorMap(list.map((r) => r.band));
@@ -13627,7 +14152,7 @@
                 cardEl.innerHTML = "<div class=\"assign-empty\">No runtime assignments</div>";
                 _bandChartLiveBands = [];
                 _bandChartLiveColorMap = {};
-                if (!assignmentsBandChartPaused) renderAssignmentsBandChart([]);
+                renderAssignmentsBandChart([]);
                 return;
             }
 
@@ -13730,45 +14255,424 @@
                 }
                 cardEl.append(card);
             }
-            if (reservedScanRows.length) {
+            if (reservedManagedRows.length) {
                 const reserveCard = document.createElement("div");
                 reserveCard.className = "rx-card";
                 reserveCard.dataset.level = "healthy";
-                const reservePills = reservedScanRows.map((rxNum) => {
+                const reservePills = reservedManagedRows.map((rxNum) => {
                     return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span class="rx-id-pill" style="color:${rxColor(rxNum)}">RX${rxNum}</span><span style="font-size:0.72rem;font-weight:600;color:var(--muted)">Unassigned</span></div>`;
                 }).join("");
-                reserveCard.innerHTML = `<div class="rx-top"><div style="display:flex;flex-direction:column;gap:2px;width:100%"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px"><span class="rx-band-label" style="font-size:1rem;font-weight:800">Scan Reserve</span><div style="display:flex;align-items:flex-start;gap:4px;flex-wrap:wrap;flex-shrink:0">${reservePills}</div></div>${iconLine("heart", "State/Health", "rx-state-line", "reserved", "#94a3b8")}</div></div><p class="kv"><span class="rx-decode-rates" style="display:block;margin-top:4px;line-height:1.6;color:var(--muted)">RX0 and RX1 are reserved for Scan Mode and remain unassigned until a scan starts.</span></p>`;
+                reserveCard.innerHTML = `<div class="rx-top"><div style="display:flex;flex-direction:column;gap:2px;width:100%"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px"><span class="rx-band-label" style="font-size:1rem;font-weight:800">${reservedManagedMeta.cardTitle}</span><div style="display:flex;align-items:flex-start;gap:4px;flex-wrap:wrap;flex-shrink:0">${reservePills}</div></div>${iconLine("heart", "State/Health", "rx-state-line", "reserved", "#94a3b8")}</div></div><p class="kv"><span class="rx-decode-rates" style="display:block;margin-top:4px;line-height:1.6;color:var(--muted)">${reservedManagedMeta.description}</span></p>`;
                 cardEl.append(reserveCard);
             }
-            if (!assignmentsBandChartPaused) renderAssignmentsBandChart(_bandChartLiveBands, _bandChartLiveColorMap);
+            renderAssignmentsBandChart(_bandChartLiveBands, _bandChartLiveColorMap);
         }
 
-        function renderReasons(reasonCounts) {
+        function humanizeHealthReason(reason) {
+            const raw = String(reason || "").trim();
+            if (!raw) return "Unknown issue";
+            return raw
+                .split("_")
+                .filter(Boolean)
+                .map((part) => {
+                    const token = String(part || "");
+                    if (!token) return "";
+                    if (token.length <= 3) return token.toUpperCase();
+                    return token.charAt(0).toUpperCase() + token.slice(1);
+                })
+                .join(" ");
+        }
+
+        function getHealthReasonMeta(reason) {
+            const key = String(reason || "").trim();
+            const known = {
+                kiwi_assignment_mismatch: {
+                    label: "Kiwi slot mismatch",
+                    detail: "Expected Kiwi slot is occupied by a different receiver.",
+                    level: "fault",
+                },
+                kiwi_assignment_mismatch_observed: {
+                    label: "Kiwi slot mismatch observed",
+                    detail: "Kiwi shows a different AUTO receiver on the expected slot, but decoder output is still flowing.",
+                    level: "warning",
+                },
+                stalled_no_decoder_output: {
+                    label: "Decoder heartbeat stalled",
+                    detail: "Receiver is visible on Kiwi but decoder output stopped.",
+                    level: "fault",
+                },
+                narrow_decode_span: {
+                    label: "Narrow decode span",
+                    detail: "Decode activity collapsed into a narrow audio span and needs attention.",
+                    level: "fault",
+                },
+                silent_no_decodes: {
+                    label: "Silent receiver",
+                    detail: "Receiver stayed visible on Kiwi but produced no decodes past the silent threshold.",
+                    level: "warning",
+                },
+                no_recent_decodes: {
+                    label: "No recent decodes",
+                    detail: "Decoder heartbeat is current, but no new decodes arrived within the warning window.",
+                    level: "warning",
+                },
+                kiwi_not_visible: {
+                    label: "Receiver missing on Kiwi",
+                    detail: "Expected Kiwi receiver is not visible to the dashboard.",
+                    level: "fault",
+                },
+                starting: {
+                    label: "Receiver starting",
+                    detail: "Receiver is still starting up and has not settled yet.",
+                    level: "warning",
+                },
+                healthy: {
+                    label: "Healthy",
+                    detail: "Receiver is healthy.",
+                    level: "healthy",
+                },
+            };
+            if (known[key]) return known[key];
+            const level = /mismatch|stalled|spawn|failed|missing|narrow/i.test(key) ? "fault" : "warning";
+            return {
+                label: humanizeHealthReason(key),
+                detail: `${humanizeHealthReason(key)} requires attention.`,
+                level,
+            };
+        }
+
+        function faultLogLevelClass(level) {
+            const normalized = String(level || "warning").toLowerCase();
+            if (normalized === "fault") return "fault";
+            if (normalized === "healthy") return "healthy";
+            return "warning";
+        }
+
+        function formatFaultLogTimestamp(ts) {
+            const numeric = Number(ts);
+            if (!Number.isFinite(numeric) || numeric <= 0) return "";
+            return new Date(numeric * 1000).toLocaleTimeString();
+        }
+
+        function buildFaultLogCopyText(entry) {
+            const parts = [
+                safeText(entry.type, "Notice").toUpperCase(),
+                safeText(entry.subject, "Receiver health"),
+                safeText(entry.message, ""),
+            ].filter(Boolean);
+            const stamp = formatFaultLogTimestamp(entry.updatedUnix);
+            if (stamp) parts.push(`Updated ${stamp}`);
+            if (safeText(entry.ageText, "")) parts.push(safeText(entry.ageText, ""));
+            return parts.join(" | ");
+        }
+
+        async function copyFaultLogEntry(entry, buttonEl) {
+            if (!entry) return;
+            const btn = buttonEl instanceof HTMLButtonElement ? buttonEl : null;
+            const priorLabel = btn ? btn.textContent : "";
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = "Copying...";
+            }
+            try {
+                await writeTextToClipboard(buildFaultLogCopyText(entry));
+                if (btn) btn.textContent = "Copied";
+            } catch (_) {
+                if (btn) btn.textContent = "Copy failed";
+            } finally {
+                if (btn) {
+                    window.setTimeout(() => {
+                        btn.disabled = false;
+                        btn.textContent = priorLabel || "Copy details";
+                    }, 1200);
+                }
+            }
+        }
+
+        function getFaultLogIconName(entry) {
+            const reasonKey = String(entry && entry.reasonKey || "").trim();
+            const type = String(entry && entry.type || "").trim().toLowerCase();
+            if (reasonKey === "kiwi_assignment_mismatch" || reasonKey === "kiwi_assignment_mismatch_observed") return "compass";
+            if (reasonKey === "stalled_no_decoder_output") return "pulse";
+            if (reasonKey === "narrow_decode_span") return "signal";
+            if (reasonKey === "silent_no_decodes" || reasonKey === "no_recent_decodes") return "activity";
+            if (reasonKey === "kiwi_not_visible") return "users";
+            if (reasonKey === "starting") return "rotate";
+            if (type === "reason") return "alert";
+            if (String(entry && entry.level || "").toLowerCase() === "healthy") return "heart";
+            return "alert";
+        }
+
+        function createFaultLogIcon(entry) {
+            const iconWrap = document.createElement("span");
+            iconWrap.className = "fault-log-icon";
+            const iconEl = document.createElement("span");
+            iconEl.className = "ui-icon";
+            iconEl.setAttribute("aria-hidden", "true");
+            iconEl.innerHTML = UI_ICONS[getFaultLogIconName(entry)] || UI_ICONS.alert || "";
+            iconWrap.append(iconEl);
+            return iconWrap;
+        }
+
+        function faultLogEntryKey(entry) {
+            return [
+                safeText(entry && entry.type, "notice"),
+                safeText(entry && entry.reasonKey, ""),
+                safeText(entry && entry.rx, "-"),
+                safeText(entry && entry.subject, ""),
+            ].join("|");
+        }
+
+        function faultLogEntryFingerprint(entry) {
+            return JSON.stringify([
+                safeText(entry && entry.level, "warning"),
+                safeText(entry && entry.type, "notice"),
+                safeText(entry && entry.reasonKey, ""),
+                safeText(entry && entry.subject, ""),
+                safeText(entry && entry.message, ""),
+                Number(entry && entry.updatedUnix || 0),
+            ]);
+        }
+
+        function markFaultLogEntryChanges(entries) {
+            const nextFingerprints = new Map();
+            const nowUnix = Date.now() / 1000;
+            (Array.isArray(entries) ? entries : []).forEach((entry) => {
+                const key = faultLogEntryKey(entry);
+                const fingerprint = faultLogEntryFingerprint(entry);
+                const prior = latestFaultLogEntryFingerprints.get(key);
+                entry.badgeType = "";
+                if (prior && prior !== fingerprint) {
+                    entry.badgeType = "changed";
+                } else if (!prior && hasFaultLogRendered) {
+                    const updatedUnix = Number(entry && entry.updatedUnix || 0);
+                    if (Number.isFinite(updatedUnix) && updatedUnix > 0 && (nowUnix - updatedUnix) <= FAULT_LOG_NEW_WINDOW_S) {
+                        entry.badgeType = "new";
+                    }
+                }
+                nextFingerprints.set(key, fingerprint);
+            });
+            latestFaultLogEntryFingerprints = nextFingerprints;
+            hasFaultLogRendered = true;
+        }
+
+        function appendFaultLogEntry(listEl, entry) {
+            if (!listEl || !entry) return;
+            const item = document.createElement("li");
+            const levelClass = faultLogLevelClass(entry.level);
+            item.className = `fault-log-entry fault-log-entry--${levelClass}`;
+
+            const top = document.createElement("div");
+            top.className = "fault-log-top";
+            const iconEl = createFaultLogIcon(entry);
+
+            const typeEl = document.createElement("span");
+            typeEl.className = "fault-log-type";
+            typeEl.textContent = safeText(entry.type, "NOTICE");
+
+            const subjectEl = document.createElement("span");
+            subjectEl.className = "fault-log-subject";
+            subjectEl.textContent = safeText(entry.subject, "Receiver health");
+
+            const badgeEl = document.createElement("span");
+            if (entry.badgeType) {
+                badgeEl.className = `fault-log-badge fault-log-badge--${safeText(entry.badgeType, "new")}`;
+                badgeEl.textContent = entry.badgeType === "changed" ? "Changed" : "New";
+            }
+
+            const messageEl = document.createElement("div");
+            messageEl.className = "fault-log-message";
+            messageEl.textContent = safeText(entry.message, "");
+
+            const metaParts = [];
+            const stamp = formatFaultLogTimestamp(entry.updatedUnix);
+            if (stamp) metaParts.push(`Updated ${stamp}`);
+            if (safeText(entry.ageText, "")) metaParts.push(safeText(entry.ageText, ""));
+
+            const metaEl = document.createElement("div");
+            metaEl.className = "fault-log-meta";
+            if (metaParts.length) {
+                const metaTimeEl = document.createElement("span");
+                metaTimeEl.className = "fault-log-meta-time";
+                metaTimeEl.textContent = metaParts.join(" · ");
+                metaEl.append(metaTimeEl);
+            }
+
+            {
+                const actionsEl = document.createElement("div");
+                actionsEl.className = "fault-log-actions";
+                const copyBtn = document.createElement("button");
+                copyBtn.type = "button";
+                copyBtn.className = "fault-log-jump";
+                copyBtn.textContent = "Copy details";
+                copyBtn.addEventListener("click", () => {
+                    copyFaultLogEntry(entry, copyBtn).catch(() => { });
+                });
+                actionsEl.append(copyBtn);
+
+                const jumpBtn = document.createElement("button");
+                if (entry.rx != null) {
+                    jumpBtn.type = "button";
+                    jumpBtn.className = "fault-log-jump";
+                    jumpBtn.textContent = `Jump to RX${safeText(entry.rx, "")}`;
+                    jumpBtn.addEventListener("click", () => jumpToReceiverCard(entry.rx));
+                    actionsEl.append(jumpBtn);
+                }
+                metaEl.append(actionsEl);
+            }
+
+            top.append(iconEl, typeEl, subjectEl);
+            if (entry.badgeType) top.append(badgeEl);
+            item.append(top, messageEl);
+            if (metaEl.childNodes.length) item.append(metaEl);
+            listEl.append(item);
+        }
+
+        function buildFaultLogEntries(health) {
+            const h = health && typeof health === "object" ? health : {};
+            const channels = h.channels && typeof h.channels === "object" ? h.channels : {};
+            const entries = [];
+            const representedReasonCounts = {};
+
+            Object.entries(channels)
+                .map(([rx, ch]) => [String(rx), ch && typeof ch === "object" ? ch : {}])
+                .filter(([, ch]) => {
+                    const level = String(ch.status_level || "healthy").toLowerCase();
+                    return level === "fault" || level === "warning";
+                })
+                .sort((left, right) => {
+                    const aa = String((left[1] || {}).status_level || "healthy").toLowerCase();
+                    const bb = String((right[1] || {}).status_level || "healthy").toLowerCase();
+                    const rank = (value) => value === "fault" ? 0 : 1;
+                    const delta = rank(aa) - rank(bb);
+                    if (delta !== 0) return delta;
+                    return Number(left[0]) - Number(right[0]);
+                })
+                .forEach(([rx, ch]) => {
+                    const level = String(ch.status_level || "warning").toLowerCase();
+                    const effectiveReason = String(
+                        ch.last_reason
+                        || (ch.is_no_decode_warning ? "no_recent_decodes" : "")
+                        || (ch.is_silent ? "silent_no_decodes" : "")
+                        || "unknown"
+                    );
+                    const meta = getHealthReasonMeta(effectiveReason);
+                    representedReasonCounts[effectiveReason] = Number(representedReasonCounts[effectiveReason] || 0) + 1;
+                    const rxLabel = `RX${safeText(ch.rx != null ? ch.rx : rx, rx)}`;
+                    const subjectParts = [rxLabel, safeText(ch.band, "-"), safeText(ch.mode, "-")].filter((part) => part && part !== "-");
+                    const detailBits = [];
+
+                    if ((ch.is_silent || ch.is_no_decode_warning) && Number.isFinite(Number(ch.decode_age_s))) {
+                        detailBits.push(`last decode ${fmtAge(ch.decode_age_s)} ago`);
+                    }
+                    if (ch.is_stalled && Number.isFinite(Number(ch.decoder_output_age_s))) {
+                        detailBits.push(`decoder output ${fmtAge(ch.decoder_output_age_s)} ago`);
+                    }
+                    if (safeText(ch.kiwi_occupant, "")) {
+                        detailBits.push(`slot occupied by ${safeText(ch.kiwi_occupant, "")}`);
+                    }
+                    if (Number.isFinite(Number(ch.consecutive_failures)) && Number(ch.consecutive_failures) > 0) {
+                        const count = Number(ch.consecutive_failures);
+                        detailBits.push(`${count} restart failure${count === 1 ? "" : "s"}`);
+                    }
+                    if (Number.isFinite(Number(ch.cooldown_remaining_s)) && Number(ch.cooldown_remaining_s) >= 1) {
+                        detailBits.push(`cooldown ${fmtAge(ch.cooldown_remaining_s)} remaining`);
+                    }
+
+                    entries.push({
+                        level,
+                        type: level === "fault" ? "Fault" : "Warning",
+                        reasonKey: effectiveReason,
+                        rx: ch.rx != null ? ch.rx : rx,
+                        subject: subjectParts.join(" · "),
+                        message: detailBits.length ? `${meta.detail} ${detailBits.join(" · ")}.` : meta.detail,
+                        updatedUnix: ch.last_updated_unix,
+                        ageText: Number.isFinite(Number(ch.last_updated_unix))
+                            ? `${fmtAge((Date.now() / 1000) - Number(ch.last_updated_unix))} ago`
+                            : "",
+                    });
+                });
+
+            const reasonCounts = h.reason_counts && typeof h.reason_counts === "object" ? h.reason_counts : {};
+            Object.keys(reasonCounts)
+                .sort((a, b) => Number(reasonCounts[b] || 0) - Number(reasonCounts[a] || 0))
+                .forEach((reason) => {
+                    const count = Number(reasonCounts[reason] || 0);
+                    if (!count) return;
+                    const representedCount = Number(representedReasonCounts[reason] || 0);
+                    if (representedCount >= count) return;
+                    const meta = getHealthReasonMeta(reason);
+                    entries.push({
+                        level: meta.level,
+                        type: "Reason",
+                        reasonKey: reason,
+                        subject: meta.label,
+                        message: `${count} receiver${count === 1 ? " is" : "s are"} currently affected.${representedCount > 0 ? ` ${representedCount} already appear${representedCount === 1 ? "s" : ""} in the live RX log above.` : ""}`,
+                    });
+                });
+
+            return entries;
+        }
+
+        function appendFaultLogSection(container, title, entries, emptyMessage = "") {
+            if (!container || (!entries.length && !emptyMessage)) return;
+            const section = document.createElement("section");
+            section.className = "fault-log-section";
+
+            const heading = document.createElement("div");
+            heading.className = "fault-log-section-title";
+            heading.innerHTML = `<span>${safeText(title)}</span><strong>${fmtCount(entries.length)}</strong>`;
+            section.append(heading);
+
+            const list = document.createElement("ul");
+            list.className = "assign-list fault-log-list";
+            section.append(list);
+
+            if (!entries.length && emptyMessage) {
+                appendFaultLogEntry(list, {
+                    level: "healthy",
+                    type: "Healthy",
+                    subject: safeText(title, "Section"),
+                    message: emptyMessage,
+                    updatedUnix: Date.now() / 1000,
+                    ageText: "just now",
+                });
+            } else {
+                entries.forEach((entry) => appendFaultLogEntry(list, entry));
+            }
+
+            container.append(section);
+        }
+
+        function renderReasons(health) {
             const el = byId("reasons");
             if (!el) return;
-            const counts = reasonCounts && typeof reasonCounts === "object" ? reasonCounts : {};
-            const keys = Object.keys(counts).sort((a, b) => Number(counts[b] || 0) - Number(counts[a] || 0));
-            if (!keys.length) {
-                el.innerHTML = "<li>No active faults</li>";
+            const entries = buildFaultLogEntries(health);
+            el.innerHTML = "";
+            if (!entries.length) {
+                latestFaultLogEntryFingerprints = new Map();
+                hasFaultLogRendered = true;
+                appendFaultLogSection(el, "Healthy", [], "No faults, warnings, or active reason counters are currently reported.");
                 return;
             }
-            el.innerHTML = keys
-                .map((k) => `<li><strong>${safeText(k)}</strong>: ${Number(counts[k] || 0)}</li>`)
-                .join("");
+            markFaultLogEntryChanges(entries);
+            const faultEntries = entries.filter((entry) => String(entry.type || "").toLowerCase() === "fault");
+            const warningEntries = entries.filter((entry) => String(entry.type || "").toLowerCase() === "warning");
+            const reasonEntries = entries.filter((entry) => String(entry.type || "").toLowerCase() === "reason");
+
+            appendFaultLogSection(el, "Faults", faultEntries);
+            appendFaultLogSection(el, "Warnings", warningEntries);
+            appendFaultLogSection(el, "Reasons", reasonEntries);
         }
 
         function renderAssignmentBalance(assignments) {
             const targets = [byId("assignment-balance")].filter(Boolean);
             if (!targets.length) return;
 
-            const autoModeEnabled = readSelectBool(
-                "auto-mode-enabled",
-                latestAutomationSettings && latestAutomationSettings.fixedModeEnabled !== false,
-            );
             const currentMode = getCurrentReceiversMode();
-            const scanModeActive = currentMode === "scan" || !!(latestReceiverScanStatus && latestReceiverScanStatus.mode_active);
-            const scanPreparedReserved = getPreparedScanReservedReceiverSet();
-            if (!(autoModeEnabled || scanModeActive)) {
+            const managedModeActive = isManagedReceiversMode(currentMode);
+            const reservedManagedReceivers = getReservedManagedReceiverSet(currentMode);
+            if (!managedModeActive) {
                 targets.forEach((el) => {
                     el.innerHTML = '<div class="balance-item"><div class="balance-band">none</div><div class="balance-value">0</div></div>';
                 });
@@ -13776,12 +14680,12 @@
             }
 
             const healthRows = Object.entries(latestChannelsMap || {})
-                .filter(([rx, item]) => item && typeof item === "object" && item.band && !scanPreparedReserved.has(Number(rx)))
+                .filter(([rx, item]) => item && typeof item === "object" && item.band && !reservedManagedReceivers.has(Number(rx)))
                 .map(([, item]) => item);
             const rows = healthRows.length
                 ? healthRows
                 : ((assignments && typeof assignments === "object" ? Object.entries(assignments) : [])
-                    .filter(([rx]) => !scanPreparedReserved.has(Number(rx)))
+                    .filter(([rx]) => !reservedManagedReceivers.has(Number(rx)))
                     .map(([, item]) => item));
             const counts = {};
             for (const item of rows) {
@@ -14092,7 +14996,6 @@
                 const rxIdEl = card.querySelector('[data-field="rx-id"]');
                 const bandLabelEl = card.querySelector('[data-field="band-label"]');
                 const rxLabel = `RX${safeText(ch.kiwi_rx != null ? ch.kiwi_rx : ch.rx, key)}`;
-                const bandColor = bandColorMap[band] || "#94a3b8";
                 const thisRxColor = rxColor(ch.kiwi_rx != null ? ch.kiwi_rx : ch.rx != null ? ch.rx : key);
                 if (nameEl) {
                     nameEl.style.color = thisRxColor;
@@ -14158,7 +15061,7 @@
             latestChannelsMap = h.channels || {};
             updateLastKnownSnrCache(latestChannelsMap);
             renderAssignments(latestAssignments);
-            renderReasons(h.reason_counts || {});
+            renderReasons(h);
             renderFixedPlanVerification(latestChannelsMap);
             if (latestSystemInfo) renderSystemPanel(latestSystemInfo);
 
@@ -14292,9 +15195,22 @@
             byId("chip-busiest-band").textContent = busiestText;
             byId("chip-all-decodes").textContent = fmtCount(totalDecodes);
             const faultEl = byId("summary-fault-load");
-            faultEl.textContent = `fault:${unstable} warn:${warns} reasons:${totalFaultReasons}`;
+            faultEl.innerHTML = "";
             faultEl.classList.remove("ok", "warn", "fault");
-            faultEl.classList.add(severity.css);
+            faultEl.classList.add(severity.css, "summary-v-stack");
+
+            const makeFaultLoadPill = (label, value, cls) => {
+                const span = document.createElement("span");
+                span.className = `fault-load-pill ${cls}`;
+                span.textContent = `${label} ${fmtCount(value)}`;
+                return span;
+            };
+
+            faultEl.append(
+                makeFaultLoadPill("Faults", unstable, "fault-load-pill--fault"),
+                makeFaultLoadPill("Warnings", warns, "fault-load-pill--warning"),
+                makeFaultLoadPill("Reasons", totalFaultReasons, "fault-load-pill--reason"),
+            );
 
             summaryFaultLoadHistory.push(faultLoad);
             summaryFaultLoadHistory = summaryFaultLoadHistory.slice(-60);

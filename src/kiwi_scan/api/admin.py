@@ -13,6 +13,8 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 
+from ..auto_set_loop import _FIXED_ASSIGNMENTS
+from ..receiver_manager import ReceiverAssignment
 from ..ws4010_server import restart_ws4010
 
 
@@ -336,10 +338,143 @@ def _set_launchd_enabled(enabled: bool) -> dict[str, object]:
     }
 
 
-def make_router(*, auto_set_loop: object | None = None, receiver_mgr: object | None = None) -> APIRouter:
+def make_router(
+    *,
+    auto_set_loop: object | None = None,
+    receiver_mgr: object | None = None,
+    mgr: object | None = None,
+) -> APIRouter:
     """Create router for admin endpoints."""
 
     router = APIRouter()
+    semi_hold_reason = "semi_transition"
+
+    def _build_fixed_assignments() -> dict[int, ReceiverAssignment]:
+        assignments: dict[int, ReceiverAssignment] = {}
+        for entry in _FIXED_ASSIGNMENTS:
+            rx = int(entry["rx"])
+            assignments[rx] = ReceiverAssignment(
+                rx=rx,
+                band=str(entry["band"]),
+                freq_hz=float(entry["freq_hz"]),
+                mode_label=str(entry["mode"]),
+                ignore_slot_check=True,
+            )
+        return assignments
+
+    def _wait_for_receiver_manager_settle(timeout_s: float = 8.0, poll_interval_s: float = 0.1) -> bool:
+        startup_event = getattr(receiver_mgr, "_startup_eviction_active", None)
+        if startup_event is None or not hasattr(startup_event, "is_set"):
+            return True
+        deadline = time.time() + max(0.0, float(timeout_s))
+        while bool(startup_event.is_set()):
+            if timeout_s > 0.0 and time.time() >= deadline:
+                return False
+            time.sleep(max(0.0, float(poll_interval_s)))
+        return True
+
+    def _wait_for_receiver_manager_lock(timeout_s: float = 8.0, poll_interval_s: float = 0.1) -> bool:
+        manager_lock = getattr(receiver_mgr, "_lock", None)
+        if manager_lock is None or not hasattr(manager_lock, "acquire") or not hasattr(manager_lock, "release"):
+            return True
+
+        deadline = time.time() + max(0.0, float(timeout_s))
+        while True:
+            acquired = False
+            try:
+                acquired = bool(manager_lock.acquire(blocking=False))
+            except TypeError:
+                acquired = bool(manager_lock.acquire(False))
+            except Exception:
+                return True
+            if acquired:
+                manager_lock.release()
+                return True
+            if timeout_s > 0.0 and time.time() >= deadline:
+                return False
+            time.sleep(max(0.0, float(poll_interval_s)))
+
+    def _clear_reserved_receiver_workers(host: str, port: int, reserved_slots: list[int]) -> list[int]:
+        stale_labels: set[str] = set()
+        stale_slots: set[int] = {int(rx) for rx in reserved_slots}
+        workers_to_stop: list[object] = []
+
+        expected_aliases = getattr(receiver_mgr, "_expected_user_label_aliases", None)
+        receiver_lock = getattr(receiver_mgr, "_lock", None)
+
+        def _collect_state() -> None:
+            assignments = getattr(receiver_mgr, "_assignments", None)
+            workers = getattr(receiver_mgr, "_workers", None)
+            activity = getattr(receiver_mgr, "_activity_by_rx", None)
+            for rx in reserved_slots:
+                assignment = assignments.pop(int(rx), None) if isinstance(assignments, dict) else None
+                worker = workers.pop(int(rx), None) if isinstance(workers, dict) else None
+                if isinstance(activity, dict):
+                    activity.pop(int(rx), None)
+                if assignment is not None and callable(expected_aliases):
+                    try:
+                        stale_labels.update(str(label).strip() for label in expected_aliases(assignment) if str(label).strip())
+                    except Exception:
+                        pass
+                active_label = str(getattr(worker, "_active_user_label", "") or "").strip()
+                if active_label:
+                    stale_labels.add(active_label)
+                if worker is not None:
+                    workers_to_stop.append(worker)
+
+        if receiver_lock is not None and hasattr(receiver_lock, "acquire") and hasattr(receiver_lock, "release"):
+            with receiver_lock:
+                _collect_state()
+        else:
+            _collect_state()
+
+        stop_worker = getattr(receiver_mgr, "_stop_worker", None)
+        for worker in workers_to_stop:
+            if callable(stop_worker):
+                stop_worker(worker, join_timeout_s=6.0)
+            elif hasattr(worker, "stop"):
+                worker.stop()
+
+        wait_missing = getattr(receiver_mgr, "_wait_for_kiwi_auto_users_missing", None)
+        if stale_labels and callable(wait_missing):
+            wait_missing(host=host, port=port, labels=set(stale_labels), timeout_s=4.0)
+
+        fetch_live_users = getattr(receiver_mgr, "_fetch_live_users", None)
+        label_matches_any = getattr(receiver_mgr, "_label_matches_any", None)
+        user_label_matches = getattr(receiver_mgr, "_user_label_matches", None)
+        if callable(fetch_live_users) and stale_labels:
+            try:
+                live_users = fetch_live_users(host, port)
+            except Exception:
+                live_users = {}
+            for slot, live_label in dict(live_users).items():
+                matches = False
+                if callable(label_matches_any):
+                    try:
+                        matches = bool(label_matches_any(set(stale_labels), live_label))
+                    except Exception:
+                        matches = False
+                elif callable(user_label_matches):
+                    try:
+                        matches = any(bool(user_label_matches(expected, live_label)) for expected in stale_labels)
+                    except Exception:
+                        matches = False
+                else:
+                    live_text = str(live_label or "").strip().upper()
+                    matches = any(str(expected or "").strip().upper() == live_text for expected in stale_labels)
+                if matches:
+                    stale_slots.add(int(slot))
+
+        cleanup_labels = getattr(receiver_mgr, "_cleanup_orphan_processes_for_labels", None)
+        if stale_labels and callable(cleanup_labels):
+            try:
+                cleanup_labels(set(stale_labels))
+            except Exception:
+                pass
+            if callable(wait_missing):
+                wait_missing(host=host, port=port, labels=set(stale_labels), timeout_s=4.0)
+
+        return sorted(stale_slots)
 
     @router.post("/admin/ws4010/restart")
     def restart_ws4010_endpoint() -> dict:
@@ -421,6 +556,65 @@ def make_router(*, auto_set_loop: object | None = None, receiver_mgr: object | N
 
         threading.Thread(target=_bg, daemon=True, name="force-reassign-bg").start()
         return {"ok": True, "status": "reassigning"}
+
+    @router.post("/admin/clear-roaming-receivers")
+    def clear_roaming_receivers_endpoint() -> dict:
+        if receiver_mgr is None or mgr is None:
+            raise HTTPException(status_code=503, detail="receiver management unavailable")
+        reserved_slots = [0, 1]
+        paused_external = False
+        try:
+            if auto_set_loop is not None:
+                auto_set_loop.pause_for_external(semi_hold_reason)  # type: ignore[attr-defined]
+                paused_external = True
+            manager_lock = getattr(mgr, "lock", None)
+            if manager_lock is not None:
+                with manager_lock:  # type: ignore[union-attr]
+                    host = str(getattr(mgr, "host"))
+                    port = int(getattr(mgr, "port"))
+            else:
+                host = str(getattr(mgr, "host"))
+                port = int(getattr(mgr, "port"))
+
+            if not _wait_for_receiver_manager_settle():
+                raise RuntimeError("receiver manager startup is still settling")
+            if not _wait_for_receiver_manager_lock():
+                raise RuntimeError("receiver manager is busy applying assignments")
+
+            stale_slots = _clear_reserved_receiver_workers(host, port, reserved_slots)
+
+            receiver_mgr._run_admin_kick_all(  # type: ignore[attr-defined]
+                host=host,
+                port=port,
+                kick_only_slots=list(stale_slots),
+                allow_fallback_kick_all=False,
+            )
+            receiver_mgr.apply_assignments(  # type: ignore[attr-defined]
+                host,
+                port,
+                _build_fixed_assignments(),
+                allow_starting_from_empty_full_reset=False,
+            )
+            receiver_mgr._wait_for_kiwi_slots_clear(  # type: ignore[attr-defined]
+                host=host,
+                port=port,
+                slots=set(stale_slots),
+                stable_secs=0.75,
+                timeout_s=4.0,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Failed clearing roaming receivers: {exc}")
+        finally:
+            if paused_external and auto_set_loop is not None:
+                try:
+                    auto_set_loop.resume_from_external(semi_hold_reason)  # type: ignore[attr-defined]
+                except Exception:
+                    pass
+        return {
+            "ok": True,
+            "status": "cleared",
+            "reserved_receivers": reserved_slots,
+        }
 
     @router.post("/admin/runtime/restart")
     def restart_runtime_endpoint() -> dict:

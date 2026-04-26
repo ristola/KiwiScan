@@ -17,6 +17,7 @@ from urllib import request as urllib_request
 from fastapi import APIRouter, WebSocket
 from fastapi.websockets import WebSocketDisconnect
 
+from ..bandplan import band_from_freq
 from ..maidenhead import distance_from_grid as _grid_distance
 from ..scheduler import block_for_hour, expected_schedule_by_season, season_for_date
 from ..auto_set_loop import _FIXED_ASSIGNMENTS
@@ -38,7 +39,8 @@ _published_decode_stats_by_rx: Dict[int, Dict[str, Any]] = {}
 # Server-side band activity chart buckets: fixed 15-second wall-clock intervals so the
 # data is accurate regardless of browser tab visibility or polling throttling.
 _CHART_BUCKET_S = 15.0
-_CHART_MAX_BUCKETS = 60  # 15 minutes of history
+_CHART_RETENTION_S = 24 * 60 * 60
+_CHART_MAX_BUCKETS = int(_CHART_RETENTION_S / _CHART_BUCKET_S)  # 24 hours of history
 _chart_lock = threading.Lock()
 _chart_buckets: deque = deque(maxlen=_CHART_MAX_BUCKETS)
 _chart_running: Dict[str, Any] = {}  # {"ts": float, "bands": {band: {"RXn|MODE": count}}}
@@ -53,6 +55,9 @@ _ws4010_debug_events: deque[Dict[str, Any]] = deque(maxlen=200)
 
 _automation_lock = threading.Lock()
 _valid_bands = ("10m", "12m", "15m", "17m", "20m", "30m", "40m", "60m", "80m", "160m")
+_GRID_PATTERN = re.compile(r"^[A-R]{2}\d{2}(?:[A-X]{2})?$", re.IGNORECASE)
+_GRID_SEARCH_RE = re.compile(r"\b[A-R]{2}\d{2}(?:[A-X]{2})?\b", re.IGNORECASE)
+_CALLSIGN_RE = re.compile(r"^[A-Z]{1,2}\d[A-Z0-9]{1,4}$")
 
 # Station coordinates for distance-to-decode calculations.
 # Loaded once from outputs/config.json; False means unavailable / load failed.
@@ -133,6 +138,221 @@ def get_published_decode_stats_by_rx() -> Dict[str, Dict[str, Any]]:
 
 def _decode_visible(payload: Dict[str, Any]) -> bool:
     return bool(payload.get("grid"))
+
+
+def _float_or_none(value: Any) -> float | None:
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(float(value))
+    except Exception:
+        return None
+
+
+def _extract_callsign_and_grid(message: str) -> tuple[str | None, str | None]:
+    callsign = None
+    grid = None
+    grid_match = _GRID_SEARCH_RE.search(message or "")
+    if grid_match:
+        candidate = grid_match.group(0).upper()
+        if candidate not in {"RR73", "R73"}:
+            grid = candidate
+
+    for token in re.findall(r"\b[A-Z0-9/]+\b", str(message or "").upper()):
+        if token in {"CQ", "QRZ", "RR73", "73", "R73"}:
+            continue
+        if _GRID_PATTERN.match(token):
+            continue
+        if _CALLSIGN_RE.match(token):
+            callsign = token
+            break
+
+    if callsign and grid and callsign.upper() == grid.upper():
+        callsign = None
+    return callsign, grid
+
+
+def _parse_wspr_fields(tokens: list[str]) -> Dict[str, Any]:
+    message = " ".join(tokens)
+    callsign = None
+    grid = None
+    power = None
+    snr = None
+    dt = None
+    hz = None
+
+    grid_idx: int | None = None
+    for idx in range(len(tokens) - 1, -1, -1):
+        candidate = str(tokens[idx] or "").strip().upper()
+        if _GRID_PATTERN.match(candidate):
+            grid = candidate
+            grid_idx = idx
+            break
+
+    call_idx: int | None = None
+    if grid_idx is not None:
+        for idx in range(grid_idx - 1, -1, -1):
+            candidate = str(tokens[idx] or "").strip().upper()
+            if not candidate or _GRID_PATTERN.match(candidate):
+                continue
+            if _CALLSIGN_RE.match(candidate):
+                callsign = candidate
+                call_idx = idx
+                break
+        if grid_idx + 1 < len(tokens):
+            power = _int_or_none(tokens[grid_idx + 1])
+        if callsign:
+            message_parts = [callsign, grid]
+            if power is not None:
+                message_parts.append(str(power))
+            message = " ".join(message_parts)
+
+    if call_idx is not None:
+        numeric_tokens: list[tuple[int, float]] = []
+        for idx, token in enumerate(tokens[:call_idx]):
+            value = _float_or_none(token)
+            if value is not None:
+                numeric_tokens.append((idx, value))
+
+        freq_idx: int | None = None
+        freq_mhz: float | None = None
+        freq_candidates = [
+            (idx, value)
+            for idx, value in numeric_tokens
+            if 0.0 < abs(value) < 0.1
+        ]
+        if freq_candidates:
+            freq_idx, freq_mhz = freq_candidates[-1]
+            hz = freq_mhz * 1e6
+        else:
+            hz_candidates = [
+                (idx, value)
+                for idx, value in numeric_tokens
+                if 100.0 <= abs(value) <= 5000.0
+            ]
+            if hz_candidates:
+                freq_idx, hz = hz_candidates[-1]
+
+        if freq_idx is not None:
+            prior_values = [value for idx, value in numeric_tokens if idx < freq_idx]
+            if prior_values:
+                dt = prior_values[-1]
+            if len(prior_values) >= 2:
+                snr = prior_values[-2]
+
+    return {
+        "callsign": callsign,
+        "grid": grid,
+        "message": message,
+        "snr": snr,
+        "dt": dt,
+        "hz": hz,
+        "power": power,
+    }
+
+
+def _add_decode_distance(payload: Dict[str, Any]) -> None:
+    grid = payload.get("grid")
+    if not grid:
+        return
+    coords = _get_station_coords()
+    if not coords:
+        return
+    dist = _grid_distance(coords[0], coords[1], str(grid))
+    if dist is None:
+        return
+    payload["dist_km"] = dist[0]
+    payload["dist_mi"] = dist[1]
+
+
+def _normalize_ws4010_decode_payload(payload: Dict[str, Any]) -> Dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+
+    payload_type = str(payload.get("type") or "").strip().lower()
+    if payload_type in {"command_ack", "command_notice", "pong"}:
+        return None
+    if any(key in payload for key in {"action", "command"}):
+        return None
+
+    mode = str(payload.get("mode") or payload.get("signal_type") or "").strip().upper()
+    if not mode or mode == "WS4010":
+        return None
+
+    message = str(payload.get("message") or "").strip()
+    callsign = str(payload.get("callsign") or "").strip().upper() or None
+    grid = str(payload.get("grid") or "").strip().upper() or None
+    if not callsign or not grid:
+        extracted_call, extracted_grid = _extract_callsign_and_grid(message)
+        callsign = callsign or extracted_call
+        grid = grid or extracted_grid
+
+    freq_hz = _float_or_none(payload.get("freq_hz"))
+    frequency_mhz = _float_or_none(payload.get("frequency_mhz"))
+    if frequency_mhz is None:
+        frequency_mhz = _float_or_none(payload.get("freq_mhz"))
+    if frequency_mhz is None:
+        frequency_mhz = _float_or_none(payload.get("frequency"))
+    if freq_hz is None and frequency_mhz is not None:
+        if abs(frequency_mhz) >= 100000.0:
+            freq_hz = frequency_mhz
+            frequency_mhz = frequency_mhz / 1e6
+        else:
+            freq_hz = frequency_mhz * 1e6
+    elif frequency_mhz is None and freq_hz is not None:
+        frequency_mhz = freq_hz / 1e6
+
+    band = str(payload.get("band") or "").strip()
+    if not band and freq_hz is not None:
+        inferred_band = band_from_freq(freq_hz)
+        band = str(inferred_band or "").strip()
+    if not band or band.lower() == "control":
+        return None
+
+    precision = 4 if mode == "WSPR" else 3
+    normalized: Dict[str, Any] = {
+        "timestamp": str(payload.get("timestamp") or datetime.now().astimezone().strftime("%H:%M:%S")).strip(),
+        "frequency_mhz": round(frequency_mhz, precision) if frequency_mhz is not None else None,
+        "mode": mode,
+        "callsign": callsign,
+        "grid": grid,
+        "message": message,
+        "snr": _float_or_none(payload.get("snr")),
+        "dt": _float_or_none(payload.get("dt")),
+        "hz": _float_or_none(payload.get("hz")),
+        "power": _int_or_none(payload.get("power")),
+        "band": band,
+        "rx": _int_or_none(payload.get("rx")),
+    }
+    source = str(payload.get("source") or "").strip()
+    if source:
+        normalized["source"] = source
+    _add_decode_distance(normalized)
+    return normalized
+
+
+def _ingest_ws4010_decode_raw(raw: str) -> Dict[str, Any] | None:
+    text = str(raw or "").strip()
+    if not text or not text.startswith("{"):
+        return None
+    try:
+        payload = json.loads(text)
+    except Exception:
+        try:
+            normalized = re.sub(r"\btrue\b", "True", text, flags=re.IGNORECASE)
+            normalized = re.sub(r"\bfalse\b", "False", normalized, flags=re.IGNORECASE)
+            normalized = re.sub(r"\bnull\b", "None", normalized, flags=re.IGNORECASE)
+            payload = ast.literal_eval(normalized)
+        except Exception:
+            return None
+    if not isinstance(payload, dict):
+        return None
+    return _normalize_ws4010_decode_payload(payload)
 
 
 def _get_station_coords() -> Optional[tuple[float, float]]:
@@ -845,53 +1065,17 @@ def _parse_decode_line(line: str) -> Dict[str, Optional[str]]:
                 else:
                     message = " ".join(parts[3:]) if len(parts) > 3 else ""
             elif mode == "WSPR":
-                # D: WSPR <epoch> <date> <time> <sync> <snr> <dt> <freq_audio_mhz> <call> <grid> <power> [...]
-                # indices:    0     1      2      3     4      5      6       7         8      9    10    11
-                if len(parts) >= 12:
-                    try:
-                        snr = float(parts[6])
-                    except Exception:
-                        snr = None
-                    try:
-                        dt = float(parts[7])
-                    except Exception:
-                        dt = None
-                    try:
-                        hz = float(parts[8]) * 1e6  # audio freq MHz -> Hz
-                    except Exception:
-                        hz = None
-                    try:
-                        power = int(float(parts[11]))
-                    except Exception:
-                        power = None
-                    # callsign=parts[9], grid=parts[10]; let the regex below extract them
-                    message = " ".join(parts[9:12])
-                else:
-                    message = " ".join(parts[3:]) if len(parts) > 3 else ""
+                wspr_fields = _parse_wspr_fields(parts[3:])
+                message = str(wspr_fields.get("message") or "")
+                snr = wspr_fields.get("snr")
+                dt = wspr_fields.get("dt")
+                hz = wspr_fields.get("hz")
+                power = wspr_fields.get("power")
             else:
                 # For other modes, keep the rest of the decoder line.
                 message = " ".join(parts[3:]) if len(parts) > 3 else ""
 
-    callsign = None
-    grid = None
-    grid_pattern = re.compile(r"^[A-R]{2}\d{2}(?:[A-X]{2})?$", re.IGNORECASE)
-    grid_match = re.search(r"\b[A-R]{2}\d{2}([A-X]{2})?\b", message, re.IGNORECASE)
-    if grid_match:
-        candidate = grid_match.group(0).upper()
-        if candidate not in {"RR73", "R73"}:
-            grid = candidate
-
-    for token in re.findall(r"\b[A-Z0-9/]+\b", message.upper()):
-        if token in {"CQ", "QRZ", "RR73", "73", "R73"}:
-            continue
-        if grid_pattern.match(token):
-            continue
-        if re.match(r"^[A-Z]{1,2}\d[A-Z0-9]{1,4}$", token):
-            callsign = token
-            break
-
-    if callsign and grid and callsign.upper() == grid.upper():
-        callsign = None
+    callsign, grid = _extract_callsign_and_grid(message)
 
     return {
         "callsign": callsign,
@@ -1105,16 +1289,7 @@ def decode_callback(event: Dict) -> None:
             "band": event.get("band"),
             "rx": event.get("rx"),
         }
-
-        grid = parsed.get("grid")
-        if grid:
-            coords = _get_station_coords()
-            if coords:
-                dist = _grid_distance(coords[0], coords[1], grid)
-                if dist is not None:
-                    payload["dist_km"] = dist[0]
-                    payload["dist_mi"] = dist[1]
-
+        _add_decode_distance(payload)
         publish_decode(payload)
     except Exception:
         logger.debug("decode_callback failed", exc_info=True)
@@ -1300,6 +1475,19 @@ async def websocket_decodes(websocket: WebSocket):
                         await _broadcast_decodes_4010(_ws4010_command_compat_frame(response), exclude=websocket)
                         for settings_frame in _ws4010_settings_decode_frames(response):
                             await _broadcast_decodes_4010(settings_frame, exclude=websocket)
+                    continue
+
+                inbound_decode = _ingest_ws4010_decode_raw(raw)
+                if inbound_decode is not None:
+                    _record_ws4010_debug(
+                        "decode_ingest",
+                        peer=peer_text,
+                        mode=inbound_decode.get("mode"),
+                        band=inbound_decode.get("band"),
+                        callsign=inbound_decode.get("callsign"),
+                        grid=inbound_decode.get("grid"),
+                    )
+                    publish_decode(inbound_decode)
             except WebSocketDisconnect:
                 break
             except Exception:

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import FastAPI
+import json
+
+from fastapi import FastAPI, WebSocket
 from fastapi.testclient import TestClient
 
 from kiwi_scan.api import decodes as decodes_api
@@ -48,6 +50,59 @@ def test_decodes_endpoint_hides_events_without_grid() -> None:
     assert body["latest"] == 2
     assert [item["mode"] for item in body["items"]] == ["FT8"]
     assert all(item.get("source") != "utility_monitor" for item in body["items"])
+
+
+def test_parse_decode_line_handles_short_wspr_format() -> None:
+    parsed = decodes_api._parse_decode_line(
+        "D: WSPR 1777127280 -22 -0.3 0.001416 0 N9KBV EM30 37"
+    )
+
+    assert parsed["mode"] == "WSPR"
+    assert parsed["callsign"] == "N9KBV"
+    assert parsed["grid"] == "EM30"
+    assert parsed["message"] == "N9KBV EM30 37"
+    assert parsed["snr"] == -22.0
+    assert parsed["dt"] == -0.3
+    assert parsed["hz"] == 1416.0
+    assert parsed["power"] == 37
+
+
+def test_ws4010_websocket_ingests_decode_payload_and_infers_band() -> None:
+    app = FastAPI()
+    app.include_router(decodes_api.router)
+
+    @app.websocket("/ws4010")
+    async def _ws4010(websocket: WebSocket):
+        await decodes_api.websocket_decodes_4010(websocket)
+
+    client = TestClient(app)
+
+    with client.websocket_connect("/ws4010") as websocket:
+        websocket.send_text(json.dumps({
+            "timestamp": "16:18:00",
+            "frequency_mhz": 14.0956,
+            "mode": "WSPR",
+            "callsign": "N9KBV",
+            "grid": "EM30",
+            "message": "N9KBV EM30 37",
+            "snr": -22,
+            "dt": -0.3,
+            "power": 37,
+            "rx": 3,
+            "source": "ws4010",
+        }))
+
+    response = client.get("/decodes")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["latest"] == 1
+    assert len(body["items"]) == 1
+    item = body["items"][0]
+    assert item["mode"] == "WSPR"
+    assert item["band"] == "20m"
+    assert item["grid"] == "EM30"
+    assert item["source"] == "ws4010"
 
 
 def test_prune_decode_buffer_discards_events_without_grid() -> None:
@@ -253,3 +308,27 @@ def test_reset_decode_metrics_clears_chart_history(monkeypatch) -> None:
     decodes_api.reset_decode_metrics()
 
     assert decodes_api.get_decodes_chart() == {"bucket_s": 15.0, "buckets": []}
+
+
+def test_decodes_chart_retains_up_to_24_hours_of_completed_buckets() -> None:
+    total_buckets = decodes_api._CHART_MAX_BUCKETS + 2
+    payload = {
+        "timestamp": "16:16:22",
+        "frequency_mhz": 14.074,
+        "mode": "FT8",
+        "callsign": "K1ABC",
+        "grid": "FN31",
+        "message": "CQ K1ABC FN31",
+        "band": "20m",
+        "rx": 2,
+    }
+
+    for idx in range(total_buckets):
+        decodes_api._chart_ingest(dict(payload), 100.0 + (idx * decodes_api._CHART_BUCKET_S))
+
+    body = decodes_api.get_decodes_chart()
+
+    assert body["bucket_s"] == 15.0
+    assert len(body["buckets"]) == decodes_api._CHART_MAX_BUCKETS
+    assert body["buckets"][0]["ts"] == 105.0
+    assert body["buckets"][-1]["ts"] == 90.0 + (decodes_api._CHART_MAX_BUCKETS * decodes_api._CHART_BUCKET_S)

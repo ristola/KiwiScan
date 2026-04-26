@@ -28,6 +28,16 @@ _STATUS_WEIGHT = {
 }
 
 
+def _normalized_receivers_mode(settings: Dict[str, Any] | None) -> str:
+    if isinstance(settings, dict):
+        raw = str(settings.get("receiversMode") or "").strip().lower()
+        if raw in {"auto", "semi", "manual", "scan"}:
+            return raw
+        if settings.get("fixedModeEnabled") is False:
+            return "manual"
+    return "auto"
+
+
 def _block_sort_key(block_key: object) -> tuple[int, int] | None:
     raw = str(block_key or "").strip()
     m = re.match(r"^(\d{2})-(\d{2})$", raw)
@@ -278,6 +288,7 @@ def make_router(
     mgr: object,
     receiver_mgr: object,
     auto_set_loop: object | None = None,
+    receiver_scan: object | None = None,
     band_order: List[str],
     band_freqs_hz: Dict[str, float],
     band_ft4_freqs_hz: Dict[str, float],
@@ -293,6 +304,25 @@ def make_router(
     _last_apply_signature: str | None = None
     _last_apply_response: dict | None = None
     _last_apply_ts: float = 0.0
+
+    def _receiver_scan_hold_reason() -> str | None:
+        if receiver_scan is None:
+            return None
+        try:
+            if hasattr(receiver_scan, "status"):
+                status = receiver_scan.status()  # type: ignore[attr-defined]
+                if isinstance(status, dict):
+                    if bool(status.get("running") or status.get("mode_active") or status.get("activating")):
+                        return "receiver_scan"
+            if bool(getattr(receiver_scan, "_running", False)):
+                return "receiver_scan"
+            if bool(getattr(receiver_scan, "_mode_active", False)):
+                return "receiver_scan"
+            if bool(getattr(receiver_scan, "_activating", False)):
+                return "receiver_scan"
+        except Exception:
+            return None
+        return None
 
     def _max_auto_receivers() -> int:
         raw = str(os.environ.get("KIWISCAN_AUTOSET_MAX_RX", "8") or "8").strip()
@@ -358,6 +388,8 @@ def make_router(
         mode = "ft8"
 
         external_hold_reason = _external_hold_reason() if enabled else None
+        if enabled and not external_hold_reason:
+            external_hold_reason = _receiver_scan_hold_reason()
 
         local_dt = datetime.now().astimezone()
         season = season_for_date(local_dt)
@@ -369,6 +401,10 @@ def make_router(
         block = str(payload.get("block") or "").strip()
         if not block or block not in table.blocks:
             block = block_for_hour(local_dt.hour, mode="ft8")
+
+        settings = _load_automation_settings()
+        if enabled and not external_hold_reason and _normalized_receivers_mode(settings) == "scan":
+            external_hold_reason = "receiver_scan"
 
         if enabled and external_hold_reason:
             logger.info(
@@ -384,8 +420,6 @@ def make_router(
                 "hold_reason": external_hold_reason,
                 "assignments": [],
             }
-
-        settings = _load_automation_settings()
 
         def _sanitize_band_modes(source: object) -> Dict[str, str]:
             out: Dict[str, str] = {}

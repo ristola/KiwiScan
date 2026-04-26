@@ -285,6 +285,15 @@ class AutoSetLoop:
         healthy, SmartScheduler ranks only the configured day/night roaming pool and
         fills the 2 spare receivers with the top-scored bands.
         """
+        if not self._roaming_enabled(settings):
+            return {
+                "enabled": True,
+                "mode": "ft8",
+                "block": day_night,
+                "fixed_assignments": list(_FIXED_ASSIGNMENTS),
+                "selected_bands": [],
+            }
+
         roaming = _ROAMING_DAY if day_night == "day" else _ROAMING_NIGHT
         _fixed_bands = {str(a["band"]).strip().lower() for a in _FIXED_ASSIGNMENTS}
         roaming_pool = [str(r["band"]) for r in roaming if str(r["band"]).strip().lower() not in _fixed_bands]
@@ -372,7 +381,22 @@ class AutoSetLoop:
         return current
 
     @staticmethod
+    def _receivers_mode(settings: Dict[str, Any]) -> str:
+        raw = str(settings.get("receiversMode") or "").strip().lower()
+        if raw in {"auto", "semi", "manual", "scan"}:
+            return raw
+        if not AutoSetLoop._safe_bool(settings.get("fixedModeEnabled"), default=True):
+            return "manual"
+        return "auto"
+
+    @staticmethod
+    def _roaming_enabled(settings: Dict[str, Any]) -> bool:
+        return AutoSetLoop._receivers_mode(settings) == "auto"
+
+    @staticmethod
     def _current_schedule_key(settings: Dict[str, Any]) -> tuple[str, str]:
+        if AutoSetLoop._receivers_mode(settings) == "scan":
+            return ("scan", "parked")
         if AutoSetLoop._safe_bool(settings.get("fixedModeEnabled"), default=True):
             local_hour = datetime.now().astimezone().hour
             day_night = "day" if 7 <= local_hour < 21 else "night"
@@ -386,6 +410,7 @@ class AutoSetLoop:
             "schedule_key": [str(schedule_key[0]), str(schedule_key[1])],
             "scheduleProfiles": settings.get("scheduleProfiles"),
             "fixedModeEnabled": settings.get("fixedModeEnabled"),
+            "receiversMode": AutoSetLoop._receivers_mode(settings),
         }
         return json.dumps(relevant, sort_keys=True, separators=(",", ":"))
 
@@ -591,6 +616,7 @@ class AutoSetLoop:
         while not self._stop.is_set():
             settings = self._load_settings()
             headless_enabled = self._safe_bool(settings.get("headlessEnabled"), default=True)
+            receivers_mode = self._receivers_mode(settings)
             schedule_key = self._current_schedule_key(settings)
             apply_signature = self._apply_signature(settings, schedule_key)
 
@@ -608,6 +634,15 @@ class AutoSetLoop:
             if external_hold_reason:
                 logger.info("Auto-set loop: external hold active (%s) — parking loop", external_hold_reason)
                 self._manual_mode_cleared = True
+                self._did_startup_apply = False
+                self._last_schedule_key = None
+                self._last_apply_signature = None
+                self._last_applied_band_config = None
+                self._wait_for_notification()
+                continue
+
+            if receivers_mode == "scan":
+                self._manual_mode_cleared = False
                 self._did_startup_apply = False
                 self._last_schedule_key = None
                 self._last_apply_signature = None
@@ -680,13 +715,13 @@ class AutoSetLoop:
                 else:
                     with self._state_lock:
                         last_band_config = self._last_applied_band_config
-                    if last_band_config is not None and '"bands":[]' in last_band_config:
+                    if self._roaming_enabled(settings) and last_band_config is not None and '"bands":[]' in last_band_config:
                         logger.info(
                             "Auto-set loop: fixed receivers now healthy — re-applying to fill scored roaming slots"
                         )
                         force_health_recovery = True
                         should_apply = True
-                if not should_apply:
+                if not should_apply and self._roaming_enabled(settings):
                     roaming_state, sick_roaming = self._roaming_health_state()
                     if roaming_state == "sick" and sick_roaming:
                         self._recovery_backoff_until_ts = time.time() + self._RECOVERY_BACKOFF_S
@@ -801,6 +836,7 @@ class AutoSetLoop:
             "interval_s": float(self._loop_interval_s()),
             "did_startup_apply": bool(self._did_startup_apply),
             "headless_enabled": bool(self._safe_bool(settings.get("headlessEnabled"), default=True)),
+            "receivers_mode": self._receivers_mode(settings),
             "fixed_mode_enabled": bool(self._safe_bool(settings.get("fixedModeEnabled"), default=True)),
             "manual_mode_parked": bool(self._manual_mode_cleared and not self._safe_bool(settings.get("fixedModeEnabled"), default=True)),
             "launchd_preferred": bool(self._safe_bool(settings.get("useLaunchd"), default=False)),
@@ -836,6 +872,9 @@ class AutoSetLoop:
             return
 
         settings = self._load_settings()
+        if self._receivers_mode(settings) == "scan":
+            logger.debug("force_reassign skipped — Scan Mode is active")
+            return
         if not self._safe_bool(settings.get("fixedModeEnabled"), default=True):
             logger.debug("force_reassign skipped — Auto Mode is OFF")
             return

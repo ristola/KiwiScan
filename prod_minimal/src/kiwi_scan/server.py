@@ -688,6 +688,7 @@ app.include_router(
         mgr=mgr,
         receiver_mgr=receiver_mgr,
         auto_set_loop=auto_set_loop,
+        receiver_scan=receiver_scan,
         band_order=BAND_ORDER,
         band_freqs_hz=BAND_FREQS_HZ,
         band_ft4_freqs_hz=BAND_FT4_FREQS_HZ,
@@ -704,7 +705,7 @@ app.include_router(
         rx_monitor=rx_monitor,
     )
 )
-app.include_router(make_admin_router(auto_set_loop=auto_set_loop, receiver_mgr=receiver_mgr))
+app.include_router(make_admin_router(auto_set_loop=auto_set_loop, receiver_mgr=receiver_mgr, mgr=mgr))
 app.include_router(make_automation_router(auto_set_loop=auto_set_loop))
 app.include_router(
     make_metrics_router(

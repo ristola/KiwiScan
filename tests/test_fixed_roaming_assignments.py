@@ -54,6 +54,20 @@ class _AutoSetLoopDirectHoldStub:
         return {"external_hold_reason": self._status_reason}
 
 
+class _ReceiverScanStatusStub:
+    def __init__(self, *, running: bool = False, mode_active: bool = False, activating: bool = False) -> None:
+        self._running = running
+        self._mode_active = mode_active
+        self._activating = activating
+
+    def status(self) -> dict[str, object]:
+        return {
+            "running": self._running,
+            "mode_active": self._mode_active,
+            "activating": self._activating,
+        }
+
+
 class _LoopResponse:
     def __init__(self, payload: object) -> None:
         self._body = json.dumps(payload).encode("utf-8")
@@ -97,6 +111,23 @@ def test_fixed_roaming_payload_night_uses_only_night_roaming_pool() -> None:
     assert payload.get("selected_bands") == ["60m", "80m"]
     assert payload.get("band_modes") == {"60m": "FT8", "80m": "FT4 / FT8", "160m": "WSPR"}
     assert set(payload.get("selected_bands", [])) <= {"60m", "80m", "160m"}
+
+
+def test_fixed_roaming_payload_semi_mode_keeps_fixed_receivers_only() -> None:
+    loop = AutoSetLoop()
+
+    payload = loop._build_fixed_roaming_payload({"receiversMode": "semi"}, "day")
+
+    assert payload.get("fixed_assignments") == [
+        {"rx": 2, "band": "20m", "mode": "FT4 / FT8", "freq_hz": 14_077_000.0},
+        {"rx": 3, "band": "20m", "mode": "WSPR", "freq_hz": 14_095_600.0},
+        {"rx": 4, "band": "40m", "mode": "FT8", "freq_hz": 7_074_000.0},
+        {"rx": 5, "band": "40m", "mode": "FT4 / WSPR", "freq_hz": 7_043_050.0},
+        {"rx": 6, "band": "30m", "mode": "FT4 / FT8 / WSPR", "freq_hz": 10_138_000.0},
+        {"rx": 7, "band": "17m", "mode": "FT4 / FT8 / WSPR", "freq_hz": 18_102_000.0},
+    ]
+    assert payload.get("selected_bands") == []
+    assert "band_modes" not in payload
 
 
 def test_fixed_roaming_payload_passes_current_roaming_to_smart_scheduler(monkeypatch) -> None:
@@ -311,6 +342,106 @@ def test_auto_set_suppressed_while_direct_hold_flag_is_active(monkeypatch) -> No
     payload = response.json()
     assert payload["held"] is True
     assert payload["hold_reason"] == "caption_monitor"
+    assert receiver_mgr.apply_calls == 0
+    assert receiver_mgr.last_assignments == {}
+
+
+def test_auto_set_suppressed_while_receiver_scan_mode_is_active_without_loop_hold(monkeypatch) -> None:
+    monkeypatch.delenv("KIWISCAN_AUTOSET_MAX_RX", raising=False)
+
+    mgr = _MgrStub()
+    receiver_mgr = _ReceiverMgrStub()
+    app = FastAPI()
+    app.include_router(
+        make_router(
+            mgr=mgr,
+            receiver_mgr=receiver_mgr,
+            auto_set_loop=_AutoSetLoopStatusStub(None),
+            receiver_scan=_ReceiverScanStatusStub(mode_active=True),
+            band_order=["10m", "12m", "15m", "17m", "20m", "30m", "40m", "60m", "80m", "160m"],
+            band_freqs_hz={
+                "10m": 28_074_000.0,
+                "15m": 21_074_000.0,
+            },
+            band_ft4_freqs_hz={},
+            band_wspr_freqs_hz={},
+        )
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/auto_set_receivers",
+        json={
+            "enabled": True,
+            "force": True,
+            "mode": "ft8",
+            "block": "day",
+            "selected_bands": ["15m", "10m"],
+            "band_modes": {
+                "15m": "FT8",
+                "10m": "FT8",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["held"] is True
+    assert payload["hold_reason"] == "receiver_scan"
+    assert receiver_mgr.apply_calls == 0
+    assert receiver_mgr.last_assignments == {}
+
+
+def test_auto_set_suppressed_while_receivers_mode_scan_is_saved(monkeypatch) -> None:
+    monkeypatch.delenv("KIWISCAN_AUTOSET_MAX_RX", raising=False)
+    monkeypatch.setattr(
+        auto_set_api,
+        "_load_automation_settings",
+        lambda: {
+            "fixedModeEnabled": True,
+            "headlessEnabled": True,
+            "receiversMode": "scan",
+        },
+    )
+
+    mgr = _MgrStub()
+    receiver_mgr = _ReceiverMgrStub()
+    app = FastAPI()
+    app.include_router(
+        make_router(
+            mgr=mgr,
+            receiver_mgr=receiver_mgr,
+            auto_set_loop=_AutoSetLoopStatusStub(None),
+            band_order=["10m", "12m", "15m", "17m", "20m", "30m", "40m", "60m", "80m", "160m"],
+            band_freqs_hz={
+                "10m": 28_074_000.0,
+                "15m": 21_074_000.0,
+            },
+            band_ft4_freqs_hz={},
+            band_wspr_freqs_hz={},
+        )
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/auto_set_receivers",
+        json={
+            "enabled": True,
+            "force": True,
+            "mode": "ft8",
+            "block": "day",
+            "selected_bands": ["15m", "10m"],
+            "band_modes": {
+                "15m": "FT8",
+                "10m": "FT8",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["held"] is True
+    assert payload["hold_reason"] == "receiver_scan"
     assert receiver_mgr.apply_calls == 0
     assert receiver_mgr.last_assignments == {}
 
@@ -646,6 +777,24 @@ def test_force_reassign_posts_payload_when_not_held(monkeypatch) -> None:
     assert loop._last_apply_signature is None
     assert loop._last_schedule_key is None
     assert loop._last_applied_band_config is None
+
+
+def test_force_reassign_skips_when_receivers_mode_scan(monkeypatch) -> None:
+    loop = AutoSetLoop()
+
+    monkeypatch.setattr(loop, "_load_settings", lambda: {"fixedModeEnabled": True, "receiversMode": "scan"})
+    monkeypatch.setattr(
+        loop,
+        "_build_payload",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("build should not be called")),
+    )
+
+    posted: list[dict] = []
+    monkeypatch.setattr(loop, "_post_auto_set", lambda payload: posted.append(dict(payload)))
+
+    loop.force_reassign()
+
+    assert posted == []
 
 
 def test_run_reapplies_when_scored_band_config_changes_without_schedule_change(monkeypatch) -> None:

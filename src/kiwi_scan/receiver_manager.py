@@ -304,6 +304,20 @@ class _ReceiverWorker(threading.Thread):
     def _strict_digital_slot_enforcement(self) -> bool:
         return self._env_bool("KIWISCAN_STRICT_DIGITAL_SLOT_ENFORCEMENT", True)
 
+    def _requires_strict_slot_check(self) -> bool:
+        mode_norm = self._mode_label.strip().upper()
+        if ("SSB" in mode_norm) or ("PHONE" in mode_norm):
+            return True
+        if not self._is_digital_mode():
+            return False
+        # RX0/RX1 are the roaming pool in Auto mode. Kiwi can legitimately
+        # swap those two digital workers between slots 0 and 1, so forcing a
+        # strict match there causes endless restart loops instead of letting
+        # the existing remap-adaptation logic settle.
+        if int(self._rx) < 2:
+            return False
+        return bool(self._strict_digital_slot_enforcement())
+
     def _pipeline_log_path(self) -> Path:
         return Path("/tmp") / f"kiwi_rx{self._rx}_pipeline.log"
 
@@ -1390,11 +1404,9 @@ class _ReceiverWorker(threading.Thread):
                     break
                 if time.time() >= next_channel_check:
                     next_channel_check = time.time() + self._watchdog_channel_check_s()
-                    mode_norm = self._mode_label.strip().upper()
-                    is_ssb = ("SSB" in mode_norm) or ("PHONE" in mode_norm)
+                    strict = self._requires_strict_slot_check()
+                    is_ssb = strict and not self._is_digital_mode()
                     if not self._ignore_slot_check:
-                        strict_roaming_digital = bool(int(self._rx) < 2 and self._is_digital_mode())
-                        strict = bool(is_ssb) or strict_roaming_digital or bool(self._strict_digital_slot_enforcement())
                         if not self._verify_kiwi_rx_channel(
                             user_label=self._active_user_label,
                             expected_rx=self._kiwi_rx_chan(),
@@ -3669,7 +3681,7 @@ class ReceiverManager:
 
     @classmethod
     def _force_full_reset_on_reconcile_enabled(cls) -> bool:
-        return cls._env_bool("KIWISCAN_RESET_ALL_ON_RECONCILE", True)
+        return cls._env_bool("KIWISCAN_RESET_ALL_ON_RECONCILE", False)
 
     @classmethod
     def _band_plan_changed(cls, current: Dict[int, ReceiverAssignment], desired: Dict[int, ReceiverAssignment]) -> bool:
@@ -3890,22 +3902,47 @@ class ReceiverManager:
         if not live_users:
             return set()
 
+        expected_labels_by_rx = {
+            int(rx): self._expected_user_label_aliases(assignment)
+            for rx, assignment in assignments.items()
+        }
+
+        def _managed_owner_for_label(label: str, *, exclude_rx: int | None = None) -> int | None:
+            text = str(label or "").strip()
+            if not text:
+                return None
+            for managed_rx, managed_labels in expected_labels_by_rx.items():
+                if exclude_rx is not None and int(managed_rx) == int(exclude_rx):
+                    continue
+                if self._label_matches_any(managed_labels, text):
+                    return int(managed_rx)
+            return None
+
         out: set[int] = set()
         for rx, assignment in assignments.items():
-            expected_labels = self._expected_user_label_aliases(assignment)
+            expected_labels = expected_labels_by_rx[int(rx)]
             ignore_slot = bool(getattr(assignment, "ignore_slot_check", False))
             if ignore_slot:
                 # For fixed receivers (ignore_slot_check=True), the Kiwi slot won't
                 # match the app rx number. Still require the expected FIXED_* label to
                 # be visible somewhere on the Kiwi, otherwise stale AUTO users can keep
                 # the worker blocked indefinitely while the local thread looks healthy.
-                label_found = any(
-                    self._label_matches_any(expected_labels, lbl)
-                    for lbl in live_users.values()
-                )
-                if not label_found:
+                visible_slots = [
+                    int(slot)
+                    for slot, lbl in live_users.items()
+                    if self._label_matches_any(expected_labels, lbl)
+                ]
+                if not visible_slots:
                     out.add(int(rx))
                     continue
+                expected_slot = int(rx)
+                if expected_slot not in visible_slots:
+                    blocking_label = str(live_users.get(expected_slot, "") or "").strip()
+                    blocking_owner = _managed_owner_for_label(blocking_label, exclude_rx=int(rx))
+                    if blocking_owner is not None:
+                        out.add(int(rx))
+                        out.add(int(blocking_owner))
+                        continue
                 worker = self._workers.get(int(rx))
                 if worker is None:
                     out.add(int(rx))
@@ -4115,6 +4152,7 @@ class ReceiverManager:
                         not host_changed
                         and assignment is not None
                         and bool(getattr(assignment, "ignore_slot_check", False))
+                        and int(rx) not in reconcile_rxs
                         and int(rx) in self._assignments
                         and self._assignment_equivalent(self._assignments[int(rx)], assignment)
                         and self._workers.get(int(rx)) is not None

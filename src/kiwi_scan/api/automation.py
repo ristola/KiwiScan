@@ -38,6 +38,7 @@ _DEFAULT_SETTINGS: Dict[str, Any] = {
     "autoScanOnStartup": False,
     "autoRefreshSchedule": True,
     "headlessEnabled": True,
+    "receiversMode": "auto",
     "useLaunchd": False,
     "uiThemeMode": "auto",
     "uiThemeNightHour": 21,
@@ -84,6 +85,11 @@ def _sanitize_settings(payload: Dict[str, Any] | None) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         return {}
     clean = {key: value for key, value in payload.items() if key not in _DEPRECATED_SETTINGS_KEYS}
+    receivers_mode = str(clean.get("receiversMode") or "").strip().lower()
+    if receivers_mode in {"auto", "semi", "manual", "scan"}:
+        clean["receiversMode"] = receivers_mode
+    else:
+        clean.pop("receiversMode", None)
     if "scheduleProfiles" in clean:
         clean["scheduleProfiles"] = _sanitize_schedule_profiles(clean.get("scheduleProfiles"))
     return clean

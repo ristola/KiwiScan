@@ -35,6 +35,57 @@ def test_automation_settings_post_notifies_auto_set_loop(monkeypatch) -> None:
     assert saved[-1]["fixedModeEnabled"] is False
 
 
+def test_automation_settings_normalize_receivers_mode(monkeypatch) -> None:
+    saved: list[dict] = []
+
+    monkeypatch.setattr(automation_api, "_load_settings", lambda: {"headlessEnabled": True})
+    monkeypatch.setattr(automation_api, "_save_settings", lambda payload: saved.append(dict(payload)))
+
+    app = FastAPI()
+    app.include_router(automation_api.make_router())
+    client = TestClient(app)
+
+    response = client.post("/automation/settings", json={"receiversMode": "scan"})
+
+    assert response.status_code == 200
+    assert saved
+    assert saved[-1]["receiversMode"] == "scan"
+
+
+def test_automation_settings_normalize_semi_receivers_mode(monkeypatch) -> None:
+    saved: list[dict] = []
+
+    monkeypatch.setattr(automation_api, "_load_settings", lambda: {"headlessEnabled": True})
+    monkeypatch.setattr(automation_api, "_save_settings", lambda payload: saved.append(dict(payload)))
+
+    app = FastAPI()
+    app.include_router(automation_api.make_router())
+    client = TestClient(app)
+
+    response = client.post("/automation/settings", json={"receiversMode": "semi"})
+
+    assert response.status_code == 200
+    assert saved
+    assert saved[-1]["receiversMode"] == "semi"
+
+
+def test_automation_settings_drop_invalid_receivers_mode(monkeypatch) -> None:
+    saved: list[dict] = []
+
+    monkeypatch.setattr(automation_api, "_load_settings", lambda: {"headlessEnabled": True})
+    monkeypatch.setattr(automation_api, "_save_settings", lambda payload: saved.append(dict(payload)))
+
+    app = FastAPI()
+    app.include_router(automation_api.make_router())
+    client = TestClient(app)
+
+    response = client.post("/automation/settings", json={"receiversMode": "bogus"})
+
+    assert response.status_code == 200
+    assert saved
+    assert saved[-1]["receiversMode"] == "auto"
+
+
 def test_automation_settings_strip_deprecated_legacy_keys(monkeypatch) -> None:
     saved: list[dict] = []
 

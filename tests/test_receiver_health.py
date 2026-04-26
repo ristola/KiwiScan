@@ -49,6 +49,21 @@ def _make_worker(*, initial_rx_chan_adjust: int = 0) -> _ReceiverWorker:
     )
 
 
+def _make_worker_for_assignment(*, rx: int, band: str, freq_hz: float, mode_label: str) -> _ReceiverWorker:
+    return _ReceiverWorker(
+        kiwirecorder_path=Path("/bin/sh"),
+        ft8modem_path=Path("/bin/sh"),
+        af2udp_path=Path("/bin/sh"),
+        sox_path="/bin/sh",
+        host="kiwi.local",
+        port=8073,
+        rx=rx,
+        band=band,
+        freq_hz=freq_hz,
+        mode_label=mode_label,
+    )
+
+
 def _set_visible_user(monkeypatch, user_label: str) -> None:
     payload = [{"i": 2, "n": user_label, "t": "0:10:00"}]
 
@@ -90,7 +105,7 @@ def test_receiver_manager_bool_env_helpers_honor_false_values(monkeypatch) -> No
     monkeypatch.delenv("KIWISCAN_RESET_ALL_ON_RECONCILE", raising=False)
 
     assert ReceiverManager._force_full_reset_on_band_change_enabled() is True
-    assert ReceiverManager._force_full_reset_on_reconcile_enabled() is True
+    assert ReceiverManager._force_full_reset_on_reconcile_enabled() is False
 
 
 def test_receiver_worker_env_helpers_respect_defaults_and_overrides(monkeypatch) -> None:
@@ -125,6 +140,18 @@ def test_receiver_worker_env_helpers_clamp_and_fallback(monkeypatch) -> None:
     monkeypatch.setenv("KIWISCAN_RX_CHAN_OFFSET", "999")
 
     assert _ReceiverWorker._env_int("KIWISCAN_RX_CHAN_OFFSET", 0, min_v=-64, max_v=64) == 64
+
+
+def test_receiver_worker_requires_strict_slot_check_respects_mode_and_roaming(monkeypatch) -> None:
+    monkeypatch.delenv("KIWISCAN_STRICT_DIGITAL_SLOT_ENFORCEMENT", raising=False)
+
+    roaming_worker = _make_worker_for_assignment(rx=0, band="10m", freq_hz=28_074_000.0, mode_label="FT8")
+    fixed_worker = _make_worker_for_assignment(rx=2, band="20m", freq_hz=14_074_000.0, mode_label="FT8")
+    ssb_worker = _make_worker_for_assignment(rx=0, band="40m", freq_hz=7_200_000.0, mode_label="SSB")
+
+    assert roaming_worker._requires_strict_slot_check() is False
+    assert fixed_worker._requires_strict_slot_check() is True
+    assert ssb_worker._requires_strict_slot_check() is True
 
 
 def test_receiver_worker_digital_usb_cut_args_match_ft8_decoder_window() -> None:
@@ -798,6 +825,127 @@ def test_apply_assignments_targeted_correction_keeps_healthy_workers_running(mon
     assert start_counts == {2: 1, 3: 2}
 
 
+def test_apply_assignments_reconcile_repairs_only_swapped_fixed_receivers(monkeypatch) -> None:
+    manager = _make_manager()
+    assignments = {
+        2: ReceiverAssignment(
+            rx=2,
+            band="20m",
+            freq_hz=14_077_000.0,
+            mode_label="FT4 / FT8",
+            ignore_slot_check=True,
+        ),
+        4: ReceiverAssignment(
+            rx=4,
+            band="40m",
+            freq_hz=7_074_000.0,
+            mode_label="FT8",
+            ignore_slot_check=True,
+        ),
+        6: ReceiverAssignment(
+            rx=6,
+            band="30m",
+            freq_hz=10_138_000.0,
+            mode_label="FT4 / FT8 / WSPR",
+            ignore_slot_check=True,
+        ),
+    }
+    manager._assignments = dict(assignments)
+    manager._active_host = "kiwi.local"
+    manager._active_port = 8073
+
+    fake_now = {"value": 0.0}
+    live_users: dict[int, str] = {
+        2: "FIXED_40m_FT8",
+        5: "FIXED_20m_MIX",
+        6: "FIXED_30m_ALL",
+    }
+    start_counts: dict[int, int] = {}
+    stop_counts: dict[int, int] = {}
+    kick_calls: list[tuple[bool, tuple[int, ...] | None]] = []
+    cleanup_calls: list[str] = []
+
+    class _FakeWorker:
+        def __init__(self, assignment: ReceiverAssignment) -> None:
+            self.assignment = assignment
+            self._rx_chan_adjust = 0
+            self._active_user_label = ReceiverManager._expected_user_label(assignment)
+
+        def is_alive(self) -> bool:
+            return True
+
+        def start(self) -> None:
+            rx = int(self.assignment.rx)
+            start_counts[rx] = int(start_counts.get(rx, 0)) + 1
+            live_users[rx] = self._active_user_label
+
+        def stop(
+            self,
+            join_timeout_s: float = 3.0,
+            *,
+            graceful: bool = False,
+            graceful_timeout_s: float = 5.0,
+        ) -> None:
+            rx = int(self.assignment.rx)
+            stop_counts[rx] = int(stop_counts.get(rx, 0)) + 1
+            for slot, label in list(live_users.items()):
+                if ReceiverManager._user_label_matches(self._active_user_label, label):
+                    live_users.pop(slot, None)
+
+    manager._workers = {
+        2: _FakeWorker(assignments[2]),
+        4: _FakeWorker(assignments[4]),
+        6: _FakeWorker(assignments[6]),
+    }
+
+    monkeypatch.setattr(receiver_manager.time, "time", lambda: fake_now["value"])
+    monkeypatch.setattr(
+        receiver_manager.time,
+        "sleep",
+        lambda seconds: fake_now.__setitem__("value", fake_now["value"] + seconds),
+    )
+    monkeypatch.setattr(manager, "_required_dependency_errors", lambda assignments: [])
+    monkeypatch.setattr(manager, "_cleanup_orphan_processes", lambda: cleanup_calls.append("global"))
+    monkeypatch.setattr(manager, "_wait_for_orphan_cleanup", lambda timeout_s=6.0: None)
+    monkeypatch.setattr(manager, "_wait_for_kiwi_auto_users_missing", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_wait_for_kiwi_auto_users_clear", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_wait_for_kiwi_slots_stable_clear", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_wait_for_kiwi_slots_clear", lambda **kwargs: True)
+    monkeypatch.setattr(manager, "_fetch_live_auto_users", lambda host, port: dict(live_users))
+    monkeypatch.setattr(manager, "_fetch_live_users", lambda host, port: dict(live_users))
+    monkeypatch.setattr(
+        manager,
+        "_fetch_live_users_with_age",
+        lambda host, port: {int(slot): (label, 0.0) for slot, label in live_users.items()},
+    )
+    monkeypatch.setattr(
+        manager,
+        "_run_admin_kick_all",
+        lambda host, port, force_all=False, kick_only_slots=None: (
+            kick_calls.append((bool(force_all), None if kick_only_slots is None else tuple(sorted(int(slot) for slot in kick_only_slots)))),
+            live_users.clear() if force_all or kick_only_slots is None else [live_users.pop(int(slot), None) for slot in kick_only_slots],
+            True,
+        )[-1],
+    )
+    monkeypatch.setattr(
+        manager,
+        "_make_worker",
+        lambda host, port, assignment, rx_chan_adjust=0, ignore_slot_check=None: _FakeWorker(assignment),
+    )
+
+    manager.apply_assignments("kiwi.local", 8073, assignments)
+
+    assert cleanup_calls == []
+    assert stop_counts == {2: 1, 4: 1}
+    assert start_counts == {2: 1, 4: 1}
+    assert kick_calls == []
+    assert live_users == {
+        2: "FIXED_20m_MIX",
+        4: "FIXED_40m_FT8",
+        6: "FIXED_30m_ALL",
+    }
+
+
 def test_reconcile_marks_fixed_receiver_missing_when_expected_label_absent(monkeypatch) -> None:
     manager = _make_manager()
     assignment = ReceiverAssignment(
@@ -858,6 +1006,73 @@ def test_reconcile_keeps_fixed_receiver_when_expected_label_visible(monkeypatch)
         host="kiwi.local",
         port=8073,
         assignments={5: assignment},
+    )
+
+    assert reconcile == set()
+
+
+def test_reconcile_marks_internal_fixed_slot_permutation(monkeypatch) -> None:
+    manager = _make_manager()
+    assignments = {
+        2: ReceiverAssignment(
+            rx=2,
+            band="20m",
+            freq_hz=14_077_000.0,
+            mode_label="FT4 / FT8",
+            ignore_slot_check=True,
+        ),
+        4: ReceiverAssignment(
+            rx=4,
+            band="40m",
+            freq_hz=7_074_000.0,
+            mode_label="FT8",
+            ignore_slot_check=True,
+        ),
+    }
+
+    manager._workers[2] = SimpleNamespace(_active_user_label="FIXED_20m_MIX", _slot_ready=threading.Event())
+    manager._workers[4] = SimpleNamespace(_active_user_label="FIXED_40m_FT8", _slot_ready=threading.Event())
+
+    _set_users_payload(
+        monkeypatch,
+        [
+            {"i": 2, "n": "FIXED_40m_FT8", "t": "0:10:00"},
+            {"i": 5, "n": "FIXED_20m_MIX", "t": "0:10:00"},
+        ],
+    )
+
+    reconcile = manager._assignment_slots_needing_reconcile(
+        host="kiwi.local",
+        port=8073,
+        assignments=assignments,
+    )
+
+    assert reconcile == {2, 4}
+
+
+def test_reconcile_keeps_offset_fixed_receiver_when_foreign_blocker_present(monkeypatch) -> None:
+    manager = _make_manager()
+    assignment = ReceiverAssignment(
+        rx=2,
+        band="20m",
+        freq_hz=14_074_000.0,
+        mode_label="FT8",
+        ignore_slot_check=True,
+    )
+    manager._workers[2] = SimpleNamespace(_active_user_label="FIXED_20m_FT8", _slot_ready=threading.Event())
+
+    _set_users_payload(
+        monkeypatch,
+        [
+            {"i": 2, "n": "AUTO_40M_FT8", "t": "0:10:00"},
+            {"i": 7, "n": "FIXED_20m_FT8", "t": "0:10:00"},
+        ],
+    )
+
+    reconcile = manager._assignment_slots_needing_reconcile(
+        host="kiwi.local",
+        port=8073,
+        assignments={2: assignment},
     )
 
     assert reconcile == set()
