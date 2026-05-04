@@ -509,7 +509,10 @@ def make_router(
                 fixed_assignments_list.append({"rx": rx_f, "band": band_f, "mode": mode_f, "freq_hz": freq_f})
 
         if selected_set is not None:
-            desired_bands = [b for b in band_order if b in selected_set and b not in empirical_closed]
+            if isinstance(settings, dict) and bool(settings.get("fixedModeEnabled", False)):
+                desired_bands = [b for b in band_order if b in selected_set]
+            else:
+                desired_bands = [b for b in band_order if b in selected_set and b not in empirical_closed]
         else:
             desired_bands = [b for b in open_bands if b not in empirical_closed]
         if fixed_band_set:

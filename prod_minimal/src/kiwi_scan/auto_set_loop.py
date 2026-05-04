@@ -296,8 +296,14 @@ class AutoSetLoop:
 
         roaming = _ROAMING_DAY if day_night == "day" else _ROAMING_NIGHT
         _fixed_bands = {str(a["band"]).strip().lower() for a in _FIXED_ASSIGNMENTS}
-        roaming_pool = [str(r["band"]) for r in roaming if str(r["band"]).strip().lower() not in _fixed_bands]
-        band_modes: Dict[str, str] = {str(r["band"]): str(r["mode"]) for r in roaming if str(r["band"]).strip().lower() not in _fixed_bands}
+        base_roaming_pool = [str(r["band"]) for r in roaming if str(r["band"]).strip().lower() not in _fixed_bands]
+        base_band_modes: Dict[str, str] = {
+            str(r["band"]): str(r["mode"])
+            for r in roaming
+            if str(r["band"]).strip().lower() not in _fixed_bands
+        }
+        roaming_pool = list(base_roaming_pool)
+        band_modes: Dict[str, str] = dict(base_band_modes)
         closed_bands: list[str] = []
         if self._smart_scheduler is not None:
             try:
@@ -329,6 +335,22 @@ class AutoSetLoop:
         if len(selected_bands) < num_roaming_slots:
             fallback = [b for b in roaming_pool if b not in selected_bands]
             selected_bands.extend(fallback[:(num_roaming_slots - len(selected_bands))])
+
+        if len(selected_bands) < num_roaming_slots:
+            fallback_closed = [b for b in base_roaming_pool if b not in selected_bands]
+            if fallback_closed:
+                logger.info(
+                    "Only %d roaming band(s) remained after closed-band filtering; "
+                    "using fallback bands to keep RX0/RX1 populated: %s",
+                    len(selected_bands),
+                    fallback_closed,
+                )
+                selected_bands.extend(fallback_closed[:(num_roaming_slots - len(selected_bands))])
+
+        band_modes = dict(band_modes)
+        for band in selected_bands:
+            if band in base_band_modes:
+                band_modes.setdefault(band, base_band_modes[band])
 
         if fixed_health_state != "healthy":
             logger.info(

@@ -177,6 +177,32 @@ def test_fixed_roaming_payload_excludes_closed_bands(monkeypatch) -> None:
     assert payload.get("closed_bands") == ["10m"]
 
 
+def test_fixed_roaming_payload_falls_back_when_closed_bands_leave_one_roaming_slot(monkeypatch) -> None:
+    loop = AutoSetLoop()
+
+    class _SmartSchedulerStub:
+        def __init__(self) -> None:
+            self.calls: list[tuple[list[str], list[str]]] = []
+
+        def get_closed_bands(self, _mode: str = "ft8") -> set[str]:
+            return {"10m", "12m"}
+
+        def rank_roaming_bands(self, available_bands: list[str], current_roaming: list[str]) -> list[str]:
+            self.calls.append((list(available_bands), list(current_roaming)))
+            return ["15m"]
+
+    scheduler = _SmartSchedulerStub()
+    loop.set_smart_scheduler(scheduler)
+    monkeypatch.setattr(loop, "_current_roaming_bands", lambda: ["12m", "15m"])
+
+    payload = loop._build_fixed_roaming_payload({}, "day")
+
+    assert scheduler.calls == [(["15m"], ["12m", "15m"])]
+    assert payload.get("selected_bands") == ["15m", "10m"]
+    assert payload.get("band_modes") == {"15m": "FT8", "10m": "FT8"}
+    assert payload.get("closed_bands") == ["10m", "12m"]
+
+
 def test_fixed_mode_only_uses_rx0_rx1_for_roaming(monkeypatch) -> None:
     monkeypatch.delenv("KIWISCAN_AUTOSET_MAX_RX", raising=False)
     monkeypatch.setattr(
@@ -254,6 +280,79 @@ def test_fixed_mode_only_uses_rx0_rx1_for_roaming(monkeypatch) -> None:
         assert assignment.band == band
         assert assignment.mode_label == mode_label
         assert assignment.ignore_slot_check is True  # fixed workers float to any Kiwi slot
+
+
+def test_fixed_mode_preserves_explicit_fallback_band_even_when_marked_closed(monkeypatch) -> None:
+    monkeypatch.delenv("KIWISCAN_AUTOSET_MAX_RX", raising=False)
+    monkeypatch.setattr(
+        auto_set_api,
+        "_load_automation_settings",
+        lambda: {
+            "fixedModeEnabled": True,
+            "headlessEnabled": True,
+        },
+    )
+
+    mgr = _MgrStub()
+    receiver_mgr = _ReceiverMgrStub()
+    app = FastAPI()
+    app.include_router(
+        make_router(
+            mgr=mgr,
+            receiver_mgr=receiver_mgr,
+            band_order=["10m", "12m", "15m", "17m", "20m", "30m", "40m", "60m", "80m", "160m"],
+            band_freqs_hz={
+                "10m": 28_074_000.0,
+                "12m": 24_915_000.0,
+                "15m": 21_074_000.0,
+                "17m": 18_104_000.0,
+                "20m": 14_074_000.0,
+                "30m": 10_136_000.0,
+                "40m": 7_074_000.0,
+                "60m": 5_357_000.0,
+                "80m": 3_573_000.0,
+                "160m": 1_840_000.0,
+            },
+            band_ft4_freqs_hz={
+                "20m": 14_080_000.0,
+                "30m": 10_140_000.0,
+                "40m": 7_047_500.0,
+                "80m": 3_575_000.0,
+            },
+            band_wspr_freqs_hz={
+                "17m": 18_104_600.0,
+                "20m": 14_095_600.0,
+                "30m": 10_138_700.0,
+                "40m": 7_038_600.0,
+                "160m": 1_836_600.0,
+            },
+        )
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/auto_set_receivers",
+        json={
+            "enabled": True,
+            "force": True,
+            "mode": "ft8",
+            "block": "day",
+            "selected_bands": ["15m", "10m"],
+            "closed_bands": ["10m", "12m"],
+            "band_modes": {
+                "15m": "FT8",
+                "10m": "FT8",
+            },
+            "fixed_assignments": list(auto_set_api._FIXED_ASSIGNMENTS),
+        },
+    )
+
+    assert response.status_code == 200
+    assert sorted(receiver_mgr.last_assignments.keys()) == list(range(8))
+    assert receiver_mgr.last_assignments[0].band == "10m"
+    assert receiver_mgr.last_assignments[0].mode_label == "FT8"
+    assert receiver_mgr.last_assignments[1].band == "15m"
+    assert receiver_mgr.last_assignments[1].mode_label == "FT8"
 
 
 def test_auto_set_suppressed_while_external_hold_active(monkeypatch) -> None:
