@@ -17,8 +17,18 @@ from urllib import request as urllib_request
 from fastapi import APIRouter, WebSocket
 from fastapi.websockets import WebSocketDisconnect
 
+try:
+    import pycountry
+except Exception:  # pragma: no cover - optional runtime dependency
+    pycountry = None
+
+try:
+    import reverse_geocoder as _reverse_geocoder
+except Exception:  # pragma: no cover - optional runtime dependency
+    _reverse_geocoder = None
+
 from ..bandplan import band_from_freq
-from ..maidenhead import distance_from_grid as _grid_distance
+from ..maidenhead import distance_from_grid as _grid_distance, grid_to_latlon as _grid_to_latlon
 from ..scheduler import block_for_hour, expected_schedule_by_season, season_for_date
 from ..auto_set_loop import _FIXED_ASSIGNMENTS
 from ..udp4010_server import publish_udp4010
@@ -62,6 +72,131 @@ _CALLSIGN_RE = re.compile(r"^[A-Z]{1,2}\d[A-Z0-9]{1,4}$")
 # Station coordinates for distance-to-decode calculations.
 # Loaded once from outputs/config.json; False means unavailable / load failed.
 _station_coords: tuple[float, float] | None | bool = None  # None=not loaded yet
+_country_prefix_lock = threading.Lock()
+_country_prefix_buckets: dict[str, list[tuple[str, str]]] | None = None
+_grid_country_lock = threading.Lock()
+_grid_country_cache: dict[str, str | None] = {}
+
+
+def _iter_country_prefix_paths() -> list[Path]:
+    resolved = Path(__file__).resolve()
+    candidates: list[Path] = []
+    for parent_idx in (3, 4):
+        if len(resolved.parents) <= parent_idx:
+            continue
+        candidate = resolved.parents[parent_idx] / "vendor" / "ft8modem-sm" / "prefixes.txt"
+        if candidate not in candidates:
+            candidates.append(candidate)
+    return candidates
+
+
+def _expand_country_prefix_spec(spec: str) -> list[str]:
+    text = str(spec or "").strip().upper()
+    if not text:
+        return []
+    if "-" not in text:
+        return [text]
+    start, stop = [part.strip().upper() for part in text.split("-", 1)]
+    if not start or not stop or len(start) != len(stop):
+        return [start] if start else []
+    prefixes = [start]
+    current = start
+    guard = 0
+    while current != stop and guard < 4096:
+        current = current[:-1] + chr(ord(current[-1]) + 1)
+        prefixes.append(current)
+        guard += 1
+    return prefixes
+
+
+def _load_country_prefix_buckets() -> dict[str, list[tuple[str, str]]]:
+    global _country_prefix_buckets
+    if _country_prefix_buckets is not None:
+        return _country_prefix_buckets
+
+    with _country_prefix_lock:
+        if _country_prefix_buckets is not None:
+            return _country_prefix_buckets
+
+        buckets: dict[str, list[tuple[str, str]]] = {}
+        prefix_path = next((path for path in _iter_country_prefix_paths() if path.is_file()), None)
+        if prefix_path is None:
+            _country_prefix_buckets = buckets
+            return buckets
+
+        try:
+            with prefix_path.open("r", encoding="utf-8") as handle:
+                for raw_line in handle:
+                    line = raw_line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    parts = line.split("\t", 1)
+                    if len(parts) != 2:
+                        continue
+                    prefix_spec, country = (parts[0].strip(), parts[1].strip())
+                    if not prefix_spec or not country:
+                        continue
+                    for prefix in _expand_country_prefix_spec(prefix_spec):
+                        first = prefix[0]
+                        buckets.setdefault(first, []).append((prefix, country))
+        except Exception:
+            logger.debug("failed loading country prefix table", exc_info=True)
+            buckets = {}
+
+        for first, entries in buckets.items():
+            buckets[first] = sorted(entries, key=lambda item: len(item[0]), reverse=True)
+
+        _country_prefix_buckets = buckets
+        return buckets
+
+
+def _lookup_callsign_country(callsign: str | None) -> str | None:
+    call = str(callsign or "").strip().upper()
+    if not call:
+        return None
+    buckets = _load_country_prefix_buckets()
+    entries = buckets.get(call[0]) or []
+    for prefix, country in entries:
+        if call.startswith(prefix):
+            return country
+    return None
+
+
+def _lookup_grid_country(grid: str | None) -> str | None:
+    locator = str(grid or "").strip().upper()
+    if not locator:
+        return None
+
+    with _grid_country_lock:
+        if locator in _grid_country_cache:
+            return _grid_country_cache[locator]
+
+    country_name: str | None = None
+    if _reverse_geocoder is not None and pycountry is not None:
+        try:
+            lat, lon = _grid_to_latlon(locator)
+            result = _reverse_geocoder.search((lat, lon), mode=1)
+            row = result[0] if result else None
+            country_code = str((row or {}).get("cc") or "").strip().upper()
+            country = pycountry.countries.get(alpha_2=country_code) if country_code else None
+            if country is not None:
+                country_name = str(getattr(country, "name", "") or "").strip() or None
+        except Exception:
+            logger.debug("failed deriving country from grid %s", locator, exc_info=True)
+
+    with _grid_country_lock:
+        _grid_country_cache[locator] = country_name
+    return country_name
+
+
+def _add_decode_country(payload: Dict[str, Any]) -> None:
+    if payload.get("country"):
+        return
+    country = _lookup_callsign_country(payload.get("callsign"))
+    if not country:
+        country = _lookup_grid_country(payload.get("grid"))
+    if country:
+        payload["country"] = country
 
 
 def _update_published_decode_stats(payload: Dict[str, Any], now: float) -> None:
@@ -1215,6 +1350,7 @@ def publish_decode(payload: Dict) -> None:
         _decode_seq += 1
         payload["id"] = _decode_seq
         payload["epoch_ts"] = now
+        _add_decode_country(payload)
         _decode_buffer.append(payload)
         _decode_times.append(now)
         cutoff = now - 300.0
@@ -1317,6 +1453,8 @@ def reset_decode_metrics() -> Dict[str, int]:
         _decode_buffer.clear()
         _decode_times.clear()
         _published_decode_stats_by_rx.clear()
+    with _grid_country_lock:
+        _grid_country_cache.clear()
     with _chart_lock:
         _chart_buckets.clear()
         _chart_running = {}

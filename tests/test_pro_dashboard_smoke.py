@@ -32,6 +32,8 @@ def _assert_dashboard_core(html: str) -> None:
         'function getPreparedScanReservedReceiverSet()',
         'function getReservedManagedReceiverSet(mode = getCurrentReceiversMode())',
         'function syncReceiversModeFromBackendState()',
+        'function getChannelEffectiveReason(ch) {',
+        'function summarizeReasonAffectedReceivers(reason, channels, limit = 3) {',
         'const rightPanels = ["assignments", "faults", "receiver-scan", "net-monitor", "caption-monitor", "messages", "map", "active-receivers", "settings", "system"]',
         'const panelVisible = panelId === navId || ((panelId === "net-monitor" || panelId === "caption-monitor") && navId === "receiver-scan")',
         'if (receiverScanPanel) receiverScanPanel.hidden = mode !== "scan";',
@@ -43,6 +45,7 @@ def _assert_dashboard_core(html: str) -> None:
         'rowName: "Reserved for Scan"',
         'cardTitle: "Semi Reserve"',
         'labelEl.textContent = isSemi ? "SEMI" : "AUTO";',
+        'Affected: ${affectedReceivers}.',
         'getJson("/receiver_scan/status", TIMEOUT)',
         'getJson("/net_monitor/status", TIMEOUT)',
         'getJson("/band_scan/results", TIMEOUT)',
@@ -84,8 +87,10 @@ def test_pro_dashboard_serves_receiver_scan_and_net_monitor_without_utility_moni
     assert response.headers["cache-control"] == "no-store, no-cache, must-revalidate, max-age=0"
 
     _assert_dashboard_core(response.text)
+    assert response.text.count('await postJson("/admin/force-reassign", {});') == 1
 
 
 def test_prod_minimal_pro_template_keeps_receiver_scan_and_net_monitor_without_utility_monitor() -> None:
     html = Path("/Users/imacpro/Development/KiwiScan/prod_minimal/src/kiwi_scan/static/pro.html").read_text(encoding="utf-8")
     _assert_dashboard_core(html)
+    assert html.count('await postJson("/admin/force-reassign", {});') == 1

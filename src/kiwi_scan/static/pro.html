@@ -4881,8 +4881,240 @@
             font-size: 0.8rem;
             display: flex;
             justify-content: space-between;
+            align-items: flex-start;
             gap: 8px;
             flex-wrap: wrap;
+        }
+
+        .pro-map-footer-primary {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .pro-map-stats {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .pro-map-stat {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--panel), white 18%);
+            color: var(--fg);
+            font-size: 0.74rem;
+            font-weight: 700;
+        }
+
+        .pro-map-stat-btn {
+            appearance: none;
+            font: inherit;
+            cursor: pointer;
+            transition: border-color 160ms ease, background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+        }
+
+        .pro-map-stat-btn:hover:not(:disabled),
+        .pro-map-stat-btn:focus-visible {
+            border-color: color-mix(in srgb, var(--accent), var(--line) 38%);
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent), transparent 76%);
+            transform: translateY(-1px);
+            outline: none;
+        }
+
+        .pro-map-stat-btn:disabled {
+            cursor: default;
+            opacity: 0.6;
+            box-shadow: none;
+            transform: none;
+        }
+
+        .pro-map-stat-label {
+            color: var(--muted);
+            font-size: 0.68rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .pro-map-stat-value {
+            color: var(--fg);
+            font-weight: 800;
+        }
+
+        body.theme-dark .pro-map-stat {
+            background: rgba(15, 23, 42, 0.68);
+            border-color: rgba(148, 163, 184, 0.34);
+        }
+
+        body.theme-dark .pro-map-stat-btn:hover:not(:disabled),
+        body.theme-dark .pro-map-stat-btn:focus-visible {
+            border-color: rgba(125, 211, 252, 0.54);
+            box-shadow: 0 0 0 2px rgba(125, 211, 252, 0.18);
+        }
+
+        .map-detail-popup-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 1250;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(7, 20, 33, 0.56);
+            backdrop-filter: blur(5px);
+        }
+
+        .map-detail-popup {
+            width: min(520px, calc(100vw - 32px));
+            max-height: min(72vh, 720px);
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            padding: 18px;
+            border: 1px solid rgba(16, 42, 67, 0.14);
+            border-radius: 18px;
+            background:
+                radial-gradient(circle at top right, rgba(14, 165, 160, 0.12), transparent 42%),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 249, 252, 0.98));
+            box-shadow: 0 28px 80px rgba(7, 20, 33, 0.28);
+            color: var(--ink);
+        }
+
+        .map-detail-popup-backdrop[hidden] {
+            display: none;
+        }
+
+        .map-detail-popup-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .map-detail-popup-title {
+            font-size: 1rem;
+            font-weight: 800;
+            letter-spacing: 0.01em;
+        }
+
+        .map-detail-popup-subtitle {
+            margin-top: 4px;
+            color: var(--muted);
+            font-size: 0.8rem;
+        }
+
+        .map-detail-popup-close {
+            appearance: none;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.82);
+            color: var(--ink);
+            width: 34px;
+            height: 34px;
+            border-radius: 999px;
+            font-size: 1.1rem;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        .map-detail-popup-close:hover,
+        .map-detail-popup-close:focus-visible {
+            border-color: color-mix(in srgb, var(--accent), var(--line) 44%);
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent), transparent 76%);
+            outline: none;
+        }
+
+        .map-detail-popup-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: auto;
+        }
+
+        .map-detail-popup-empty {
+            padding: 18px 4px 6px;
+            color: var(--muted);
+            font-size: 0.86rem;
+        }
+
+        .map-detail-popup-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .map-detail-popup-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 11px 12px;
+            border: 1px solid rgba(16, 42, 67, 0.1);
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.86);
+        }
+
+        .map-detail-popup-row-main {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .map-detail-popup-row-label {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--ink);
+            word-break: break-word;
+        }
+
+        .map-detail-popup-row-meta {
+            color: var(--muted);
+            font-size: 0.76rem;
+            word-break: break-word;
+        }
+
+        .map-detail-popup-row-count {
+            flex: 0 0 auto;
+            padding: 4px 8px;
+            border-radius: 999px;
+            border: 1px solid rgba(15, 76, 129, 0.18);
+            background: rgba(15, 76, 129, 0.08);
+            color: var(--accent);
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.03em;
+            white-space: nowrap;
+        }
+
+        body.theme-dark .map-detail-popup {
+            border-color: rgba(148, 163, 184, 0.22);
+            background:
+                radial-gradient(circle at top right, rgba(45, 212, 191, 0.14), transparent 44%),
+                linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(19, 41, 61, 0.98));
+            box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42);
+        }
+
+        body.theme-dark .map-detail-popup-close,
+        body.theme-dark .map-detail-popup-row {
+            background: rgba(23, 48, 71, 0.92);
+            border-color: rgba(148, 163, 184, 0.22);
+            color: var(--ink);
+        }
+
+        body.theme-dark .map-detail-popup-close:hover,
+        body.theme-dark .map-detail-popup-close:focus-visible {
+            border-color: rgba(125, 211, 252, 0.54);
+            box-shadow: 0 0 0 2px rgba(125, 211, 252, 0.18);
+        }
+
+        body.theme-dark .map-detail-popup-row-count {
+            border-color: rgba(125, 211, 252, 0.28);
+            background: rgba(125, 211, 252, 0.1);
+            color: #d8f0ff;
         }
 
         .balance-grid {
@@ -5835,8 +6067,26 @@
                                 </div>
                             </div>
                             <div class="pro-map-footer">
-                                <span id="map-count">0 spots</span>
-                                <span id="map-updated">Updated: --</span>
+                                <div class="pro-map-footer-primary">
+                                    <span id="map-count">0 spots</span>
+                                    <span id="map-updated">Updated: --</span>
+                                </div>
+                                <div class="pro-map-stats" aria-label="Visible map totals">
+                                    <span class="pro-map-stat"><span class="pro-map-stat-label">Callsigns</span><span
+                                            class="pro-map-stat-value" id="map-unique-calls">0</span></span>
+                                    <span class="pro-map-stat"><span class="pro-map-stat-label">Grids</span><span
+                                            class="pro-map-stat-value" id="map-unique-grids">0</span></span>
+                                    <button type="button" class="pro-map-stat pro-map-stat-btn" id="map-country-button"
+                                        aria-haspopup="dialog" aria-controls="map-detail-popup">
+                                        <span class="pro-map-stat-label">Countries</span><span
+                                            class="pro-map-stat-value" id="map-country-count">0</span>
+                                    </button>
+                                    <button type="button" class="pro-map-stat pro-map-stat-btn" id="map-dx-button"
+                                        aria-haspopup="dialog" aria-controls="map-detail-popup">
+                                        <span class="pro-map-stat-label">DX</span><span class="pro-map-stat-value"
+                                            id="map-dx-count">0</span>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </article>
@@ -6255,6 +6505,7 @@
         let refreshPaused = false;
         let refreshInFlight = false;
         let lastSuccessfulRefreshMs = null;
+        let initialRefreshAttemptCount = 0;
         let currentUiThemeMode = "auto";
         let currentUiThemeNightHour = 21;
         let authoritativeUiThemeNightHour = 21;
@@ -6333,6 +6584,9 @@
         const MAP_POINT_TTL_MS = 24 * 60 * 60 * 1000;
         const SYSTEM_INFO_CACHE_MS = 15000;
         const SYSTEM_INFO_TIMEOUT_MS = 4000;
+        const INITIAL_REFRESH_FAST_TIMEOUT_MS = 500;
+        const INITIAL_REFRESH_WARM_TIMEOUT_MS = 2500;
+        const REFRESH_TIMEOUT_MS = 4500;
         const MAP_MODE_COLORS = {
             WSPR: "#a855f7",
             FT8: "#3b82f6",
@@ -8061,6 +8315,12 @@
             return !isLatLonWithinContinentalUs(pos.lat, pos.lon);
         }
 
+        function isGridOutsideContinentalUs(grid) {
+            const pos = maidenheadToLatLon(grid);
+            if (!pos) return false;
+            return !isLatLonWithinContinentalUs(pos.lat, pos.lon);
+        }
+
         function isCqDecodeMessage(message) {
             const text = String(message || "").toUpperCase();
             return /\bCQ\b/.test(text) || /\bCQDX\b/.test(text);
@@ -8075,12 +8335,33 @@
             return true;
         }
 
+        function normalizeEpochMilliseconds(value) {
+            const raw = Number(value);
+            if (!Number.isFinite(raw) || raw <= 0) return 0;
+            if (raw >= 1e12) return Math.round(raw);
+            if (raw >= 1e9) return Math.round(raw * 1000);
+            return 0;
+        }
+
+        function resolveDecodeReceivedAtMs(item, fallback = Date.now()) {
+            if (!item || typeof item !== "object") return fallback;
+            const candidate = normalizeEpochMilliseconds(item.receivedAt)
+                || normalizeEpochMilliseconds(item.received_at)
+                || normalizeEpochMilliseconds(item.epoch_ts)
+                || normalizeEpochMilliseconds(item.epochTs);
+            if (candidate > 0) return candidate;
+            const rawTimestamp = String(item.timestamp || "").trim();
+            const parsed = Date.parse(rawTimestamp);
+            if (Number.isFinite(parsed) && parsed > 0) return parsed;
+            return fallback;
+        }
+
         function formatDecodeClockText(item) {
             const raw = String(item && item.timestamp || "").trim();
             if (/^\d{2}:\d{2}:\d{2}$/.test(raw)) return raw;
             const parsed = Date.parse(raw);
             if (Number.isFinite(parsed)) return new Date(parsed).toLocaleTimeString();
-            const receivedAt = Number(item && item.receivedAt || 0);
+            const receivedAt = resolveDecodeReceivedAtMs(item, 0);
             return Number.isFinite(receivedAt) && receivedAt > 0 ? new Date(receivedAt).toLocaleTimeString() : "--:--:--";
         }
 
@@ -8268,8 +8549,7 @@
             const raw = String(item && item.timestamp || "").trim();
             const parsed = Date.parse(raw);
             if (Number.isFinite(parsed)) return parsed;
-            const receivedAt = Number(item && item.receivedAt || 0);
-            return Number.isFinite(receivedAt) ? receivedAt : 0;
+            return resolveDecodeReceivedAtMs(item, 0);
         }
 
         function compareDecodeField(a, b, key) {
@@ -8819,10 +9099,227 @@
             mapHasAutoFit = true;
         }
 
-        function renderPropagationMap() {
+        function computeVisibleMapStats(entries) {
+            const callsigns = new Set();
+            const grids = new Set();
+            const countries = new Set();
+            let dx = 0;
+            (Array.isArray(entries) ? entries : []).forEach((entry) => {
+                if (!entry) return;
+                const callsign = sanitizeCallsign(entry.callsign, entry.grid);
+                if (callsign) callsigns.add(callsign);
+                const grid = normalizeGridSquare(entry.grid);
+                if (grid) grids.add(grid);
+                if (grid && isGridOutsideContinentalUs(grid)) dx += 1;
+                const country = String(entry.country || "").trim();
+                if (country) countries.add(country.toUpperCase());
+            });
+            return {
+                callsigns: callsigns.size,
+                grids: grids.size,
+                countries: countries.size,
+                dx,
+            };
+        }
+
+        function formatMapDetailCount(count, singular, plural = `${singular}s`) {
+            const n = Math.max(0, Number(count) || 0);
+            return `${n} ${n === 1 ? singular : plural}`;
+        }
+
+        function compareMapDetailLabels(left, right) {
+            return String(left || "").localeCompare(String(right || ""), undefined, {
+                numeric: true,
+                sensitivity: "base",
+            });
+        }
+
+        function buildVisibleCountryDetails(entries) {
+            const buckets = new Map();
+            (Array.isArray(entries) ? entries : []).forEach((entry) => {
+                const country = String(entry && entry.country || "").trim();
+                if (!country) return;
+                const key = country.toUpperCase();
+                const existing = buckets.get(key) || { label: country, count: 0 };
+                existing.count += 1;
+                buckets.set(key, existing);
+            });
+            const rows = Array.from(buckets.values())
+                .sort((left, right) => compareMapDetailLabels(left.label, right.label))
+                .map((row) => ({
+                    label: row.label,
+                    meta: "",
+                    countText: formatMapDetailCount(row.count, "spot"),
+                }));
+            return {
+                title: "Visible Countries",
+                subtitle: `${formatMapDetailCount(rows.length, "country")}${rows.length ? ` across ${formatMapDetailCount(entries.length, "visible spot")}` : ""}`,
+                emptyMessage: "No visible countries match the current map filters.",
+                rows,
+            };
+        }
+
+        function summarizeMapDetailSet(values, maxItems = 3) {
+            const items = Array.from(values || []).map((value) => String(value || "").trim()).filter(Boolean).sort((a, b) => a.localeCompare(b));
+            if (!items.length) return "";
+            if (items.length <= maxItems) return items.join(", ");
+            return `${items.slice(0, maxItems).join(", ")} +${items.length - maxItems}`;
+        }
+
+        function buildVisibleDxDetails(entries) {
+            const buckets = new Map();
+            (Array.isArray(entries) ? entries : []).forEach((entry) => {
+                if (!entry) return;
+                const grid = normalizeGridSquare(entry.grid);
+                if (!grid || !isGridOutsideContinentalUs(grid)) return;
+                const callsign = sanitizeCallsign(entry.callsign, grid);
+                const key = callsign ? `CALL:${callsign}` : `GRID:${grid}`;
+                let bucket = buckets.get(key);
+                if (!bucket) {
+                    bucket = {
+                        label: callsign || grid,
+                        count: 0,
+                        grids: new Set(),
+                        countries: new Set(),
+                        gridOnly: !callsign,
+                    };
+                    buckets.set(key, bucket);
+                }
+                bucket.count += 1;
+                bucket.grids.add(grid);
+                const country = String(entry.country || "").trim();
+                if (country) bucket.countries.add(country);
+            });
+            const rows = Array.from(buckets.values())
+                .sort((left, right) => compareMapDetailLabels(left.label, right.label))
+                .map((row) => {
+                    const metaParts = [];
+                    if (row.gridOnly) metaParts.push("Grid only");
+                    const countrySummary = summarizeMapDetailSet(row.countries, 2);
+                    if (countrySummary) metaParts.push(countrySummary);
+                    const gridSummary = summarizeMapDetailSet(row.grids, 3);
+                    if (gridSummary) metaParts.push(gridSummary);
+                    return {
+                        label: row.label,
+                        meta: metaParts.join(" · "),
+                        countText: formatMapDetailCount(row.count, "spot"),
+                    };
+                });
+            return {
+                title: "Visible DX Callsigns",
+                subtitle: `${formatMapDetailCount(rows.length, "callsign")}${rows.length ? ` across ${formatMapDetailCount(entries.filter((entry) => normalizeGridSquare(entry && entry.grid) && isGridOutsideContinentalUs(entry.grid)).length, "DX spot")}` : ""}`,
+                emptyMessage: "No visible DX spots match the current map filters.",
+                rows,
+            };
+        }
+
+        let mapDetailPopupLastTrigger = null;
+
+        function closeMapDetailPopup() {
+            const backdrop = byId("map-detail-popup-backdrop");
+            if (!backdrop || backdrop.hidden) return;
+            backdrop.hidden = true;
+            document.body.classList.remove("map-detail-popup-open");
+            if (mapDetailPopupLastTrigger && typeof mapDetailPopupLastTrigger.focus === "function") {
+                mapDetailPopupLastTrigger.focus();
+            }
+            mapDetailPopupLastTrigger = null;
+        }
+
+        function openMapDetailPopup(config, triggerEl = null) {
+            const backdrop = byId("map-detail-popup-backdrop");
+            const titleEl = byId("map-detail-popup-title");
+            const subtitleEl = byId("map-detail-popup-subtitle");
+            const bodyEl = byId("map-detail-popup-body");
+            const closeBtn = byId("map-detail-popup-close");
+            if (!backdrop || !titleEl || !subtitleEl || !bodyEl) return;
+            titleEl.textContent = String(config && config.title || "Map details");
+            subtitleEl.textContent = String(config && config.subtitle || "");
+            bodyEl.textContent = "";
+            const rows = Array.isArray(config && config.rows) ? config.rows : [];
+            if (!rows.length) {
+                const emptyEl = document.createElement("div");
+                emptyEl.className = "map-detail-popup-empty";
+                emptyEl.textContent = String(config && config.emptyMessage || "No items available.");
+                bodyEl.appendChild(emptyEl);
+            } else {
+                const listEl = document.createElement("div");
+                listEl.className = "map-detail-popup-list";
+                rows.forEach((row) => {
+                    const itemEl = document.createElement("div");
+                    itemEl.className = "map-detail-popup-row";
+                    const mainEl = document.createElement("div");
+                    mainEl.className = "map-detail-popup-row-main";
+                    const labelEl = document.createElement("div");
+                    labelEl.className = "map-detail-popup-row-label";
+                    labelEl.textContent = String(row && row.label || "");
+                    mainEl.appendChild(labelEl);
+                    const meta = String(row && row.meta || "").trim();
+                    if (meta) {
+                        const metaEl = document.createElement("div");
+                        metaEl.className = "map-detail-popup-row-meta";
+                        metaEl.textContent = meta;
+                        mainEl.appendChild(metaEl);
+                    }
+                    itemEl.appendChild(mainEl);
+                    const countText = String(row && row.countText || "").trim();
+                    if (countText) {
+                        const countEl = document.createElement("div");
+                        countEl.className = "map-detail-popup-row-count";
+                        countEl.textContent = countText;
+                        itemEl.appendChild(countEl);
+                    }
+                    listEl.appendChild(itemEl);
+                });
+                bodyEl.appendChild(listEl);
+            }
+            mapDetailPopupLastTrigger = triggerEl || document.activeElement;
+            backdrop.hidden = false;
+            document.body.classList.add("map-detail-popup-open");
+            if (closeBtn && typeof closeBtn.focus === "function") closeBtn.focus();
+        }
+
+        function formatVisibleMapMeta(entries, stats) {
+            const spotText = `${entries.length} visible spot${entries.length === 1 ? "" : "s"}`;
+            const callsignText = `${stats.callsigns} unique callsign${stats.callsigns === 1 ? "" : "s"}`;
+            const gridText = `${stats.grids} unique grid${stats.grids === 1 ? "" : "s"}`;
+            const countryText = `${stats.countries} countr${stats.countries === 1 ? "y" : "ies"}`;
+            const dxText = `${stats.dx} DX spot${stats.dx === 1 ? "" : "s"}`;
+            return `${spotText} · ${callsignText} · ${gridText} · ${countryText} · ${dxText}`;
+        }
+
+        function updateMapSummaryCounts(entries, metaPrefix = "") {
             const countEl = byId("map-count");
-            const updatedEl = byId("map-updated");
             const metaEl = byId("map-panel-meta");
+            const uniqueCallsEl = byId("map-unique-calls");
+            const uniqueGridsEl = byId("map-unique-grids");
+            const countryEl = byId("map-country-count");
+            const dxEl = byId("map-dx-count");
+            const countryBtn = byId("map-country-button");
+            const dxBtn = byId("map-dx-button");
+            const stats = computeVisibleMapStats(entries);
+            const metaText = formatVisibleMapMeta(entries, stats);
+            if (countEl) countEl.textContent = `${entries.length} spot${entries.length === 1 ? "" : "s"}`;
+            if (metaEl) metaEl.textContent = metaPrefix ? `${metaPrefix} · ${metaText}` : metaText;
+            if (uniqueCallsEl) uniqueCallsEl.textContent = String(stats.callsigns);
+            if (uniqueGridsEl) uniqueGridsEl.textContent = String(stats.grids);
+            if (countryEl) countryEl.textContent = String(stats.countries);
+            if (dxEl) dxEl.textContent = String(stats.dx);
+            if (countryBtn) {
+                countryBtn.disabled = stats.countries <= 0;
+                countryBtn.title = stats.countries > 0 ? "Show visible countries" : "No visible countries";
+                countryBtn.setAttribute("aria-label", stats.countries > 0 ? `Show ${stats.countries} visible countries` : "No visible countries");
+            }
+            if (dxBtn) {
+                dxBtn.disabled = stats.dx <= 0;
+                dxBtn.title = stats.dx > 0 ? "Show visible DX callsigns" : "No visible DX callsigns";
+                dxBtn.setAttribute("aria-label", stats.dx > 0 ? `Show ${stats.dx} visible DX callsigns` : "No visible DX callsigns");
+            }
+            return stats;
+        }
+
+        function renderPropagationMap() {
+            const updatedEl = byId("map-updated");
             updateMapBandFilterButtons();
             updateMapModeFilterButtons();
             updateMapFilterSummary();
@@ -8830,9 +9327,8 @@
             if (mapViewMode === "globe") {
                 initGlobeMap();
                 if (!globeInstance) {
-                    if (countEl) countEl.textContent = "0 spots";
+                    updateMapSummaryCounts(entries, "3D globe unavailable");
                     if (updatedEl) updatedEl.textContent = "Updated: --";
-                    if (metaEl) metaEl.textContent = "3D globe unavailable";
                     return;
                 }
                 updateGlobeDayNightOverlay();
@@ -8855,9 +9351,8 @@
             } else {
                 initLeafletMap();
                 if (!mapInstance || !mapMarkerLayer || !window.L) {
-                    if (countEl) countEl.textContent = "0 spots";
+                    updateMapSummaryCounts(entries, "Map unavailable");
                     if (updatedEl) updatedEl.textContent = "Updated: --";
-                    if (metaEl) metaEl.textContent = "Map unavailable";
                     return;
                 }
                 mapMarkerLayer.clearLayers();
@@ -8889,10 +9384,9 @@
                 }
                 if (!mapHasAutoFit && entries.length) fitMapToVisibleEntries();
             }
-            if (countEl) countEl.textContent = `${entries.length} spot${entries.length === 1 ? "" : "s"}`;
+            updateMapSummaryCounts(entries);
             const updatedText = `Updated: ${new Date().toLocaleTimeString()}`;
             if (updatedEl) updatedEl.textContent = updatedText;
-            if (metaEl) metaEl.textContent = `${entries.length} visible spot${entries.length === 1 ? "" : "s"}`;
         }
 
         function schedulePropagationMapRender() {
@@ -8922,8 +9416,9 @@
                 mode,
                 band,
                 callsign: sanitizeCallsign(item.callsign, grid),
+                country: String(item.country || "").trim(),
                 snr: Number.isFinite(Number(item.snr)) ? Number(item.snr) : null,
-                lastSeen: Number(item.receivedAt || Date.now()),
+                lastSeen: resolveDecodeReceivedAtMs(item),
             });
             if (options.renderMap === false) return;
             schedulePropagationMapRender();
@@ -8936,6 +9431,7 @@
                 if (recentDecodeIds.has(decodeId)) return;
                 recentDecodeIds.add(decodeId);
             }
+            const receivedAt = resolveDecodeReceivedAtMs(item);
             const normalized = {
                 ...item,
                 band: String(item.band || "").trim(),
@@ -8943,7 +9439,7 @@
                 grid: normalizeGridSquare(item.grid),
                 callsign: sanitizeCallsign(item.callsign, item.grid),
                 snr: Number.isFinite(Number(item.snr)) ? Number(item.snr) : null,
-                receivedAt: Date.now(),
+                receivedAt,
             };
             if (MAP_MODE_FILTERS.includes(normalized.mode)) decodeSeenModes.add(normalized.mode);
             recordDecodeSnr(normalized);
@@ -12424,8 +12920,10 @@
                                 : "Semi Mode ON — clearing RX0/RX1 while fixed receivers stay assigned..."
                         );
                     } else {
-                        // Apply the persisted managed mode immediately via the headless path.
-                        await postJson("/admin/force-reassign", {});
+                        // Saving /automation/settings already wakes the auto-set loop.
+                        // Avoid a second overlapping force-reassign here because the
+                        // duplicate apply can restart fixed receivers that are already
+                        // stable when only RX0/RX1 need to be added back.
                         setAutomationStatus(
                             transitioningFromScan
                                 ? "Auto Mode ON — adding RX0/RX1 roaming receivers..."
@@ -14414,6 +14912,77 @@
             return iconWrap;
         }
 
+        function appendFaultLogEntry(listEl, entry) {
+            if (!(listEl instanceof HTMLElement) || !entry || typeof entry !== "object") return;
+
+            const item = document.createElement("li");
+            item.className = `fault-log-entry fault-log-entry--${faultLogLevelClass(entry.level)}`;
+
+            const top = document.createElement("div");
+            top.className = "fault-log-top";
+
+            const iconEl = createFaultLogIcon(entry);
+
+            const typeEl = document.createElement("span");
+            typeEl.className = "fault-log-type";
+            typeEl.textContent = safeText(entry.type, "Notice");
+
+            const subjectEl = document.createElement("span");
+            subjectEl.className = "fault-log-subject";
+            subjectEl.textContent = safeText(entry.subject, "Receiver health");
+
+            const badgeEl = document.createElement("span");
+            badgeEl.className = `fault-log-badge fault-log-badge--${entry.badgeType === "changed" ? "changed" : "new"}`;
+            badgeEl.textContent = entry.badgeType === "changed" ? "Changed" : "New";
+
+            const messageEl = document.createElement("div");
+            messageEl.className = "fault-log-message";
+            messageEl.textContent = safeText(entry.message, "");
+
+            const metaParts = [
+                formatFaultLogTimestamp(entry.updatedUnix),
+                safeText(entry.ageText, ""),
+            ].filter(Boolean);
+
+            const metaEl = document.createElement("div");
+            metaEl.className = "fault-log-meta";
+            if (metaParts.length) {
+                const metaTimeEl = document.createElement("span");
+                metaTimeEl.className = "fault-log-meta-time";
+                metaTimeEl.textContent = metaParts.join(" · ");
+                metaEl.append(metaTimeEl);
+            }
+
+            const actionsEl = document.createElement("div");
+            actionsEl.className = "fault-log-actions";
+
+            const copyBtn = document.createElement("button");
+            copyBtn.type = "button";
+            copyBtn.className = "fault-log-jump";
+            copyBtn.textContent = "Copy details";
+            copyBtn.addEventListener("click", () => {
+                copyFaultLogEntry(entry, copyBtn).catch(() => { });
+            });
+            actionsEl.append(copyBtn);
+
+            if (entry.rx != null && safeText(entry.rx, "") !== "") {
+                const jumpBtn = document.createElement("button");
+                jumpBtn.type = "button";
+                jumpBtn.className = "fault-log-jump";
+                jumpBtn.textContent = `Jump to RX${safeText(entry.rx, "")}`;
+                jumpBtn.addEventListener("click", () => jumpToReceiverCard(entry.rx));
+                actionsEl.append(jumpBtn);
+            }
+
+            if (actionsEl.childNodes.length) metaEl.append(actionsEl);
+
+            top.append(iconEl, typeEl, subjectEl);
+            if (entry.badgeType) top.append(badgeEl);
+            item.append(top, messageEl);
+            if (metaEl.childNodes.length) item.append(metaEl);
+            listEl.append(item);
+        }
+
         function faultLogEntryKey(entry) {
             return [
                 safeText(entry && entry.type, "notice"),
@@ -14456,76 +15025,42 @@
             hasFaultLogRendered = true;
         }
 
-        function appendFaultLogEntry(listEl, entry) {
-            if (!listEl || !entry) return;
-            const item = document.createElement("li");
-            const levelClass = faultLogLevelClass(entry.level);
-            item.className = `fault-log-entry fault-log-entry--${levelClass}`;
+        function getChannelEffectiveReason(ch) {
+            const channel = ch && typeof ch === "object" ? ch : {};
+            return String(
+                channel.last_reason
+                || (channel.is_no_decode_warning ? "no_recent_decodes" : "")
+                || (channel.is_silent ? "silent_no_decodes" : "")
+                || "unknown"
+            );
+        }
 
-            const top = document.createElement("div");
-            top.className = "fault-log-top";
-            const iconEl = createFaultLogIcon(entry);
+        function getFaultLogSubjectParts(rx, ch) {
+            const channel = ch && typeof ch === "object" ? ch : {};
+            const rxLabel = `RX${safeText(channel.rx != null ? channel.rx : rx, rx)}`;
+            return [rxLabel, safeText(channel.band, "-"), safeText(channel.mode, "-")].filter((part) => part && part !== "-");
+        }
 
-            const typeEl = document.createElement("span");
-            typeEl.className = "fault-log-type";
-            typeEl.textContent = safeText(entry.type, "NOTICE");
+        function channelMatchesReasonSummary(reason, ch) {
+            const key = String(reason || "").trim();
+            const channel = ch && typeof ch === "object" ? ch : {};
+            if (!key) return false;
+            if (getChannelEffectiveReason(channel) === key) return true;
+            if (key === "silent_no_decodes") return !!channel.is_silent;
+            if (key === "no_recent_decodes") return !!channel.is_no_decode_warning;
+            return String(channel.last_reason || "").trim() === key;
+        }
 
-            const subjectEl = document.createElement("span");
-            subjectEl.className = "fault-log-subject";
-            subjectEl.textContent = safeText(entry.subject, "Receiver health");
-
-            const badgeEl = document.createElement("span");
-            if (entry.badgeType) {
-                badgeEl.className = `fault-log-badge fault-log-badge--${safeText(entry.badgeType, "new")}`;
-                badgeEl.textContent = entry.badgeType === "changed" ? "Changed" : "New";
-            }
-
-            const messageEl = document.createElement("div");
-            messageEl.className = "fault-log-message";
-            messageEl.textContent = safeText(entry.message, "");
-
-            const metaParts = [];
-            const stamp = formatFaultLogTimestamp(entry.updatedUnix);
-            if (stamp) metaParts.push(`Updated ${stamp}`);
-            if (safeText(entry.ageText, "")) metaParts.push(safeText(entry.ageText, ""));
-
-            const metaEl = document.createElement("div");
-            metaEl.className = "fault-log-meta";
-            if (metaParts.length) {
-                const metaTimeEl = document.createElement("span");
-                metaTimeEl.className = "fault-log-meta-time";
-                metaTimeEl.textContent = metaParts.join(" · ");
-                metaEl.append(metaTimeEl);
-            }
-
-            {
-                const actionsEl = document.createElement("div");
-                actionsEl.className = "fault-log-actions";
-                const copyBtn = document.createElement("button");
-                copyBtn.type = "button";
-                copyBtn.className = "fault-log-jump";
-                copyBtn.textContent = "Copy details";
-                copyBtn.addEventListener("click", () => {
-                    copyFaultLogEntry(entry, copyBtn).catch(() => { });
-                });
-                actionsEl.append(copyBtn);
-
-                const jumpBtn = document.createElement("button");
-                if (entry.rx != null) {
-                    jumpBtn.type = "button";
-                    jumpBtn.className = "fault-log-jump";
-                    jumpBtn.textContent = `Jump to RX${safeText(entry.rx, "")}`;
-                    jumpBtn.addEventListener("click", () => jumpToReceiverCard(entry.rx));
-                    actionsEl.append(jumpBtn);
-                }
-                metaEl.append(actionsEl);
-            }
-
-            top.append(iconEl, typeEl, subjectEl);
-            if (entry.badgeType) top.append(badgeEl);
-            item.append(top, messageEl);
-            if (metaEl.childNodes.length) item.append(metaEl);
-            listEl.append(item);
+        function summarizeReasonAffectedReceivers(reason, channels, limit = 3) {
+            const labels = Object.entries(channels && typeof channels === "object" ? channels : {})
+                .filter(([, ch]) => channelMatchesReasonSummary(reason, ch))
+                .sort((left, right) => Number(left[0]) - Number(right[0]))
+                .map(([rx, ch]) => getFaultLogSubjectParts(rx, ch).join(" · "))
+                .filter(Boolean);
+            if (!labels.length) return "";
+            const visible = labels.slice(0, Math.max(1, Number(limit) || 3));
+            const suffix = labels.length > visible.length ? ` +${labels.length - visible.length} more` : "";
+            return `${visible.join("; ")}${suffix}`;
         }
 
         function buildFaultLogEntries(health) {
@@ -14550,16 +15085,10 @@
                 })
                 .forEach(([rx, ch]) => {
                     const level = String(ch.status_level || "warning").toLowerCase();
-                    const effectiveReason = String(
-                        ch.last_reason
-                        || (ch.is_no_decode_warning ? "no_recent_decodes" : "")
-                        || (ch.is_silent ? "silent_no_decodes" : "")
-                        || "unknown"
-                    );
+                    const effectiveReason = getChannelEffectiveReason(ch);
                     const meta = getHealthReasonMeta(effectiveReason);
                     representedReasonCounts[effectiveReason] = Number(representedReasonCounts[effectiveReason] || 0) + 1;
-                    const rxLabel = `RX${safeText(ch.rx != null ? ch.rx : rx, rx)}`;
-                    const subjectParts = [rxLabel, safeText(ch.band, "-"), safeText(ch.mode, "-")].filter((part) => part && part !== "-");
+                    const subjectParts = getFaultLogSubjectParts(rx, ch);
                     const detailBits = [];
 
                     if ((ch.is_silent || ch.is_no_decode_warning) && Number.isFinite(Number(ch.decode_age_s))) {
@@ -14602,12 +15131,18 @@
                     const representedCount = Number(representedReasonCounts[reason] || 0);
                     if (representedCount >= count) return;
                     const meta = getHealthReasonMeta(reason);
+                    const affectedReceivers = summarizeReasonAffectedReceivers(reason, channels);
+                    const countText = `${count} receiver${count === 1 ? " is" : "s are"} currently affected.`;
+                    const representedText = representedCount > 0
+                        ? ` ${representedCount} already appear${representedCount === 1 ? "s" : ""} in the live RX log above.`
+                        : "";
+                    const affectedText = affectedReceivers ? ` Affected: ${affectedReceivers}.` : "";
                     entries.push({
                         level: meta.level,
                         type: "Reason",
                         reasonKey: reason,
                         subject: meta.label,
-                        message: `${count} receiver${count === 1 ? " is" : "s are"} currently affected.${representedCount > 0 ? ` ${representedCount} already appear${representedCount === 1 ? "s" : ""} in the live RX log above.` : ""}`,
+                        message: `${countText}${representedText}${affectedText}`,
                     });
                 });
 
@@ -15602,10 +16137,14 @@
             refreshInFlight = true;
             const isFirstLoad = lastSuccessfulRefreshMs === null;
             try {
-                // First-load: short 500 ms timeout so the UI immediately shows
-                // "Connecting…" on a slow/starting server instead of stalling for seconds.
-                // After first success use a generous timeout to tolerate slow Kiwi paths.
-                const TIMEOUT = isFirstLoad ? 500 : 4500;
+                // First-load: do one fast probe so the UI can show "Connecting…" quickly,
+                // then switch to a warmer timeout so a slow backend can still initialize.
+                const TIMEOUT = !isFirstLoad
+                    ? REFRESH_TIMEOUT_MS
+                    : (initialRefreshAttemptCount === 0
+                        ? INITIAL_REFRESH_FAST_TIMEOUT_MS
+                        : INITIAL_REFRESH_WARM_TIMEOUT_MS);
+                if (isFirstLoad) initialRefreshAttemptCount += 1;
 
                 // Fire all requests simultaneously but track whether each core endpoint
                 // has already been applied via its own .then() so we don't re-apply below.
@@ -15627,6 +16166,10 @@
                 const [health, status, version, deltaInfo, chartData, receiverScan, bandScanResults, netMonitor, captionMonitor] = await Promise.all([
                     healthP, statusP, versionP, deltaP, chartP, receiverScanP, bandScanResultsP, netMonitorP, captionMonitorP,
                 ]);
+
+                if (version && typeof version === "object") {
+                    applyVersion(version);
+                }
 
                 // Both core endpoints unreachable — server not yet ready.
                 // Show a soft connecting state and schedule a fast retry so the UI
@@ -15665,9 +16208,6 @@
                 if (bandScanResults) renderBandScanResults(bandScanResults);
                 if (netMonitor) applyNetMonitorStatus(netMonitor);
                 if (captionMonitor) applyCaptionMonitorStatus(captionMonitor);
-                if (version && typeof version === "object") {
-                    applyVersion(version);
-                }
                 updateDecodeStreamChip();
                 // Only fetch /system/info when the System panel is open — it makes
                 // blocking Kiwi HTTP calls and must not run on every 2 s heartbeat.
@@ -15685,6 +16225,7 @@
                     refreshTsEl.textContent = `Last update: ${new Date().toLocaleTimeString()}`;
                 }
                 lastSuccessfulRefreshMs = Date.now();
+                initialRefreshAttemptCount = 0;
                 updateRefreshCadenceLabel();
                 updateRefreshStatus();
             } catch (err) {
@@ -15783,6 +16324,59 @@
                 hideTimer = setTimeout(hidePopup, 100);
             });
         })();
+
+        function initMapDetailPopup() {
+            const backdrop = byId("map-detail-popup-backdrop");
+            const countryBtn = byId("map-country-button");
+            const dxBtn = byId("map-dx-button");
+            if (!backdrop || !countryBtn || !dxBtn) return;
+            if (backdrop.dataset.bound === "1") return;
+            backdrop.dataset.bound = "1";
+
+            document.addEventListener("click", (event) => {
+                const countryTrigger = event.target && event.target.closest ? event.target.closest("#map-country-button") : null;
+                if (countryTrigger) {
+                    openMapDetailPopup(buildVisibleCountryDetails(getVisibleMapEntries()), countryTrigger);
+                    return;
+                }
+                const dxTrigger = event.target && event.target.closest ? event.target.closest("#map-dx-button") : null;
+                if (dxTrigger) {
+                    openMapDetailPopup(buildVisibleDxDetails(getVisibleMapEntries()), dxTrigger);
+                    return;
+                }
+                const closeTrigger = event.target && event.target.closest ? event.target.closest("#map-detail-popup-close") : null;
+                if (closeTrigger) {
+                    closeMapDetailPopup();
+                    return;
+                }
+                if (event.target === backdrop) {
+                    closeMapDetailPopup();
+                }
+            });
+
+            document.addEventListener("keydown", (event) => {
+                if (event.key === "Escape" && !backdrop.hidden) closeMapDetailPopup();
+            });
+        }
+    </script>
+
+    <div id="map-detail-popup-backdrop" class="map-detail-popup-backdrop" hidden>
+        <div id="map-detail-popup" class="map-detail-popup" role="dialog" aria-modal="true"
+            aria-labelledby="map-detail-popup-title">
+            <div class="map-detail-popup-header">
+                <div>
+                    <div id="map-detail-popup-title" class="map-detail-popup-title">Map details</div>
+                    <div id="map-detail-popup-subtitle" class="map-detail-popup-subtitle"></div>
+                </div>
+                <button type="button" id="map-detail-popup-close" class="map-detail-popup-close"
+                    aria-label="Close map details">×</button>
+            </div>
+            <div id="map-detail-popup-body" class="map-detail-popup-body"></div>
+        </div>
+    </div>
+
+    <script>
+        initMapDetailPopup();
     </script>
 
     <div id="heart-chart-popup" aria-hidden="true">

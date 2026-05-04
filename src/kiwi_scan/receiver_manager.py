@@ -2265,6 +2265,19 @@ class ReceiverManager:
     def _no_decode_warning_seconds(cls) -> float:
         return cls._env_float("KIWISCAN_NO_DECODE_WARN_S", 120.0, min_v=30.0, max_v=3600.0)
 
+    @staticmethod
+    def _internal_watchdog_reason(reason: object) -> bool:
+        normalized = str(reason or "").strip().lower()
+        return normalized in {
+            "nonssb_rx_mismatch",
+            "ssb_rx_mismatch",
+            "process_exited",
+            "spawn_exception",
+            "spawn_failed",
+            "stop_requested",
+            "starting",
+        }
+
     @classmethod
     def _digital_remap_grace_seconds(cls) -> float:
         return cls._env_float("KIWISCAN_DIGITAL_REMAP_GRACE_S", 20.0, min_v=5.0, max_v=300.0)
@@ -3071,6 +3084,11 @@ class ReceiverManager:
                 if not is_active:
                     last_reason = last_reason or "kiwi_not_visible"
 
+            if visible_on_kiwi:
+                normalized_last_reason = str(last_reason or "").strip().lower()
+                if self._internal_watchdog_reason(normalized_last_reason) or normalized_last_reason == "kiwi_not_visible":
+                    last_reason = None
+
             def _to_float(value: object) -> float | None:
                 try:
                     return float(value)
@@ -3221,6 +3239,8 @@ class ReceiverManager:
                 if occupant and not self._label_matches_any(expected_labels, occupant):
                     kiwi_occupant = occupant
                 mismatch_detected = bool(wrong_slot_stale or displaced_by_stale_auto)
+                if visible_on_kiwi and not mismatch_detected and str(last_reason or "").strip().lower() in {"nonssb_rx_mismatch", "ssb_rx_mismatch"}:
+                    last_reason = None
                 strict_roaming_slot = bool(int(rx) < 2 and not bool(getattr(assignment, "ignore_slot_check", False)))
                 # When the worker is completely absent from Kiwi AND the expected slot is
                 # occupied by a stale alien AUTO_ process, the worker clearly failed to

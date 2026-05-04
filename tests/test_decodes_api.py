@@ -67,6 +67,46 @@ def test_parse_decode_line_handles_short_wspr_format() -> None:
     assert parsed["power"] == 37
 
 
+def test_publish_decode_enriches_country_from_callsign_prefix() -> None:
+    decodes_api.publish_decode(
+        {
+            "timestamp": "16:16:22",
+            "frequency_mhz": 7.074,
+            "mode": "FT8",
+            "callsign": "CO8LY",
+            "grid": "FL20",
+            "message": "CQ CO8LY FL20",
+            "band": "40m",
+            "rx": 4,
+        }
+    )
+
+    items = decodes_api.get_recent_decodes(900)
+
+    assert len(items) == 1
+    assert items[0]["country"] == "Cuba"
+
+
+def test_publish_decode_enriches_country_from_grid_when_callsign_missing() -> None:
+    decodes_api.publish_decode(
+        {
+            "timestamp": "16:16:22",
+            "frequency_mhz": 14.074,
+            "mode": "FT8",
+            "callsign": None,
+            "grid": "FL20",
+            "message": "CQ FL20",
+            "band": "20m",
+            "rx": 2,
+        }
+    )
+
+    items = decodes_api.get_recent_decodes(900)
+
+    assert len(items) == 1
+    assert items[0]["country"] == "Cuba"
+
+
 def test_ws4010_websocket_ingests_decode_payload_and_infers_band() -> None:
     app = FastAPI()
     app.include_router(decodes_api.router)
