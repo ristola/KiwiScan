@@ -224,6 +224,7 @@ class _ReceiverWorker(threading.Thread):
         sox_path: str,
         host: str,
         port: int,
+        password: Optional[str] = None,
         rx: int,
         band: str,
         freq_hz: float,
@@ -243,6 +244,7 @@ class _ReceiverWorker(threading.Thread):
         self._sox_path = sox_path
         self._host = host
         self._port = int(port)
+        self._password = str(password or "").strip()
         self._rx = int(rx)
         self._band = str(band)
         self._freq_hz = float(freq_hz)
@@ -1113,6 +1115,11 @@ class _ReceiverWorker(threading.Thread):
             return None
         freq_khz = self._format_freq_khz(self._freq_hz)
         user_label = _compact_user_label(self._user_prefix, self._band, self._mode_label)
+        password_arg = f" --password {shlex.quote(self._password)}" if self._password else ""
+        kiwirecorder_base_cmd = (
+            f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
+            f"-s {self._host} -p {self._port}{password_arg}"
+        )
         self._active_user_label = user_label
         self._kill_local_kiwi_user_processes(user_label)
         logger.info(
@@ -1145,8 +1152,7 @@ class _ReceiverWorker(threading.Thread):
                         self._rx, self._band, iq_centre_khz, ft8_off, ft4_off, wspr_off,
                     )
                     pipeline_cmd = (
-                        f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-                        f"-s {self._host} -p {self._port} -f {iq_centre_khz} -m iq "
+                        f"{kiwirecorder_base_cmd} -f {iq_centre_khz} -m iq "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._python_cmd} -u {iq_splitter_path} "
                         f"{ft8_off:.1f} {udp_port_ft8} "
@@ -1165,8 +1171,7 @@ class _ReceiverWorker(threading.Thread):
                             self._band,
                         )
                         pipeline_cmd = (
-                            f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-                            f"-s {self._host} -p {self._port} -f {iq_centre_khz} -m iq "
+                            f"{kiwirecorder_base_cmd} -f {iq_centre_khz} -m iq "
                             f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                             f"{self._python_cmd} -u {iq_splitter_path} "
                             f"{ft8_off:.1f} {udp_port_ft8} {ft4_off:.1f} {udp_port_ft4}"
@@ -1180,8 +1185,7 @@ class _ReceiverWorker(threading.Thread):
                             udp_port=udp_port_ft8, af2udp_path=af2udp_path
                         )
                         pipeline_cmd = (
-                            f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-                            f"-s {self._host} -p {self._port} -f {freq_khz} -m usb {self._digital_usb_cut_args()} "
+                            f"{kiwirecorder_base_cmd} -f {freq_khz} -m usb {self._digital_usb_cut_args()} "
                             f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                             f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
                                 f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
@@ -1204,8 +1208,7 @@ class _ReceiverWorker(threading.Thread):
                         self._rx, self._band, iq_centre_khz, ft8_off_hz, ft4_off_hz,
                     )
                     pipeline_cmd = (
-                        f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-                        f"-s {self._host} -p {self._port} -f {iq_centre_khz} -m iq "
+                        f"{kiwirecorder_base_cmd} -f {iq_centre_khz} -m iq "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._python_cmd} -u {iq_splitter_path} "
                         f"{ft8_off_hz:.1f} {udp_port_ft8} {ft4_off_hz:.1f} {udp_port_ft4}"
@@ -1219,8 +1222,7 @@ class _ReceiverWorker(threading.Thread):
                         self._rx, self._band,
                     )
                     pipeline_cmd = (
-                        f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-                        f"-s {self._host} -p {self._port} -f {freq_khz} -m usb {self._digital_usb_cut_args()} "
+                        f"{kiwirecorder_base_cmd} -f {freq_khz} -m usb {self._digital_usb_cut_args()} "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
                             f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
@@ -1241,8 +1243,7 @@ class _ReceiverWorker(threading.Thread):
                         self._rx, self._band, iq_centre_khz, ft4_off_hz, wspr_off_hz,
                     )
                     pipeline_cmd = (
-                        f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-                        f"-s {self._host} -p {self._port} -f {iq_centre_khz} -m iq "
+                        f"{kiwirecorder_base_cmd} -f {iq_centre_khz} -m iq "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._python_cmd} -u {iq_splitter_path} "
                         f"{ft4_off_hz:.1f} {udp_port_ft4} {wspr_off_hz:.1f} {udp_port_wspr}"
@@ -1262,8 +1263,7 @@ class _ReceiverWorker(threading.Thread):
                         udp_port=udp_port_wspr, af2udp_path=af2udp_path
                     )
                     pipeline_cmd = (
-                        f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-                        f"-s {self._host} -p {self._port} -f {wspr_freq_khz} -m usb {self._digital_usb_cut_args()} "
+                        f"{kiwirecorder_base_cmd} -f {wspr_freq_khz} -m usb {self._digital_usb_cut_args()} "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
                             f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
@@ -1274,8 +1274,7 @@ class _ReceiverWorker(threading.Thread):
                 self._start_decoder(udp_port, self._decoder_mode())
                 udp_sender_cmd = self._udp_audio_sender_cmd(udp_port=udp_port, af2udp_path=af2udp_path)
                 pipeline_cmd = (
-                    f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-                    f"-s {self._host} -p {self._port} -f {freq_khz} -m usb {self._digital_usb_cut_args()} "
+                    f"{kiwirecorder_base_cmd} -f {freq_khz} -m usb {self._digital_usb_cut_args()} "
                     f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                     f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
                         f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
@@ -1300,8 +1299,7 @@ class _ReceiverWorker(threading.Thread):
                     self._last_spawn_error_reason = "stop_requested"
                     return None
                 if not self._ignore_slot_check and self._is_digital_mode():
-                    # RX0/RX1 roaming workers must be strict about slot placement.
-                    strict_digital = bool(int(self._rx) < 2) or self._strict_digital_slot_enforcement()
+                    strict_digital = self._requires_strict_slot_check()
                     if not self._verify_kiwi_rx_channel(
                         user_label=user_label,
                         expected_rx=self._kiwi_rx_chan(),
@@ -1502,6 +1500,11 @@ class ReceiverManager:
     @staticmethod
     def _env_int(name: str, default: int, *, min_v: int, max_v: int) -> int:
         return _read_env_int(name, default, min_v=min_v, max_v=max_v)
+
+    @staticmethod
+    def _kiwi_password() -> Optional[str]:
+        value = str(os.environ.get("KIWISCAN_KIWI_PASSWORD", "") or "").strip()
+        return value or None
 
     def _stale_recovery_enabled(self) -> bool:
         return self._env_bool("KIWISCAN_STALE_RECOVERY_ENABLED", True)
@@ -1956,6 +1959,7 @@ class ReceiverManager:
             sox_path=self._sox_path,
             host=host,
             port=port,
+            password=self._kiwi_password(),
             rx=assignment.rx,
             band=assignment.band,
             freq_hz=assignment.freq_hz,

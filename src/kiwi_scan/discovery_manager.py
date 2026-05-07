@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import threading
 import time
 from pathlib import Path
@@ -59,6 +60,7 @@ class DiscoveryManager:
         # default Kiwi host (override via /config or env var)
         self.host = DEFAULT_KIWI_HOST
         self.port = 8073
+        self.password = str(os.environ.get("KIWISCAN_KIWI_PASSWORD", "") or "").strip() or None
         # Disable debug logging by default; enable via /config if needed
         self.debug = False
         # Let the kiwi server choose an available receiver for discovery.

@@ -1300,8 +1300,7 @@ class _ReceiverWorker(threading.Thread):
                     self._last_spawn_error_reason = "stop_requested"
                     return None
                 if not self._ignore_slot_check and self._is_digital_mode():
-                    # RX0/RX1 roaming workers must be strict about slot placement.
-                    strict_digital = bool(int(self._rx) < 2) or self._strict_digital_slot_enforcement()
+                    strict_digital = self._requires_strict_slot_check()
                     if not self._verify_kiwi_rx_channel(
                         user_label=user_label,
                         expected_rx=self._kiwi_rx_chan(),

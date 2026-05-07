@@ -232,6 +232,42 @@ def test_receiver_worker_requires_strict_slot_check_respects_mode_and_roaming(mo
     assert ssb_worker._requires_strict_slot_check() is True
 
 
+def test_receiver_worker_spawn_uses_non_strict_startup_check_for_roaming_digital(monkeypatch) -> None:
+    worker = _make_worker_for_assignment(rx=0, band="60m", freq_hz=5_357_000.0, mode_label="FT8")
+    verify_calls: list[dict[str, object]] = []
+
+    class _FakeProc:
+        def poll(self):
+            return None
+
+    monkeypatch.setattr(worker, "_kill_local_kiwi_user_processes", lambda user_label: None)
+    monkeypatch.setattr(worker, "_start_decoder", lambda udp_port, mode: None)
+    monkeypatch.setattr(worker, "_udp_audio_sender_cmd", lambda **kwargs: "cat >/dev/null")
+    monkeypatch.setattr(
+        worker,
+        "_verify_kiwi_rx_channel",
+        lambda **kwargs: verify_calls.append(dict(kwargs)) or True,
+    )
+    monkeypatch.setattr(
+        receiver_manager.subprocess,
+        "Popen",
+        lambda *args, **kwargs: _FakeProc(),
+    )
+
+    proc = worker._spawn()
+
+    assert proc is not None
+    assert verify_calls == [
+        {
+            "user_label": "ROAM_60m_FT8",
+            "expected_rx": 0,
+            "timeout_s": 6.0,
+            "strict": False,
+            "require_visible": False,
+        }
+    ]
+
+
 def test_receiver_worker_digital_usb_cut_args_match_ft8_decoder_window() -> None:
     assert _ReceiverWorker._digital_usb_cut_args() == "-L 0 -H 3100"
 
