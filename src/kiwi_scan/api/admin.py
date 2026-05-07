@@ -557,6 +557,18 @@ def make_router(
         threading.Thread(target=_bg, daemon=True, name="force-reassign-bg").start()
         return {"ok": True, "status": "reassigning"}
 
+    @router.post("/admin/restore-roaming-receivers")
+    def restore_roaming_receivers_endpoint() -> dict:
+        if auto_set_loop is None:
+            raise HTTPException(status_code=503, detail="auto_set_loop unavailable")
+        try:
+            applied = bool(auto_set_loop.apply_current_settings(force=True, sync_state=True))  # type: ignore[attr-defined]
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Failed restoring roaming receivers: {exc}")
+        if not applied:
+            raise HTTPException(status_code=409, detail="Auto roaming restore is not available in the current mode")
+        return {"ok": True, "status": "restored", "reserved_receivers": [0, 1]}
+
     @router.post("/admin/clear-roaming-receivers")
     def clear_roaming_receivers_endpoint() -> dict:
         if receiver_mgr is None or mgr is None:

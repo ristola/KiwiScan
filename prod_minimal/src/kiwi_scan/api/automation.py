@@ -117,7 +117,7 @@ def make_router(*, auto_set_loop: object | None = None) -> APIRouter:
             return merged
 
     @router.post("/automation/settings")
-    async def put_settings(request: Request) -> Dict[str, str]:
+    async def put_settings(request: Request, notify_auto_set: bool = True) -> Dict[str, str]:
         try:
             payload = await request.json()
         except Exception as exc:
@@ -130,7 +130,7 @@ def make_router(*, auto_set_loop: object | None = None) -> APIRouter:
             merged = _with_defaults(current)
             merged.update(clean_payload)
             _save_settings(_with_defaults(merged))
-        if auto_set_loop is not None:
+        if auto_set_loop is not None and notify_auto_set:
             try:
                 auto_set_loop.notify_settings_changed()  # type: ignore[attr-defined]
             except Exception:

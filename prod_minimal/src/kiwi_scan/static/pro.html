@@ -8427,6 +8427,23 @@
             if (uniqueCalls) uniqueCalls.checked = !!decodeUniqueCallsigns;
         }
 
+        function resetRecentDecodeState(options = {}) {
+            recentDecodeItems = [];
+            recentDecodeIds.clear();
+            if (options.resetSeenModes) decodeSeenModes.clear();
+            if (options.resetMap) mapPoints.clear();
+        }
+
+        async function reloadRecentDecodeState(latestCursor) {
+            const latest = Math.max(0, Number(latestCursor) || 0);
+            resetRecentDecodeState({ resetSeenModes: true, resetMap: true });
+            const recent = await getJson(`/decodes?since=${encodeURIComponent(Math.max(0, latest - RECENT_DECODE_LIMIT))}`);
+            const recentItems = Array.isArray(recent.items) ? recent.items : [];
+            for (const item of recentItems) ingestDecodeItem(item, { renderList: false, renderMap: false });
+            scheduleRecentDecodePanelRender();
+            schedulePropagationMapRender();
+        }
+
         function initDecodeExtraFilters() {
             const storedPrefs = readStoredDecodeExtraFilterPrefs();
             decodeCqOnly = !!storedPrefs.cqOnly;
@@ -8439,8 +8456,7 @@
 
             if (clearBtn && clearBtn.dataset.bound !== "1") {
                 clearBtn.addEventListener("click", () => {
-                    recentDecodeItems = [];
-                    recentDecodeIds.clear();
+                    resetRecentDecodeState();
                     renderRecentDecodePanel();
                 });
                 clearBtn.dataset.bound = "1";
@@ -12330,6 +12346,7 @@
 
         async function saveAutomationSection(options = {}) {
             const autosave = !!options.autosave;
+            const notifyBackend = options.notifyBackend !== false;
             setAutomationStatus(autosave ? "autosaving..." : "saving...");
             const snapshot = latestAutomationSettings && typeof latestAutomationSettings === "object"
                 ? latestAutomationSettings
@@ -12366,7 +12383,8 @@
                 ...(bsGrid !== null ? { scheduleProfiles: bsGrid } : {}),
             };
             try {
-                await postJson("/automation/settings", payload);
+                const saveUrl = notifyBackend ? "/automation/settings" : "/automation/settings?notify_auto_set=0";
+                await postJson(saveUrl, payload);
                 latestAutomationSettings = { ...payload };
                 authoritativeUiThemeNightHour = clampUiThemeHour(payload.uiThemeNightHour);
                 authoritativeUiThemeHourOffset = clampUiThemeHourOffset(payload.uiThemeHourOffset);
@@ -12899,9 +12917,9 @@
             setAutomationStatus(targetMode === "manual" ? "disabling receiver automation..." : `enabling ${receiversModeStatusLabel(targetMode).toLowerCase()}...`);
             setReceiversBusy(true, targetMode === "semi" ? "Clearing RX0/RX1 assignments..." : undefined);
             try {
-                // Persist the mode selection first so backend loops and force-reassign
-                // read the same fixed/manual state the user just selected.
-                await saveAutomationSection({ autosave: true });
+                // Persist the mode selection first, but suppress the loop wake here.
+                // Each explicit mode transition below performs its own single apply.
+                await saveAutomationSection({ autosave: true, notifyBackend: false });
                 await deactivateCaptionMonitorMode({ quiet: true });
                 await deactivateNetMonitorMode({ quiet: true });
                 await deactivateReceiverScanMode({ quiet: true });
@@ -12920,10 +12938,7 @@
                                 : "Semi Mode ON — clearing RX0/RX1 while fixed receivers stay assigned..."
                         );
                     } else {
-                        // Saving /automation/settings already wakes the auto-set loop.
-                        // Avoid a second overlapping force-reassign here because the
-                        // duplicate apply can restart fixed receivers that are already
-                        // stable when only RX0/RX1 need to be added back.
+                        await postJson("/admin/restore-roaming-receivers", {});
                         setAutomationStatus(
                             transitioningFromScan
                                 ? "Auto Mode ON — adding RX0/RX1 roaming receivers..."
@@ -13248,13 +13263,7 @@
                     if (typeof seed.latest === "number") {
                         decodeCursor = Math.max(0, seed.latest);
                         try {
-                            const recent = await getJson(`/decodes?since=${encodeURIComponent(Math.max(0, decodeCursor - RECENT_DECODE_LIMIT))}`);
-                            const recentItems = Array.isArray(recent.items) ? recent.items : [];
-                            recentDecodeItems = [];
-                            recentDecodeIds.clear();
-                            for (const item of recentItems) ingestDecodeItem(item, { renderList: false, renderMap: false });
-                            scheduleRecentDecodePanelRender();
-                            schedulePropagationMapRender();
+                            await reloadRecentDecodeState(decodeCursor);
                         } catch (_) {
                             // Leave the decode panel empty if the backfill fails.
                         }
@@ -13264,6 +13273,16 @@
                 }
 
                 const data = await getJson(`/decodes?since=${encodeURIComponent(decodeCursor)}`);
+                const latestServer = Number(data && data.latest);
+                if (Number.isFinite(latestServer) && latestServer >= 0 && latestServer < decodeCursor) {
+                    decodeCursor = latestServer;
+                    try {
+                        await reloadRecentDecodeState(decodeCursor);
+                    } catch (_) {
+                        // Ignore rollover recovery failures and resume on the next poll.
+                    }
+                    return { count: recentDecodeItems.length, reprime: true };
+                }
                 const items = Array.isArray(data.items) ? data.items : [];
 
                 const receiverCounts = {};

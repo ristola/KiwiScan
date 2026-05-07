@@ -911,3 +911,48 @@ class AutoSetLoop:
             self._last_apply_signature = None
             self._last_schedule_key = None
             self._last_applied_band_config = None
+
+    def apply_current_settings(self, *, force: bool = False, sync_state: bool = True) -> bool:
+        """Apply the current automation payload immediately.
+
+        Used by explicit mode-transition endpoints so the caller can request a
+        single immediate apply without relying on the loop wakeup path.
+        """
+        with self._state_lock:
+            external_hold_reason = self._external_hold_reason
+        if external_hold_reason:
+            logger.debug(
+                "apply_current_settings skipped — external hold active (%s)",
+                external_hold_reason,
+            )
+            return False
+
+        settings = self._load_settings()
+        if self._receivers_mode(settings) == "scan":
+            logger.debug("apply_current_settings skipped — Scan Mode is active")
+            return False
+        if not self._safe_bool(settings.get("fixedModeEnabled"), default=True):
+            logger.debug("apply_current_settings skipped — Auto Mode is OFF")
+            return False
+
+        schedule_key = self._current_schedule_key(settings)
+        payload = self._build_payload(settings, schedule_key=schedule_key)
+        if force:
+            payload["force"] = True
+        apply_signature = self._apply_signature(settings, schedule_key)
+        band_config = self._band_config_signature(payload)
+
+        self._post_auto_set(payload)
+
+        now = time.time()
+        with self._state_lock:
+            self._last_success_ts = now
+            self._last_error = None
+            self._manual_mode_cleared = False
+            if sync_state:
+                self._did_startup_apply = True
+                self._last_schedule_key = schedule_key
+                self._last_apply_signature = apply_signature
+                self._last_applied_band_config = band_config
+            self._recovery_backoff_until_ts = now + self._RECOVERY_BACKOFF_S
+        return True

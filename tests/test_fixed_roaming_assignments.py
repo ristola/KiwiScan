@@ -896,6 +896,46 @@ def test_force_reassign_skips_when_receivers_mode_scan(monkeypatch) -> None:
     assert posted == []
 
 
+def test_apply_current_settings_posts_payload_and_syncs_loop_state(monkeypatch) -> None:
+    loop = AutoSetLoop()
+
+    monkeypatch.setattr(loop, "_load_settings", lambda: {"fixedModeEnabled": True, "receiversMode": "auto"})
+    monkeypatch.setattr(loop, "_current_schedule_key", lambda _settings: ("fixed", "day"))
+    monkeypatch.setattr(loop, "_apply_signature", lambda _settings, _schedule_key: "sig")
+    monkeypatch.setattr(
+        loop,
+        "_build_payload",
+        lambda _settings, schedule_key=None: {
+            "enabled": True,
+            "mode": "ft8",
+            "block": "day",
+            "fixed_assignments": list(auto_set_api._FIXED_ASSIGNMENTS),
+            "selected_bands": ["10m", "12m"],
+            "band_modes": {"10m": "FT8", "12m": "FT8", "15m": "FT8"},
+        },
+    )
+
+    posted: list[dict] = []
+    monkeypatch.setattr(loop, "_post_auto_set", lambda payload: posted.append(dict(payload)))
+
+    applied = loop.apply_current_settings(force=True, sync_state=True)
+
+    assert applied is True
+    assert posted == [{
+        "enabled": True,
+        "mode": "ft8",
+        "block": "day",
+        "fixed_assignments": list(auto_set_api._FIXED_ASSIGNMENTS),
+        "selected_bands": ["10m", "12m"],
+        "band_modes": {"10m": "FT8", "12m": "FT8", "15m": "FT8"},
+        "force": True,
+    }]
+    assert loop._did_startup_apply is True
+    assert loop._last_schedule_key == ("fixed", "day")
+    assert loop._last_apply_signature == "sig"
+    assert loop._last_applied_band_config == loop._band_config_signature(posted[0])
+
+
 def test_run_reapplies_when_scored_band_config_changes_without_schedule_change(monkeypatch) -> None:
     loop = AutoSetLoop()
     loop._did_startup_apply = True

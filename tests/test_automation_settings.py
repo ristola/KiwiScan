@@ -35,6 +35,32 @@ def test_automation_settings_post_notifies_auto_set_loop(monkeypatch) -> None:
     assert saved[-1]["fixedModeEnabled"] is False
 
 
+def test_automation_settings_post_can_skip_auto_set_loop_notify(monkeypatch) -> None:
+    saved: list[dict] = []
+
+    class _LoopStub:
+        def __init__(self) -> None:
+            self.notifications = 0
+
+        def notify_settings_changed(self) -> None:
+            self.notifications += 1
+
+    loop_stub = _LoopStub()
+    monkeypatch.setattr(automation_api, "_load_settings", lambda: {"headlessEnabled": True})
+    monkeypatch.setattr(automation_api, "_save_settings", lambda payload: saved.append(dict(payload)))
+
+    app = FastAPI()
+    app.include_router(automation_api.make_router(auto_set_loop=loop_stub))
+    client = TestClient(app)
+
+    response = client.post("/automation/settings?notify_auto_set=0", json={"receiversMode": "auto"})
+
+    assert response.status_code == 200
+    assert loop_stub.notifications == 0
+    assert saved
+    assert saved[-1]["receiversMode"] == "auto"
+
+
 def test_automation_settings_normalize_receivers_mode(monkeypatch) -> None:
     saved: list[dict] = []
 

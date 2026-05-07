@@ -112,3 +112,21 @@ def test_clear_roaming_receivers_endpoint_clears_only_rx0_rx1() -> None:
     assert receiver_mgr._assignments == {}
     assert receiver_mgr._workers == {}
     assert receiver_mgr._activity_by_rx == {}
+
+
+def test_restore_roaming_receivers_endpoint_applies_current_auto_settings() -> None:
+    apply_calls: list[tuple[bool, bool]] = []
+
+    auto_set_loop = SimpleNamespace(
+        apply_current_settings=lambda force=False, sync_state=True: apply_calls.append((bool(force), bool(sync_state))) or True,
+    )
+
+    app = FastAPI()
+    app.include_router(make_router(auto_set_loop=auto_set_loop))
+    client = TestClient(app)
+
+    response = client.post("/admin/restore-roaming-receivers")
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "status": "restored", "reserved_receivers": [0, 1]}
+    assert apply_calls == [(True, True)]
