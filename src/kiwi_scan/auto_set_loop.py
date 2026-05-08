@@ -354,10 +354,11 @@ class AutoSetLoop:
 
         if fixed_health_state != "healthy":
             logger.info(
-                "Fixed receiver health=%s; keeping fallback roaming bands active: %s",
+                "Fixed receiver health=%s; keeping RX0/RX1 empty until fixed slots recover",
                 fixed_health_state,
-                selected_bands,
             )
+            selected_bands = []
+            band_modes = {}
 
         payload: Dict[str, Any] = {
             "enabled": True,
@@ -497,7 +498,7 @@ class AutoSetLoop:
                 data = json.loads(resp.read(1024 * 1024).decode("utf-8", errors="ignore"))
         except Exception:
             return "unknown", list(_FIXED_ASSIGNMENTS)
-        if isinstance(data, dict) and (data.get("overall") == "busy" or bool(data.get("_from_cache"))):
+        if isinstance(data, dict) and (str(data.get("overall") or "").lower() in {"busy", "starting"} or bool(data.get("_from_cache"))):
             return "unknown", list(_FIXED_ASSIGNMENTS)
         channels = data.get("channels") if isinstance(data, dict) else None
         if not isinstance(channels, dict):
@@ -509,10 +510,26 @@ class AutoSetLoop:
             if not isinstance(ch, dict):
                 logger.info("Fixed receiver RX%s missing from health channels", rx_key)
                 sick.append(entry)
+                continue
             elif not ch.get("active"):
                 logger.info("Fixed receiver RX%s is inactive", rx_key)
                 sick.append(entry)
-            elif ch.get("status_level") == "fault":
+                continue
+            else:
+                kiwi_rx_raw = ch.get("kiwi_rx")
+                try:
+                    kiwi_rx = int(kiwi_rx_raw) if isinstance(kiwi_rx_raw, (int, float, str)) else None
+                except Exception:
+                    kiwi_rx = None
+                if kiwi_rx is not None and kiwi_rx != int(entry["rx"]):
+                    logger.info(
+                        "Fixed receiver RX%s drifted to Kiwi slot %s",
+                        rx_key,
+                        kiwi_rx,
+                    )
+                    sick.append(entry)
+                    continue
+            if ch.get("status_level") == "fault":
                 logger.info("Fixed receiver RX%s is faulted (%s)", rx_key, ch.get("last_reason"))
                 sick.append(entry)
         if sick:
@@ -594,7 +611,7 @@ class AutoSetLoop:
 
         if not isinstance(data, dict):
             return "unknown", [0, 1]
-        if data.get("overall") == "busy" or bool(data.get("_from_cache")):
+        if str(data.get("overall") or "").lower() in {"busy", "starting"} or bool(data.get("_from_cache")):
             return "unknown", [0, 1]
 
         channels = data.get("channels")
@@ -616,15 +633,25 @@ class AutoSetLoop:
         return ("healthy", []) if not sick else ("sick", sick)
 
     def _restart_sick_receivers(self, sick: list[dict]) -> None:
-        """Restart only the listed stuck fixed receivers via the targeted admin endpoint."""
-        rx_list = [int(e["rx"]) for e in sick]
+        """Restart one stuck fixed receiver via the targeted admin endpoint.
+
+        Fixed-slot recovery must reclaim one home slot at a time. Restarting more
+        than one fixed receiver in the same cycle reopens multiple slots and lets
+        Kiwi remap the displaced FIXED_* workers into the wrong free channel.
+        """
+        if not sick:
+            return
+        target = min((int(e["rx"]) for e in sick), default=None)
+        if target is None:
+            return
+        rx_list = [target]
         port_raw = str(os.environ.get("PORT", "4020") or "4020").strip()
         try:
             port = int(port_raw)
         except Exception:
             port = 4020
         url = f"http://127.0.0.1:{port}/admin/restart-receivers"
-        body = json.dumps({"rx_list": rx_list}).encode("utf-8")
+        body = json.dumps({"rx_list": rx_list, "reason": "kiwi_assignment_mismatch"}).encode("utf-8")
         req = urllib.request.Request(url, data=body, headers={"Content-Type": "application/json"}, method="POST")
         try:
             with urllib.request.urlopen(req, timeout=10.0) as resp:

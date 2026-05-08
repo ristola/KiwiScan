@@ -82,8 +82,9 @@ class _LoopResponse:
         return False
 
 
-def test_fixed_roaming_payload_pins_rx2_to_rx7() -> None:
+def test_fixed_roaming_payload_pins_rx2_to_rx7(monkeypatch) -> None:
     loop = AutoSetLoop()
+    monkeypatch.setattr(loop, "_fixed_health_state", lambda: ("healthy", []))
 
     payload = loop._build_fixed_roaming_payload({}, "day")
 
@@ -103,8 +104,9 @@ def test_fixed_roaming_payload_pins_rx2_to_rx7() -> None:
     assert set(payload.get("selected_bands", [])) <= {"10m", "12m", "15m"}
 
 
-def test_fixed_roaming_payload_night_uses_only_night_roaming_pool() -> None:
+def test_fixed_roaming_payload_night_uses_only_night_roaming_pool(monkeypatch) -> None:
     loop = AutoSetLoop()
+    monkeypatch.setattr(loop, "_fixed_health_state", lambda: ("healthy", []))
 
     payload = loop._build_fixed_roaming_payload({}, "night")
 
@@ -132,6 +134,7 @@ def test_fixed_roaming_payload_semi_mode_keeps_fixed_receivers_only() -> None:
 
 def test_fixed_roaming_payload_passes_current_roaming_to_smart_scheduler(monkeypatch) -> None:
     loop = AutoSetLoop()
+    monkeypatch.setattr(loop, "_fixed_health_state", lambda: ("healthy", []))
 
     class _SmartSchedulerStub:
         def __init__(self) -> None:
@@ -153,6 +156,7 @@ def test_fixed_roaming_payload_passes_current_roaming_to_smart_scheduler(monkeyp
 
 def test_fixed_roaming_payload_excludes_closed_bands(monkeypatch) -> None:
     loop = AutoSetLoop()
+    monkeypatch.setattr(loop, "_fixed_health_state", lambda: ("healthy", []))
 
     class _SmartSchedulerStub:
         def __init__(self) -> None:
@@ -179,6 +183,7 @@ def test_fixed_roaming_payload_excludes_closed_bands(monkeypatch) -> None:
 
 def test_fixed_roaming_payload_falls_back_when_closed_bands_leave_one_roaming_slot(monkeypatch) -> None:
     loop = AutoSetLoop()
+    monkeypatch.setattr(loop, "_fixed_health_state", lambda: ("healthy", []))
 
     class _SmartSchedulerStub:
         def __init__(self) -> None:
@@ -727,14 +732,109 @@ def test_fixed_health_state_treats_cached_nonempty_snapshot_as_unknown(monkeypat
     ]
 
 
-def test_fixed_roaming_payload_keeps_fallback_roaming_when_health_is_unknown(monkeypatch) -> None:
+def test_fixed_health_state_marks_fixed_slot_drift_as_sick(monkeypatch) -> None:
+    loop = AutoSetLoop()
+
+    channels = {
+        str(rx): {
+            "active": True,
+            "visible_on_kiwi": True,
+            "status_level": "healthy",
+            "kiwi_rx": rx,
+        }
+        for rx in range(2, 8)
+    }
+    channels["2"]["kiwi_rx"] = 0
+
+    def _fake_urlopen(request, timeout=0.0):
+        del timeout
+        url = request.full_url if hasattr(request, "full_url") else str(request)
+        assert url.endswith("/health/rx")
+        return _LoopResponse({"overall": "degraded", "channels": channels})
+
+    monkeypatch.setattr("kiwi_scan.auto_set_loop.urllib.request.urlopen", _fake_urlopen)
+
+    state, sick = loop._fixed_health_state()
+
+    assert state == "sick"
+    assert sick == [{"rx": 2, "band": "20m", "mode": "FT4 / FT8", "freq_hz": 14_077_000.0}]
+
+
+def test_restart_sick_receivers_posts_mismatch_reason(monkeypatch) -> None:
+    loop = AutoSetLoop()
+    captured: dict[str, object] = {}
+
+    def _fake_urlopen(request, timeout=0.0):
+        del timeout
+        captured["url"] = request.full_url if hasattr(request, "full_url") else str(request)
+        captured["body"] = json.loads((request.data or b"{}").decode("utf-8"))
+        return _LoopResponse({"ok": True})
+
+    monkeypatch.setattr("kiwi_scan.auto_set_loop.urllib.request.urlopen", _fake_urlopen)
+
+    loop._restart_sick_receivers([{"rx": 2}, {"rx": 7}])
+
+    assert str(captured.get("url") or "").endswith("/admin/restart-receivers")
+    assert captured.get("body") == {"rx_list": [2], "reason": "kiwi_assignment_mismatch"}
+
+
+def test_restart_sick_receivers_targets_lowest_fixed_rx_first(monkeypatch) -> None:
+    loop = AutoSetLoop()
+    captured: dict[str, object] = {}
+
+    def _fake_urlopen(request, timeout=0.0):
+        del timeout
+        captured["body"] = json.loads((request.data or b"{}").decode("utf-8"))
+        return _LoopResponse({"ok": True})
+
+    monkeypatch.setattr("kiwi_scan.auto_set_loop.urllib.request.urlopen", _fake_urlopen)
+
+    loop._restart_sick_receivers([{"rx": 7}, {"rx": 4}, {"rx": 5}])
+
+    assert captured.get("body") == {"rx_list": [4], "reason": "kiwi_assignment_mismatch"}
+
+
+def test_fixed_roaming_payload_keeps_roaming_empty_when_health_is_unknown(monkeypatch) -> None:
     loop = AutoSetLoop()
 
     monkeypatch.setattr(loop, "_fixed_health_state", lambda: ("unknown", []))
 
     payload = loop._build_fixed_roaming_payload({}, "night")
 
-    assert payload.get("selected_bands") == ["60m", "80m"]
+    assert payload.get("selected_bands") == []
+    assert payload.get("band_modes") == {}
+
+
+def test_fixed_roaming_payload_keeps_roaming_empty_when_health_is_sick(monkeypatch) -> None:
+    loop = AutoSetLoop()
+
+    monkeypatch.setattr(
+        loop,
+        "_fixed_health_state",
+        lambda: ("sick", [{"rx": 2, "band": "20m", "mode": "FT4 / FT8", "freq_hz": 14_077_000.0}]),
+    )
+
+    payload = loop._build_fixed_roaming_payload({}, "day")
+
+    assert payload.get("selected_bands") == []
+    assert payload.get("band_modes") == {}
+
+
+def test_fixed_health_state_treats_starting_health_as_unknown(monkeypatch) -> None:
+    loop = AutoSetLoop()
+
+    def _fake_urlopen(request, timeout=0.0):
+        del timeout
+        url = request.full_url if hasattr(request, "full_url") else str(request)
+        assert url.endswith("/health/rx")
+        return _LoopResponse({"overall": "starting", "channels": {}})
+
+    monkeypatch.setattr("kiwi_scan.auto_set_loop.urllib.request.urlopen", _fake_urlopen)
+
+    state, sick = loop._fixed_health_state()
+
+    assert state == "unknown"
+    assert [entry["rx"] for entry in sick] == [2, 3, 4, 5, 6, 7]
 
 
 def test_roaming_health_state_reports_sick_missing_roam(monkeypatch) -> None:

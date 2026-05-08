@@ -651,6 +651,7 @@ def make_router(
         rx_list_raw = payload.get("rx_list", [])
         if not isinstance(rx_list_raw, list):
             raise HTTPException(status_code=400, detail="rx_list must be an array")
+        reason = str(payload.get("reason") or "admin_restart").strip() or "admin_restart"
         rx_list: list[int] = []
         for item in rx_list_raw:
             try:
@@ -658,13 +659,12 @@ def make_router(
             except Exception:
                 raise HTTPException(status_code=400, detail=f"Invalid rx value: {item!r}")
         results: list[dict] = []
-        import threading
         import asyncio
         for rx in rx_list:
             try:
                 ok = await asyncio.to_thread(
                     receiver_mgr._restart_receiver_worker,  # type: ignore[attr-defined]
-                    rx, "admin_restart",
+                    rx, reason,
                 )
                 results.append({"rx": rx, "ok": bool(ok)})
             except Exception as exc:
