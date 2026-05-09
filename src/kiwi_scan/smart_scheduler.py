@@ -22,8 +22,10 @@ import logging
 import os
 import threading
 import time
+import urllib.request
 from datetime import datetime
 import math
+from xml.etree import ElementTree
 from kiwi_scan.api.decodes import get_recent_decodes
 
 from pathlib import Path
@@ -71,6 +73,10 @@ _ROAMING_LOW_DECODES_PER_HOUR_DAY = 3
 _ROAMING_LOW_DECODES_PER_HOUR_NIGHT = 1
 _ROAMING_LOW_RATE_PENALTY = 18.0
 _ROAMING_EXPLORATION_BONUS = 12.0
+_SOLAR_ACTIVITY_URL = "https://www.hamqsl.com/solarxml.php"
+_SOLAR_ACTIVITY_CACHE_TTL_S = 300.0
+_SOLAR_ACTIVITY_RETRY_S = 60.0
+_SOLAR_HF_LEVEL_SCORES: Dict[str, int] = {"GOOD": 80, "FAIR": 55, "POOR": 25}
 
 
 def _mode_supplies_propagation_evidence(mode_label: str) -> bool:
@@ -208,6 +214,90 @@ def _empirical_from_health(health: Dict[str, Any]) -> Dict[str, str]:
     return result
 
 
+def _xml_text(parent: ElementTree.Element | None, tag: str) -> str:
+    if parent is None:
+        return ""
+    child = parent.find(tag)
+    if child is None or child.text is None:
+        return ""
+    return str(child.text).strip()
+
+
+def _float_or_none(value: Any) -> Optional[float]:
+    try:
+        text = str(value).strip()
+        if not text:
+            return None
+        return float(text)
+    except Exception:
+        return None
+
+
+def _compute_solar_hf_score(hf_conditions: Dict[str, Dict[str, str]], *, period: str) -> Optional[int]:
+    values: list[int] = []
+    for entry in hf_conditions.values():
+        if not isinstance(entry, dict):
+            continue
+        label = str(entry.get(period) or entry.get("day") or entry.get("night") or "").strip().upper()
+        if not label:
+            continue
+        values.append(_SOLAR_HF_LEVEL_SCORES.get(label, 40))
+    if not values:
+        return None
+    return int(round(sum(values) / len(values)))
+
+
+def _fetch_hamqsl_solar_activity(timeout_s: float = 4.0) -> Dict[str, Any]:
+    req = urllib.request.Request(
+        _SOLAR_ACTIVITY_URL,
+        headers={"User-Agent": "KiwiScan/1.0"},
+        method="GET",
+    )
+    with urllib.request.urlopen(req, timeout=max(1.0, float(timeout_s))) as resp:
+        payload = resp.read()
+
+    root = ElementTree.fromstring(payload)
+    solardata = root if root.tag == "solardata" else root.find("solardata")
+    if solardata is None:
+        return {}
+
+    source_el = solardata.find("source")
+    hf_conditions: Dict[str, Dict[str, str]] = {}
+    calc_el = solardata.find("calculatedconditions")
+    if calc_el is not None:
+        for band_el in calc_el.findall("band"):
+            band_name = str(band_el.attrib.get("name") or "").strip()
+            period = str(band_el.attrib.get("time") or "").strip().lower()
+            value = str(band_el.text or "").strip()
+            if not band_name or period not in {"day", "night"} or not value:
+                continue
+            hf_conditions.setdefault(band_name, {})[period] = value
+
+    snapshot: Dict[str, Any] = {
+        "source": "hamqsl",
+        "source_name": str(source_el.text or "").strip() if source_el is not None else "",
+        "source_url": str(source_el.attrib.get("url") or "").strip() if source_el is not None else "",
+        "updated": _xml_text(solardata, "updated"),
+        "solar_flux": _float_or_none(_xml_text(solardata, "solarflux")),
+        "a_index": _float_or_none(_xml_text(solardata, "aindex")),
+        "k_index": _float_or_none(_xml_text(solardata, "kindex")),
+        "xray": _xml_text(solardata, "xray"),
+        "sunspots": _float_or_none(_xml_text(solardata, "sunspots")),
+        "helium_line": _float_or_none(_xml_text(solardata, "heliumline")),
+        "proton_flux": _float_or_none(_xml_text(solardata, "protonflux")),
+        "electron_flux": _float_or_none(_xml_text(solardata, "electonflux")),
+        "aurora": _float_or_none(_xml_text(solardata, "aurora")),
+        "aurora_normalization": _float_or_none(_xml_text(solardata, "normalization")),
+        "aurora_latitude": _float_or_none(_xml_text(solardata, "latdegree")),
+        "solar_wind": _float_or_none(_xml_text(solardata, "solarwind")),
+        "magnetic_field": _float_or_none(_xml_text(solardata, "magneticfield")),
+        "hf_conditions": hf_conditions,
+    }
+    snapshot["hf_score_day"] = _compute_solar_hf_score(hf_conditions, period="day")
+    snapshot["hf_score_night"] = _compute_solar_hf_score(hf_conditions, period="night")
+    return snapshot
+
+
 class SmartScheduler:
     """Background band-condition monitor.
 
@@ -241,6 +331,8 @@ class SmartScheduler:
         self._last_merged: Dict[str, str] = {}
         self._last_health_overall: str = "unknown"
         self._last_roaming_decision: Dict[str, Any] = {}
+        self._solar_activity: Dict[str, Any] = {}
+        self._solar_activity_last_attempt_ts: float = 0.0
 
     # ------------------------------------------------------------------
     # Persistence helpers
@@ -384,6 +476,8 @@ class SmartScheduler:
         except Exception:
             logger.debug("SmartScheduler: health_summary() failed", exc_info=True)
             return
+
+        self._refresh_solar_activity()
 
         new_empirical = _empirical_from_health(health)
         health_overall = str(health.get("overall") or "unknown")
@@ -531,6 +625,7 @@ class SmartScheduler:
             last_check_ts = self._last_check_ts
             health_overall = str(self._last_health_overall)
             roaming_decision = dict(self._last_roaming_decision)
+            solar_activity = dict(self._solar_activity)
 
         overrides = self._load_overrides()
         allowed = self._allowed_bands()
@@ -584,12 +679,35 @@ class SmartScheduler:
             "interval_s": self._interval_s(),
             "mode": "ft8",
             "roaming_decision": roaming_decision,
+            "solar_activity": solar_activity,
             "conditions": conditions,
             "closed_bands": sorted(b for b, c in merged.items() if c == "CLOSED" and b in allowed),
             "open_bands": sorted(b for b, c in merged.items() if c == "OPEN" and b in allowed),
             "marginal_bands": sorted(b for b, c in merged.items() if c == "MARGINAL" and b in allowed),
             "allowed_bands": sorted(allowed),
         }
+
+    def _refresh_solar_activity(self, force: bool = False) -> Dict[str, Any]:
+        now = time.time()
+        with self._lock:
+            cached = dict(self._solar_activity)
+            last_attempt_ts = float(self._solar_activity_last_attempt_ts or 0.0)
+        retry_window = _SOLAR_ACTIVITY_CACHE_TTL_S if cached else _SOLAR_ACTIVITY_RETRY_S
+        if not force and last_attempt_ts and (now - last_attempt_ts) < retry_window:
+            return cached
+
+        snapshot: Dict[str, Any] = {}
+        try:
+            snapshot = _fetch_hamqsl_solar_activity()
+        except Exception:
+            logger.debug("SmartScheduler: solar activity fetch failed", exc_info=True)
+
+        with self._lock:
+            self._solar_activity_last_attempt_ts = now
+            if snapshot:
+                snapshot["fetched_ts"] = now
+                self._solar_activity = snapshot
+            return dict(self._solar_activity)
 
     def _compute_smart_score(self, band: str, recent_decodes: list[Dict[str, Any]], current_roaming: list[str]) -> float:
         from datetime import datetime, timezone

@@ -959,6 +959,10 @@
             text-align: center;
         }
 
+        .status-chip-stream {
+            gap: 8px;
+        }
+
         .status-chip.status-chip-time {
             justify-content: flex-start;
         }
@@ -1009,6 +1013,109 @@
         .status-chip-stream .chip-label {
             justify-content: center;
             margin-bottom: 4px;
+        }
+
+        .stream-chip-activity {
+            display: grid;
+            gap: 8px;
+            width: 100%;
+            max-width: 340px;
+            margin-top: 4px;
+        }
+
+        .stream-chip-activity-head {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
+            width: 100%;
+        }
+
+        .stream-chip-activity-label {
+            color: var(--muted);
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .stream-chip-activity-percent {
+            font-size: 0.92rem;
+            font-weight: 800;
+            line-height: 1;
+            color: #eaf6ff;
+        }
+
+        .stream-chip-activity-bar {
+            position: relative;
+            width: 100%;
+            height: 14px;
+            border-radius: 999px;
+            overflow: visible;
+        }
+
+        .stream-chip-activity-track {
+            position: absolute;
+            inset: 0;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #c24141 0 33%, #d0a32c 33% 66%, #22c55e 66% 100%);
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+        }
+
+        .stream-chip-activity-track::after {
+            content: "";
+            position: absolute;
+            inset: 2px;
+            border-radius: 999px;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.02));
+            pointer-events: none;
+        }
+
+        .stream-chip-activity-pointer {
+            position: absolute;
+            top: 50%;
+            left: var(--hf-activity-percent, 0%);
+            transform: translate(-50%, -50%);
+            width: 18px;
+            height: 18px;
+            border-radius: 999px;
+            background: #f8fbff;
+            border: 2px solid rgba(15, 23, 42, 0.32);
+            box-shadow: 0 5px 14px rgba(15, 23, 42, 0.35);
+            transition: left 220ms ease, background-color 220ms ease, box-shadow 220ms ease;
+            z-index: 1;
+        }
+
+        .stream-chip-activity-pointer::before {
+            content: "";
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 4px;
+            height: 22px;
+            border-radius: 999px;
+            background: currentColor;
+            transform: translate(-50%, -50%);
+            opacity: 0.9;
+        }
+
+        .stream-chip-activity-pointer.is-low {
+            color: #7f1d1d;
+        }
+
+        .stream-chip-activity-pointer.is-mid {
+            color: #854d0e;
+        }
+
+        .stream-chip-activity-pointer.is-high {
+            color: #166534;
+        }
+
+        .stream-chip-activity-caption {
+            color: #d8e7f2;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
         }
 
         .status-chip-head .chip-label {
@@ -3574,9 +3681,66 @@
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
-            margin-bottom: 8px;
+            margin-bottom: 0;
             gap: 6px;
             flex-wrap: wrap;
+        }
+
+        .rx-top-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            column-gap: 16px;
+            row-gap: 2px;
+            align-items: start;
+            width: 100%;
+        }
+
+        .rx-top-main {
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .rx-top-head {
+            display: flex;
+            align-items: flex-start;
+            gap: 6px;
+            min-width: 0;
+        }
+
+        .rx-top-pills {
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-end;
+            justify-self: end;
+            gap: 2px;
+            flex-wrap: wrap;
+            flex-shrink: 0;
+            grid-column: 2;
+            grid-row: 1;
+        }
+
+        .rx-card-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .rx-decode-rates {
+            display: block;
+            margin-top: 10px;
+            line-height: 1.6;
+        }
+
+        .rx-decode-rate-row {
+            display: block;
+            font-size: 0.7rem;
+            white-space: nowrap;
+        }
+
+        .rx-decode-rate-label {
+            font-weight: 700;
         }
 
         .rx-name {
@@ -3591,8 +3755,8 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            min-width: 40px;
-            padding: 3px 8px;
+            min-width: 38px;
+            padding: 3px 7px;
             border-radius: 999px;
             border: 1px solid currentColor;
             background: color-mix(in srgb, currentColor, transparent 88%);
@@ -3606,6 +3770,50 @@
             color: var(--ink);
             font-size: 0.95rem;
             font-weight: 700;
+        }
+
+        .rx-band-head {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+            min-width: 0;
+            max-width: 100%;
+        }
+
+        .rx-band-title {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+        }
+
+        .rx-band-condition {
+            font-size: 0.78rem;
+            font-weight: 600;
+            line-height: 1.1;
+            white-space: nowrap;
+        }
+
+        .rx-pill-stack {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 2px;
+        }
+
+        .rx-pill-mode {
+            font-size: 0.7rem;
+            font-weight: 600;
+            line-height: 1.05;
+            text-align: center;
+            white-space: nowrap;
+            letter-spacing: -0.01em;
+        }
+
+        .rx-pill-mode-divider {
+            color: var(--muted);
+            padding: 0 1px;
         }
 
         .pill {
@@ -5486,6 +5694,20 @@
                         <article class="status-chip status-chip-stream" data-icon="stream">
                             <div class="chip-label">WebSocket Stream</div>
                             <div class="chip-value" id="chip-stream">Connecting...</div>
+                            <div class="stream-chip-activity">
+                                <div class="stream-chip-activity-head">
+                                    <div class="stream-chip-activity-label">HF Conditions</div>
+                                    <div class="stream-chip-activity-percent mono" id="chip-stream-activity-percent">0%
+                                    </div>
+                                </div>
+                                <div class="stream-chip-activity-bar" id="chip-stream-activity-bar" aria-hidden="true">
+                                    <div class="stream-chip-activity-track"></div>
+                                    <div class="stream-chip-activity-pointer is-low" id="chip-stream-activity-pointer">
+                                    </div>
+                                </div>
+                                <div class="stream-chip-activity-caption" id="chip-stream-activity-caption">Quiet band
+                                    activity</div>
+                            </div>
                         </article>
                         <article class="status-chip status-chip-time" data-icon="globe">
                             <div class="chip-label">Time</div>
@@ -6537,6 +6759,8 @@
         let wsMessageBurst = 0;
         let lastIntervalMessages = 0;
         let rateHistory = [];
+        let currentDecodeRatePerMin = 0;
+        let currentHfActivityDisplayPercent = 0;
         let summaryFaultLoadHistory = [];
         let summaryDecodeRateHistory = [];
         let latestBcConditions = {};
@@ -14833,6 +15057,78 @@
             return `${count} Connection${count === 1 ? "" : "s"}`;
         }
 
+        function computeHfActivityPercent() {
+            const conditions = latestBcConditions && typeof latestBcConditions === "object"
+                ? Object.values(latestBcConditions).filter((entry) => entry && typeof entry === "object")
+                : [];
+            if (!conditions.length) return 0;
+
+            const fallbackByMergedState = {
+                OPEN: 72,
+                MARGINAL: 46,
+                CLOSED: 14,
+            };
+            const scores = conditions.map((entry) => {
+                const rawScore = Number(entry && entry.score);
+                if (Number.isFinite(rawScore) && String(entry && entry.source || "").toLowerCase() === "empirical") {
+                    return Math.max(0, Math.min(100, rawScore));
+                }
+                const merged = String(entry && entry.merged || "UNKNOWN").toUpperCase();
+                return fallbackByMergedState[merged] ?? 28;
+            });
+            const averageScore = scores.reduce((sum, value) => sum + value, 0) / Math.max(1, scores.length);
+
+            const solarActivity = latestBcStatus && latestBcStatus.solar_activity && typeof latestBcStatus.solar_activity === "object"
+                ? latestBcStatus.solar_activity
+                : null;
+            if (!solarActivity) {
+                return Math.max(0, Math.min(100, Math.round(averageScore)));
+            }
+
+            const localHour = new Date().getHours();
+            const isDay = localHour >= 6 && localHour < 18;
+            const hfBandScore = Number(isDay ? solarActivity.hf_score_day : solarActivity.hf_score_night);
+            const solarFlux = Number(solarActivity.solar_flux);
+            const kIndex = Number(solarActivity.k_index);
+            let solarScore = Number.isFinite(hfBandScore) ? hfBandScore : averageScore;
+            if (Number.isFinite(solarFlux)) {
+                solarScore += Math.max(-6, Math.min(10, (solarFlux - 100) / 6));
+            }
+            if (Number.isFinite(kIndex)) {
+                solarScore -= Math.max(0, (kIndex - 2) * 8);
+            }
+            solarScore = Math.max(0, Math.min(100, solarScore));
+            return Math.max(0, Math.min(100, Math.round((averageScore * 0.72) + (solarScore * 0.28))));
+        }
+
+        function describeHfActivity(percent) {
+            const value = Math.max(0, Math.min(100, Number(percent) || 0));
+            if (value >= 67) return { label: "Current HF conditions are strong", pointerClass: "is-high" };
+            if (value >= 34) return { label: "Current HF conditions are mixed", pointerClass: "is-mid" };
+            return { label: "Current HF conditions are poor", pointerClass: "is-low" };
+        }
+
+        function updateDecodeStreamActivityChip() {
+            const percentEl = byId("chip-stream-activity-percent");
+            const barEl = byId("chip-stream-activity-bar");
+            const pointerEl = byId("chip-stream-activity-pointer");
+            const captionEl = byId("chip-stream-activity-caption");
+            if (!percentEl || !barEl || !pointerEl || !captionEl) return;
+
+            const targetPercent = computeHfActivityPercent();
+            const blendedPercent = (currentHfActivityDisplayPercent * 0.72) + (targetPercent * 0.28);
+            currentHfActivityDisplayPercent = Math.abs(targetPercent - blendedPercent) <= 1.5
+                ? targetPercent
+                : blendedPercent;
+            const activityPercent = Math.max(0, Math.min(100, Math.round(currentHfActivityDisplayPercent)));
+            const activityState = describeHfActivity(activityPercent);
+            percentEl.textContent = `${activityPercent}%`;
+            barEl.style.setProperty("--hf-activity-percent", `${activityPercent}%`);
+            pointerEl.classList.remove("is-low", "is-mid", "is-high");
+            pointerEl.classList.add(activityState.pointerClass);
+            captionEl.textContent = activityState.label;
+        }
+
         function startDecodeWsClientPolling(wsUrl) {
             stopDecodeWsClientPolling();
             void wsUrl;
@@ -14886,6 +15182,7 @@
 
             chip.textContent = formatStreamConnectionText(count4010);
             chip.classList.toggle("chip-value-active", count4010 > 0 || localOpen || recentMessage);
+            updateDecodeStreamActivityChip();
         }
 
         function startDecodeWebSocket() {
@@ -15034,6 +15331,12 @@
                 const colorAttr = iconColor ? ` style="color:${iconColor}"` : "";
                 return `<span class="${cls}"><span class="ui-icon kv-icon"${colorAttr} aria-label="${label}" title="${label}">${svg}</span>\u00a0\u00a0<span${colorAttr}>${safeText(value)}</span></span>`;
             };
+            const bandHeaderHtml = (band) => `<span class="rx-band-head"><span class="rx-band-title"><span class="rx-band-label" style="font-size:1rem;font-weight:800">${band}</span>${isFixedPlanBand(band) ? fixedLockSvgHtml("fixed-rx-lock-icon") : ""}</span>${(() => { const ct = conditionText(band); return ct !== "--" ? `<span class="rx-band-condition" style="color:${conditionColor(band)}">${ct}</span>` : ""; })()}</span>`;
+            const scoreLineHtml = (band) => {
+                const sc = bandScoreText(band);
+                const color = sc === "--" ? "var(--muted)" : bandScoreColor(band);
+                return iconLine("spark", "Score", "rx-score-line", sc === "--" ? "--" : `Score: ${sc}`, color);
+            };
             const modeColor = (m) => ({ FT8: "#60a5fa", FT4: "#4ade80", SSB: "#f87171", WSPR: "#c084fc" })[String(m).toUpperCase()] || "var(--muted)";
             const fmtModeHtml = (raw) => {
                 const mn = String(raw || "").trim().toUpperCase().replace(/\s+/g, "");
@@ -15052,7 +15355,7 @@
                 card.className = "rx-card";
                 if (!bandRows.length) {
                     card.dataset.level = "healthy";
-                    card.innerHTML = `<div class="rx-top"><span style="display:inline-flex;align-items:center;gap:6px"><span class="rx-band-label" style="font-size:1rem;font-weight:800">${band}</span>${isFixedPlanBand(band) ? fixedLockSvgHtml("fixed-rx-lock-icon") : ""}${(() => { const ct = conditionText(band); return ct !== "--" ? `\u00a0\u00a0<span style="font-size:0.78rem;font-weight:600;color:${conditionColor(band)}">${ct}</span>` : ""; })()}</span><span style="color:var(--muted);font-size:0.82rem">&mdash;</span></div><p class="kv">${iconLine("heart", "State/Health", "rx-state-line", "--", "var(--muted)")}${iconLine("gauge", "SNR(avg)", "rx-snr-line", "--")}${(() => { const sc = bandScoreText(band); return sc === "--" ? "" : iconLine("spark", "Score", "rx-score-line", `Score: ${sc}`, bandScoreColor(band)); })()}</p>`;
+                    card.innerHTML = `<div class="rx-top"><div class="rx-top-layout"><div class="rx-top-main"><div class="rx-top-head">${bandHeaderHtml(band)}</div><div class="rx-card-stack">${iconLine("heart", "State/Health", "rx-state-line", "--", "var(--muted)")}<div class="kv">${iconLine("gauge", "SNR(avg)", "rx-snr-line", "--")}${scoreLineHtml(band)}</div></div></div><div class="rx-top-pills"><span style="color:var(--muted);font-size:0.82rem">&mdash;</span></div></div></div>`;
                 } else {
                     const row = bandRows[0];
                     const ch = latestChannelsMap[String(row.rxNum)] || {};
@@ -15065,13 +15368,13 @@
                         const _modes = String(r.mode || "").split(" / ").map((m) => m.trim()).filter(Boolean);
                         let modeLabelHtml;
                         if (_modes.length >= 3) {
-                            const _firstLine = _modes.slice(0, _modes.length - 1).map((m) => `<span style="color:${modeColor(m)}">${safeText(m)}</span>`).join(`<span style="color:var(--muted)"> / </span>`);
+                            const _firstLine = _modes.slice(0, _modes.length - 1).map((m) => `<span style="color:${modeColor(m)}">${safeText(m)}</span>`).join(`<span class="rx-pill-mode-divider">/</span>`);
                             const _lastMode = _modes[_modes.length - 1];
-                            modeLabelHtml = `<div style="font-size:0.72rem;font-weight:600;text-align:center"><div>${_firstLine}</div><div style="color:${modeColor(_lastMode)}">${safeText(_lastMode)}</div></div>`;
+                            modeLabelHtml = `<div class="rx-pill-mode"><div>${_firstLine}</div><div style="color:${modeColor(_lastMode)}">${safeText(_lastMode)}</div></div>`;
                         } else {
-                            modeLabelHtml = `<span style="font-size:0.72rem;font-weight:600">${_modes.map((m) => `<span style="color:${modeColor(m)}">${safeText(m)}</span>`).join(`<span style="color:var(--muted)"> / </span>`)}</span>`;
+                            modeLabelHtml = `<span class="rx-pill-mode">${_modes.map((m) => `<span style="color:${modeColor(m)}">${safeText(m)}</span>`).join(`<span class="rx-pill-mode-divider">/</span>`)}</span>`;
                         }
-                        return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span class="rx-id-pill" style="color:${rxColor(r.rxNum)}">${displayRx}</span>${modeLabelHtml}</div>`;
+                        return `<div class="rx-pill-stack"><span class="rx-id-pill" style="color:${rxColor(r.rxNum)}">${displayRx}</span>${modeLabelHtml}</div>`;
                     }).join("");
                     const heartColor = level === "fault" ? "#f87171" : level === "warning" ? "#f59e0b" : "#4ade80";
                     // Aggregate decode rates by mode across all receivers on this band
@@ -15121,9 +15424,9 @@
                             const ph = agg.ph != null ? agg.ph : 0;
                             const tot = agg.tot != null ? agg.tot : 0;
                             const mc = modeColor(m);
-                            return `<span style="display:inline-flex;align-items:baseline;gap:4px;font-size:0.72rem"><span style="font-weight:700;color:${mc}">${safeText(m)}:</span><span>${fmtCount(pm)} min</span><span style="color:var(--muted)">&#8226;</span><span>${fmtCount(ph)} hr</span><span style="color:var(--muted)">&#8226;</span><span>${fmtCount(tot)} total</span></span>`;
-                        }).join("<br>");
-                    card.innerHTML = `<div class="rx-top"><div style="display:flex;flex-direction:column;gap:2px;width:100%"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px"><span style="display:inline-flex;align-items:center;gap:6px"><span class="rx-band-label" style="font-size:1rem;font-weight:800">${band}</span>${isFixedPlanBand(band) ? fixedLockSvgHtml("fixed-rx-lock-icon") : ""}${(() => { const ct = conditionText(band); return ct !== "--" ? `\u00a0\u00a0<span style="font-size:0.78rem;font-weight:600;color:${conditionColor(band)}">${ct}</span>` : ""; })()}</span><div style="display:flex;align-items:flex-start;gap:4px;flex-wrap:wrap;flex-shrink:0">${rxPills}</div></div>${iconLine("heart", "State/Health", "rx-state-line", safeText(ch.health_state, "-"), heartColor)}</div></div><p class="kv">${iconLine("gauge", "SNR(avg)", "rx-snr-line", (() => { const t = snrAvgTextForRx(row.rxLabel); return t !== "--" ? t : (Number.isFinite(Number(ch.snr_avg_db)) ? `${Number(ch.snr_avg_db).toFixed(1)} dB` : "--"); })())}${(() => { const sc = bandScoreText(band); return iconLine("spark", "Score", "rx-score-line", sc === "--" ? "--" : `Score: ${sc}`, bandScoreColor(band)); })()}<span class="rx-decode-rates" style="display:block;margin-top:4px;line-height:1.6">${decodeRateRows}</span></p>`;
+                            return `<span class="rx-decode-rate-row"><span class="rx-decode-rate-label" style="color:${mc}">${safeText(m)}:</span> ${fmtCount(pm)} min <span style="color:var(--muted)">&#8226;</span> ${fmtCount(ph)} hr <span style="color:var(--muted)">&#8226;</span> ${fmtCount(tot)} total</span>`;
+                        }).join("");
+                    card.innerHTML = `<div class="rx-top"><div class="rx-top-layout"><div class="rx-top-main"><div class="rx-top-head">${bandHeaderHtml(band)}</div><div class="rx-card-stack">${iconLine("heart", "State/Health", "rx-state-line", safeText(ch.health_state, "-"), heartColor)}<div class="kv">${iconLine("gauge", "SNR(avg)", "rx-snr-line", (() => { const t = snrAvgTextForRx(row.rxLabel); return t !== "--" ? t : (Number.isFinite(Number(ch.snr_avg_db)) ? `${Number(ch.snr_avg_db).toFixed(1)} dB` : "--"); })())}${scoreLineHtml(band)}</div>${decodeRateRows ? `<span class="rx-decode-rates" style="line-height:1.6">${decodeRateRows}</span>` : ""}</div></div><div class="rx-top-pills">${rxPills}</div></div></div>`;
                 }
                 cardEl.append(card);
             }
@@ -15134,7 +15437,7 @@
                 const reservePills = reservedManagedRows.map((rxNum) => {
                     return `<div style="display:flex;flex-direction:column;align-items:center;gap:2px"><span class="rx-id-pill" style="color:${rxColor(rxNum)}">RX${rxNum}</span><span style="font-size:0.72rem;font-weight:600;color:var(--muted)">Unassigned</span></div>`;
                 }).join("");
-                reserveCard.innerHTML = `<div class="rx-top"><div style="display:flex;flex-direction:column;gap:2px;width:100%"><div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px"><span class="rx-band-label" style="font-size:1rem;font-weight:800">${reservedManagedMeta.cardTitle}</span><div style="display:flex;align-items:flex-start;gap:4px;flex-wrap:wrap;flex-shrink:0">${reservePills}</div></div>${iconLine("heart", "State/Health", "rx-state-line", "reserved", "#94a3b8")}</div></div><p class="kv"><span class="rx-decode-rates" style="display:block;margin-top:4px;line-height:1.6;color:var(--muted)">${reservedManagedMeta.description}</span></p>`;
+                reserveCard.innerHTML = `<div class="rx-top"><div class="rx-top-layout"><div class="rx-top-main"><div class="rx-top-head"><span class="rx-band-label" style="font-size:1rem;font-weight:800">${reservedManagedMeta.cardTitle}</span></div><div class="rx-card-stack">${iconLine("heart", "State/Health", "rx-state-line", "reserved", "#94a3b8")}<span class="rx-decode-rates" style="line-height:1.6;color:var(--muted)">${reservedManagedMeta.description}</span></div></div><div class="rx-top-pills">${reservePills}</div></div></div>`;
                 cardEl.append(reserveCard);
             }
             renderAssignmentsBandChart(_bandChartLiveBands, _bandChartLiveColorMap);
@@ -16102,6 +16405,7 @@
         }
 
         function applyExecutiveSummary(status, health, ratePerMin) {
+            currentDecodeRatePerMin = Math.max(0, Number(ratePerMin) || 0);
             const counts = {};
             let recentDecodeTotal = 0;
             for (const item of recentDecodeItems) {
@@ -16176,6 +16480,7 @@
             summaryFaultLoadHistory.push(faultLoad);
             summaryFaultLoadHistory = summaryFaultLoadHistory.slice(-60);
             renderSummarySparkline("spark-fault-load", summaryFaultLoadHistory, severity.color);
+            updateDecodeStreamActivityChip();
 
 
         }
@@ -16292,6 +16597,7 @@
         function applySmartScheduler(data) {
             latestBcStatus = data || null;
             latestBcConditions = (data && data.conditions) ? data.conditions : {};
+            updateDecodeStreamActivityChip();
             applyAutoRoamingDecisionLabel(data);
             if (latestChannelsMap && typeof latestChannelsMap === 'object') {
                 renderReceivers(latestChannelsMap);

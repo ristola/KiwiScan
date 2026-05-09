@@ -24,6 +24,34 @@ def test_smart_scheduler_status_returns_ft8_snapshot() -> None:
     assert all(entry["score"] is None for entry in response.json()["conditions"].values())
 
 
+def test_smart_scheduler_status_includes_cached_solar_activity(monkeypatch) -> None:
+    scheduler = SmartScheduler(receiver_mgr=_ReceiverMgrStub())
+
+    monkeypatch.setattr(
+        "kiwi_scan.smart_scheduler._fetch_hamqsl_solar_activity",
+        lambda timeout_s=4.0: {
+            "source": "hamqsl",
+            "source_name": "N0NBH",
+            "updated": "09 May 2026 1645 GMT",
+            "solar_flux": 120.0,
+            "k_index": 1.0,
+            "hf_conditions": {
+                "80m-40m": {"day": "Fair", "night": "Good"},
+                "30m-20m": {"day": "Good", "night": "Good"},
+            },
+            "hf_score_day": 68,
+            "hf_score_night": 80,
+        },
+    )
+
+    scheduler._refresh_solar_activity(force=True)
+    status = scheduler.get_status()
+
+    assert status["solar_activity"]["source_name"] == "N0NBH"
+    assert status["solar_activity"]["solar_flux"] == 120.0
+    assert status["solar_activity"]["hf_conditions"]["80m-40m"]["night"] == "Good"
+
+
 def test_smart_scheduler_status_scores_quiet_current_roaming_band_without_empirical() -> None:
     class _ReceiverMgrQuietRoamingStatusStub:
         def health_summary(self):
@@ -128,6 +156,8 @@ def test_smart_scheduler_scores_combo_digital_modes() -> None:
                     },
                 },
             }
+
+    monkeypatch.setattr("kiwi_scan.smart_scheduler._fetch_hamqsl_solar_activity", lambda timeout_s=4.0: {})
 
     scheduler = SmartScheduler(receiver_mgr=_ReceiverMgrComboModeStub())
     scheduler._check_once()
