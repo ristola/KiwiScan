@@ -6,6 +6,7 @@ import platform
 import shutil
 import socket
 import threading
+from concurrent.futures import ThreadPoolExecutor
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -135,6 +136,90 @@ def _fetch_kiwi_users(host: str, port: int) -> list[dict[str, Any]]:
     return []
 
 
+def _count_active_kiwi_users(rows: list[dict[str, Any]]) -> int:
+    active = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        fields = (
+            row.get("n"),
+            row.get("m"),
+            row.get("f"),
+            row.get("g"),
+            row.get("a"),
+            row.get("t"),
+        )
+        if any(value not in (None, "") for value in fields):
+            active += 1
+    return active
+
+
+def _build_kiwi_status_snapshot(status: dict[str, Any]) -> dict[str, object]:
+    return {
+        "name": status.get("name"),
+        "sdr_hw": status.get("sdr_hw"),
+        "sw_version": status.get("sw_version"),
+        "bands": status.get("bands"),
+        "users": _safe_int(status.get("users")),
+        "users_max": _safe_int(status.get("users_max")),
+        "preempt": _safe_int(status.get("preempt")),
+        "gps": status.get("gps"),
+        "grid": status.get("grid"),
+        "gps_good": _safe_int(status.get("gps_good")),
+        "fixes": _safe_int(status.get("fixes")),
+        "loc": status.get("loc"),
+        "antenna": status.get("antenna"),
+        "snr": status.get("snr"),
+        "adc_ov": _safe_int(status.get("adc_ov")),
+        "uptime_seconds": _safe_int(status.get("uptime")),
+        "date": status.get("date"),
+        "offline": status.get("offline"),
+    }
+
+
+def _normalize_discovered_entry(entry: object) -> dict[str, object] | None:
+    if not isinstance(entry, dict):
+        return None
+    host = str(entry.get("host") or "").strip()
+    port = _safe_int(entry.get("port")) or 0
+    if not host or port <= 0:
+        return None
+    return dict(entry)
+
+
+def _build_discovered_kiwi_entries(
+    entries: list[object],
+    *,
+    active_host: str,
+    active_port: int,
+    active_status: dict[str, Any],
+    active_users: list[dict[str, Any]],
+) -> list[dict[str, object]]:
+    normalized_entries = [entry for item in entries if (entry := _normalize_discovered_entry(item)) is not None]
+    if not normalized_entries:
+        return []
+
+    def _enrich(entry: dict[str, object]) -> dict[str, object]:
+        host = str(entry.get("host") or "").strip()
+        port = _safe_int(entry.get("port")) or 0
+        if host == active_host and port == active_port:
+            status = dict(active_status)
+            users = list(active_users)
+        else:
+            status = read_kiwi_status(host, port, timeout_s=0.5) or {}
+            users = _fetch_kiwi_users(host, port)
+        enriched = dict(entry)
+        enriched["reachable"] = bool(status or users)
+        enriched["status"] = _build_kiwi_status_snapshot(status)
+        enriched["raw_user_count"] = len(users)
+        enriched["active_user_count"] = _count_active_kiwi_users(users)
+        return enriched
+
+    max_workers = min(4, len(normalized_entries)) or 1
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        return list(pool.map(_enrich, normalized_entries))
+
+
 def _build_container_payload() -> dict[str, object]:
     disk_total, disk_used, disk_free = shutil.disk_usage("/")
     meminfo = _read_meminfo_kib()
@@ -203,26 +288,15 @@ def _build_kiwi_payload(mgr: object, receiver_mgr: object | None = None) -> dict
     status = read_kiwi_status(host, port, timeout_s=0.5) or {}
     users = _fetch_kiwi_users(host, port)
     out["reachable"] = bool(status or users)
-    out["status"] = {
-        "name": status.get("name"),
-        "sdr_hw": status.get("sdr_hw"),
-        "sw_version": status.get("sw_version"),
-        "bands": status.get("bands"),
-        "users": _safe_int(status.get("users")),
-        "users_max": _safe_int(status.get("users_max")),
-        "preempt": _safe_int(status.get("preempt")),
-        "gps": status.get("gps"),
-        "grid": status.get("grid"),
-        "gps_good": _safe_int(status.get("gps_good")),
-        "fixes": _safe_int(status.get("fixes")),
-        "loc": status.get("loc"),
-        "antenna": status.get("antenna"),
-        "snr": status.get("snr"),
-        "adc_ov": _safe_int(status.get("adc_ov")),
-        "uptime_seconds": _safe_int(status.get("uptime")),
-        "date": status.get("date"),
-        "offline": status.get("offline"),
-    }
+    out["status"] = _build_kiwi_status_snapshot(status)
+    discovered_found = cached_discovery.get("found", [])
+    out["discovered_kiwis"] = _build_discovered_kiwi_entries(
+        list(discovered_found) if isinstance(discovered_found, list) else [],
+        active_host=host,
+        active_port=port,
+        active_status=status,
+        active_users=users,
+    )
 
     # Build label → internal-rx mapping so the display uses KiwiScan's own rx
     # numbering rather than the raw Kiwi channel index.  This matters when the Kiwi

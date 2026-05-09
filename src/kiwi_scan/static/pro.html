@@ -3257,6 +3257,11 @@
             align-items: start;
         }
 
+        .system-extra-cards {
+            display: grid;
+            gap: 12px;
+        }
+
         .system-card {
             border: 1px solid var(--line);
             border-radius: 12px;
@@ -6487,7 +6492,7 @@
                             </section>
                             <section class="system-card" data-icon="radio" data-system-card="kiwi">
                                 <div class="system-card-header">
-                                    <div class="system-card-title">KiwiSDR</div>
+                                    <div class="system-card-title" id="system-kiwi-title">KiwiSDR</div>
                                     <button class="system-card-toggle" type="button" aria-expanded="true"
                                         aria-label="Collapse KiwiSDR card">
                                         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -6506,6 +6511,7 @@
                                     </div>
                                 </div>
                             </section>
+                            <div id="system-extra-kiwi-cards" class="system-extra-cards"></div>
 
                         </div>
                         <div class="control-status" id="system-status">System Info: idle</div>
@@ -7338,7 +7344,11 @@
         function renderInfoRows(targetId, rows) {
             const el = typeof targetId === "string" ? byId(targetId) : targetId;
             if (!el) return;
-            el.innerHTML = rows.map(([label, value]) => `
+            el.innerHTML = buildSystemInfoRowsHtml(rows);
+        }
+
+        function buildSystemInfoRowsHtml(rows) {
+            return rows.map(([label, value]) => `
                 <div class="system-info-row">
                     <div class="system-info-key">${escapeHtml(label)}</div>
                     <div class="system-info-value ${/^(Host|Python|Current UTC|Time|Active Users|Users|Receiver|Software)$/i.test(String(label)) ? "mono" : ""}">${escapeHtml(value)}</div>
@@ -7368,6 +7378,26 @@
                         grid: safeText(entry.grid, ""),
                         latitude: Number.isFinite(Number(entry.latitude)) ? Number(entry.latitude) : null,
                         longitude: Number.isFinite(Number(entry.longitude)) ? Number(entry.longitude) : null,
+                        reachable: !!entry.reachable,
+                        raw_user_count: Number.isFinite(Number(entry.raw_user_count)) ? Number(entry.raw_user_count) : null,
+                        active_user_count: Number.isFinite(Number(entry.active_user_count)) ? Number(entry.active_user_count) : null,
+                        status: entry.status && typeof entry.status === "object"
+                            ? {
+                                name: safeText(entry.status.name, ""),
+                                sdr_hw: safeText(entry.status.sdr_hw, ""),
+                                sw_version: safeText(entry.status.sw_version, ""),
+                                gps: safeText(entry.status.gps, ""),
+                                grid: safeText(entry.status.grid, ""),
+                                loc: safeText(entry.status.loc, ""),
+                                antenna: safeText(entry.status.antenna, ""),
+                                snr: safeText(entry.status.snr, ""),
+                                fixes: Number.isFinite(Number(entry.status.fixes)) ? Number(entry.status.fixes) : null,
+                                users: Number.isFinite(Number(entry.status.users)) ? Number(entry.status.users) : null,
+                                users_max: Number.isFinite(Number(entry.status.users_max)) ? Number(entry.status.users_max) : null,
+                                uptime_seconds: Number.isFinite(Number(entry.status.uptime_seconds)) ? Number(entry.status.uptime_seconds) : null,
+                                date: safeText(entry.status.date, ""),
+                            }
+                            : {},
                     };
                 })
                 .filter(Boolean);
@@ -7465,6 +7495,111 @@
                     </section>
                 `;
             }).join("");
+        }
+
+        function formatKiwiGpsText(value = {}) {
+            const gpsText = safeText(value && value.gps, "");
+            if (gpsText) return gpsText;
+            const latitude = Number(value && value.latitude);
+            const longitude = Number(value && value.longitude);
+            if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+                return `(${latitude.toFixed(6)}, ${longitude.toFixed(6)})`;
+            }
+            return "--";
+        }
+
+        function formatUnixTimeText(value) {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric) || numeric <= 0) return "--";
+            return new Date(numeric * 1000).toLocaleTimeString();
+        }
+
+        function renderDiscoveredKiwiSystemCards(kiwi = {}) {
+            const container = byId("system-extra-kiwi-cards");
+            const titleEl = byId("system-kiwi-title");
+            if (!container) return;
+
+            const discovered = sortDiscoveredKiwiEntries(normalizeDiscoveredKiwiEntries(
+                Array.isArray(kiwi && kiwi.discovered_kiwis) ? kiwi.discovered_kiwis : latestDiscoveredKiwiEntries
+            ));
+            const activeHost = safeText(kiwi && kiwi.host, "");
+            const activePort = Number(kiwi && kiwi.port);
+            const activeIndex = discovered.findIndex((entry) => entry.host === activeHost && entry.port === activePort);
+
+            if (titleEl) {
+                titleEl.textContent = activeIndex >= 0 && discovered.length > 1
+                    ? `KiwiSDR ${activeIndex + 1}`
+                    : "KiwiSDR";
+            }
+
+            const secondaryEntries = discovered
+                .map((entry, index) => ({ ...entry, systemCardIndex: index + 1 }))
+                .filter((entry) => !(entry.host === activeHost && entry.port === activePort));
+
+            if (!secondaryEntries.length) {
+                container.innerHTML = "";
+                return;
+            }
+
+            const discoverySource = safeText(kiwi && kiwi.discovery_source, latestDiscoverySource || "--");
+            const discoveryUpdated = formatUnixTimeText(kiwi && kiwi.discovery_updated_unix);
+
+            container.innerHTML = secondaryEntries.map((entry) => {
+                const liveStatus = entry && entry.status && typeof entry.status === "object" ? entry.status : {};
+                const liveReachable = !!entry.reachable;
+                const receiverRows = [
+                    ["Receiver", safeText(liveStatus.name, safeText(entry.name, safeText(liveStatus.sdr_hw, safeText(entry.sdr_hw, "--"))))],
+                    ["Hardware", safeText(liveStatus.sdr_hw, safeText(entry.sdr_hw, "--"))],
+                    ["Software", safeText(liveStatus.sw_version, safeText(entry.sw_version, "--"))],
+                    ["Location", safeText(liveStatus.loc, safeText(entry.loc, "--"))],
+                    ["Grid", safeText(liveStatus.grid, safeText(entry.grid, "--"))],
+                    ["Antenna", safeText(liveStatus.antenna, "--")],
+                ];
+                const statusRows = [
+                    ["Host", `${safeText(entry.host, "--")}:${safeText(entry.port, "--")}`],
+                    ["Status", liveReachable ? "Reachable" : "Discovered"],
+                    ["GPS", formatKiwiGpsText({
+                        gps: liveStatus.gps,
+                        latitude: entry.latitude,
+                        longitude: entry.longitude,
+                    })],
+                    ["Fixes", safeText(liveStatus.fixes, "--")],
+                    ["SNR", safeText(liveStatus.snr, "--")],
+                    ["Users", liveStatus.users !== null && liveStatus.users !== undefined && liveStatus.users_max !== null && liveStatus.users_max !== undefined
+                        ? `${safeText(liveStatus.users, "0")} / ${safeText(liveStatus.users_max, "0")}`
+                        : safeText(liveStatus.users, "--")],
+                    ["Active Users", safeText(entry.active_user_count, safeText(liveStatus.users, "--"))],
+                    ["Uptime", Number.isFinite(Number(liveStatus.uptime_seconds)) ? fmtDurationCompact(liveStatus.uptime_seconds) : "--"],
+                    ["Time", safeText(liveStatus.date, liveReachable ? "--" : discoveryUpdated)],
+                ];
+
+                return `
+                    <section class="system-card" data-icon="radio" data-system-card="kiwi-${entry.systemCardIndex}">
+                        <div class="system-card-header">
+                            <div class="system-card-title">KiwiSDR ${entry.systemCardIndex}</div>
+                            <button class="system-card-toggle" type="button" aria-expanded="true"
+                                aria-label="Collapse KiwiSDR ${entry.systemCardIndex} card">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="m6 9 6 6 6-6"></path>
+                                </svg>
+                            </button>
+                        </div>
+                        <div class="system-card-body system-card-body-split">
+                            <div class="system-card-section">
+                                <div class="system-card-section-title">Receiver Information</div>
+                                <div class="system-info-table">${buildSystemInfoRowsHtml(receiverRows)}</div>
+                            </div>
+                            <div class="system-card-section">
+                                <div class="system-card-section-title">Status</div>
+                                <div class="system-info-table">${buildSystemInfoRowsHtml(statusRows)}</div>
+                            </div>
+                        </div>
+                    </section>
+                `;
+            }).join("");
+
+            decorateUiIcons();
+            initSystemCardToggles();
         }
 
         function renderSystemMetrics(container, metrics) {
@@ -7801,6 +7936,11 @@
                 ? latestSystemInfo.kiwi
                 : {};
             const kiwiStatus = kiwi.status && typeof kiwi.status === "object" ? kiwi.status : {};
+            const discovered = sortDiscoveredKiwiEntries(normalizeDiscoveredKiwiEntries(
+                Array.isArray(kiwi.discovered_kiwis) ? kiwi.discovered_kiwis : latestDiscoveredKiwiEntries
+            ));
+            const activeIndex = discovered.findIndex((entry) => entry.host === safeText(kiwi.host, "") && entry.port === Number(kiwi.port));
+            const activeDiscovered = activeIndex >= 0 ? discovered[activeIndex] : null;
             updateServerChipFromState();
 
             renderInfoRows("system-container-table", [
@@ -7844,19 +7984,22 @@
             const users = buildActiveReceiverRows(kiwi.active_users, kiwi.raw_users);
             const activeUserCount = users.filter((user) => !!user.active).length;
             renderInfoRows("system-kiwi-details", [
-                ["Receiver", safeText(kiwiStatus.name, "--")],
-                ["Hardware", safeText(kiwiStatus.sdr_hw, "--")],
-                ["Software", safeText(kiwiStatus.sw_version, "--")],
-                ["Location", safeText(kiwiStatus.loc, "--")],
-                ["Grid", safeText(kiwiStatus.grid, "--")],
+                ["Receiver", safeText(kiwiStatus.name, safeText(activeDiscovered && activeDiscovered.name, "--"))],
+                ["Hardware", safeText(kiwiStatus.sdr_hw, safeText(activeDiscovered && activeDiscovered.sdr_hw, "--"))],
+                ["Software", safeText(kiwiStatus.sw_version, safeText(activeDiscovered && activeDiscovered.sw_version, "--"))],
+                ["Location", safeText(kiwiStatus.loc, safeText(activeDiscovered && activeDiscovered.loc, "--"))],
+                ["Grid", safeText(kiwiStatus.grid, safeText(activeDiscovered && activeDiscovered.grid, "--"))],
                 ["Antenna", safeText(kiwiStatus.antenna, "--")],
-                ["GPS", safeText(kiwiStatus.gps, "--")],
             ]);
 
             renderInfoRows("system-kiwi-status-card", [
                 ["Host", kiwi.host && kiwi.port ? `${kiwi.host}:${kiwi.port}` : "--"],
                 ["Status", reachable ? "Reachable" : "Unavailable"],
-                ["GPS", safeText(kiwiStatus.gps, "--")],
+                ["GPS", formatKiwiGpsText({
+                    gps: kiwiStatus.gps,
+                    latitude: activeDiscovered && activeDiscovered.latitude,
+                    longitude: activeDiscovered && activeDiscovered.longitude,
+                })],
                 ["Fixes", safeText(kiwiStatus.fixes, "--")],
                 ["SNR", safeText(kiwiStatus.snr, "--")],
                 ["Users", kiwiStatus.users !== undefined && kiwiStatus.users_max !== undefined
@@ -7866,6 +8009,7 @@
                 ["Uptime", Number.isFinite(Number(kiwiStatus.uptime_seconds)) ? fmtDurationCompact(kiwiStatus.uptime_seconds) : "--"],
                 ["Time", safeText(kiwiStatus.date, "--")],
             ]);
+            renderDiscoveredKiwiSystemCards(kiwi);
 
             const usersEl = byId("active-receivers-table");
             if (!usersEl) return;
