@@ -5,7 +5,7 @@ import ipaddress
 import re
 import socket
 import time
-from typing import Any
+from typing import Any, Iterable
 from urllib.request import urlopen
 
 DEFAULT_KIWI_HOST = "0.0.0.0"
@@ -142,15 +142,69 @@ def _private_prefixes_for_lan_scan(client_ip: str) -> list[str]:
     return prefixes[:8]
 
 
+def _normalize_discovery_ports(port: int, ports: Iterable[object] | None = None) -> list[int]:
+    candidates = [port]
+    if ports is not None:
+        candidates.extend(list(ports))
+    out: list[int] = []
+    seen: set[int] = set()
+    for candidate in candidates:
+        try:
+            value = int(candidate)
+        except Exception as exc:
+            raise ValueError("port must be 1..65535") from exc
+        if value < 1 or value > 65535:
+            raise ValueError("port must be 1..65535")
+        if value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return out
+
+
+def sort_discovered_kiwis(entries: Iterable[object]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    seen: set[tuple[str, int]] = set()
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        host = str(item.get("host") or "").strip()
+        try:
+            port = int(item.get("port") or 0)
+        except Exception:
+            port = 0
+        if not host or not (1 <= port <= 65535):
+            continue
+        key = (host, port)
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append(dict(item))
+
+    return sorted(
+        normalized,
+        key=lambda entry: (
+            0 if int(entry.get("port") or 0) == 8073 else 1,
+            int(entry.get("port") or 0),
+            str(entry.get("host") or ""),
+        ),
+    )
+
+
+def preferred_discovered_kiwi(entries: Iterable[object]) -> dict[str, Any] | None:
+    ordered = sort_discovered_kiwis(entries)
+    return ordered[0] if ordered else None
+
+
 def discover_kiwis(
     *,
     client_ip: str = "",
     port: int = 8073,
+    ports: Iterable[object] | None = None,
     timeout_s: float = 0.20,
     max_hosts: int = 32,
 ) -> dict[str, Any]:
-    if port < 1 or port > 65535:
-        raise ValueError("port must be 1..65535")
+    discovery_ports = _normalize_discovery_ports(port, ports)
     if timeout_s <= 0 or timeout_s > 2:
         raise ValueError("timeout_s must be > 0 and <= 2")
     if max_hosts < 1 or max_hosts > 256:
@@ -173,19 +227,21 @@ def discover_kiwis(
         prefixes = _private_prefixes_for_lan_scan(client_ip)
         source = "lan_scan"
 
-        def has_port_open(ip: str) -> bool:
+        def has_port_open(endpoint: tuple[str, int]) -> bool:
+            ip, candidate_port = endpoint
             try:
-                with socket.create_connection((ip, port), timeout=timeout_s):
+                with socket.create_connection((ip, candidate_port), timeout=timeout_s):
                     return True
             except OSError:
                 return False
 
         for prefix in prefixes:
             ips = [f"{prefix}.{idx}" for idx in range(1, 255)]
+            endpoints = [(ip, candidate_port) for ip in ips for candidate_port in discovery_ports]
             with concurrent.futures.ThreadPoolExecutor(max_workers=64) as executor:
-                for ip, ok in zip(ips, executor.map(has_port_open, ips)):
+                for endpoint, ok in zip(endpoints, executor.map(has_port_open, endpoints)):
                     if ok:
-                        candidates.append((ip, port))
+                        candidates.append(endpoint)
                         if len(candidates) >= max_hosts:
                             break
             if len(candidates) >= max_hosts:
@@ -207,6 +263,13 @@ def discover_kiwis(
             name = status.get("name")
             grid = status.get("grid")
             gps_good = status.get("gps_good")
+            sdr_hw = status.get("sdr_hw")
+            sw_version = status.get("sw_version")
+            loc = status.get("loc")
+        else:
+            sdr_hw = None
+            sw_version = None
+            loc = None
         found.append(
             {
                 "host": host,
@@ -216,8 +279,13 @@ def discover_kiwis(
                 "grid": grid,
                 "gps_good": gps_good,
                 "name": name,
+                "sdr_hw": sdr_hw,
+                "sw_version": sw_version,
+                "loc": loc,
             }
         )
+
+    found = sort_discovered_kiwis(found)
 
     return {
         "ok": True,

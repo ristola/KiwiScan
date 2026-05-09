@@ -909,6 +909,10 @@
             justify-content: center;
         }
 
+        .status-chip:has(#chip-server-endpoint) {
+            justify-content: flex-start;
+        }
+
         .status-chip.status-chip-rx-summary {
             justify-content: center;
         }
@@ -955,6 +959,42 @@
             text-align: center;
         }
 
+        .status-chip.status-chip-time {
+            justify-content: flex-start;
+        }
+
+        .time-chip-grid {
+            display: grid;
+            gap: 8px;
+            width: 100%;
+            margin-top: 2px;
+        }
+
+        .time-chip-row {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
+            width: 100%;
+        }
+
+        .time-chip-key {
+            color: var(--muted);
+            font-size: 0.76rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            white-space: nowrap;
+        }
+
+        .time-chip-value {
+            font-size: 1rem;
+            font-weight: 700;
+            line-height: 1.2;
+            text-align: right;
+            word-break: break-word;
+        }
+
         .chip-label {
             display: flex;
             align-items: center;
@@ -986,6 +1026,18 @@
             font-weight: 700;
             line-height: 1.2;
             word-break: break-word;
+        }
+
+        #chip-server:empty {
+            display: none;
+        }
+
+        #chip-server:empty+#chip-server-endpoint {
+            margin-top: 0;
+        }
+
+        .status-chip:has(#chip-server:empty) .chip-label {
+            margin-bottom: 0;
         }
 
         .chip-value-active {
@@ -1024,6 +1076,11 @@
             color: var(--muted);
             line-height: 1.2;
             word-break: break-word;
+        }
+
+        #chip-server-endpoint {
+            white-space: pre-line;
+            line-height: 1.35;
         }
 
         .layout {
@@ -5425,7 +5482,19 @@
                             <div class="chip-label">WebSocket Stream</div>
                             <div class="chip-value" id="chip-stream">Connecting...</div>
                         </article>
-                        <article class="status-chip status-chip-empty" aria-hidden="true"></article>
+                        <article class="status-chip status-chip-time" data-icon="globe">
+                            <div class="chip-label">Time</div>
+                            <div class="time-chip-grid">
+                                <div class="time-chip-row">
+                                    <div class="time-chip-key">Local Time</div>
+                                    <div class="time-chip-value mono" id="chip-local-time">--</div>
+                                </div>
+                                <div class="time-chip-row">
+                                    <div class="time-chip-key">UTC Time</div>
+                                    <div class="time-chip-value mono" id="chip-utc-time">--</div>
+                                </div>
+                            </div>
+                        </article>
                     </div>
                 </article>
             </section>
@@ -6182,6 +6251,7 @@
 
                         <section class="settings-card" aria-labelledby="settings-kiwisdr-title">
                             <div class="settings-card-title" id="settings-kiwisdr-title">KiwiSdr Settings</div>
+                            <div class="meta" id="settings-kiwisdr-meta" hidden></div>
                             <div class="control-grid" style="margin-top: 0;">
                                 <label class="control-field">Kiwi Host
                                     <input id="cfg-host" type="text" placeholder="0.0.0.0">
@@ -6208,6 +6278,7 @@
                                     Kiwi</button>
                             </div>
                         </section>
+                        <div id="cfg-discovered-kiwi-cards" class="settings-subcard-grid"></div>
 
                         <section class="settings-card" aria-labelledby="settings-layout-title">
                             <div class="settings-card-title" id="settings-layout-title">Layout</div>
@@ -6375,8 +6446,8 @@
                                         </table>
                                         <p class="band-sched-hint" style="margin:0;">
                                             Roaming (RX0&ndash;1): Day 07:00&ndash;21:00: <strong>15m FT8 + 10m
-                                                FT8</strong>
-                                            &nbsp;/&nbsp; Night: <strong>80m FT4+FT8 + 160m WSPR</strong>
+                                                FT8 + 12m FT4+FT8</strong>
+                                            &nbsp;/&nbsp; Night: <strong>80m + 160m FT4+FT8+WSPR</strong>
                                         </p>
                                     </section>
                                     <div class="control-status" id="auto-status">Automation: idle</div>
@@ -6498,6 +6569,10 @@
         let latestPublishedDecodeStatsByRx = {};
         let latestAssignments = {};
         let latestAssignmentsSource = "";
+        let latestAssignmentsHost = "";
+        let latestAssignmentsPort = 0;
+        let latestDiscoveredKiwiEntries = [];
+        let latestDiscoverySource = "";
         const FAULT_LOG_NEW_WINDOW_S = 90;
         let lastRateTickMs = Date.now();
         let refreshTimer = null;
@@ -7271,6 +7346,127 @@
             `).join("");
         }
 
+        function normalizeDiscoveredKiwiEntries(raw = []) {
+            if (!Array.isArray(raw)) return [];
+            const seen = new Set();
+            return raw
+                .map((entry) => {
+                    if (!entry || typeof entry !== "object") return null;
+                    const host = safeText(entry.host, "");
+                    const port = Number(entry.port);
+                    if (!host || !Number.isFinite(port) || port <= 0) return null;
+                    const key = `${host}:${port}`;
+                    if (seen.has(key)) return null;
+                    seen.add(key);
+                    return {
+                        host,
+                        port,
+                        name: safeText(entry.name, ""),
+                        sdr_hw: safeText(entry.sdr_hw, ""),
+                        sw_version: safeText(entry.sw_version, ""),
+                        loc: safeText(entry.loc, ""),
+                        grid: safeText(entry.grid, ""),
+                        latitude: Number.isFinite(Number(entry.latitude)) ? Number(entry.latitude) : null,
+                        longitude: Number.isFinite(Number(entry.longitude)) ? Number(entry.longitude) : null,
+                    };
+                })
+                .filter(Boolean);
+        }
+
+        function sortDiscoveredKiwiEntries(entries = []) {
+            return [...entries].sort((left, right) => {
+                const leftPrimary = Number(left && left.port) === 8073 ? 0 : 1;
+                const rightPrimary = Number(right && right.port) === 8073 ? 0 : 1;
+                if (leftPrimary !== rightPrimary) return leftPrimary - rightPrimary;
+                const leftPort = Number(left && left.port);
+                const rightPort = Number(right && right.port);
+                if (leftPort !== rightPort) return leftPort - rightPort;
+                return safeText(left && left.host, "").localeCompare(safeText(right && right.host, ""));
+            });
+        }
+
+        function updateDiscoveredKiwiState(entries = [], meta = {}) {
+            latestDiscoveredKiwiEntries = sortDiscoveredKiwiEntries(normalizeDiscoveredKiwiEntries(entries));
+            latestDiscoverySource = safeText(meta && meta.source, latestDiscoverySource || "");
+            updateServerChipFromState();
+            return latestDiscoveredKiwiEntries;
+        }
+
+        function renderDiscoveredKiwiSettings(entries = [], activeSettings = {}) {
+            const normalized = sortDiscoveredKiwiEntries(normalizeDiscoveredKiwiEntries(entries));
+            const activeHost = safeText(activeSettings && activeSettings.host, "");
+            const activePort = Number(activeSettings && activeSettings.port);
+            const primaryTitleEl = byId("settings-kiwisdr-title");
+            const primaryMetaEl = byId("settings-kiwisdr-meta");
+            const cardsEl = byId("cfg-discovered-kiwi-cards");
+            const activeEntry = normalized.find((entry) => entry.host === activeHost && Number.isFinite(activePort) && entry.port === activePort) || null;
+
+            if (primaryTitleEl) {
+                const titleModel = safeText(activeEntry && activeEntry.sdr_hw, "");
+                primaryTitleEl.textContent = titleModel
+                    ? `KiwiSDR Settings - ${titleModel}`
+                    : "KiwiSDR Settings";
+            }
+
+            if (primaryMetaEl) {
+                const subtitleParts = [];
+                if (activeEntry && activeEntry.name && activeEntry.name.toLowerCase() !== String(activeEntry.sdr_hw || "").toLowerCase()) subtitleParts.push(activeEntry.name);
+                if (activeEntry && activeEntry.loc) subtitleParts.push(activeEntry.loc);
+                if (activeEntry && activeEntry.sw_version) subtitleParts.push(`v${activeEntry.sw_version}`);
+                const subtitle = subtitleParts.join(" · ");
+                primaryMetaEl.textContent = subtitle;
+                primaryMetaEl.hidden = !subtitle;
+            }
+
+            if (!cardsEl) return;
+
+            const secondaryEntries = activeEntry
+                ? normalized.filter((entry) => !(entry.host === activeEntry.host && entry.port === activeEntry.port))
+                : normalized;
+
+            if (!secondaryEntries.length) {
+                cardsEl.innerHTML = "";
+                return;
+            }
+
+            cardsEl.innerHTML = secondaryEntries.map((entry, index) => {
+                const titleModel = safeText(entry.sdr_hw, `KiwiSDR ${index + 1}`);
+                const host = escapeHtml(entry.host);
+                const port = escapeHtml(String(entry.port));
+                const latitude = Number.isFinite(Number(entry.latitude)) ? escapeHtml(String(Number(entry.latitude))) : "--";
+                const longitude = Number.isFinite(Number(entry.longitude)) ? escapeHtml(String(Number(entry.longitude))) : "--";
+                const grid = escapeHtml(safeText(entry.grid, "--"));
+                const subtitleParts = [];
+                if (entry.name && entry.name.toLowerCase() !== String(entry.sdr_hw || "").toLowerCase()) subtitleParts.push(escapeHtml(entry.name));
+                if (entry.loc) subtitleParts.push(escapeHtml(entry.loc));
+                if (entry.sw_version) subtitleParts.push(`v${escapeHtml(entry.sw_version)}`);
+                const subtitle = subtitleParts.join(" · ");
+                return `
+                    <section class="settings-card" aria-label="${escapeHtml(titleModel)} settings">
+                        <div class="settings-card-title">KiwiSDR Settings - ${escapeHtml(titleModel)}</div>
+                        ${subtitle ? `<div class="meta">${subtitle}</div>` : ""}
+                        <div class="control-grid" style="margin-top: 0;">
+                            <label class="control-field">Kiwi Host
+                                <input type="text" value="${host}" readonly>
+                            </label>
+                            <label class="control-field">Kiwi Port
+                                <input type="text" value="${port}" readonly>
+                            </label>
+                            <label class="control-field">Latitude
+                                <input type="text" value="${latitude}" readonly>
+                            </label>
+                            <label class="control-field">Longitude
+                                <input type="text" value="${longitude}" readonly>
+                            </label>
+                            <label class="control-field">Grid Square
+                                <input type="text" value="${grid}" readonly>
+                            </label>
+                        </div>
+                    </section>
+                `;
+            }).join("");
+        }
+
         function renderSystemMetrics(container, metrics) {
             const el = typeof container === "string" ? byId(container) : container;
             if (!el) return;
@@ -7605,6 +7801,7 @@
                 ? latestSystemInfo.kiwi
                 : {};
             const kiwiStatus = kiwi.status && typeof kiwi.status === "object" ? kiwi.status : {};
+            updateServerChipFromState();
 
             renderInfoRows("system-container-table", [
                 ["Hostname", safeText(container.hostname, "--")],
@@ -11948,6 +12145,10 @@
                     latitude: cfg.latitude,
                     longitude: cfg.longitude,
                 });
+                updateDiscoveredKiwiState(cfg.discovered_kiwis, {
+                    source: cfg.discovery_source,
+                });
+                renderDiscoveredKiwiSettings(cfg.discovered_kiwis, nextKiwiSettings);
                 const shouldAutoDiscoverKiwi = !kiwiAutoDiscoverAttempted && isDefaultKiwiSettings(nextKiwiSettings);
                 byId("cfg-host").value = nextKiwiSettings.host;
                 byId("cfg-port").value = String(nextKiwiSettings.port);
@@ -12008,6 +12209,11 @@
                 const candidates = Array.isArray(res.candidates)
                     ? res.candidates
                     : (Array.isArray(res.found) ? res.found : []);
+                updateDiscoveredKiwiState(candidates, { source: res.source });
+                renderDiscoveredKiwiSettings(candidates, {
+                    host: readTextInput("cfg-host", KIWI_SETTINGS_DEFAULTS.host),
+                    port: readNumberInput("cfg-port", KIWI_SETTINGS_DEFAULTS.port),
+                });
                 if (candidates.length) {
                     const first = candidates[0] || {};
                     byId("cfg-host").value = safeText(first.host, "");
@@ -12023,6 +12229,7 @@
                         : candidates.length;
                     const selectedHost = safeText(first.host, "-");
                     const selectedPort = Number.isFinite(Number(first.port)) ? Number(first.port) : readNumberInput("cfg-port", KIWI_SETTINGS_DEFAULTS.port);
+                    renderDiscoveredKiwiSettings(candidates, { host: selectedHost, port: selectedPort });
                     const verification = await getJson(`/config/verify?host=${encodeURIComponent(selectedHost)}&port=${encodeURIComponent(String(selectedPort))}&timeout_s=1.2`);
                     if (!verification || !verification.ok || !verification.reachable) {
                         setConfigStatus(`${autoTriggered ? "auto-discover verification failed" : "discover verification failed"} for ${selectedHost}:${selectedPort}`);
@@ -12070,6 +12277,8 @@
                 port: readNumberInput("cfg-port", KIWI_SETTINGS_DEFAULTS.port),
                 latitude: readNumberInput("cfg-latitude", KIWI_SETTINGS_DEFAULTS.latitude),
                 longitude: readNumberInput("cfg-longitude", KIWI_SETTINGS_DEFAULTS.longitude),
+                discovered_kiwis: latestDiscoveredKiwiEntries,
+                discovery_source: latestDiscoverySource,
             };
             setConfigStatus(autosave ? "autosaving Kiwi settings..." : "saving Kiwi settings...");
             try {
@@ -12092,6 +12301,8 @@
                 port: readNumberInput("cfg-port", KIWI_SETTINGS_DEFAULTS.port),
                 latitude: readNumberInput("cfg-latitude", KIWI_SETTINGS_DEFAULTS.latitude),
                 longitude: readNumberInput("cfg-longitude", KIWI_SETTINGS_DEFAULTS.longitude),
+                discovered_kiwis: latestDiscoveredKiwiEntries,
+                discovery_source: latestDiscoverySource,
                 dwell_s: readNumberInput("cfg-dwell-s", 18),
                 span_hz: readNumberInput("cfg-span-hz", 3000),
                 threshold_db: readNumberInput("cfg-threshold-db", 12),
@@ -12760,7 +12971,7 @@
         function defaultAutoRoamingLabelText() {
             const h = new Date().getHours();
             const isDay = h >= 7 && h < 21;
-            return isDay ? "15m FT8 + 10m FT8" : "80m FT4+FT8 + 160m WSPR";
+            return isDay ? "10m FT8 + 12m FT4+FT8 + 15m FT8" : "80m + 160m FT4+FT8+WSPR";
         }
 
         function applyAutoRoamingDecisionLabel(data = latestBcStatus) {
@@ -15663,15 +15874,67 @@
             const statusEl = byId("chip-server");
             const endpointEl = byId("chip-server-endpoint");
             if (statusEl) statusEl.textContent = statusText;
-            if (endpointEl) endpointEl.textContent = endpointText;
+            if (endpointEl) {
+                endpointEl.textContent = Array.isArray(endpointText)
+                    ? endpointText.join("\n")
+                    : String(endpointText == null ? "--" : endpointText);
+            }
+        }
+
+        function updateHeaderTimeChip() {
+            const localEl = byId("chip-local-time");
+            const utcEl = byId("chip-utc-time");
+            if (!localEl && !utcEl) return;
+            const now = new Date();
+            const localText = now.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+                timeZoneName: "short",
+            });
+            const utcText = now.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+                timeZone: "UTC",
+                timeZoneName: "short",
+            });
+            if (localEl) localEl.textContent = localText;
+            if (utcEl) utcEl.textContent = utcText;
+        }
+
+        function updateServerChipFromState() {
+            const kiwi = latestSystemInfo && latestSystemInfo.kiwi && typeof latestSystemInfo.kiwi === "object"
+                ? latestSystemInfo.kiwi
+                : {};
+            const discovered = normalizeDiscoveredKiwiEntries(
+                Array.isArray(kiwi.discovered_kiwis) && kiwi.discovered_kiwis.length
+                    ? kiwi.discovered_kiwis
+                    : latestDiscoveredKiwiEntries
+            );
+            const sortedDiscovered = sortDiscoveredKiwiEntries(discovered);
+            if (sortedDiscovered.length > 1) {
+                setServerChip(
+                    "",
+                    sortedDiscovered.map((entry, index) => `KiwiSDR ${index + 1} - ${entry.host}:${entry.port}`),
+                );
+                return;
+            }
+            if (sortedDiscovered.length === 1) {
+                setServerChip("", `KiwiSDR 1 - ${sortedDiscovered[0].host}:${sortedDiscovered[0].port}`);
+                return;
+            }
+            const endpoint = latestAssignmentsHost && Number.isFinite(Number(latestAssignmentsPort)) && Number(latestAssignmentsPort) > 0
+                ? `${latestAssignmentsHost}:${Number(latestAssignmentsPort)}`
+                : "--";
+            setServerChip(endpoint !== "--" ? "Online" : "Connecting...", endpoint);
         }
 
         function applyStatus(status) {
             const s = status && typeof status === "object" ? status : {};
-            const host = safeText(s.assignments_host, "");
-            const port = Number(s.assignments_port || 0);
-            const endpoint = host && Number.isFinite(port) && port > 0 ? `${host}:${port}` : "--";
-            setServerChip("Online", endpoint);
+            latestAssignmentsHost = safeText(s.assignments_host, "");
+            latestAssignmentsPort = Number(s.assignments_port || 0);
+            updateServerChipFromState();
             latestAssignmentsSource = safeText(s.assignments_source, "");
             latestAssignments = s.assignments || {};
             latestPublishedDecodeStatsByRx = (s.published_decode_stats_by_rx && typeof s.published_decode_stats_by_rx === "object")
@@ -16287,11 +16550,13 @@
         refreshSystemInfo(false).catch(() => { });
         refresh();
         restartRefreshTimer();
+        updateHeaderTimeChip();
         setInterval(() => {
             if (currentUiThemeMode === "auto") {
                 applyUiPreferences(currentUiThemeMode, currentUiDensity, currentUiThemeNightHour);
             }
         }, 60000);
+        setInterval(updateHeaderTimeChip, 1000);
         setInterval(updateDecodeStreamChip, 1000);
         setInterval(updateRefreshStatus, 1000);
         setInterval(renderTrend, 1000);

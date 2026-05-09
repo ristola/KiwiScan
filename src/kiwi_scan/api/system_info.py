@@ -19,6 +19,27 @@ _SYSTEM_INFO_CACHE_LOCK: threading.Lock = threading.Lock()
 _SYSTEM_INFO_CACHE: dict[str, Any] = {"payload": None, "timestamp": 0.0, "future": None}
 
 
+def _get_cached_discovery(mgr: object) -> dict[str, object]:
+    if hasattr(mgr, "get_discovered_kiwis"):
+        try:
+            data = mgr.get_discovered_kiwis()  # type: ignore[attr-defined]
+            if isinstance(data, dict):
+                found = data.get("found")
+                return {
+                    "found": list(found) if isinstance(found, list) else [],
+                    "source": str(data.get("source") or "").strip(),
+                    "updated_unix": data.get("updated_unix"),
+                }
+        except Exception:
+            pass
+    found = getattr(mgr, "discovered_kiwis", [])
+    return {
+        "found": list(found) if isinstance(found, list) else [],
+        "source": str(getattr(mgr, "discovery_source", "") or "").strip(),
+        "updated_unix": getattr(mgr, "discovery_updated_unix", None),
+    }
+
+
 def _read_proc_uptime_seconds() -> float | None:
     try:
         with open("/proc/uptime", "r", encoding="utf-8") as handle:
@@ -168,7 +189,14 @@ def _build_kiwi_payload(mgr: object, receiver_mgr: object | None = None) -> dict
         "status": {},
         "active_users": [],
         "raw_users": [],
+        "discovered_kiwis": [],
+        "discovery_source": "",
+        "discovery_updated_unix": None,
     }
+    cached_discovery = _get_cached_discovery(mgr)
+    out["discovered_kiwis"] = cached_discovery.get("found", [])
+    out["discovery_source"] = cached_discovery.get("source", "")
+    out["discovery_updated_unix"] = cached_discovery.get("updated_unix")
     if not host or port <= 0:
         return out
 

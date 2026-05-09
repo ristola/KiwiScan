@@ -82,6 +82,9 @@ class DiscoveryManager:
         self._pause = threading.Event()
         self._paused = threading.Event()
         self.runtime_dependencies: Dict[str, object] = {}
+        self.discovered_kiwis: list[dict[str, object]] = []
+        self.discovery_source: str = ""
+        self.discovery_updated_unix: float = 0.0
 
         # Persist thresholds between restarts
         root = Path(__file__).resolve().parents[2]
@@ -207,6 +210,58 @@ class DiscoveryManager:
         rd = data.get("runtime_dependencies")
         if isinstance(rd, dict):
             self.runtime_dependencies = dict(rd)
+        dk = data.get("discovered_kiwis")
+        if isinstance(dk, list):
+            self.discovered_kiwis = self._sanitize_discovered_kiwis(dk)
+        ds = _read_str("discovery_source")
+        if ds is not None:
+            self.discovery_source = ds
+        val = _read_float("discovery_updated_unix")
+        if val is not None and val >= 0:
+            self.discovery_updated_unix = val
+
+    @staticmethod
+    def _sanitize_discovered_kiwis(raw: object) -> list[dict[str, object]]:
+        if not isinstance(raw, list):
+            return []
+        out: list[dict[str, object]] = []
+        seen: set[tuple[str, int]] = set()
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            host = str(item.get("host") or "").strip()
+            try:
+                port = int(item.get("port") or 0)
+            except Exception:
+                port = 0
+            if not host or not (1 <= port <= 65535):
+                continue
+            key = (host, port)
+            if key in seen:
+                continue
+            seen.add(key)
+            entry: dict[str, object] = {
+                "host": host,
+                "port": port,
+            }
+            for text_key in ("name", "grid", "sdr_hw", "sw_version", "loc"):
+                value = str(item.get(text_key) or "").strip()
+                if value:
+                    entry[text_key] = value
+            for float_key in ("latitude", "longitude"):
+                try:
+                    value = float(item.get(float_key))
+                except Exception:
+                    continue
+                entry[float_key] = value
+            try:
+                gps_good = int(item.get("gps_good"))
+            except Exception:
+                gps_good = None
+            if gps_good is not None:
+                entry["gps_good"] = gps_good
+            out.append(entry)
+        return out
 
     def _save_config(self) -> None:
         try:
@@ -229,11 +284,33 @@ class DiscoveryManager:
                 "port": int(self.port),
                 "debug": bool(self.debug),
                 "runtime_dependencies": dict(self.runtime_dependencies),
+                "discovered_kiwis": list(self.discovered_kiwis),
+                "discovery_source": str(self.discovery_source),
+                "discovery_updated_unix": float(self.discovery_updated_unix),
                 "saved_unix": time.time(),
             }
             self._config_path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
         except Exception:
             pass
+
+    def set_discovered_kiwis(self, discovery: Dict[str, object], *, save: bool = True) -> None:
+        found = self._sanitize_discovered_kiwis(discovery.get("found"))
+        source = str(discovery.get("source") or "").strip()
+        updated_unix = time.time()
+        with self.lock:
+            self.discovered_kiwis = found
+            self.discovery_source = source
+            self.discovery_updated_unix = updated_unix
+            if save:
+                self._save_config()
+
+    def get_discovered_kiwis(self) -> Dict[str, object]:
+        with self.lock:
+            return {
+                "found": list(self.discovered_kiwis),
+                "source": str(self.discovery_source),
+                "updated_unix": float(self.discovery_updated_unix),
+            }
 
     def set_runtime_dependencies(self, report: Dict[str, object], *, save: bool = True) -> None:
         with self.lock:

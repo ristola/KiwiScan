@@ -13,9 +13,17 @@ except ImportError:  # anyio may not be on the path before startup
 
 from fastapi import FastAPI
 
-from .kiwi_discovery import discover_kiwis, is_unconfigured_kiwi_host
+from .kiwi_discovery import discover_kiwis, is_unconfigured_kiwi_host, preferred_discovered_kiwi
 
 logger = logging.getLogger(__name__)
+
+
+def _startup_discovery_ports(current_port: int) -> list[int]:
+    ports: list[int] = []
+    for candidate in (8073, current_port):
+        if 1 <= int(candidate) <= 65535 and int(candidate) not in ports:
+            ports.append(int(candidate))
+    return ports or [8073]
 
 
 def _is_container_runtime() -> bool:
@@ -37,7 +45,7 @@ def _is_container_runtime() -> bool:
     return False
 
 
-def _bootstrap_container_kiwi(mgr: object) -> dict[str, object] | None:
+def _bootstrap_container_kiwi(mgr: object, discovery: dict[str, object] | None = None) -> dict[str, object] | None:
     with mgr.lock:  # type: ignore[attr-defined]
         current_host = str(getattr(mgr, "host", "") or "").strip()
         current_port = int(getattr(mgr, "port", 8073) or 8073)
@@ -45,13 +53,13 @@ def _bootstrap_container_kiwi(mgr: object) -> dict[str, object] | None:
     if not is_unconfigured_kiwi_host(current_host):
         return None
 
-    discovery = discover_kiwis(client_ip="", port=current_port, timeout_s=0.20, max_hosts=8)
-    found = discovery.get("found")
+    discovery_payload = discovery if isinstance(discovery, dict) else _refresh_startup_discovered_kiwis(mgr)
+    found = discovery_payload.get("found")
     if not isinstance(found, list) or not found:
         logger.info("Container startup Kiwi auto-discovery found no hosts")
         return None
 
-    candidate = found[0]
+    candidate = preferred_discovered_kiwi(found)
     if not isinstance(candidate, dict):
         return None
 
@@ -70,7 +78,73 @@ def _bootstrap_container_kiwi(mgr: object) -> dict[str, object] | None:
         mgr._save_config()  # type: ignore[attr-defined]
 
     logger.info("Container startup Kiwi auto-discovery selected %s:%s", host, port)
-    return {"host": host, "port": port, "source": discovery.get("source")}
+    return {"host": host, "port": port, "source": discovery_payload.get("source")}
+
+
+def _sync_preferred_startup_kiwi(mgr: object, discovery: dict[str, object] | None) -> dict[str, object] | None:
+    if not isinstance(discovery, dict):
+        return None
+    found = discovery.get("found")
+    if not isinstance(found, list) or not found:
+        return None
+
+    preferred = preferred_discovered_kiwi(found)
+    if not isinstance(preferred, dict):
+        return None
+
+    preferred_host = str(preferred.get("host") or "").strip()
+    try:
+        preferred_port = int(preferred.get("port") or 0)
+    except Exception:
+        preferred_port = 0
+    if not preferred_host or not (1 <= preferred_port <= 65535):
+        return None
+
+    discovered_endpoints = set()
+    for item in found:
+        if not isinstance(item, dict):
+            continue
+        host = str(item.get("host") or "").strip()
+        try:
+            port = int(item.get("port") or 0)
+        except Exception:
+            port = 0
+        if host and 1 <= port <= 65535:
+            discovered_endpoints.add((host, port))
+
+    with mgr.lock:  # type: ignore[attr-defined]
+        current_host = str(getattr(mgr, "host", "") or "").strip()
+        current_port = int(getattr(mgr, "port", 8073) or 8073)
+        should_sync = is_unconfigured_kiwi_host(current_host) or (current_host, current_port) in discovered_endpoints
+        if not should_sync:
+            return None
+        if current_host == preferred_host and current_port == preferred_port:
+            return {"host": preferred_host, "port": preferred_port, "changed": False}
+        mgr.host = preferred_host
+        mgr.port = preferred_port
+        mgr.rx_chan = None
+        mgr._save_config()  # type: ignore[attr-defined]
+
+    logger.info("Startup Kiwi selection using preferred discovered host %s:%s", preferred_host, preferred_port)
+    return {"host": preferred_host, "port": preferred_port, "changed": True}
+
+
+def _refresh_startup_discovered_kiwis(mgr: object) -> dict[str, object]:
+    with mgr.lock:  # type: ignore[attr-defined]
+        current_port = int(getattr(mgr, "port", 8073) or 8073)
+    discovery = discover_kiwis(
+        client_ip="",
+        port=current_port,
+        ports=_startup_discovery_ports(current_port),
+        timeout_s=0.20,
+        max_hosts=16,
+    )
+    if hasattr(mgr, "set_discovered_kiwis"):
+        try:
+            mgr.set_discovered_kiwis(discovery, save=True)  # type: ignore[attr-defined]
+        except Exception:
+            logger.debug("Failed to cache startup Kiwi discovery results", exc_info=True)
+    return discovery
 
 
 def register_lifecycle(
@@ -109,9 +183,21 @@ def register_lifecycle(
 
         discovered_kiwi: dict[str, object] | None = None
 
+        startup_discovery: dict[str, object] | None = None
+
+        try:
+            startup_discovery = await asyncio.to_thread(_refresh_startup_discovered_kiwis, mgr)
+        except Exception:
+            logger.exception("Startup Kiwi discovery refresh failed")
+
+        try:
+            await asyncio.to_thread(_sync_preferred_startup_kiwi, mgr, startup_discovery)
+        except Exception:
+            logger.exception("Startup Kiwi preference sync failed")
+
         if _is_container_runtime():
             try:
-                discovered_kiwi = await asyncio.to_thread(_bootstrap_container_kiwi, mgr)
+                discovered_kiwi = await asyncio.to_thread(_bootstrap_container_kiwi, mgr, startup_discovery)
             except Exception:
                 logger.exception("Container startup Kiwi auto-discovery failed")
 

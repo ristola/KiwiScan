@@ -12,6 +12,40 @@ from ..kiwi_discovery import discover_kiwis, extract_gps_lat_lon, normalize_kiwi
 logger = logging.getLogger(__name__)
 
 
+def _discovery_ports_for_request(mgr: object, requested_port: int) -> list[int]:
+    ports: list[int] = []
+    for candidate in (8073, requested_port, getattr(mgr, "port", requested_port)):
+        try:
+            value = int(candidate)
+        except Exception:
+            continue
+        if value < 1 or value > 65535 or value in ports:
+            continue
+        ports.append(value)
+    return ports or [8073]
+
+
+def _get_cached_discovery(mgr: object) -> dict:
+    if hasattr(mgr, "get_discovered_kiwis"):
+        try:
+            data = mgr.get_discovered_kiwis()  # type: ignore[attr-defined]
+            if isinstance(data, dict):
+                found = data.get("found")
+                return {
+                    "found": list(found) if isinstance(found, list) else [],
+                    "source": str(data.get("source") or "").strip(),
+                    "updated_unix": data.get("updated_unix"),
+                }
+        except Exception:
+            logger.debug("Failed reading cached Kiwi discovery results", exc_info=True)
+    found = getattr(mgr, "discovered_kiwis", [])
+    return {
+        "found": list(found) if isinstance(found, list) else [],
+        "source": str(getattr(mgr, "discovery_source", "") or "").strip(),
+        "updated_unix": getattr(mgr, "discovery_updated_unix", None),
+    }
+
+
 def make_router(*, mgr: object, waterholes: Dict[str, float], receiver_mgr: object | None = None) -> APIRouter:
     """Create router for GET/POST /config.
 
@@ -34,7 +68,19 @@ def make_router(*, mgr: object, waterholes: Dict[str, float], receiver_mgr: obje
 
         try:
             client_ip = (request.client.host if request.client else "") or ""
-            return discover_kiwis(client_ip=client_ip, port=port, timeout_s=timeout_s, max_hosts=max_hosts)
+            result = discover_kiwis(
+                client_ip=client_ip,
+                port=port,
+                ports=_discovery_ports_for_request(mgr, port),
+                timeout_s=timeout_s,
+                max_hosts=max_hosts,
+            )
+            if hasattr(mgr, "set_discovered_kiwis"):
+                try:
+                    mgr.set_discovered_kiwis(result, save=True)  # type: ignore[attr-defined]
+                except Exception:
+                    logger.debug("Failed caching Kiwi discovery results", exc_info=True)
+            return result
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -90,6 +136,7 @@ def make_router(*, mgr: object, waterholes: Dict[str, float], receiver_mgr: obje
         except Exception:
             pass
 
+        cached_discovery = _get_cached_discovery(mgr)
         with mgr.lock:  # type: ignore[attr-defined]
             runtime_deps = {}
             try:
@@ -117,6 +164,9 @@ def make_router(*, mgr: object, waterholes: Dict[str, float], receiver_mgr: obje
                 "kiwi_longitude": kiwi_lon,
                 "kiwi_grid": kiwi_grid,
                 "kiwi_gps_good": kiwi_gps_good,
+                "discovered_kiwis": cached_discovery.get("found", []),
+                "discovery_source": cached_discovery.get("source", ""),
+                "discovery_updated_unix": cached_discovery.get("updated_unix"),
                 "runtime_dependencies": runtime_deps,
             }
 
@@ -179,6 +229,17 @@ def make_router(*, mgr: object, waterholes: Dict[str, float], receiver_mgr: obje
     @router.post("/config")
     async def set_config(request: Request):
         data = await request.json()
+        if ("discovered_kiwis" in data or "discovery_source" in data) and hasattr(mgr, "set_discovered_kiwis"):
+            try:
+                mgr.set_discovered_kiwis(  # type: ignore[attr-defined]
+                    {
+                        "found": data.get("discovered_kiwis"),
+                        "source": data.get("discovery_source"),
+                    },
+                    save=False,
+                )
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"invalid value for discovered_kiwis: {exc}") from exc
         # rx_chan is intentionally not user-configurable: let Kiwi choose.
         allowed = {
             "dwell_s",

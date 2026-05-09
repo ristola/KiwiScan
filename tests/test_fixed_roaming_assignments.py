@@ -6,6 +6,7 @@ import threading
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import kiwi_scan.auto_set_loop as asl
 from kiwi_scan.api import auto_set as auto_set_api
 from kiwi_scan.api import decodes as decodes_api
 from kiwi_scan.api.auto_set import make_router
@@ -100,7 +101,7 @@ def test_fixed_roaming_payload_pins_rx2_to_rx7(monkeypatch) -> None:
     ]
     assert payload.get("selected_bands") == ["10m", "12m"]
     # band_modes covers the full roaming pool for the block (all 3 day bands).
-    assert payload.get("band_modes") == {"10m": "FT8", "12m": "FT8", "15m": "FT8"}
+    assert payload.get("band_modes") == {"10m": "FT8", "12m": "FT4 / FT8", "15m": "FT8"}
     assert set(payload.get("selected_bands", [])) <= {"10m", "12m", "15m"}
 
 
@@ -111,7 +112,7 @@ def test_fixed_roaming_payload_night_uses_only_night_roaming_pool(monkeypatch) -
     payload = loop._build_fixed_roaming_payload({}, "night")
 
     assert payload.get("selected_bands") == ["60m", "80m"]
-    assert payload.get("band_modes") == {"60m": "FT8", "80m": "FT4 / FT8", "160m": "WSPR"}
+    assert payload.get("band_modes") == {"60m": "FT8", "80m": "FT4 / FT8 / WSPR", "160m": "FT4 / FT8 / WSPR"}
     assert set(payload.get("selected_bands", [])) <= {"60m", "80m", "160m"}
 
 
@@ -177,7 +178,7 @@ def test_fixed_roaming_payload_excludes_closed_bands(monkeypatch) -> None:
 
     assert scheduler.calls == [(["12m", "15m"], ["10m", "12m"])]
     assert payload.get("selected_bands") == ["15m", "12m"]
-    assert payload.get("band_modes") == {"12m": "FT8", "15m": "FT8"}
+    assert payload.get("band_modes") == {"12m": "FT4 / FT8", "15m": "FT8"}
     assert payload.get("closed_bands") == ["10m"]
 
 
@@ -570,7 +571,7 @@ def test_fixed_mode_roaming_drops_bands_reserved_by_fixed_assignments(monkeypatc
             band_ft4_freqs_hz={
                 "80m": 3_575_000.0,
             },
-            band_wspr_freqs_hz={},
+            band_wspr_freqs_hz={"80m": 3_568_600.0},
         )
     )
 
@@ -587,7 +588,7 @@ def test_fixed_mode_roaming_drops_bands_reserved_by_fixed_assignments(monkeypatc
                 "17m": "FT8",
                 "40m": "FT8",
                 "60m": "FT8",
-                "80m": "FT4 / FT8",
+                "80m": "FT4 / FT8 / WSPR",
             },
             "fixed_assignments": [
                 {"rx": 2, "band": "40m", "mode": "FT8", "freq_hz": 7_074_000.0},
@@ -1011,7 +1012,7 @@ def test_apply_current_settings_posts_payload_and_syncs_loop_state(monkeypatch) 
             "block": "day",
             "fixed_assignments": list(auto_set_api._FIXED_ASSIGNMENTS),
             "selected_bands": ["10m", "12m"],
-            "band_modes": {"10m": "FT8", "12m": "FT8", "15m": "FT8"},
+            "band_modes": {"10m": "FT8", "12m": "FT4 / FT8", "15m": "FT8"},
         },
     )
 
@@ -1027,7 +1028,7 @@ def test_apply_current_settings_posts_payload_and_syncs_loop_state(monkeypatch) 
         "block": "day",
         "fixed_assignments": list(auto_set_api._FIXED_ASSIGNMENTS),
         "selected_bands": ["10m", "12m"],
-        "band_modes": {"10m": "FT8", "12m": "FT8", "15m": "FT8"},
+        "band_modes": {"10m": "FT8", "12m": "FT4 / FT8", "15m": "FT8"},
         "force": True,
     }]
     assert loop._did_startup_apply is True
@@ -1036,13 +1037,51 @@ def test_apply_current_settings_posts_payload_and_syncs_loop_state(monkeypatch) 
     assert loop._last_applied_band_config == loop._band_config_signature(posted[0])
 
 
+def test_recovery_backoff_uses_shorter_recheck_for_empty_roaming_payload(monkeypatch) -> None:
+    loop = AutoSetLoop()
+    loop._RECOVERY_BACKOFF_S = 180.0
+    loop._EMPTY_ROAMING_RECHECK_BACKOFF_S = 30.0
+
+    monkeypatch.setattr(loop, "_loop_interval_s", lambda: 30.0)
+
+    assert loop._recovery_backoff_seconds_for_payload(
+        {
+            "enabled": True,
+            "mode": "ft8",
+            "block": "night",
+            "fixed_assignments": list(auto_set_api._FIXED_ASSIGNMENTS),
+            "selected_bands": [],
+            "band_modes": {},
+        }
+    ) == 30.0
+
+
+def test_recovery_backoff_keeps_full_delay_for_active_roaming_payload(monkeypatch) -> None:
+    loop = AutoSetLoop()
+    loop._RECOVERY_BACKOFF_S = 180.0
+    loop._EMPTY_ROAMING_RECHECK_BACKOFF_S = 30.0
+
+    monkeypatch.setattr(loop, "_loop_interval_s", lambda: 30.0)
+
+    assert loop._recovery_backoff_seconds_for_payload(
+        {
+            "enabled": True,
+            "mode": "ft8",
+            "block": "night",
+            "fixed_assignments": list(auto_set_api._FIXED_ASSIGNMENTS),
+            "selected_bands": ["60m", "80m"],
+            "band_modes": {"60m": "FT8", "80m": "FT4 / FT8 / WSPR", "160m": "FT4 / FT8 / WSPR"},
+        }
+    ) == 180.0
+
+
 def test_run_reapplies_when_scored_band_config_changes_without_schedule_change(monkeypatch) -> None:
     loop = AutoSetLoop()
     loop._did_startup_apply = True
     loop._last_schedule_key = ("fixed", "day")
     loop._last_apply_signature = "sig"
     loop._last_applied_band_config = json.dumps(
-        {"bands": ["10m", "12m"], "modes": {"10m": "FT8", "12m": "FT8", "15m": "FT8"}, "closed": []},
+        {"bands": ["10m", "12m"], "modes": {"10m": "FT8", "12m": "FT4 / FT8", "15m": "FT8"}, "closed": []},
         separators=(",", ":"),
     )
     loop._recovery_backoff_until_ts = 0.0
@@ -1053,7 +1092,7 @@ def test_run_reapplies_when_scored_band_config_changes_without_schedule_change(m
         "mode": "ft8",
         "block": "day",
         "selected_bands": ["10m", "15m"],
-        "band_modes": {"10m": "FT8", "12m": "FT8", "15m": "FT8"},
+        "band_modes": {"10m": "FT8", "12m": "FT4 / FT8", "15m": "FT8"},
     }
 
     monkeypatch.setattr(loop, "_load_settings", lambda: settings)
@@ -1073,6 +1112,38 @@ def test_run_reapplies_when_scored_band_config_changes_without_schedule_change(m
     assert loop._last_schedule_key == ("fixed", "day")
     assert loop._last_apply_signature == "sig"
     assert loop._last_applied_band_config == loop._band_config_signature(payload)
+
+
+def test_run_uses_shorter_backoff_after_empty_roaming_startup_apply(monkeypatch) -> None:
+    loop = AutoSetLoop()
+    loop._RECOVERY_BACKOFF_S = 180.0
+    loop._EMPTY_ROAMING_RECHECK_BACKOFF_S = 30.0
+
+    settings = {"headlessEnabled": True, "fixedModeEnabled": True}
+    payload = {
+        "enabled": True,
+        "mode": "ft8",
+        "block": "night",
+        "fixed_assignments": list(auto_set_api._FIXED_ASSIGNMENTS),
+        "selected_bands": [],
+        "band_modes": {},
+    }
+
+    monkeypatch.setattr(asl, "time", type("_FakeTime", (), {"time": staticmethod(lambda: 1000.0)}))
+    monkeypatch.setattr(loop, "_load_settings", lambda: settings)
+    monkeypatch.setattr(loop, "_current_schedule_key", lambda _settings: ("fixed", "night"))
+    monkeypatch.setattr(loop, "_apply_signature", lambda _settings, _schedule_key: "sig")
+    monkeypatch.setattr(loop, "_loop_interval_s", lambda: 30.0)
+    monkeypatch.setattr(loop, "_build_payload", lambda _settings, schedule_key=None: dict(payload))
+    monkeypatch.setattr(loop, "_wait_for_notification", lambda timeout_s=None: loop._stop.set())
+
+    posted: list[dict] = []
+    monkeypatch.setattr(loop, "_post_auto_set", lambda posted_payload: posted.append(dict(posted_payload)))
+
+    loop._run()
+
+    assert posted == [payload]
+    assert loop._recovery_backoff_until_ts == 1030.0
 
 
 def test_non_fixed_payload_ignores_schedule_block_for_assignments(monkeypatch) -> None:

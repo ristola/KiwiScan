@@ -38,13 +38,13 @@ _FIXED_ASSIGNMENTS = [
 # Roaming schedule for RX0-RX1 (day = 07:00–20:59 local, night otherwise)
 _ROAMING_DAY = [
     {"band": "10m", "mode": "FT8"},
-    {"band": "12m", "mode": "FT8"},
+    {"band": "12m", "mode": "FT4 / FT8"},
     {"band": "15m", "mode": "FT8"},
 ]
 _ROAMING_NIGHT = [
     {"band": "60m", "mode": "FT8"},
-    {"band": "80m", "mode": "FT4 / FT8"},
-    {"band": "160m", "mode": "WSPR"},
+    {"band": "80m", "mode": "FT4 / FT8 / WSPR"},
+    {"band": "160m", "mode": "FT4 / FT8 / WSPR"},
 ]
 
 
@@ -69,6 +69,7 @@ class AutoSetLoop:
         # take up to ~3 min for 8 receivers over VPN).
         self._recovery_backoff_until_ts: float = time.time() + 180.0
         self._RECOVERY_BACKOFF_S: float = 180.0
+        self._EMPTY_ROAMING_RECHECK_BACKOFF_S: float = 30.0
         self._external_hold_reason: str | None = None
 
     def set_smart_scheduler(self, smart_scheduler: Any) -> None:
@@ -461,6 +462,19 @@ class AutoSetLoop:
             return json.dumps({"block": block, "modes": modes, "closed": closed}, separators=(",", ":"))
         return json.dumps({"bands": bands, "modes": modes, "closed": closed}, separators=(",", ":"))
 
+    def _recovery_backoff_seconds_for_payload(self, payload: Dict[str, Any]) -> float:
+        """Return the health-check backoff to use after applying a payload.
+
+        Fixed-mode startup can intentionally post an empty roaming set while RX2-RX7
+        settle. Rechecking sooner shortens the blank RX0/RX1 window without removing
+        the normal anti-thrash backoff for broader reassignments.
+        """
+        selected = payload.get("selected_bands")
+        fixed_assignments = payload.get("fixed_assignments")
+        if isinstance(selected, list) and not selected and isinstance(fixed_assignments, list) and fixed_assignments:
+            return float(min(self._RECOVERY_BACKOFF_S, max(self._loop_interval_s(), self._EMPTY_ROAMING_RECHECK_BACKOFF_S)))
+        return float(self._RECOVERY_BACKOFF_S)
+
     def _post_auto_set(self, payload: Dict[str, Any]) -> None:
         body = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
@@ -835,11 +849,11 @@ class AutoSetLoop:
                         with self._state_lock:
                             self._last_success_ts = time.time()
                             self._last_error = None
-                            
+
                         # Set backoff after applying new assignments to prevent targeted restarts 
                         # from fighting the eviction loop while receivers are still booting.
-                        self._recovery_backoff_until_ts = time.time() + self._RECOVERY_BACKOFF_S
-                        
+                        self._recovery_backoff_until_ts = time.time() + self._recovery_backoff_seconds_for_payload(payload)
+
                         if not self._did_startup_apply:
                             self._did_startup_apply = True
                     except urllib.error.HTTPError as e:
@@ -981,5 +995,5 @@ class AutoSetLoop:
                 self._last_schedule_key = schedule_key
                 self._last_apply_signature = apply_signature
                 self._last_applied_band_config = band_config
-            self._recovery_backoff_until_ts = now + self._RECOVERY_BACKOFF_S
+            self._recovery_backoff_until_ts = now + self._recovery_backoff_seconds_for_payload(payload)
         return True
