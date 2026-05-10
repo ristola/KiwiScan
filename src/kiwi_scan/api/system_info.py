@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import platform
 import shutil
@@ -12,12 +13,27 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
+from ..audio_stream import stop_kiwi_audio_stream, stream_kiwi_audio_wav
 from ..kiwi_discovery import read_kiwi_status
 
 _SYSTEM_INFO_CACHE_LOCK: threading.Lock = threading.Lock()
 _SYSTEM_INFO_CACHE: dict[str, Any] = {"payload": None, "timestamp": 0.0, "future": None}
+logger = logging.getLogger(__name__)
+
+
+def _get_configured_kiwis(mgr: object) -> list[dict[str, object]]:
+    if hasattr(mgr, "get_configured_kiwis"):
+        try:
+            data = mgr.get_configured_kiwis()  # type: ignore[attr-defined]
+            if isinstance(data, list):
+                return [dict(entry) for entry in data if isinstance(entry, dict)]
+        except Exception:
+            pass
+    data = getattr(mgr, "configured_kiwis", [])
+    return [dict(entry) for entry in data if isinstance(entry, dict)] if isinstance(data, list) else []
 
 
 def _get_cached_discovery(mgr: object) -> dict[str, object]:
@@ -177,17 +193,75 @@ def _build_kiwi_status_snapshot(status: dict[str, Any]) -> dict[str, object]:
     }
 
 
-def _normalize_discovered_entry(entry: object) -> dict[str, object] | None:
+def _normalize_known_kiwi_entry(entry: object) -> dict[str, object] | None:
     if not isinstance(entry, dict):
         return None
     host = str(entry.get("host") or "").strip()
     port = _safe_int(entry.get("port")) or 0
     if not host or port <= 0:
         return None
-    return dict(entry)
+    normalized = dict(entry)
+    normalized["host"] = host
+    normalized["port"] = port
+    return normalized
 
 
-def _build_discovered_kiwi_entries(
+def _merge_known_kiwi_source(existing: object, incoming: object) -> str:
+    values = []
+    for candidate in (existing, incoming):
+        text = str(candidate or "").strip().lower()
+        if not text:
+            continue
+        for part in text.split("_"):
+            if part and part not in values:
+                values.append(part)
+    if not values:
+        return ""
+    if values == ["configured", "discovered"]:
+        return "configured_discovered"
+    if len(values) == 1:
+        return values[0]
+    return "_".join(values)
+
+
+def _build_known_kiwi_seed_entries(
+    *,
+    configured_entries: list[dict[str, object]],
+    discovered_entries: list[object],
+    active_host: str,
+    active_port: int,
+) -> list[dict[str, object]]:
+    merged: dict[tuple[str, int], dict[str, object]] = {}
+
+    for index, raw_entry in enumerate(configured_entries):
+        entry = _normalize_known_kiwi_entry(raw_entry)
+        if entry is None:
+            continue
+        entry["known_source"] = "configured"
+        entry["known_order"] = index
+        merged[(str(entry["host"]), int(entry["port"]))] = entry
+
+    for raw_entry in discovered_entries:
+        entry = _normalize_known_kiwi_entry(raw_entry)
+        if entry is None:
+            continue
+        key = (str(entry["host"]), int(entry["port"]))
+        existing = merged.get(key)
+        if existing is None:
+            merged[key] = entry
+            continue
+        known_order = existing.get("known_order")
+        merged_entry = dict(existing)
+        merged_entry.update(entry)
+        merged_entry["known_source"] = _merge_known_kiwi_source(existing.get("known_source"), "discovered")
+        if known_order is not None:
+            merged_entry["known_order"] = known_order
+        merged[key] = merged_entry
+
+    return list(merged.values())
+
+
+def _build_known_kiwi_entries(
     entries: list[object],
     *,
     active_host: str,
@@ -195,7 +269,7 @@ def _build_discovered_kiwi_entries(
     active_status: dict[str, Any],
     active_users: list[dict[str, Any]],
 ) -> list[dict[str, object]]:
-    normalized_entries = [entry for item in entries if (entry := _normalize_discovered_entry(item)) is not None]
+    normalized_entries = [entry for item in entries if (entry := _normalize_known_kiwi_entry(item)) is not None]
     if not normalized_entries:
         return []
 
@@ -218,6 +292,136 @@ def _build_discovered_kiwi_entries(
     max_workers = min(4, len(normalized_entries)) or 1
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         return list(pool.map(_enrich, normalized_entries))
+
+
+def _resolve_audio_stream_endpoint(
+    *,
+    mgr: object,
+    requested_host: str | None,
+    requested_port: int | None,
+) -> tuple[str, int]:
+    lock = getattr(mgr, "lock", None)
+    if hasattr(lock, "acquire") and hasattr(lock, "release"):
+        lock.acquire()
+        try:
+            active_host = str(getattr(mgr, "host", "") or "").strip()
+            active_port = int(getattr(mgr, "port", 0) or 0)
+        finally:
+            lock.release()
+    else:
+        active_host = str(getattr(mgr, "host", "") or "").strip()
+        active_port = int(getattr(mgr, "port", 0) or 0)
+
+    if not requested_host and (requested_port is None or int(requested_port or 0) <= 0):
+        return active_host, active_port
+
+    candidate_host = str(requested_host or "").strip()
+    candidate_port = int(requested_port or 0)
+    if not candidate_host or candidate_port <= 0:
+        raise HTTPException(status_code=400, detail="Audio stream host and port must both be provided")
+
+    configured_kiwis = _get_configured_kiwis(mgr)
+    cached_discovery = _get_cached_discovery(mgr)
+    seed_entries = _build_known_kiwi_seed_entries(
+        configured_entries=configured_kiwis,
+        discovered_entries=list(cached_discovery.get("found", [])) if isinstance(cached_discovery.get("found"), list) else [],
+        active_host=active_host,
+        active_port=active_port,
+    )
+    allowed_endpoints = {
+        (str(entry.get("host") or "").strip(), int(entry.get("port") or 0))
+        for entry in seed_entries
+        if str(entry.get("host") or "").strip() and int(entry.get("port") or 0) > 0
+    }
+    if active_host and active_port > 0:
+        allowed_endpoints.add((active_host, active_port))
+    if (candidate_host, candidate_port) not in allowed_endpoints:
+        raise HTTPException(status_code=400, detail="Audio stream endpoint is not a configured KiwiSDR")
+    return candidate_host, candidate_port
+
+
+def _resolve_audio_stream_receiver_target(
+    *,
+    receiver_mgr: object | None,
+    requested_rx: int | None,
+    requested_kiwi_rx: int | None,
+    requested_host: str | None,
+    requested_port: int | None,
+) -> tuple[int | None, str | None, int | None]:
+    resolved_kiwi_rx = int(requested_kiwi_rx) if requested_kiwi_rx is not None else None
+    resolved_host = str(requested_host or "").strip() or None
+    resolved_port = int(requested_port) if requested_port is not None else None
+    if requested_rx is None or receiver_mgr is None or not hasattr(receiver_mgr, "health_summary"):
+        return resolved_kiwi_rx, resolved_host, resolved_port
+
+    try:
+        summary = receiver_mgr.health_summary()  # type: ignore[attr-defined]
+    except Exception:
+        logger.exception("Failed reading receiver health summary for audio stream resolution")
+        return resolved_kiwi_rx, resolved_host, resolved_port
+
+    channels = summary.get("channels") if isinstance(summary, dict) else None
+    channel = channels.get(str(int(requested_rx))) if isinstance(channels, dict) else None
+    if not isinstance(channel, dict):
+        return resolved_kiwi_rx, resolved_host, resolved_port
+
+    channel_kiwi_rx = _safe_int(channel.get("kiwi_actual_rx"))
+    if channel_kiwi_rx is None:
+        channel_kiwi_rx = _safe_int(channel.get("kiwi_rx"))
+    channel_host = str(channel.get("host") or "").strip() or None
+    channel_port = _safe_int(channel.get("port"))
+
+    if channel_kiwi_rx is not None and channel_kiwi_rx >= 0:
+        resolved_kiwi_rx = channel_kiwi_rx
+    if channel_host and channel_port is not None and channel_port > 0:
+        resolved_host = channel_host
+        resolved_port = channel_port
+    return resolved_kiwi_rx, resolved_host, resolved_port
+
+
+def _resolve_audio_stream_source_freq_hz(
+    *,
+    receiver_mgr: object | None,
+    requested_rx: int | None,
+    requested_source_freq_hz: float | None,
+) -> float | None:
+    resolved_source_freq_hz = float(requested_source_freq_hz) if requested_source_freq_hz is not None else None
+    if requested_rx is None or receiver_mgr is None:
+        return resolved_source_freq_hz
+
+    try:
+        summary = receiver_mgr.health_summary()  # type: ignore[attr-defined]
+    except Exception:
+        logger.exception("Failed reading receiver health summary for audio source frequency resolution")
+    else:
+        channels = summary.get("channels") if isinstance(summary, dict) else None
+        channel = channels.get(str(int(requested_rx))) if isinstance(channels, dict) else None
+        if isinstance(channel, dict):
+            channel_freq_hz = _safe_float(channel.get("freq_hz"))
+            if channel_freq_hz is not None and channel_freq_hz > 0:
+                return float(channel_freq_hz)
+
+    lock = getattr(receiver_mgr, "_lock", None)
+    lock_acquired = False
+    if hasattr(lock, "acquire") and hasattr(lock, "release"):
+        try:
+            lock_acquired = bool(lock.acquire(timeout=0.05))
+        except Exception:
+            lock_acquired = False
+        if not lock_acquired:
+            return resolved_source_freq_hz
+    try:
+        assignments = getattr(receiver_mgr, "_assignments", None)
+        assignment = assignments.get(int(requested_rx)) if isinstance(assignments, dict) else None
+        assignment_freq_hz = _safe_float(getattr(assignment, "freq_hz", None))
+        if assignment_freq_hz is not None and assignment_freq_hz > 0:
+            return float(assignment_freq_hz)
+    except Exception:
+        logger.exception("Failed reading receiver assignment source frequency for rx=%s", requested_rx)
+    finally:
+        if lock_acquired:
+            lock.release()
+    return resolved_source_freq_hz
 
 
 def _build_container_payload() -> dict[str, object]:
@@ -274,12 +478,21 @@ def _build_kiwi_payload(mgr: object, receiver_mgr: object | None = None) -> dict
         "status": {},
         "active_users": [],
         "raw_users": [],
+        "configured_kiwis": [],
         "discovered_kiwis": [],
         "discovery_source": "",
         "discovery_updated_unix": None,
     }
     cached_discovery = _get_cached_discovery(mgr)
-    out["discovered_kiwis"] = cached_discovery.get("found", [])
+    configured_kiwis = _get_configured_kiwis(mgr)
+    out["configured_kiwis"] = configured_kiwis
+    seed_entries = _build_known_kiwi_seed_entries(
+        configured_entries=configured_kiwis,
+        discovered_entries=list(cached_discovery.get("found", [])) if isinstance(cached_discovery.get("found"), list) else [],
+        active_host=host,
+        active_port=port,
+    )
+    out["discovered_kiwis"] = seed_entries
     out["discovery_source"] = cached_discovery.get("source", "")
     out["discovery_updated_unix"] = cached_discovery.get("updated_unix")
     if not host or port <= 0:
@@ -289,9 +502,8 @@ def _build_kiwi_payload(mgr: object, receiver_mgr: object | None = None) -> dict
     users = _fetch_kiwi_users(host, port)
     out["reachable"] = bool(status or users)
     out["status"] = _build_kiwi_status_snapshot(status)
-    discovered_found = cached_discovery.get("found", [])
-    out["discovered_kiwis"] = _build_discovered_kiwi_entries(
-        list(discovered_found) if isinstance(discovered_found, list) else [],
+    out["discovered_kiwis"] = _build_known_kiwi_entries(
+        seed_entries,
         active_host=host,
         active_port=port,
         active_status=status,
@@ -324,6 +536,8 @@ def _build_kiwi_payload(mgr: object, receiver_mgr: object | None = None) -> dict
             "mode": str(row.get("m") or "").strip().upper() or None,
             "ip": str(row.get("a") or "").strip() or None,
             "connected_seconds": _parse_elapsed_seconds(row.get("t")),
+            "host": host,
+            "port": port,
         }
         raw_users.append(dict(row_payload))
         resolved_label, resolved_rx = _resolve_managed_label(label, label_to_rx)
@@ -339,6 +553,8 @@ def _build_kiwi_payload(mgr: object, receiver_mgr: object | None = None) -> dict
                 "mode": str(row.get("m") or "").strip().upper() or None,
                 "ip": str(row.get("a") or "").strip() or None,
                 "connected_seconds": _parse_elapsed_seconds(row.get("t")),
+                "host": host,
+                "port": port,
             }
         )
     # Sort by our internal rx number so the table always appears in assignment order.
@@ -358,5 +574,74 @@ def make_router(*, mgr: object, receiver_mgr: object | None = None) -> APIRouter
             "container": _build_container_payload(),
             "kiwi": _build_kiwi_payload(mgr, receiver_mgr=receiver_mgr),
         }
+
+    @router.get("/system/audio_stream")
+    def get_system_audio_stream(
+        freq_khz: float = Query(..., gt=0),
+        mode: str = Query("USB"),
+        source_freq_khz: float | None = Query(default=None, gt=0),
+        rx: int | None = Query(default=None),
+        kiwi_rx: int | None = Query(default=None),
+        camp: bool = Query(default=False),
+        host: str | None = Query(default=None),
+        port: int | None = Query(default=None),
+        stream_id: str | None = Query(default=None),
+    ) -> StreamingResponse:
+        requested_host = str(host or "").strip() or None
+        requested_port = int(port) if port is not None else None
+        lock = getattr(mgr, "lock", None)
+        if hasattr(lock, "acquire") and hasattr(lock, "release"):
+            lock.acquire()
+            try:
+                password = getattr(mgr, "password", None)
+            finally:
+                lock.release()
+        else:
+            password = getattr(mgr, "password", None)
+        resolved_kiwi_rx, requested_host, requested_port = _resolve_audio_stream_receiver_target(
+            receiver_mgr=receiver_mgr,
+            requested_rx=rx,
+            requested_kiwi_rx=kiwi_rx,
+            requested_host=requested_host,
+            requested_port=requested_port,
+        )
+        resolved_source_freq_hz = _resolve_audio_stream_source_freq_hz(
+            receiver_mgr=receiver_mgr,
+            requested_rx=rx,
+            requested_source_freq_hz=float(source_freq_khz) * 1000.0 if source_freq_khz is not None else None,
+        )
+        stream_host, stream_port = _resolve_audio_stream_endpoint(
+            mgr=mgr,
+            requested_host=requested_host,
+            requested_port=requested_port,
+        )
+        if not stream_host or stream_port <= 0:
+            raise HTTPException(status_code=503, detail="KiwiSDR host is not configured")
+
+        user_suffix = f" RX{int(rx)}" if rx is not None else ""
+        stream = stream_kiwi_audio_wav(
+            host=stream_host,
+            port=stream_port,
+            password=password if isinstance(password, str) else None,
+            freq_hz=float(freq_khz) * 1000.0,
+            mode=mode,
+            user=f"KiwiScan Web Audio{user_suffix}",
+            source_freq_hz=resolved_source_freq_hz,
+            required_rx=None if camp else (int(resolved_kiwi_rx) if resolved_kiwi_rx is not None else None),
+            camp_rx=int(resolved_kiwi_rx) if camp and resolved_kiwi_rx is not None else None,
+            stream_id=stream_id,
+        )
+        return StreamingResponse(
+            stream,
+            media_type="audio/wav",
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
+    @router.post("/system/audio_stream/stop")
+    def stop_system_audio_stream(stream_id: str = Query(..., min_length=1)) -> Dict[str, object]:
+        return {"stopped": bool(stop_kiwi_audio_stream(stream_id))}
 
     return router

@@ -2439,6 +2439,20 @@ class ReceiverManager:
             "mismatch_streak": int(self._mismatch_global_streak),
         }
 
+    @staticmethod
+    def _worker_endpoint(worker: object | None, *, fallback_host: str = "", fallback_port: int = 0) -> tuple[str | None, int | None]:
+        host = str(fallback_host or "").strip()
+        port = int(fallback_port or 0)
+        if worker is not None:
+            try:
+                worker_host = str(getattr(worker, "_host", "") or "").strip()
+                worker_port = int(getattr(worker, "_port", 0) or 0)
+            except Exception:
+                worker_host, worker_port = "", 0
+            if worker_host and worker_port > 0:
+                host, port = worker_host, worker_port
+        return (host or None, port if port > 0 else None)
+
     def _seed_health_summary_cache(self, assignments: Dict[int, ReceiverAssignment]) -> None:
         channels: Dict[str, Dict[str, object]] = {}
         for rx in sorted(assignments.keys()):
@@ -2449,6 +2463,8 @@ class ReceiverManager:
                 "freq_hz": float(assignment.freq_hz),
                 "band": str(assignment.band),
                 "mode": str(assignment.mode_label),
+                "host": None,
+                "port": None,
                 "active": False,
                 "visible_on_kiwi": False,
                 "kiwi_user_age_s": None,
@@ -2527,6 +2543,7 @@ class ReceiverManager:
 
             worker = self._workers.get(int(rx))
             is_active = bool(observed_slot is not None)
+            endpoint_host, endpoint_port = self._worker_endpoint(worker, fallback_host=str(host), fallback_port=int(port))
             if is_active:
                 active += 1
 
@@ -2536,6 +2553,8 @@ class ReceiverManager:
                 "freq_hz": float(assignment.freq_hz),
                 "band": str(assignment.band),
                 "mode": str(assignment.mode_label),
+                "host": endpoint_host,
+                "port": endpoint_port,
                 "active": is_active,
                 "visible_on_kiwi": is_active,
                 "kiwi_user_age_s": None,
@@ -2651,6 +2670,7 @@ class ReceiverManager:
                         break
 
             worker = workers.get(int(rx))
+            endpoint_host, endpoint_port = self._worker_endpoint(worker, fallback_host=active_host, fallback_port=active_port)
             worker_alive = bool(worker is not None and worker.is_alive())
             last_decoder_output_unix = activity.get("last_decoder_output_unix")
             last_decode_unix = activity.get("last_decode_unix")
@@ -2669,6 +2689,8 @@ class ReceiverManager:
                 "freq_hz": float(assignment.freq_hz) if assignment is not None else None,
                 "band": str(assignment.band) if assignment is not None else wd.get("band"),
                 "mode": str(assignment.mode_label) if assignment is not None else None,
+                "host": endpoint_host,
+                "port": endpoint_port,
                 "active": bool(observed_slot is not None or worker_alive),
                 "visible_on_kiwi": bool(observed_slot is not None),
                 "kiwi_user_age_s": observed_age_s,
@@ -2980,6 +3002,7 @@ class ReceiverManager:
             restart_total = int(self._restart_total)
             active_host = str(getattr(self, "_active_host", "") or "")
             active_port = int(getattr(self, "_active_port", 0) or 0)
+            workers = {int(k): v for k, v in self._workers.items()}
         finally:
             self._lock.release()
 
@@ -3040,6 +3063,8 @@ class ReceiverManager:
             assignment = assignments.get(rx)
             wd = watchdog_by_rx.get(rx, {})
             activity = activity_by_rx.get(rx, {})
+            worker = workers.get(int(rx))
+            endpoint_host, endpoint_port = self._worker_endpoint(worker, fallback_host=active_host, fallback_port=active_port)
             consecutive = int(wd.get("consecutive_failures", 0) or 0)
             backoff_s = float(wd.get("backoff_s", 0.0) or 0.0)
             updated_unix = wd.get("updated_unix")
@@ -3328,6 +3353,8 @@ class ReceiverManager:
                 "freq_hz": float(assignment.freq_hz) if assignment is not None else None,
                 "band": assignment.band if assignment else wd.get("band"),
                 "mode": assignment.mode_label if assignment else None,
+                "host": endpoint_host,
+                "port": endpoint_port,
                 "active": bool(is_active),
                 "visible_on_kiwi": bool(visible_on_kiwi),
                 "kiwi_user_age_s": kiwi_user_age_s,

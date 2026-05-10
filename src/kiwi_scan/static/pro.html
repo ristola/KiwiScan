@@ -4169,6 +4169,13 @@
             text-align: right;
         }
 
+        .assign-table thead th.active-rx-audio-col,
+        .assign-table tbody td.active-rx-audio-col {
+            width: 1%;
+            white-space: nowrap;
+            text-align: right;
+        }
+
         .assign-table tbody td {
             padding: 7px 9px;
             border-bottom: 1px solid var(--line);
@@ -4201,6 +4208,140 @@
             text-transform: lowercase;
             font-weight: 700;
             letter-spacing: 0.03em;
+        }
+
+        .active-rx-audio-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 2.15rem;
+            height: 2.15rem;
+            padding: 0;
+            border-radius: 999px;
+            border: 1px solid color-mix(in srgb, var(--accent), var(--line) 45%);
+            background: color-mix(in srgb, var(--panel), white 18%);
+            color: var(--accent);
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+            cursor: pointer;
+            transition: transform 0.16s ease, background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+        }
+
+        .active-rx-audio-btn:hover,
+        .active-rx-audio-btn:focus-visible {
+            transform: translateY(-1px);
+            background: color-mix(in srgb, var(--accent), white 88%);
+            border-color: color-mix(in srgb, var(--accent), var(--line) 15%);
+            outline: none;
+        }
+
+        .active-rx-audio-btn svg {
+            width: 1rem;
+            height: 1rem;
+        }
+
+        .active-receiver-audio-popup {
+            position: fixed;
+            right: 1rem;
+            bottom: 1rem;
+            z-index: 60;
+            width: min(22rem, calc(100vw - 2rem));
+            display: grid;
+            gap: 0.85rem;
+            padding: 1rem;
+            border-radius: 1rem;
+            border: 1px solid color-mix(in srgb, var(--accent), var(--line) 42%);
+            background: color-mix(in srgb, var(--panel), white 10%);
+            box-shadow: 0 22px 48px rgba(15, 23, 42, 0.24);
+            backdrop-filter: blur(14px);
+        }
+
+        .active-receiver-audio-popup[hidden] {
+            display: none;
+        }
+
+        .active-receiver-audio-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+
+        .active-receiver-audio-title {
+            font-size: 0.92rem;
+            font-weight: 800;
+            letter-spacing: 0.01em;
+        }
+
+        .active-receiver-audio-meta {
+            margin-top: 0.25rem;
+            color: var(--muted);
+            font-size: 0.78rem;
+        }
+
+        .active-receiver-audio-mode-group {
+            display: grid;
+            gap: 0.45rem;
+        }
+
+        .active-receiver-audio-mode-label {
+            color: var(--muted);
+            font-size: 0.72rem;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .active-receiver-audio-mode-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.45rem;
+        }
+
+        .active-receiver-audio-mode-btn {
+            padding: 0.38rem 0.72rem;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: color-mix(in srgb, var(--panel), white 18%);
+            color: var(--fg);
+            font-size: 0.76rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            cursor: pointer;
+        }
+
+        .active-receiver-audio-mode-btn.is-selected {
+            background: color-mix(in srgb, var(--accent), white 84%);
+            border-color: color-mix(in srgb, var(--accent), var(--line) 10%);
+            color: color-mix(in srgb, var(--accent), black 12%);
+        }
+
+        .active-receiver-audio-controls {
+            display: grid;
+            gap: 0.75rem;
+        }
+
+        .active-receiver-audio-volume {
+            display: grid;
+            gap: 0.35rem;
+            color: var(--fg);
+            font-size: 0.8rem;
+            font-weight: 700;
+        }
+
+        .active-receiver-audio-volume input[type="range"] {
+            width: 100%;
+        }
+
+        .active-receiver-audio-actions {
+            display: flex;
+            gap: 0.55rem;
+            justify-content: flex-end;
+        }
+
+        .active-receiver-audio-status {
+            min-height: 1.2rem;
+            color: var(--muted);
+            font-size: 0.76rem;
+            font-weight: 600;
         }
 
         .prop-open {
@@ -6409,6 +6550,34 @@
                         <div class="panel-body">
                             <div id="active-receivers-table" class="system-users-wrap"></div>
                         </div>
+                        <div id="active-receiver-audio-popup" class="active-receiver-audio-popup" hidden>
+                            <div class="active-receiver-audio-head">
+                                <div>
+                                    <div class="active-receiver-audio-title" id="active-receiver-audio-title">Listen
+                                        Live</div>
+                                    <div class="active-receiver-audio-meta" id="active-receiver-audio-meta">Select a
+                                        receiver to monitor.</div>
+                                </div>
+                            </div>
+                            <div id="active-receiver-audio-mode-group" class="active-receiver-audio-mode-group" hidden>
+                                <div class="active-receiver-audio-mode-label">Listen Mode</div>
+                                <div id="active-receiver-audio-modes" class="active-receiver-audio-mode-buttons"></div>
+                            </div>
+                            <div class="active-receiver-audio-controls">
+                                <label class="active-receiver-audio-volume">Volume
+                                    <input id="active-receiver-audio-volume" type="range" min="0" max="100" step="1"
+                                        value="85" />
+                                </label>
+                                <div class="active-receiver-audio-actions">
+                                    <button class="action-btn-sm" id="active-receiver-audio-mute"
+                                        type="button">Mute</button>
+                                    <button class="action-btn-sm" id="active-receiver-audio-close"
+                                        type="button">Close</button>
+                                </div>
+                            </div>
+                            <div id="active-receiver-audio-status" class="active-receiver-audio-status">Ready.</div>
+                            <audio id="active-receiver-audio-element" preload="none" hidden></audio>
+                        </div>
                     </article>
 
                     <article class="panel panel-full" id="settings">
@@ -6805,6 +6974,16 @@
         let latestConfiguredKiwiEntries = [];
         let latestDiscoveredKiwiEntries = [];
         let latestDiscoverySource = "";
+        let activeReceiverAudioTarget = null;
+        let activeReceiverAudioSelectedMode = "";
+        let activeReceiverAudioVolume = 0.85;
+        let activeReceiverAudioMuted = false;
+        let activeReceiverAudioContext = null;
+        let activeReceiverAudioGainNode = null;
+        let activeReceiverAudioAbortController = null;
+        let activeReceiverAudioStreamId = "";
+        let activeReceiverAudioPlaybackCursor = 0;
+        let activeReceiverAudioStreamToken = 0;
         const FAULT_LOG_NEW_WINDOW_S = 90;
         let lastRateTickMs = Date.now();
         let refreshTimer = null;
@@ -6902,6 +7081,42 @@
             SSB: "#ef4444",
         };
         const MAP_MODE_FILTERS = ["FT8", "FT4", "WSPR", "SSB"];
+        const BAND_FT8_FREQS_KHZ = Object.freeze({
+            "10m": 28074.0,
+            "12m": 24915.0,
+            "15m": 21074.0,
+            "17m": 18100.0,
+            "20m": 14074.0,
+            "30m": 10136.0,
+            "40m": 7074.0,
+            "60m": 5357.0,
+            "80m": 3573.0,
+            "160m": 1840.0,
+        });
+        const BAND_FT4_FREQS_KHZ = Object.freeze({
+            "10m": 28180.0,
+            "12m": 24919.0,
+            "15m": 21140.0,
+            "17m": 18104.0,
+            "20m": 14080.0,
+            "30m": 10140.0,
+            "40m": 7047.5,
+            "60m": 5357.0,
+            "80m": 3575.0,
+            "160m": 1843.0,
+        });
+        const BAND_WSPR_FREQS_KHZ = Object.freeze({
+            "10m": 28124.6,
+            "12m": 24924.6,
+            "15m": 21094.6,
+            "17m": 18104.6,
+            "20m": 14095.6,
+            "30m": 10138.7,
+            "40m": 7038.6,
+            "60m": 5288.7,
+            "80m": 3568.6,
+            "160m": 1836.6,
+        });
         const MAP_BAND_OPTIONS = ["10m", "12m", "15m", "17m", "20m", "30m", "40m", "60m", "80m", "160m"];
         const MAP_VIEW_STORAGE_KEY = "kiwiscan-pro-map-view";
         const MAP_GLOBE_IMAGE_URL = "https://unpkg.com/three-globe/example/img/earth-day.jpg";
@@ -7598,6 +7813,8 @@
                     return {
                         host,
                         port,
+                        known_source: safeText(entry.known_source, ""),
+                        known_order: Number.isFinite(Number(entry.known_order)) ? Number(entry.known_order) : null,
                         name: safeText(entry.name, ""),
                         sdr_hw: safeText(entry.sdr_hw, ""),
                         sw_version: safeText(entry.sw_version, ""),
@@ -7752,6 +7969,15 @@
 
         function sortDiscoveredKiwiEntries(entries = []) {
             return [...entries].sort((left, right) => {
+                const leftOrder = Number(left && left.known_order);
+                const rightOrder = Number(right && right.known_order);
+                const leftHasOrder = Number.isFinite(leftOrder);
+                const rightHasOrder = Number.isFinite(rightOrder);
+                if (leftHasOrder || rightHasOrder) {
+                    if (!leftHasOrder) return 1;
+                    if (!rightHasOrder) return -1;
+                    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+                }
                 const leftPrimary = Number(left && left.port) === 8073 ? 0 : 1;
                 const rightPrimary = Number(right && right.port) === 8073 ? 0 : 1;
                 if (leftPrimary !== rightPrimary) return leftPrimary - rightPrimary;
@@ -7883,6 +8109,7 @@
             container.innerHTML = secondaryEntries.map((entry) => {
                 const liveStatus = entry && entry.status && typeof entry.status === "object" ? entry.status : {};
                 const liveReachable = !!entry.reachable;
+                const sourceTag = safeText(entry && entry.known_source, "").toLowerCase();
                 const receiverRows = [
                     ["Receiver", safeText(liveStatus.name, safeText(entry.name, safeText(liveStatus.sdr_hw, safeText(entry.sdr_hw, "--"))))],
                     ["Hardware", safeText(liveStatus.sdr_hw, safeText(entry.sdr_hw, "--"))],
@@ -7893,7 +8120,7 @@
                 ];
                 const statusRows = [
                     ["Host", `${safeText(entry.host, "--")}:${safeText(entry.port, "--")}`],
-                    ["Status", liveReachable ? "Reachable" : "Discovered"],
+                    ["Status", liveReachable ? "Reachable" : (sourceTag.includes("configured") ? "Configured" : "Discovered")],
                     ["GPS", formatKiwiGpsText({
                         gps: liveStatus.gps,
                         latitude: entry.latitude,
@@ -8064,6 +8291,416 @@
                 prefix = rxNum >= 2 ? "FIXED" : "ROAM";
             }
             return buildManagedReceiverLabel(prefix, band, mode) || `(connecting RX${safeText(rx, "--")})`;
+        }
+
+        function inferActiveReceiverBand(...values) {
+            for (const value of values) {
+                const text = normalizeActiveReceiverBand(value);
+                if (text) return text;
+                const match = String(safeText(value, "")).match(/\b(160m|80m|60m|40m|30m|20m|17m|15m|12m|10m)\b/i);
+                if (match) return normalizeActiveReceiverBand(match[1]);
+            }
+            return "";
+        }
+
+        function parseActiveReceiverListenModes(modeValue) {
+            const raw = String(safeText(modeValue, "")).trim().toUpperCase();
+            if (!raw || raw === "--") return [];
+            const modes = [];
+            if (raw.includes("FT4")) modes.push("FT4");
+            if (raw.includes("FT8")) modes.push("FT8");
+            if (raw.includes("WSPR") || raw === "WS") modes.push("WSPR");
+            if (!modes.length && (raw.includes("SSB") || raw.includes("PHONE") || raw === "USB" || raw === "LSB")) modes.push("SSB");
+            if (!modes.length && raw.includes("AM")) modes.push("AM");
+            if (!modes.length && raw.includes("CW")) modes.push("CW");
+            if (!modes.length) modes.push(raw.replace(/\s+/g, " "));
+            return Array.from(new Set(modes));
+        }
+
+        function resolveActiveReceiverListenMode(modeValue, freqKHz) {
+            const normalized = String(safeText(modeValue, "USB")).trim().toUpperCase();
+            if (["FT4", "FT8", "WSPR"].includes(normalized)) return normalized;
+            if (normalized === "CW") return "CW";
+            if (normalized === "AM") return "AM";
+            if (normalized === "LSB" || normalized === "USB") return normalized;
+            if (normalized === "SSB" || normalized === "PHONE") {
+                return Number(freqKHz) < 10000 ? "LSB" : "USB";
+            }
+            return "USB";
+        }
+
+        function preferredActiveReceiverListenMode(receiver) {
+            const modes = parseActiveReceiverListenModes(receiver && receiver.mode);
+            if (modes.includes("FT8")) return "FT8";
+            return modes[0] || resolveActiveReceiverListenMode(receiver && receiver.mode, receiver && receiver.freq_khz);
+        }
+
+        function resolveActiveReceiverListenFrequencyKHz(receiver, modeValue) {
+            const band = inferActiveReceiverBand(receiver && receiver.band, receiver && receiver.display_name, receiver && receiver.name);
+            const normalizedMode = String(safeText(modeValue, "")).trim().toUpperCase();
+            if (band && normalizedMode === "FT8" && Number.isFinite(Number(BAND_FT8_FREQS_KHZ[band]))) {
+                return Number(BAND_FT8_FREQS_KHZ[band]);
+            }
+            if (band && normalizedMode === "FT4" && Number.isFinite(Number(BAND_FT4_FREQS_KHZ[band]))) {
+                return Number(BAND_FT4_FREQS_KHZ[band]);
+            }
+            if (band && normalizedMode === "WSPR" && Number.isFinite(Number(BAND_WSPR_FREQS_KHZ[band]))) {
+                return Number(BAND_WSPR_FREQS_KHZ[band]);
+            }
+            const freqKHz = Number(receiver && receiver.freq_khz);
+            return Number.isFinite(freqKHz) && freqKHz > 0 ? freqKHz : null;
+        }
+
+        function canListenToActiveReceiver(user) {
+            return Number.isFinite(Number(user && user.freq_khz)) && Number(user.freq_khz) > 0;
+        }
+
+        function readActiveReceiverAudioButtonPayload(button) {
+            if (!(button instanceof HTMLElement)) return null;
+            const rx = Number(button.getAttribute("data-rx"));
+            const kiwiRx = Number(button.getAttribute("data-kiwi-rx"));
+            const freqKHz = Number(button.getAttribute("data-freq-khz"));
+            const port = Number(button.getAttribute("data-port"));
+            return {
+                rx: Number.isFinite(rx) ? rx : null,
+                kiwi_rx: Number.isFinite(kiwiRx) ? kiwiRx : null,
+                name: safeText(button.getAttribute("data-name"), ""),
+                display_name: safeText(button.getAttribute("data-display-name"), safeText(button.getAttribute("data-name"), "Receiver")),
+                band: safeText(button.getAttribute("data-band"), ""),
+                mode: safeText(button.getAttribute("data-mode"), "USB"),
+                freq_khz: Number.isFinite(freqKHz) ? freqKHz : null,
+                host: safeText(button.getAttribute("data-host"), ""),
+                port: Number.isFinite(port) && port > 0 ? port : null,
+            };
+        }
+
+        function setActiveReceiverAudioStatus(message) {
+            const statusEl = byId("active-receiver-audio-status");
+            if (statusEl) statusEl.textContent = safeText(message, "");
+        }
+
+        function concatUint8Arrays(left, right) {
+            const leftBytes = left instanceof Uint8Array ? left : new Uint8Array(0);
+            const rightBytes = right instanceof Uint8Array ? right : new Uint8Array(0);
+            if (!leftBytes.length) return rightBytes;
+            if (!rightBytes.length) return leftBytes;
+            const merged = new Uint8Array(leftBytes.length + rightBytes.length);
+            merged.set(leftBytes, 0);
+            merged.set(rightBytes, leftBytes.length);
+            return merged;
+        }
+
+        function ensureActiveReceiverAudioContext() {
+            const Ctor = window.AudioContext || window.webkitAudioContext;
+            if (!Ctor) throw new Error("Web Audio is not available in this browser.");
+            if (!activeReceiverAudioContext || activeReceiverAudioContext.state === "closed") {
+                activeReceiverAudioContext = new Ctor();
+                activeReceiverAudioGainNode = activeReceiverAudioContext.createGain();
+                activeReceiverAudioGainNode.connect(activeReceiverAudioContext.destination);
+            }
+            return activeReceiverAudioContext;
+        }
+
+        function stopActiveReceiverAudioStream({ resetCursor = true } = {}) {
+            activeReceiverAudioStreamToken += 1;
+            if (activeReceiverAudioStreamId) {
+                requestStopActiveReceiverAudioStream(activeReceiverAudioStreamId);
+            }
+            if (activeReceiverAudioAbortController) {
+                try { activeReceiverAudioAbortController.abort(); } catch (_) { }
+                activeReceiverAudioAbortController = null;
+            }
+            if (resetCursor) activeReceiverAudioPlaybackCursor = 0;
+        }
+
+        function buildActiveReceiverAudioStreamId() {
+            if (window.crypto && typeof window.crypto.randomUUID === "function") {
+                return window.crypto.randomUUID();
+            }
+            return `active-rx-audio-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        }
+
+        function ensureActiveReceiverAudioStreamId() {
+            if (!activeReceiverAudioStreamId) {
+                activeReceiverAudioStreamId = buildActiveReceiverAudioStreamId();
+            }
+            return activeReceiverAudioStreamId;
+        }
+
+        function requestStopActiveReceiverAudioStream(streamId) {
+            const normalized = safeText(streamId, "");
+            if (!normalized) return;
+            const url = `/system/audio_stream/stop?stream_id=${encodeURIComponent(normalized)}`;
+            try {
+                fetch(url, {
+                    method: "POST",
+                    cache: "no-store",
+                    keepalive: true,
+                }).catch(() => { });
+            } catch (_) { }
+        }
+
+        function queueActiveReceiverAudioPcm(bytes, sampleRate, streamToken) {
+            if (!(bytes instanceof Uint8Array) || !bytes.length) return;
+            if (streamToken !== activeReceiverAudioStreamToken) return;
+            const ctx = ensureActiveReceiverAudioContext();
+            const frameCount = Math.floor(bytes.length / 2);
+            if (frameCount <= 0) return;
+            const audioBuffer = ctx.createBuffer(1, frameCount, sampleRate);
+            const channelData = audioBuffer.getChannelData(0);
+            const view = new DataView(bytes.buffer, bytes.byteOffset, frameCount * 2);
+            for (let index = 0; index < frameCount; index += 1) {
+                channelData[index] = view.getInt16(index * 2, true) / 32768;
+            }
+            const source = ctx.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(activeReceiverAudioGainNode || ctx.destination);
+            const startAt = Math.max(Number(activeReceiverAudioPlaybackCursor) || 0, ctx.currentTime + 0.05);
+            source.start(startAt);
+            activeReceiverAudioPlaybackCursor = startAt + audioBuffer.duration;
+            source.onended = () => {
+                try { source.disconnect(); } catch (_) { }
+            };
+        }
+
+        function syncActiveReceiverAudioControls() {
+            const muteBtn = byId("active-receiver-audio-mute");
+            const volumeInput = byId("active-receiver-audio-volume");
+            if (activeReceiverAudioGainNode && activeReceiverAudioContext) {
+                const nextGain = activeReceiverAudioMuted ? 0 : Math.max(0, Math.min(1, Number(activeReceiverAudioVolume) || 0));
+                try {
+                    activeReceiverAudioGainNode.gain.setTargetAtTime(nextGain, activeReceiverAudioContext.currentTime, 0.015);
+                } catch (_) {
+                    activeReceiverAudioGainNode.gain.value = nextGain;
+                }
+            }
+            if (muteBtn) muteBtn.textContent = activeReceiverAudioMuted ? "Unmute" : "Mute";
+            if (volumeInput && document.activeElement !== volumeInput) {
+                volumeInput.value = String(Math.round((Number(activeReceiverAudioVolume) || 0) * 100));
+            }
+        }
+
+        function closeActiveReceiverAudioPopup() {
+            const popup = byId("active-receiver-audio-popup");
+            stopActiveReceiverAudioStream();
+            activeReceiverAudioTarget = null;
+            activeReceiverAudioSelectedMode = "";
+            if (popup) popup.hidden = true;
+            setActiveReceiverAudioStatus("Ready.");
+        }
+
+        function buildActiveReceiverAudioStreamUrl(receiver, modeValue) {
+            const freqKHz = resolveActiveReceiverListenFrequencyKHz(receiver, modeValue);
+            if (!Number.isFinite(Number(freqKHz)) || Number(freqKHz) <= 0) return "";
+            const listenMode = resolveActiveReceiverListenMode(modeValue, freqKHz);
+            const canCamp = Number.isFinite(Number(receiver && receiver.kiwi_rx)) && Number(receiver.kiwi_rx) >= 0;
+            const params = new URLSearchParams({
+                freq_khz: Number(freqKHz).toFixed(4),
+                mode: listenMode,
+            });
+            if (Number.isFinite(Number(receiver && receiver.rx))) {
+                params.set("rx", String(Number(receiver.rx)));
+            }
+            if (Number.isFinite(Number(receiver && receiver.kiwi_rx)) && Number(receiver.kiwi_rx) >= 0) {
+                params.set("kiwi_rx", String(Number(receiver.kiwi_rx)));
+            }
+            if (canCamp) {
+                params.set("camp", "1");
+            }
+            if (safeText(receiver && receiver.host, "")) {
+                params.set("host", safeText(receiver.host, ""));
+            }
+            if (Number.isFinite(Number(receiver && receiver.port)) && Number(receiver.port) > 0) {
+                params.set("port", String(Number(receiver.port)));
+            }
+            if (Number.isFinite(Number(receiver && receiver.freq_khz)) && Number(receiver.freq_khz) > 0) {
+                params.set("source_freq_khz", Number(receiver.freq_khz).toFixed(4));
+            }
+            params.set("stream_id", ensureActiveReceiverAudioStreamId());
+            return `/system/audio_stream?${params.toString()}`;
+        }
+
+        async function startActiveReceiverAudioPlayback(receiver, modeValue) {
+            if (!receiver) return;
+            const ctx = ensureActiveReceiverAudioContext();
+            await ctx.resume();
+            stopActiveReceiverAudioStream();
+            const controller = new AbortController();
+            activeReceiverAudioAbortController = controller;
+            activeReceiverAudioStreamToken += 1;
+            const streamToken = activeReceiverAudioStreamToken;
+            const streamUrl = buildActiveReceiverAudioStreamUrl(receiver, modeValue);
+            if (!streamUrl) {
+                setActiveReceiverAudioStatus("This receiver does not have a listenable frequency.");
+                return;
+            }
+            activeReceiverAudioPlaybackCursor = ctx.currentTime + 0.12;
+            activeReceiverAudioSelectedMode = String(modeValue || "").trim().toUpperCase();
+            syncActiveReceiverAudioPopup();
+            syncActiveReceiverAudioControls();
+            const canCamp = Number.isFinite(Number(receiver && receiver.kiwi_rx)) && Number(receiver.kiwi_rx) >= 0;
+            setActiveReceiverAudioStatus(`${canCamp ? "Camping on" : "Connecting to"} ${activeReceiverAudioSelectedMode || resolveActiveReceiverListenMode(modeValue, receiver && receiver.freq_khz)}...`);
+            try {
+                const response = await fetch(streamUrl, {
+                    cache: "no-store",
+                    signal: controller.signal,
+                    headers: { Accept: "audio/wav" },
+                });
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                if (!response.body) {
+                    throw new Error("Streaming response body is unavailable.");
+                }
+                const reader = response.body.getReader();
+                let headerBytes = new Uint8Array(0);
+                let pcmBytes = new Uint8Array(0);
+                let trailingByte = new Uint8Array(0);
+                let sampleRate = 12000;
+                let headerParsed = false;
+                let announcedPlayback = false;
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    if (streamToken !== activeReceiverAudioStreamToken) return;
+                    let chunk = value instanceof Uint8Array ? value : new Uint8Array(value || 0);
+                    if (!headerParsed) {
+                        headerBytes = concatUint8Arrays(headerBytes, chunk);
+                        if (headerBytes.length < 44) {
+                            continue;
+                        }
+                        const header = headerBytes.slice(0, 44);
+                        const headerText = String.fromCharCode(...header.slice(0, 4));
+                        const waveText = String.fromCharCode(...header.slice(8, 12));
+                        if (headerText !== "RIFF" || waveText !== "WAVE") {
+                            throw new Error("Unsupported audio stream format.");
+                        }
+                        const headerView = new DataView(header.buffer, header.byteOffset, header.byteLength);
+                        sampleRate = Number(headerView.getUint32(24, true)) || 12000;
+                        headerParsed = true;
+                        chunk = headerBytes.slice(44);
+                        headerBytes = new Uint8Array(0);
+                    }
+                    if (trailingByte.length) {
+                        chunk = concatUint8Arrays(trailingByte, chunk);
+                        trailingByte = new Uint8Array(0);
+                    }
+                    if (chunk.length % 2 === 1) {
+                        trailingByte = chunk.slice(chunk.length - 1);
+                        chunk = chunk.slice(0, chunk.length - 1);
+                    }
+                    if (!chunk.length) continue;
+                    pcmBytes = concatUint8Arrays(pcmBytes, chunk);
+                    const chunkTargetBytes = Math.max(4096, Math.floor(sampleRate * 0.25) * 2);
+                    while (pcmBytes.length >= chunkTargetBytes) {
+                        queueActiveReceiverAudioPcm(pcmBytes.slice(0, chunkTargetBytes), sampleRate, streamToken);
+                        pcmBytes = pcmBytes.slice(chunkTargetBytes);
+                        if (!announcedPlayback) {
+                            announcedPlayback = true;
+                            setActiveReceiverAudioStatus(`${canCamp ? "Camping on" : "Listening to"} ${safeText(receiver.display_name, `RX${safeText(receiver.rx, "--")}`)} on ${activeReceiverAudioSelectedMode || resolveActiveReceiverListenMode(modeValue, receiver && receiver.freq_khz)}.`);
+                        }
+                    }
+                }
+                if (trailingByte.length) {
+                    pcmBytes = concatUint8Arrays(pcmBytes, trailingByte);
+                }
+                if (pcmBytes.length >= 2 && streamToken === activeReceiverAudioStreamToken) {
+                    const evenLength = pcmBytes.length - (pcmBytes.length % 2);
+                    queueActiveReceiverAudioPcm(pcmBytes.slice(0, evenLength), sampleRate, streamToken);
+                    if (!announcedPlayback) {
+                        setActiveReceiverAudioStatus(`${canCamp ? "Camping on" : "Listening to"} ${safeText(receiver.display_name, `RX${safeText(receiver.rx, "--")}`)} on ${activeReceiverAudioSelectedMode || resolveActiveReceiverListenMode(modeValue, receiver && receiver.freq_khz)}.`);
+                    }
+                } else if (!announcedPlayback && streamToken === activeReceiverAudioStreamToken) {
+                    throw new Error("Stream ended before audio frames arrived.");
+                }
+            } catch (err) {
+                if (controller.signal.aborted) return;
+                setActiveReceiverAudioStatus(`Playback failed: ${String((err && err.message) || err)}`);
+            }
+        }
+
+        function syncActiveReceiverAudioPopup() {
+            const popup = byId("active-receiver-audio-popup");
+            const titleEl = byId("active-receiver-audio-title");
+            const metaEl = byId("active-receiver-audio-meta");
+            const modeGroupEl = byId("active-receiver-audio-mode-group");
+            const modesEl = byId("active-receiver-audio-modes");
+            if (!popup || !titleEl || !metaEl || !modeGroupEl || !modesEl || !activeReceiverAudioTarget) return;
+            const receiver = activeReceiverAudioTarget;
+            const selectedMode = activeReceiverAudioSelectedMode || preferredActiveReceiverListenMode(receiver);
+            titleEl.textContent = `Listen Live: ${safeText(receiver.display_name, safeText(receiver.name, `RX${safeText(receiver.rx, "--")}`))}`;
+            const band = inferActiveReceiverBand(receiver.band, receiver.display_name, receiver.name);
+            const freqKHz = resolveActiveReceiverListenFrequencyKHz(receiver, selectedMode);
+            metaEl.textContent = [
+                Number.isFinite(Number(receiver.rx)) ? `RX${Number(receiver.rx)}` : "",
+                band || "",
+                Number.isFinite(Number(freqKHz)) ? `${Number(freqKHz).toFixed(3)} kHz` : "",
+            ].filter(Boolean).join(" • ");
+            modeGroupEl.hidden = modes.length <= 1;
+            modesEl.innerHTML = modes.map((modeName) => `
+                <button class="active-receiver-audio-mode-btn ${modeName === selectedMode ? "is-selected" : ""}" type="button" data-active-receiver-mode="${escapeHtml(modeName)}">${escapeHtml(modeName)}</button>
+            `).join("");
+            popup.hidden = false;
+            syncActiveReceiverAudioControls();
+        }
+
+        function openActiveReceiverAudioPopup(receiver) {
+            if (!receiver) return;
+            activeReceiverAudioTarget = receiver;
+            activeReceiverAudioSelectedMode = preferredActiveReceiverListenMode(receiver);
+            syncActiveReceiverAudioPopup();
+            startActiveReceiverAudioPlayback(receiver, activeReceiverAudioSelectedMode);
+        }
+
+        function initActiveReceiverAudioPopup() {
+            const tableEl = byId("active-receivers-table");
+            const muteBtn = byId("active-receiver-audio-mute");
+            const closeBtn = byId("active-receiver-audio-close");
+            const volumeInput = byId("active-receiver-audio-volume");
+            const modeButtonsEl = byId("active-receiver-audio-modes");
+            if (tableEl && tableEl.dataset.audioBound !== "1") {
+                tableEl.addEventListener("click", (event) => {
+                    const target = event.target instanceof Element ? event.target.closest("[data-active-receiver-audio]") : null;
+                    if (!target) return;
+                    const receiver = readActiveReceiverAudioButtonPayload(target);
+                    if (!receiver) return;
+                    openActiveReceiverAudioPopup(receiver);
+                });
+                tableEl.dataset.audioBound = "1";
+            }
+            if (muteBtn && muteBtn.dataset.bound !== "1") {
+                muteBtn.addEventListener("click", () => {
+                    activeReceiverAudioMuted = !activeReceiverAudioMuted;
+                    syncActiveReceiverAudioControls();
+                });
+                muteBtn.dataset.bound = "1";
+            }
+            if (closeBtn && closeBtn.dataset.bound !== "1") {
+                closeBtn.addEventListener("click", () => {
+                    closeActiveReceiverAudioPopup();
+                });
+                closeBtn.dataset.bound = "1";
+            }
+            if (volumeInput && volumeInput.dataset.bound !== "1") {
+                volumeInput.addEventListener("input", () => {
+                    activeReceiverAudioVolume = Math.max(0, Math.min(1, Number(volumeInput.value) / 100));
+                    syncActiveReceiverAudioControls();
+                });
+                volumeInput.dataset.bound = "1";
+            }
+            if (modeButtonsEl && modeButtonsEl.dataset.bound !== "1") {
+                modeButtonsEl.addEventListener("click", (event) => {
+                    const button = event.target instanceof Element ? event.target.closest("[data-active-receiver-mode]") : null;
+                    if (!button || !activeReceiverAudioTarget) return;
+                    const modeName = safeText(button.getAttribute("data-active-receiver-mode"), "");
+                    if (!modeName) return;
+                    activeReceiverAudioSelectedMode = modeName;
+                    syncActiveReceiverAudioPopup();
+                    startActiveReceiverAudioPlayback(activeReceiverAudioTarget, modeName);
+                });
+                modeButtonsEl.dataset.bound = "1";
+            }
+            syncActiveReceiverAudioControls();
         }
 
         function getPreparedScanReservedReceiverSet() {
@@ -8239,8 +8876,19 @@
                         : (fallbackDisplayName || synthesizedName || "Unassigned");
                     return {
                         rx: rxNum,
+                        kiwi_rx: Number.isFinite(liveKiwiRx) ? liveKiwiRx : (Number.isFinite(Number(systemUser.kiwi_rx)) ? Number(systemUser.kiwi_rx) : null),
                         name: channelDisplayName || managedName || (managedModeActive ? rawName : "") || (populated ? synthesizedName : "Unassigned"),
                         display_name: preferredDisplayName,
+                        band: inferActiveReceiverBand(
+                            channel && channel.band,
+                            assignment && assignment.band,
+                            systemUser && systemUser.band,
+                            rawUser && rawUser.band,
+                            preferredDisplayName,
+                            channelDisplayName,
+                            managedName,
+                            rawName
+                        ),
                         freq_khz: Number.isFinite(Number(channel.freq_hz))
                             ? Number(channel.freq_hz) / 1000.0
                             : (Number.isFinite(Number(systemUser.freq_khz))
@@ -8249,6 +8897,14 @@
                                     ? Number(rawUser.freq_khz)
                                     : (Number.isFinite(freqHz) ? freqHz / 1000.0 : null))),
                         mode: safeText(channel.mode, safeText(assignment.mode, safeText(systemUser.mode, safeText(rawUser.mode, "--")))),
+                        host: safeText(channel.host, safeText(systemUser.host, safeText(rawUser.host, latestAssignmentsHost))),
+                        port: Number.isFinite(Number(channel.port))
+                            ? Number(channel.port)
+                            : (Number.isFinite(Number(systemUser.port))
+                                ? Number(systemUser.port)
+                                : (Number.isFinite(Number(rawUser.port))
+                                    ? Number(rawUser.port)
+                                    : (Number.isFinite(Number(latestAssignmentsPort)) ? Number(latestAssignmentsPort) : null))),
                         connected_seconds: Number.isFinite(Number(channel.kiwi_user_age_s))
                             ? Number(channel.kiwi_user_age_s)
                             : (Number.isFinite(Number(systemUser.connected_seconds))
@@ -8353,6 +9009,7 @@
                 ? JSON.stringify(users.map((user) => ({
                     rx: Number(user && user.rx),
                     name: safeText(user && user.display_name, safeText(user && user.name, "")),
+                    band: safeText(user && user.band, ""),
                     freq_khz: Number.isFinite(Number(user && user.freq_khz)) ? Number(user.freq_khz) : null,
                     mode: safeText(user && user.mode, ""),
                     connected_seconds: Number.isFinite(Number(user && user.connected_seconds)) ? Number(user.connected_seconds) : null,
@@ -8378,12 +9035,13 @@
                     <td class="mono">${escapeHtml(Number.isFinite(Number(user.freq_khz)) ? `${Number(user.freq_khz).toFixed(3)} kHz` : "--")}</td>
                     <td>${escapeHtml(safeText(user.mode, "--"))}</td>
                     <td class="mono">${escapeHtml(Number.isFinite(Number(user.connected_seconds)) ? fmtDurationCompact(user.connected_seconds) : "--")}</td>
+                    <td class="active-rx-audio-col">${canListenToActiveReceiver(user) ? `<button type="button" class="active-rx-audio-btn" data-active-receiver-audio="1" data-rx="${escapeHtml(safeText(user.rx, ""))}" data-kiwi-rx="${escapeHtml(Number.isFinite(Number(user.kiwi_rx)) ? String(Number(user.kiwi_rx)) : "")}" data-name="${escapeHtml(safeText(user.name, ""))}" data-display-name="${escapeHtml(safeText(user.display_name, safeText(user.name, "Receiver")))}" data-band="${escapeHtml(safeText(user.band, ""))}" data-mode="${escapeHtml(safeText(user.mode, "USB"))}" data-freq-khz="${escapeHtml(Number(user.freq_khz).toFixed(3))}" data-host="${escapeHtml(safeText(user.host, ""))}" data-port="${escapeHtml(Number.isFinite(Number(user.port)) ? String(Number(user.port)) : "")}" aria-label="Listen to ${escapeHtml(safeText(user.display_name, safeText(user.name, `RX${safeText(user.rx, "--")}`)))}">${buildIconMarkup("audio")}</button>` : ""}</td>
                 </tr>
             `).join("");
             usersEl.innerHTML = `
                 <div class="assign-table-wrap">
                     <table class="assign-table">
-                        <thead><tr><th class="active-rx-col">RX</th><th class="active-rx-lock-col"></th><th>Name</th><th>Freq</th><th>Mode</th><th>Connected</th></tr></thead>
+                        <thead><tr><th class="active-rx-col">RX</th><th class="active-rx-lock-col"></th><th>Name</th><th>Freq</th><th>Mode</th><th>Connected</th><th class="active-rx-audio-col">Audio</th></tr></thead>
                         <tbody>${body}</tbody>
                     </table>
                 </div>
@@ -8627,6 +9285,7 @@
             pulse: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2-4 4 8 2-4h6"></path></svg>`,
             radio: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 6h14v12H5z"></path><path d="M9 10h6"></path><circle cx="16" cy="14" r="1.5"></circle><path d="m8 6 8-3"></path></svg>`,
             refresh: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.8-3"></path><path d="M4 4v5h5"></path><path d="M4 13a8 8 0 0 0 14.8 3"></path><path d="M20 20v-5h-5"></path></svg>`,
+            audio: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 6 7.5 9H4v6h3.5L11 18V6Z"></path><path d="M15 9.5a4 4 0 0 1 0 5"></path><path d="M17.5 7a7 7 0 0 1 0 10"></path></svg>`,
             rotate: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.7"></path><path d="M4 4v6h6"></path></svg>`,
             search: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6"></circle><path d="m20 20-4.2-4.2"></path></svg>`,
             server: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="6" rx="1.5"></rect><rect x="4" y="14" width="16" height="6" rx="1.5"></rect><path d="M8 7h.01"></path><path d="M8 17h.01"></path><path d="M15 7h3"></path><path d="M15 17h3"></path></svg>`,
@@ -13952,6 +14611,7 @@
             syncReceiverScanControls();
             syncNetMonitorControls();
             syncCaptionMonitorControls();
+            initActiveReceiverAudioPopup();
             applyCaptionDrawerOpen(false);
             renderCaptionDrawer();
 
