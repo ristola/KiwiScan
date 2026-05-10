@@ -6,7 +6,7 @@ from typing import Dict
 
 from fastapi import APIRouter, HTTPException, Request
 
-from ..kiwi_discovery import discover_kiwis, extract_gps_lat_lon, normalize_kiwi_host, read_kiwi_status
+from ..kiwi_discovery import discover_kiwis, extract_gps_lat_lon, is_unconfigured_kiwi_host, normalize_kiwi_host, read_kiwi_status
 
 
 logger = logging.getLogger(__name__)
@@ -44,6 +44,18 @@ def _get_cached_discovery(mgr: object) -> dict:
         "source": str(getattr(mgr, "discovery_source", "") or "").strip(),
         "updated_unix": getattr(mgr, "discovery_updated_unix", None),
     }
+
+
+def _get_configured_kiwis(mgr: object) -> list[dict]:
+    if hasattr(mgr, "get_configured_kiwis"):
+        try:
+            data = mgr.get_configured_kiwis()  # type: ignore[attr-defined]
+            if isinstance(data, list):
+                return [dict(item) for item in data if isinstance(item, dict)]
+        except Exception:
+            logger.debug("Failed reading configured Kiwi entries", exc_info=True)
+    data = getattr(mgr, "configured_kiwis", [])
+    return [dict(item) for item in data if isinstance(item, dict)] if isinstance(data, list) else []
 
 
 def make_router(*, mgr: object, waterholes: Dict[str, float], receiver_mgr: object | None = None) -> APIRouter:
@@ -137,6 +149,7 @@ def make_router(*, mgr: object, waterholes: Dict[str, float], receiver_mgr: obje
             pass
 
         cached_discovery = _get_cached_discovery(mgr)
+        configured_kiwis = _get_configured_kiwis(mgr)
         with mgr.lock:  # type: ignore[attr-defined]
             runtime_deps = {}
             try:
@@ -160,6 +173,7 @@ def make_router(*, mgr: object, waterholes: Dict[str, float], receiver_mgr: obje
                 "rx_chan": mgr.rx_chan,
                 "host": mgr.host,
                 "port": mgr.port,
+                "kiwisdrs": configured_kiwis,
                 "kiwi_latitude": kiwi_lat,
                 "kiwi_longitude": kiwi_lon,
                 "kiwi_grid": kiwi_grid,
@@ -229,6 +243,11 @@ def make_router(*, mgr: object, waterholes: Dict[str, float], receiver_mgr: obje
     @router.post("/config")
     async def set_config(request: Request):
         data = await request.json()
+        if "kiwisdrs" in data and hasattr(mgr, "set_configured_kiwis"):
+            try:
+                mgr.set_configured_kiwis(data.get("kiwisdrs"), save=False)  # type: ignore[attr-defined]
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"invalid value for kiwisdrs: {exc}") from exc
         if ("discovered_kiwis" in data or "discovery_source" in data) and hasattr(mgr, "set_discovered_kiwis"):
             try:
                 mgr.set_discovered_kiwis(  # type: ignore[attr-defined]
@@ -354,6 +373,22 @@ def make_router(*, mgr: object, waterholes: Dict[str, float], receiver_mgr: obje
 
             # Do not force an RX channel; allow the server to choose.
             mgr.rx_chan = None
+            if "kiwisdrs" not in data and hasattr(mgr, "set_configured_kiwis"):
+                existing_configured = _get_configured_kiwis(mgr)
+                primary: dict[str, object] = {
+                    "host": normalize_kiwi_host(mgr.host),
+                    "port": int(mgr.port),
+                    "latitude": float(mgr.latitude),
+                    "longitude": float(mgr.longitude),
+                }
+                if existing_configured:
+                    grid = str(existing_configured[0].get("grid") or "").strip()
+                    if grid:
+                        primary["grid"] = grid
+                merged_configured = [] if is_unconfigured_kiwi_host(primary["host"]) else [primary]
+                if len(existing_configured) > 1:
+                    merged_configured.extend(existing_configured[1:])
+                mgr.set_configured_kiwis(merged_configured, save=False)  # type: ignore[attr-defined]
             mgr._save_config()  # type: ignore[attr-defined]
 
         return {"ok": True}

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Awaitable, Callable, Dict, Optional
 
 from .discovery import DiscoveryWorker, FT8_WATERHOLES
-from .kiwi_discovery import DEFAULT_KIWI_HOST, normalize_kiwi_host
+from .kiwi_discovery import DEFAULT_KIWI_HOST, is_unconfigured_kiwi_host, normalize_kiwi_host
 from .kiwi_waterfall import KiwiClientUnavailable
 
 logger = logging.getLogger(__name__)
@@ -82,6 +82,7 @@ class DiscoveryManager:
         self._pause = threading.Event()
         self._paused = threading.Event()
         self.runtime_dependencies: Dict[str, object] = {}
+        self.configured_kiwis: list[dict[str, object]] = []
         self.discovered_kiwis: list[dict[str, object]] = []
         self.discovery_source: str = ""
         self.discovery_updated_unix: float = 0.0
@@ -207,6 +208,15 @@ class DiscoveryManager:
         val = _read_bool("debug")
         if val is not None:
             self.debug = val
+        configured = self._sanitize_configured_kiwis(data.get("kiwisdrs"))
+        if configured:
+            self.configured_kiwis = configured
+        else:
+            legacy_configured = self._legacy_configured_kiwis_from_payload(data)
+            if legacy_configured:
+                self.configured_kiwis = legacy_configured
+        if self.configured_kiwis:
+            self._apply_primary_configured_kiwi()
         rd = data.get("runtime_dependencies")
         if isinstance(rd, dict):
             self.runtime_dependencies = dict(rd)
@@ -263,9 +273,119 @@ class DiscoveryManager:
             out.append(entry)
         return out
 
+    @staticmethod
+    def _sanitize_configured_kiwis(raw: object) -> list[dict[str, object]]:
+        if not isinstance(raw, list):
+            return []
+        out: list[dict[str, object]] = []
+        seen: set[tuple[str, int]] = set()
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            host = normalize_kiwi_host(item.get("host"))
+            try:
+                port = int(item.get("port") or 0)
+            except Exception:
+                port = 0
+            if is_unconfigured_kiwi_host(host) or not (1 <= port <= 65535):
+                continue
+            key = (host, port)
+            if key in seen:
+                continue
+            seen.add(key)
+            entry: dict[str, object] = {
+                "host": host,
+                "port": port,
+            }
+            for text_key in ("grid", "name", "loc", "sdr_hw", "sw_version"):
+                value = str(item.get(text_key) or "").strip()
+                if value:
+                    entry[text_key] = value
+            for float_key, lower, upper in (("latitude", -90.0, 90.0), ("longitude", -180.0, 180.0)):
+                try:
+                    value = float(item.get(float_key))
+                except Exception:
+                    continue
+                if lower <= value <= upper:
+                    entry[float_key] = value
+            out.append(entry)
+        return out
+
+    @staticmethod
+    def _legacy_configured_kiwis_from_payload(data: dict[str, object]) -> list[dict[str, object]]:
+        host = normalize_kiwi_host(data.get("host"))
+        if is_unconfigured_kiwi_host(host):
+            return []
+        try:
+            port = int(data.get("port") or 8073)
+        except Exception:
+            port = 8073
+        if not (1 <= port <= 65535):
+            port = 8073
+        entry: dict[str, object] = {
+            "host": host,
+            "port": port,
+        }
+        for float_key, lower, upper in (("latitude", -90.0, 90.0), ("longitude", -180.0, 180.0)):
+            try:
+                value = float(data.get(float_key))
+            except Exception:
+                continue
+            if lower <= value <= upper:
+                entry[float_key] = value
+        grid = str(data.get("kiwi_grid") or "").strip()
+        if grid:
+            entry["grid"] = grid
+        return [entry]
+
+    def _apply_primary_configured_kiwi(self) -> None:
+        if not self.configured_kiwis:
+            return
+        primary = self.configured_kiwis[0]
+        host = normalize_kiwi_host(primary.get("host"))
+        try:
+            port = int(primary.get("port") or self.port)
+        except Exception:
+            port = self.port
+        if not is_unconfigured_kiwi_host(host):
+            self.host = host
+        if 1 <= port <= 65535:
+            self.port = port
+        for attr, lower, upper in (("latitude", -90.0, 90.0), ("longitude", -180.0, 180.0)):
+            try:
+                value = float(primary.get(attr))
+            except Exception:
+                continue
+            if lower <= value <= upper:
+                setattr(self, attr, value)
+
+    def _configured_kiwi_payload(self) -> list[dict[str, object]]:
+        entries = self._sanitize_configured_kiwis(self.configured_kiwis)
+        host = normalize_kiwi_host(self.host)
+        if entries:
+            if not is_unconfigured_kiwi_host(host):
+                entries[0]["host"] = host
+                entries[0]["port"] = int(self.port)
+                entries[0]["latitude"] = float(self.latitude)
+                entries[0]["longitude"] = float(self.longitude)
+            self.configured_kiwis = entries
+            return entries
+        if is_unconfigured_kiwi_host(host):
+            self.configured_kiwis = []
+            return []
+        entry = {
+            "host": host,
+            "port": int(self.port),
+            "latitude": float(self.latitude),
+            "longitude": float(self.longitude),
+        }
+        self.configured_kiwis = [entry]
+        return [dict(entry)]
+
     def _save_config(self) -> None:
         try:
             self._config_path.parent.mkdir(parents=True, exist_ok=True)
+            configured_kiwis = self._configured_kiwi_payload()
             payload = {
                 "dwell_s": float(self.dwell_s),
                 "span_hz": float(self.span_hz),
@@ -282,6 +402,7 @@ class DiscoveryManager:
                 "retune_pause_s": float(self.retune_pause_s),
                 "host": normalize_kiwi_host(self.host),
                 "port": int(self.port),
+                "kiwisdrs": configured_kiwis,
                 "debug": bool(self.debug),
                 "runtime_dependencies": dict(self.runtime_dependencies),
                 "discovered_kiwis": list(self.discovered_kiwis),
@@ -292,6 +413,20 @@ class DiscoveryManager:
             self._config_path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
         except Exception:
             pass
+
+    def set_configured_kiwis(self, kiwis: object, *, save: bool = True) -> None:
+        entries = self._sanitize_configured_kiwis(kiwis)
+        with self.lock:
+            self.configured_kiwis = entries
+            if entries:
+                self._apply_primary_configured_kiwi()
+                self.rx_chan = None
+            if save:
+                self._save_config()
+
+    def get_configured_kiwis(self) -> list[dict[str, object]]:
+        with self.lock:
+            return list(self._configured_kiwi_payload())
 
     def set_discovered_kiwis(self, discovery: Dict[str, object], *, save: bool = True) -> None:
         found = self._sanitize_discovered_kiwis(discovery.get("found"))

@@ -29,6 +29,7 @@ class _MgrStub:
         self.port = 8074
         self.debug = False
         self.runtime_dependencies = {}
+        self.configured_kiwis: list[dict[str, object]] = []
         self.discovered_kiwis: list[dict[str, object]] = []
         self.discovery_source = ""
         self.discovery_updated_unix = 0.0
@@ -62,6 +63,46 @@ class _MgrStub:
         self.discovery_updated_unix = 1778291400.0
         if save:
             self._save_config()
+
+    def set_configured_kiwis(self, kiwis: object, *, save: bool = True) -> None:
+        out: list[dict[str, object]] = []
+        if isinstance(kiwis, list):
+            for item in kiwis:
+                if not isinstance(item, dict):
+                    continue
+                host = str(item.get("host") or "").strip()
+                try:
+                    port = int(item.get("port") or 0)
+                except Exception:
+                    port = 0
+                if not host or not (1 <= port <= 65535):
+                    continue
+                entry: dict[str, object] = {"host": host, "port": port}
+                for key in ("grid", "name", "loc", "sdr_hw", "sw_version"):
+                    value = str(item.get(key) or "").strip()
+                    if value:
+                        entry[key] = value
+                for key in ("latitude", "longitude"):
+                    try:
+                        value = float(item.get(key))
+                    except Exception:
+                        continue
+                    entry[key] = value
+                out.append(entry)
+        self.configured_kiwis = out
+        if out:
+            self.host = str(out[0]["host"])
+            self.port = int(out[0]["port"])
+            if "latitude" in out[0]:
+                self.latitude = float(out[0]["latitude"])
+            if "longitude" in out[0]:
+                self.longitude = float(out[0]["longitude"])
+            self.rx_chan = None
+        if save:
+            self._save_config()
+
+    def get_configured_kiwis(self) -> list[dict[str, object]]:
+        return list(self.configured_kiwis)
 
     def get_discovered_kiwis(self) -> dict[str, object]:
         return {
@@ -140,3 +181,36 @@ def test_post_config_persists_discovered_kiwis(monkeypatch) -> None:
         {"host": "10.13.1.236", "port": 8074, "sdr_hw": "KiwiSDR 2"},
     ]
     assert payload["discovery_source"] == "lan_scan"
+
+
+def test_post_config_persists_configured_kiwis(monkeypatch) -> None:
+    mgr = _MgrStub()
+    app = FastAPI()
+    app.include_router(config_api.make_router(mgr=mgr, waterholes={"20m": 14074.0}))
+    client = TestClient(app)
+
+    monkeypatch.setattr(config_api, "read_kiwi_status", lambda host, port, timeout_s: {})
+
+    response = client.post(
+        "/config",
+        json={
+            "kiwisdrs": [
+                {"host": "10.13.1.235", "port": 8073, "latitude": 38.1, "longitude": -78.2, "grid": "FM08so"},
+                {"host": "10.13.1.236", "port": 8074, "latitude": 39.1, "longitude": -77.2, "grid": "FM09aa"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert mgr.save_calls == 1
+    assert mgr.host == "10.13.1.235"
+    assert mgr.port == 8073
+
+    config_response = client.get("/config")
+
+    assert config_response.status_code == 200
+    payload = config_response.json()
+    assert payload["kiwisdrs"] == [
+        {"host": "10.13.1.235", "port": 8073, "latitude": 38.1, "longitude": -78.2, "grid": "FM08so"},
+        {"host": "10.13.1.236", "port": 8074, "latitude": 39.1, "longitude": -77.2, "grid": "FM09aa"},
+    ]

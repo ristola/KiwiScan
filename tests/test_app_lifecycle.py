@@ -36,3 +36,12 @@ def test_sync_preferred_startup_kiwi_switches_to_port_8073() -> None:
     assert mgr.port == 8073
     assert mgr.rx_chan is None
     assert mgr.save_calls == 1
+
+
+def test_should_run_startup_kiwi_discovery_only_when_unconfigured() -> None:
+    configured_mgr = _MgrStub()
+    assert app_lifecycle._should_run_startup_kiwi_discovery(configured_mgr) is False
+
+    unconfigured_mgr = _MgrStub()
+    unconfigured_mgr.host = "0.0.0.0"
+    assert app_lifecycle._should_run_startup_kiwi_discovery(unconfigured_mgr) is True

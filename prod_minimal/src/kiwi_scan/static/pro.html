@@ -6404,6 +6404,7 @@
 
                         <section class="settings-card" aria-labelledby="settings-kiwisdr-title">
                             <div class="settings-card-title" id="settings-kiwisdr-title">KiwiSdr Settings</div>
+                            <div class="meta" id="settings-kiwisdr-meta" hidden></div>
                             <div class="control-grid" style="margin-top: 0;">
                                 <label class="control-field">Kiwi Host
                                     <input id="cfg-host" type="text" placeholder="0.0.0.0">
@@ -6420,16 +6421,18 @@
                                         placeholder="0">
                                 </label>
                                 <label class="control-field">Grid Square
-                                    <input id="cfg-kiwi-grid" type="text" placeholder="--" readonly
-                                        style="cursor:default;"
-                                        title="Maidenhead grid square reported by the KiwiSDR GPS receiver">
+                                    <input id="cfg-kiwi-grid" type="text" placeholder="FM08so"
+                                        title="Maidenhead grid square for the configured KiwiSDR">
                                 </label>
                             </div>
                             <div class="control-actions" style="margin-top: 0;">
+                                <button class="action-btn" id="cfg-add-kiwi" type="button" data-icon="plus">Add
+                                    Kiwi</button>
                                 <button class="action-btn" id="cfg-discover" type="button" data-icon="search">Discover
                                     Kiwi</button>
                             </div>
                         </section>
+                        <div id="cfg-discovered-kiwi-cards" class="settings-subcard-grid"></div>
 
                         <section class="settings-card" aria-labelledby="settings-layout-title">
                             <div class="settings-card-title" id="settings-layout-title">Layout</div>
@@ -6749,6 +6752,7 @@
         let configSaveInFlight = false;
         let automationSaveInFlight = false;
         let latestAutomationSettings = {};
+        let latestConfiguredKiwiEntries = [];
         let pendingConfigAutosave = false;
         let pendingAutomationAutosave = false;
         let lastBandActivitySampleMs = Date.now();
@@ -6774,6 +6778,7 @@
         const UI_THEME_DEFAULT_HOUR_OFFSET = 0;
         const UI_THEME_AUTO_DAY_HOUR = 7;
         const UI_DENSITY_DEFAULT_MODE = "normal";
+        const MAX_CONFIGURED_KIWIS = 2;
         const KIWI_SETTINGS_DEFAULTS = Object.freeze({
             host: "0.0.0.0",
             port: 8073,
@@ -8300,6 +8305,169 @@
                 && next.port === KIWI_SETTINGS_DEFAULTS.port
                 && next.latitude === KIWI_SETTINGS_DEFAULTS.latitude
                 && next.longitude === KIWI_SETTINGS_DEFAULTS.longitude;
+        }
+
+        function normalizeKiwiGridText(value) {
+            const raw = String(value == null ? "" : value).trim();
+            if (!raw) return "";
+            return raw.length >= 6
+                ? raw.slice(0, 4).toUpperCase() + raw.slice(4).toLowerCase()
+                : raw.toUpperCase();
+        }
+
+        function isConfiguredKiwiHost(host) {
+            const text = String(host || "").trim();
+            if (!text) return false;
+            const lowered = text.toLowerCase();
+            return lowered !== String(KIWI_SETTINGS_DEFAULTS.host || "").toLowerCase()
+                && lowered !== "127.0.0.1"
+                && lowered !== "localhost";
+        }
+
+        function normalizeConfiguredKiwiEntry(raw = {}, { preserveBlankHost = false } = {}) {
+            const host = String(raw && raw.host != null ? raw.host : "").trim();
+            const portValue = Number(raw && raw.port);
+            const latitudeValue = Number(raw && raw.latitude);
+            const longitudeValue = Number(raw && raw.longitude);
+            const grid = normalizeKiwiGridText(raw && raw.grid);
+            if (!preserveBlankHost && !isConfiguredKiwiHost(host)) return null;
+            return {
+                host,
+                port: Number.isFinite(portValue) && portValue >= 1 && portValue <= 65535
+                    ? Math.round(portValue)
+                    : KIWI_SETTINGS_DEFAULTS.port,
+                latitude: Number.isFinite(latitudeValue) ? latitudeValue : null,
+                longitude: Number.isFinite(longitudeValue) ? longitudeValue : null,
+                grid,
+            };
+        }
+
+        function normalizeConfiguredKiwiEntries(raw = [], { preserveBlankHost = false } = {}) {
+            if (!Array.isArray(raw)) return [];
+            const seen = new Set();
+            const out = [];
+            raw.forEach((entry, index) => {
+                const normalized = normalizeConfiguredKiwiEntry(entry, { preserveBlankHost });
+                if (!normalized) return;
+                const key = normalized.host
+                    ? `${normalized.host}:${normalized.port}`
+                    : `blank:${index}`;
+                if (!preserveBlankHost && seen.has(key)) return;
+                seen.add(key);
+                out.push(normalized);
+            });
+            return out.slice(0, MAX_CONFIGURED_KIWIS);
+        }
+
+        function buildDefaultConfiguredKiwiEntry() {
+            return {
+                host: "",
+                port: KIWI_SETTINGS_DEFAULTS.port,
+                latitude: null,
+                longitude: null,
+                grid: "",
+            };
+        }
+
+        function hasConfiguredKiwiIp(entries = []) {
+            return normalizeConfiguredKiwiEntries(entries, { preserveBlankHost: true })
+                .some((entry) => isConfiguredKiwiHost(entry && entry.host));
+        }
+
+        function formatKiwiNumberInputValue(value) {
+            return Number.isFinite(Number(value)) ? String(Number(value)) : "";
+        }
+
+        function setPrimaryConfiguredKiwiInputs(entry = null) {
+            const normalized = normalizeConfiguredKiwiEntry(entry || {}, { preserveBlankHost: true }) || buildDefaultConfiguredKiwiEntry();
+            byId("cfg-host").value = normalized.host || "";
+            byId("cfg-port").value = String(normalized.port || KIWI_SETTINGS_DEFAULTS.port);
+            byId("cfg-latitude").value = formatKiwiNumberInputValue(normalized.latitude);
+            byId("cfg-longitude").value = formatKiwiNumberInputValue(normalized.longitude);
+            byId("cfg-kiwi-grid").value = normalized.grid || "";
+        }
+
+        function collectConfiguredKiwiInputs({ includeBlank = false } = {}) {
+            const entries = [
+                normalizeConfiguredKiwiEntry({
+                    host: readTextInput("cfg-host", ""),
+                    port: readNumberInput("cfg-port", KIWI_SETTINGS_DEFAULTS.port),
+                    latitude: readTextInput("cfg-latitude", ""),
+                    longitude: readTextInput("cfg-longitude", ""),
+                    grid: readTextInput("cfg-kiwi-grid", ""),
+                }, { preserveBlankHost: true }) || buildDefaultConfiguredKiwiEntry(),
+            ];
+            const cardsEl = byId("cfg-discovered-kiwi-cards");
+            if (cardsEl) {
+                cardsEl.querySelectorAll("[data-secondary-kiwi-index]").forEach((card) => {
+                    entries.push(normalizeConfiguredKiwiEntry({
+                        host: card.querySelector('[data-field="host"]')?.value || "",
+                        port: card.querySelector('[data-field="port"]')?.value || KIWI_SETTINGS_DEFAULTS.port,
+                        latitude: card.querySelector('[data-field="latitude"]')?.value || "",
+                        longitude: card.querySelector('[data-field="longitude"]')?.value || "",
+                        grid: card.querySelector('[data-field="grid"]')?.value || "",
+                    }, { preserveBlankHost: true }) || buildDefaultConfiguredKiwiEntry());
+                });
+            }
+            return includeBlank ? entries.slice(0, MAX_CONFIGURED_KIWIS) : normalizeConfiguredKiwiEntries(entries);
+        }
+
+        function buildKiwiConfigPayloadFromInputs() {
+            const allEntries = collectConfiguredKiwiInputs({ includeBlank: true });
+            const primary = allEntries[0] || buildDefaultConfiguredKiwiEntry();
+            const normalizedPrimary = normalizeConfiguredKiwiEntry(primary, { preserveBlankHost: true }) || buildDefaultConfiguredKiwiEntry();
+            return {
+                host: normalizedPrimary.host || KIWI_SETTINGS_DEFAULTS.host,
+                port: normalizedPrimary.port || KIWI_SETTINGS_DEFAULTS.port,
+                latitude: Number.isFinite(Number(normalizedPrimary.latitude)) ? Number(normalizedPrimary.latitude) : KIWI_SETTINGS_DEFAULTS.latitude,
+                longitude: Number.isFinite(Number(normalizedPrimary.longitude)) ? Number(normalizedPrimary.longitude) : KIWI_SETTINGS_DEFAULTS.longitude,
+                kiwisdrs: collectConfiguredKiwiInputs({ includeBlank: false }),
+            };
+        }
+
+        function renderConfiguredKiwiSettings(entries = []) {
+            const normalized = normalizeConfiguredKiwiEntries(entries, { preserveBlankHost: true });
+            const safeEntries = normalized.length ? normalized : [buildDefaultConfiguredKiwiEntry()];
+            latestConfiguredKiwiEntries = safeEntries;
+            setPrimaryConfiguredKiwiInputs(safeEntries[0]);
+            const titleEl = byId("settings-kiwisdr-title");
+            const metaEl = byId("settings-kiwisdr-meta");
+            const cardsEl = byId("cfg-discovered-kiwi-cards");
+            if (titleEl) titleEl.textContent = "KiwiSDR Settings - Kiwi 1";
+            if (metaEl) metaEl.hidden = true;
+            if (cardsEl) {
+                const secondaryEntries = safeEntries.slice(1, MAX_CONFIGURED_KIWIS);
+                cardsEl.innerHTML = secondaryEntries.map((entry, index) => {
+                    const kiwiIndex = index + 1;
+                    return `
+                        <section class="settings-card" aria-label="Kiwi ${kiwiIndex + 1} settings" data-secondary-kiwi-index="${kiwiIndex}">
+                            <div class="settings-card-title">KiwiSDR Settings - Kiwi ${kiwiIndex + 1}</div>
+                            <div class="control-grid" style="margin-top: 0;">
+                                <label class="control-field">Kiwi Host
+                                    <input type="text" data-field="host" value="${escapeHtml(entry.host || "")}" placeholder="0.0.0.0">
+                                </label>
+                                <label class="control-field">Kiwi Port
+                                    <input type="number" data-field="port" min="1" max="65535" step="1" value="${escapeHtml(String(entry.port || KIWI_SETTINGS_DEFAULTS.port))}" placeholder="8073">
+                                </label>
+                                <label class="control-field">Latitude
+                                    <input type="number" data-field="latitude" min="-90" max="90" step="0.0001" value="${escapeHtml(formatKiwiNumberInputValue(entry.latitude))}" placeholder="0">
+                                </label>
+                                <label class="control-field">Longitude
+                                    <input type="number" data-field="longitude" min="-180" max="180" step="0.0001" value="${escapeHtml(formatKiwiNumberInputValue(entry.longitude))}" placeholder="0">
+                                </label>
+                                <label class="control-field">Grid Square
+                                    <input type="text" data-field="grid" value="${escapeHtml(entry.grid || "")}" placeholder="FM08so">
+                                </label>
+                            </div>
+                            <div class="control-actions" style="margin-top: 0;">
+                                <button class="action-btn" type="button" data-action="remove-kiwi" data-secondary-kiwi-index="${kiwiIndex}">Remove Kiwi</button>
+                            </div>
+                        </section>
+                    `;
+                }).join("");
+            }
+            const addBtn = byId("cfg-add-kiwi");
+            if (addBtn) addBtn.hidden = safeEntries.length >= MAX_CONFIGURED_KIWIS;
         }
 
         function setServiceToggleState(next = {}) {
@@ -12110,28 +12278,38 @@
             };
         }
 
-        async function ensureKiwiAvailableOnLoad(settings) {
+        async function ensureKiwiAvailableOnLoad(settings, options = {}) {
+            const allowAutoDiscover = !!options.allowAutoDiscover;
             if (kiwiConnectivityCheckInFlight) return false;
             kiwiConnectivityCheckInFlight = true;
             try {
+                const host = safeText(settings && settings.host, "");
+                const port = Number.isFinite(Number(settings && settings.port))
+                    ? Number(settings.port)
+                    : KIWI_SETTINGS_DEFAULTS.port;
+                if (!isConfiguredKiwiHost(host)) {
+                    if (allowAutoDiscover && !kiwiAutoDiscoverAttempted) {
+                        setKiwiNoticeVisible(true, "Running auto Discover.");
+                        kiwiAutoDiscoverAttempted = true;
+                        return await discoverConfigHost({ saveOnSuccess: true, autoTriggered: true });
+                    }
+                    setKiwiNoticeVisible(true, "Enter a Kiwi IP or run Discover to configure KiwiSDR access.");
+                    return false;
+                }
                 const result = await verifyConfiguredKiwi(settings);
                 if (result.reachable) {
                     setKiwiNoticeVisible(false);
-                    if (Number.isFinite(Number(result.verification.latitude))) {
-                        byId("cfg-latitude").value = String(Number(result.verification.latitude));
-                    }
-                    if (Number.isFinite(Number(result.verification.longitude))) {
-                        byId("cfg-longitude").value = String(Number(result.verification.longitude));
-                    }
                     return true;
                 }
-                setKiwiNoticeVisible(true, "Running auto Discover.");
-                kiwiAutoDiscoverAttempted = true;
-                return await discoverConfigHost({ saveOnSuccess: true, autoTriggered: true });
+                setKiwiNoticeVisible(true, `Configured Kiwi ${host}:${port} is unreachable. Discovery skipped because a Kiwi IP is already saved.`);
+                return false;
             } catch (_) {
-                setKiwiNoticeVisible(true, "Running auto Discover.");
-                kiwiAutoDiscoverAttempted = true;
-                return await discoverConfigHost({ saveOnSuccess: true, autoTriggered: true });
+                const host = safeText(settings && settings.host, "");
+                const port = Number.isFinite(Number(settings && settings.port))
+                    ? Number(settings.port)
+                    : KIWI_SETTINGS_DEFAULTS.port;
+                setKiwiNoticeVisible(true, `Configured Kiwi ${host || "--"}:${port} could not be verified. Discovery skipped because a Kiwi IP is already saved.`);
+                return false;
             } finally {
                 kiwiConnectivityCheckInFlight = false;
             }
@@ -12165,17 +12343,21 @@
                     currentUiDensity || storedDensity || UI_DENSITY_DEFAULT_MODE,
                 );
                 const nextOverviewTopics = normalizeOverviewTopicPrefs(auto.overviewTopics, readStoredOverviewTopicPrefs());
-                const nextKiwiSettings = normalizeKiwiSettingsSnapshot({
-                    host: cfg.host,
-                    port: cfg.port,
-                    latitude: cfg.latitude,
-                    longitude: cfg.longitude,
-                });
-                const shouldAutoDiscoverKiwi = !kiwiAutoDiscoverAttempted && isDefaultKiwiSettings(nextKiwiSettings);
-                byId("cfg-host").value = nextKiwiSettings.host;
-                byId("cfg-port").value = String(nextKiwiSettings.port);
-                byId("cfg-latitude").value = String(nextKiwiSettings.latitude);
-                byId("cfg-longitude").value = String(nextKiwiSettings.longitude);
+                const nextConfiguredKiwis = normalizeConfiguredKiwiEntries(
+                    Array.isArray(cfg.kiwisdrs) && cfg.kiwisdrs.length
+                        ? cfg.kiwisdrs
+                        : [{
+                            host: cfg.host,
+                            port: cfg.port,
+                            latitude: cfg.latitude,
+                            longitude: cfg.longitude,
+                            grid: cfg.kiwi_grid,
+                        }],
+                    { preserveBlankHost: true },
+                );
+                renderConfiguredKiwiSettings(nextConfiguredKiwis);
+                const nextKiwiSettings = normalizeKiwiSettingsSnapshot(collectConfiguredKiwiInputs({ includeBlank: true })[0] || buildDefaultConfiguredKiwiEntry());
+                const shouldAutoDiscoverKiwi = !kiwiAutoDiscoverAttempted && !hasConfiguredKiwiIp(nextConfiguredKiwis);
                 const _cfgDwellS = byId("cfg-dwell-s"); if (_cfgDwellS) _cfgDwellS.value = Number.isFinite(Number(cfg.dwell_s)) ? String(Number(cfg.dwell_s)) : "";
                 const _cfgSpanHz = byId("cfg-span-hz"); if (_cfgSpanHz) _cfgSpanHz.value = Number.isFinite(Number(cfg.span_hz)) ? String(Number(cfg.span_hz)) : "";
                 const _cfgThresholdDb = byId("cfg-threshold-db"); if (_cfgThresholdDb) _cfgThresholdDb.value = Number.isFinite(Number(cfg.threshold_db)) ? String(Number(cfg.threshold_db)) : "";
@@ -12199,7 +12381,7 @@
                     ? kiwiGridRaw.slice(0, 4).toUpperCase() + kiwiGridRaw.slice(4).toLowerCase()
                     : kiwiGridRaw.toUpperCase();
                 const gridEl = byId("cfg-kiwi-grid");
-                if (gridEl) gridEl.value = kiwiGrid || "--";
+                if (gridEl && !readTextInput("cfg-kiwi-grid", "")) gridEl.value = kiwiGrid || "";
                 if (Number.isFinite(kiwiLat) && Number.isFinite(kiwiLon)) {
                     stationLat = kiwiLat;
                     stationLon = kiwiLon;
@@ -12207,15 +12389,11 @@
                 } else {
                     setConfigStatus("loaded");
                 }
-                const kiwiReachable = await ensureKiwiAvailableOnLoad(nextKiwiSettings);
+                const kiwiReachable = await ensureKiwiAvailableOnLoad(nextKiwiSettings, { allowAutoDiscover: shouldAutoDiscoverKiwi });
                 refreshRuntimeStatus();
                 checkForUpdates();
                 if (!kiwiReachable) {
                     return;
-                }
-                if (shouldAutoDiscoverKiwi && !kiwiAutoDiscoverAttempted) {
-                    kiwiAutoDiscoverAttempted = true;
-                    await discoverConfigHost({ saveOnSuccess: true, autoTriggered: true });
                 }
             } catch (err) {
                 setConfigStatus(`load failed: ${String((err && err.message) || err)}`);
@@ -12233,14 +12411,15 @@
                     : (Array.isArray(res.found) ? res.found : []);
                 if (candidates.length) {
                     const first = candidates[0] || {};
-                    byId("cfg-host").value = safeText(first.host, "");
-                    byId("cfg-port").value = Number.isFinite(Number(first.port)) ? String(Number(first.port)) : byId("cfg-port").value;
-                    if (Number.isFinite(Number(first.latitude))) {
-                        byId("cfg-latitude").value = String(Number(first.latitude));
-                    }
-                    if (Number.isFinite(Number(first.longitude))) {
-                        byId("cfg-longitude").value = String(Number(first.longitude));
-                    }
+                    const configuredEntries = collectConfiguredKiwiInputs({ includeBlank: true });
+                    const primary = configuredEntries[0] || buildDefaultConfiguredKiwiEntry();
+                    primary.host = safeText(first.host, "");
+                    primary.port = Number.isFinite(Number(first.port)) ? Number(first.port) : KIWI_SETTINGS_DEFAULTS.port;
+                    if (Number.isFinite(Number(first.latitude))) primary.latitude = Number(first.latitude);
+                    if (Number.isFinite(Number(first.longitude))) primary.longitude = Number(first.longitude);
+                    primary.grid = normalizeKiwiGridText(first.grid);
+                    configuredEntries[0] = primary;
+                    renderConfiguredKiwiSettings(configuredEntries);
                     const total = Number.isFinite(Number(res.total_candidates))
                         ? Number(res.total_candidates)
                         : candidates.length;
@@ -12252,15 +12431,16 @@
                         if (autoTriggered) setKiwiNoticeVisible(true, "Running auto Discover.");
                         return false;
                     }
-                    if (Number.isFinite(Number(verification.latitude))) {
-                        byId("cfg-latitude").value = String(Number(verification.latitude));
-                    }
-                    if (Number.isFinite(Number(verification.longitude))) {
-                        byId("cfg-longitude").value = String(Number(verification.longitude));
+                    const verifiedEntries = collectConfiguredKiwiInputs({ includeBlank: true });
+                    if (verifiedEntries.length) {
+                        if (Number.isFinite(Number(verification.latitude))) verifiedEntries[0].latitude = Number(verification.latitude);
+                        if (Number.isFinite(Number(verification.longitude))) verifiedEntries[0].longitude = Number(verification.longitude);
+                        verifiedEntries[0].grid = normalizeKiwiGridText(verification.grid || verifiedEntries[0].grid);
+                        renderConfiguredKiwiSettings(verifiedEntries);
                     }
                     let saved = true;
                     if (saveOnSuccess) {
-                        saved = await saveDiscoveredKiwiConfig({ autosave: true });
+                        saved = await saveConfiguredKiwiConfig({ autosave: true });
                     }
                     if (saved) {
                         setKiwiNoticeVisible(false);
@@ -12286,14 +12466,9 @@
             }
         }
 
-        async function saveDiscoveredKiwiConfig(options = {}) {
+        async function saveConfiguredKiwiConfig(options = {}) {
             const autosave = !!options.autosave;
-            const payload = {
-                host: readTextInput("cfg-host", KIWI_SETTINGS_DEFAULTS.host),
-                port: readNumberInput("cfg-port", KIWI_SETTINGS_DEFAULTS.port),
-                latitude: readNumberInput("cfg-latitude", KIWI_SETTINGS_DEFAULTS.latitude),
-                longitude: readNumberInput("cfg-longitude", KIWI_SETTINGS_DEFAULTS.longitude),
-            };
+            const payload = buildKiwiConfigPayloadFromInputs();
             setConfigStatus(autosave ? "autosaving Kiwi settings..." : "saving Kiwi settings...");
             try {
                 await postJson("/config", payload);
@@ -12311,10 +12486,7 @@
             const reloadAfterSave = options.reloadAfterSave !== false;
             setConfigStatus(autosave ? "autosaving..." : "saving...");
             const payload = {
-                host: readTextInput("cfg-host", KIWI_SETTINGS_DEFAULTS.host),
-                port: readNumberInput("cfg-port", KIWI_SETTINGS_DEFAULTS.port),
-                latitude: readNumberInput("cfg-latitude", KIWI_SETTINGS_DEFAULTS.latitude),
-                longitude: readNumberInput("cfg-longitude", KIWI_SETTINGS_DEFAULTS.longitude),
+                ...buildKiwiConfigPayloadFromInputs(),
                 dwell_s: readNumberInput("cfg-dwell-s", 18),
                 span_hz: readNumberInput("cfg-span-hz", 3000),
                 threshold_db: readNumberInput("cfg-threshold-db", 12),
@@ -13217,8 +13389,10 @@
         function initConfigAutomationControls() {
             applyStoredReceiversModePreference();
             const cfgReload = byId("cfg-reload");
+            const cfgAddKiwi = byId("cfg-add-kiwi");
             const cfgDiscover = byId("cfg-discover");
             const cfgSave = byId("cfg-save");
+            const cfgKiwiCards = byId("cfg-discovered-kiwi-cards");
             const cfgDepsRefresh = byId("cfg-deps-refresh");
             const cfgDepsTest = byId("cfg-deps-test");
             const cfgCheckUpdates = byId("cfg-check-updates");
@@ -13238,6 +13412,7 @@
                 "cfg-port",
                 "cfg-latitude",
                 "cfg-longitude",
+                "cfg-kiwi-grid",
                 "cfg-dwell-s",
                 "cfg-span-hz",
                 "cfg-threshold-db",
@@ -13273,6 +13448,15 @@
             };
 
             if (cfgReload) cfgReload.addEventListener("click", () => { loadConfigSection(); });
+            if (cfgAddKiwi) {
+                cfgAddKiwi.addEventListener("click", () => {
+                    const entries = collectConfiguredKiwiInputs({ includeBlank: true });
+                    if (entries.length >= MAX_CONFIGURED_KIWIS) return;
+                    entries.push(buildDefaultConfiguredKiwiEntry());
+                    renderConfiguredKiwiSettings(entries);
+                    scheduleConfigAutosave();
+                });
+            }
             if (cfgDiscover) {
                 cfgDiscover.addEventListener("click", async () => {
                     setConfigActionState(cfgDiscover, "busy");
@@ -13307,6 +13491,23 @@
                     scheduleAutomationAutosave();
                 });
             });
+            if (cfgKiwiCards && cfgKiwiCards.dataset.bound !== "1") {
+                const queueKiwiAutosave = () => { scheduleConfigAutosave(); };
+                cfgKiwiCards.addEventListener("input", queueKiwiAutosave);
+                cfgKiwiCards.addEventListener("change", queueKiwiAutosave);
+                cfgKiwiCards.addEventListener("click", (event) => {
+                    const target = event.target instanceof Element ? event.target.closest('[data-action="remove-kiwi"]') : null;
+                    if (!target) return;
+                    const kiwiIndex = Number(target.getAttribute("data-secondary-kiwi-index"));
+                    if (!Number.isFinite(kiwiIndex) || kiwiIndex < 1) return;
+                    const entries = collectConfiguredKiwiInputs({ includeBlank: true });
+                    if (kiwiIndex >= entries.length) return;
+                    entries.splice(kiwiIndex, 1);
+                    renderConfiguredKiwiSettings(entries);
+                    scheduleConfigAutosave();
+                });
+                cfgKiwiCards.dataset.bound = "1";
+            }
 
             const autoModeBtn = byId("auto-mode-enabled");
             const scanModeBtn = byId("scan-mode-btn");

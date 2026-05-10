@@ -45,6 +45,12 @@ def _is_container_runtime() -> bool:
     return False
 
 
+def _should_run_startup_kiwi_discovery(mgr: object) -> bool:
+    with mgr.lock:  # type: ignore[attr-defined]
+        current_host = str(getattr(mgr, "host", "") or "").strip()
+    return is_unconfigured_kiwi_host(current_host)
+
+
 def _bootstrap_container_kiwi(mgr: object, discovery: dict[str, object] | None = None) -> dict[str, object] | None:
     with mgr.lock:  # type: ignore[attr-defined]
         current_host = str(getattr(mgr, "host", "") or "").strip()
@@ -185,15 +191,16 @@ def register_lifecycle(
 
         startup_discovery: dict[str, object] | None = None
 
-        try:
-            startup_discovery = await asyncio.to_thread(_refresh_startup_discovered_kiwis, mgr)
-        except Exception:
-            logger.exception("Startup Kiwi discovery refresh failed")
+        if _should_run_startup_kiwi_discovery(mgr):
+            try:
+                startup_discovery = await asyncio.to_thread(_refresh_startup_discovered_kiwis, mgr)
+            except Exception:
+                logger.exception("Startup Kiwi discovery refresh failed")
 
-        try:
-            await asyncio.to_thread(_sync_preferred_startup_kiwi, mgr, startup_discovery)
-        except Exception:
-            logger.exception("Startup Kiwi preference sync failed")
+            try:
+                await asyncio.to_thread(_sync_preferred_startup_kiwi, mgr, startup_discovery)
+            except Exception:
+                logger.exception("Startup Kiwi preference sync failed")
 
         if _is_container_runtime():
             try:

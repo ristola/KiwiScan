@@ -29,6 +29,22 @@ def _normalize_kiwi_host(host: object) -> str:
     return value
 
 
+def _is_unconfigured_kiwi_host(host: object) -> bool:
+    return _normalize_kiwi_host(host) == DEFAULT_KIWI_HOST
+
+
+def _get_configured_kiwis(mgr: object) -> list[dict[str, object]]:
+    if hasattr(mgr, "get_configured_kiwis"):
+        try:
+            data = mgr.get_configured_kiwis()  # type: ignore[attr-defined]
+            if isinstance(data, list):
+                return [dict(item) for item in data if isinstance(item, dict)]
+        except Exception:
+            pass
+    raw = getattr(mgr, "configured_kiwis", [])
+    return [dict(item) for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
+
+
 def make_router(*, mgr: object, waterholes: Dict[str, float]) -> APIRouter:
     """Create router for GET/POST /config.
 
@@ -270,6 +286,7 @@ def make_router(*, mgr: object, waterholes: Dict[str, float]) -> APIRouter:
                 "rx_chan": mgr.rx_chan,
                 "host": mgr.host,
                 "port": mgr.port,
+                "kiwisdrs": _get_configured_kiwis(mgr),
                 "kiwi_latitude": kiwi_lat,
                 "kiwi_longitude": kiwi_lon,
                 "kiwi_grid": kiwi_grid,
@@ -279,6 +296,11 @@ def make_router(*, mgr: object, waterholes: Dict[str, float]) -> APIRouter:
     @router.post("/config")
     async def set_config(request: Request):
         data = await request.json()
+        if "kiwisdrs" in data and hasattr(mgr, "set_configured_kiwis"):
+            try:
+                mgr.set_configured_kiwis(data.get("kiwisdrs"), save=False)  # type: ignore[attr-defined]
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"invalid value for kiwisdrs: {exc}") from exc
         # rx_chan is intentionally not user-configurable: let Kiwi choose.
         allowed = {
             "dwell_s",
@@ -393,6 +415,22 @@ def make_router(*, mgr: object, waterholes: Dict[str, float]) -> APIRouter:
 
             # Do not force an RX channel; allow the server to choose.
             mgr.rx_chan = None
+            if "kiwisdrs" not in data and hasattr(mgr, "set_configured_kiwis"):
+                existing = _get_configured_kiwis(mgr)
+                primary: dict[str, object] = {
+                    "host": _normalize_kiwi_host(mgr.host),
+                    "port": int(mgr.port),
+                    "latitude": float(mgr.latitude),
+                    "longitude": float(mgr.longitude),
+                }
+                if existing:
+                    grid = str(existing[0].get("grid") or "").strip()
+                    if grid:
+                        primary["grid"] = grid
+                merged = [] if _is_unconfigured_kiwi_host(primary["host"]) else [primary]
+                if len(existing) > 1:
+                    merged.extend(existing[1:])
+                mgr.set_configured_kiwis(merged, save=False)  # type: ignore[attr-defined]
             mgr._save_config()  # type: ignore[attr-defined]
 
         return {"ok": True}
