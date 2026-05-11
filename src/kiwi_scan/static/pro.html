@@ -7117,6 +7117,7 @@
             "80m": 3568.6,
             "160m": 1836.6,
         });
+        const ACTIVE_RECEIVER_DIGITAL_MODE_MAX_OFFSET_KHZ = 5.0;
         const MAP_BAND_OPTIONS = ["10m", "12m", "15m", "17m", "20m", "30m", "40m", "60m", "80m", "160m"];
         const MAP_VIEW_STORAGE_KEY = "kiwiscan-pro-map-view";
         const MAP_GLOBE_IMAGE_URL = "https://unpkg.com/three-globe/example/img/earth-day.jpg";
@@ -8330,9 +8331,28 @@
         }
 
         function preferredActiveReceiverListenMode(receiver) {
-            const modes = parseActiveReceiverListenModes(receiver && receiver.mode);
+            const modes = availableActiveReceiverListenModes(receiver);
             if (modes.includes("FT8")) return "FT8";
             return modes[0] || resolveActiveReceiverListenMode(receiver && receiver.mode, receiver && receiver.freq_khz);
+        }
+
+        function isActiveReceiverListenModeReachable(receiver, modeValue) {
+            const normalizedMode = String(safeText(modeValue, "")).trim().toUpperCase();
+            if (!["FT8", "FT4", "WSPR"].includes(normalizedMode)) return true;
+            const sourceFreqKHz = Number(receiver && receiver.freq_khz);
+            if (!Number.isFinite(sourceFreqKHz) || sourceFreqKHz <= 0) return true;
+            const targetFreqKHz = resolveActiveReceiverListenFrequencyKHz(receiver, normalizedMode);
+            if (!Number.isFinite(Number(targetFreqKHz)) || Number(targetFreqKHz) <= 0) return true;
+            return Math.abs(Number(targetFreqKHz) - sourceFreqKHz) <= ACTIVE_RECEIVER_DIGITAL_MODE_MAX_OFFSET_KHZ;
+        }
+
+        function availableActiveReceiverListenModes(receiver) {
+            const parsedModes = parseActiveReceiverListenModes(receiver && receiver.mode);
+            if (!parsedModes.length) {
+                return [resolveActiveReceiverListenMode(receiver && receiver.mode, receiver && receiver.freq_khz)];
+            }
+            const availableModes = parsedModes.filter((modeName) => isActiveReceiverListenModeReachable(receiver, modeName));
+            return availableModes.length ? availableModes : parsedModes;
         }
 
         function resolveActiveReceiverListenFrequencyKHz(receiver, modeValue) {
@@ -8490,6 +8510,7 @@
         }
 
         function buildActiveReceiverAudioStreamUrl(receiver, modeValue) {
+            if (!isActiveReceiverListenModeReachable(receiver, modeValue)) return "";
             const freqKHz = resolveActiveReceiverListenFrequencyKHz(receiver, modeValue);
             if (!Number.isFinite(Number(freqKHz)) || Number(freqKHz) <= 0) return "";
             const listenMode = resolveActiveReceiverListenMode(modeValue, freqKHz);
@@ -8627,6 +8648,7 @@
             const modesEl = byId("active-receiver-audio-modes");
             if (!popup || !titleEl || !metaEl || !modeGroupEl || !modesEl || !activeReceiverAudioTarget) return;
             const receiver = activeReceiverAudioTarget;
+            const modes = availableActiveReceiverListenModes(receiver);
             const selectedMode = activeReceiverAudioSelectedMode || preferredActiveReceiverListenMode(receiver);
             titleEl.textContent = `Listen Live: ${safeText(receiver.display_name, safeText(receiver.name, `RX${safeText(receiver.rx, "--")}`))}`;
             const band = inferActiveReceiverBand(receiver.band, receiver.display_name, receiver.name);

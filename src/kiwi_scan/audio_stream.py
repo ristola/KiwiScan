@@ -160,6 +160,14 @@ def _wav_header(sample_rate: int) -> bytes:
     )
 
 
+def _pcm16le_bytes(samples: object) -> bytes:
+    pcm = np.asarray(samples)
+    if pcm.size == 0:
+        return b""
+    pcm = np.clip(np.rint(pcm), -32768, 32767).astype("<i2", copy=False)
+    return pcm.tobytes()
+
+
 def _demodulate_iq_to_mono_pcm(
     samples: object,
     *,
@@ -327,7 +335,7 @@ class _KiwiLiveAudioWavStream:
                         pass
 
                 def _process_audio_samples(self_inner, seq, samples, rssi, is_compressed):
-                    controller._push_audio(samples.tobytes())
+                    controller._push_audio(_pcm16le_bytes(samples))
 
                 def _process_iq_samples(self_inner, seq, samples, rssi, gps, is_compressed=None):
                     try:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from kiwi_scan.audio_stream import _demodulate_iq_to_mono_pcm
+from kiwi_scan.audio_stream import _demodulate_iq_to_mono_pcm, _pcm16le_bytes
 
 
 def _peak_hz(samples: np.ndarray, sample_rate: int) -> float:
@@ -86,3 +86,11 @@ def test_demodulate_iq_to_mono_pcm_separates_neighboring_mode_subbands() -> None
     assert not np.array_equal(ft8_audio, ft4_audio)
     assert not np.array_equal(ft8_audio, wspr_audio)
     assert not np.array_equal(ft4_audio, wspr_audio)
+
+
+def test_pcm16le_bytes_normalizes_big_endian_audio_samples() -> None:
+    samples = np.array([0x1234, -0x1234, 0x007f, -0x0080], dtype=">i2")
+
+    pcm = _pcm16le_bytes(samples)
+
+    assert pcm == bytes([0x34, 0x12, 0xcc, 0xed, 0x7f, 0x00, 0x80, 0xff])
