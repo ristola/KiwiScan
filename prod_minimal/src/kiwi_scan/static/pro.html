@@ -14913,12 +14913,21 @@
                 MARGINAL: 46,
                 CLOSED: 14,
             };
+            const seasonalFallbackByMergedState = {
+                OPEN: 18,
+                MARGINAL: 10,
+                CLOSED: 0,
+            };
             const scores = conditions.map((entry) => {
                 const rawScore = Number(entry && entry.score);
-                if (Number.isFinite(rawScore) && String(entry && entry.source || "").toLowerCase() === "empirical") {
+                if (Number.isFinite(rawScore)) {
                     return Math.max(0, Math.min(100, rawScore));
                 }
+                const source = String(entry && entry.source || "").toLowerCase();
                 const merged = String(entry && entry.merged || "UNKNOWN").toUpperCase();
+                if (source === "seasonal") {
+                    return seasonalFallbackByMergedState[merged] ?? 8;
+                }
                 return fallbackByMergedState[merged] ?? 28;
             });
             const averageScore = scores.reduce((sum, value) => sum + value, 0) / Math.max(1, scores.length);
@@ -15021,9 +15030,10 @@
 
             const localOpen = isDecodeSocketOpen();
             const recentMessage = hasRecentDecodeWsMessage();
+            const localObservedCount = (localOpen || recentMessage) ? 1 : 0;
             const count4010 = Number.isFinite(decodeWs4010ClientCount)
-                ? Math.max(0, Math.round(decodeWs4010ClientCount))
-                : ((localOpen || recentMessage) ? 1 : 0);
+                ? Math.max(localObservedCount, Math.max(0, Math.round(decodeWs4010ClientCount)))
+                : localObservedCount;
 
             chip.textContent = formatStreamConnectionText(count4010);
             chip.classList.toggle("chip-value-active", count4010 > 0 || localOpen || recentMessage);
