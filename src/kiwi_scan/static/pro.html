@@ -3802,6 +3802,20 @@
             gap: 2px;
         }
 
+        .rx-card-listen-pill {
+            cursor: pointer;
+            font: inherit;
+            transition: transform 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+        }
+
+        .rx-card-listen-pill:hover,
+        .rx-card-listen-pill:focus-visible {
+            transform: translateY(-1px);
+            background: color-mix(in srgb, currentColor, transparent 82%);
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
+            outline: none;
+        }
+
         .rx-pill-mode {
             font-size: 0.7rem;
             font-weight: 600;
@@ -6667,12 +6681,34 @@
                                     <input id="cfg-kiwi-grid" type="text" placeholder="FM08so"
                                         title="Maidenhead grid square for the configured KiwiSDR">
                                 </label>
+                                <label class="control-field">Kiwi User Password
+                                    <input id="cfg-kiwi-password" type="password" placeholder="Optional"
+                                        autocomplete="new-password"
+                                        title="Stored locally for normal Kiwi receiver connections when only limited no-password channels are available">
+                                </label>
+                                <div class="control-field">User Password Status
+                                    <div class="control-status" id="cfg-kiwi-password-status">Not saved</div>
+                                </div>
+                                <label class="control-field">Kiwi Admin Password
+                                    <input id="cfg-kiwi-admin-password" type="password" placeholder="Optional"
+                                        autocomplete="new-password"
+                                        title="Stored locally for Kiwi admin kick and receiver slot recovery">
+                                </label>
+                                <div class="control-field">Admin Password Status
+                                    <div class="control-status" id="cfg-kiwi-admin-password-status">Not saved</div>
+                                </div>
                             </div>
                             <div class="control-actions" style="margin-top: 0;">
                                 <button class="action-btn" id="cfg-add-kiwi" type="button" data-icon="plus">Add
                                     Kiwi</button>
                                 <button class="action-btn" id="cfg-discover" type="button" data-icon="search">Discover
                                     Kiwi</button>
+                                <button class="action-btn" id="cfg-clear-password" type="button"
+                                    data-icon="lock-open">Forget
+                                    User Password</button>
+                                <button class="action-btn" id="cfg-clear-admin-password" type="button"
+                                    data-icon="lock-open">Forget
+                                    Admin Password</button>
                             </div>
                         </section>
                         <div id="cfg-discovered-kiwi-cards" class="settings-subcard-grid"></div>
@@ -7957,7 +7993,9 @@
             const allEntries = collectConfiguredKiwiInputs({ includeBlank: true });
             const primary = allEntries[0] || buildDefaultConfiguredKiwiEntry();
             const normalizedPrimary = normalizeConfiguredKiwiEntry(primary, { preserveBlankHost: true }) || buildDefaultConfiguredKiwiEntry();
-            return {
+            const password = readTextInput("cfg-kiwi-password", "").trim();
+            const adminPassword = readTextInput("cfg-kiwi-admin-password", "").trim();
+            const payload = {
                 host: normalizedPrimary.host || KIWI_SETTINGS_DEFAULTS.host,
                 port: normalizedPrimary.port || KIWI_SETTINGS_DEFAULTS.port,
                 latitude: Number.isFinite(Number(normalizedPrimary.latitude)) ? Number(normalizedPrimary.latitude) : KIWI_SETTINGS_DEFAULTS.latitude,
@@ -7965,7 +8003,39 @@
                 kiwisdrs: collectConfiguredKiwiInputs({ includeBlank: false }),
                 discovered_kiwis: latestDiscoveredKiwiEntries,
                 discovery_source: latestDiscoverySource,
+                sync_discovered_to_configured: true,
             };
+            if (password) payload.kiwi_password = password;
+            if (adminPassword) payload.kiwi_admin_password = adminPassword;
+            return payload;
+        }
+
+        function setKiwiPasswordUiState(isSet = false) {
+            const input = byId("cfg-kiwi-password");
+            const statusEl = byId("cfg-kiwi-password-status");
+            if (input) {
+                input.value = "";
+                input.placeholder = isSet ? "Saved locally; enter a new value to replace" : "Optional";
+            }
+            if (statusEl) {
+                statusEl.textContent = isSet
+                    ? "Saved locally for Kiwi receiver connections"
+                    : "Not saved";
+            }
+        }
+
+        function setKiwiAdminPasswordUiState(isSet = false) {
+            const input = byId("cfg-kiwi-admin-password");
+            const statusEl = byId("cfg-kiwi-admin-password-status");
+            if (input) {
+                input.value = "";
+                input.placeholder = isSet ? "Saved locally; enter a new value to replace" : "Optional";
+            }
+            if (statusEl) {
+                statusEl.textContent = isSet
+                    ? "Saved locally for admin kick / slot recovery"
+                    : "Not saved";
+            }
         }
 
         function sortDiscoveredKiwiEntries(entries = []) {
@@ -8318,6 +8388,38 @@
             return Array.from(new Set(modes));
         }
 
+        function preferredActiveReceiverListenModeFromDecodeRates(modeValue, decodeRatesByMode) {
+            const availableModes = parseActiveReceiverListenModes(modeValue);
+            if (availableModes.length <= 1 || !decodeRatesByMode || typeof decodeRatesByMode !== "object") return "";
+            let bestMode = "";
+            let bestRank = null;
+            for (const modeName of availableModes) {
+                const stats = decodeRatesByMode && typeof decodeRatesByMode[modeName] === "object"
+                    ? decodeRatesByMode[modeName]
+                    : {};
+                const rank = [
+                    Number.isFinite(Number(stats.decode_rate_per_min)) ? Number(stats.decode_rate_per_min) : -1,
+                    Number.isFinite(Number(stats.decode_rate_per_hour)) ? Number(stats.decode_rate_per_hour) : -1,
+                    Number.isFinite(Number(stats.decode_total)) ? Number(stats.decode_total) : -1,
+                ];
+                if (!rank.some((value) => value > 0)) continue;
+                if (!bestRank) {
+                    bestMode = modeName;
+                    bestRank = rank;
+                    continue;
+                }
+                for (let index = 0; index < rank.length; index += 1) {
+                    if (rank[index] === bestRank[index]) continue;
+                    if (rank[index] > bestRank[index]) {
+                        bestMode = modeName;
+                        bestRank = rank;
+                    }
+                    break;
+                }
+            }
+            return bestMode;
+        }
+
         function resolveActiveReceiverListenMode(modeValue, freqKHz) {
             const normalized = String(safeText(modeValue, "USB")).trim().toUpperCase();
             if (["FT4", "FT8", "WSPR"].includes(normalized)) return normalized;
@@ -8332,6 +8434,8 @@
 
         function preferredActiveReceiverListenMode(receiver) {
             const modes = availableActiveReceiverListenModes(receiver);
+            const explicitPreferred = String(safeText(receiver && receiver.preferred_listen_mode, "")).trim().toUpperCase();
+            if (explicitPreferred && modes.includes(explicitPreferred)) return explicitPreferred;
             if (modes.includes("FT8")) return "FT8";
             return modes[0] || resolveActiveReceiverListenMode(receiver && receiver.mode, receiver && receiver.freq_khz);
         }
@@ -8349,10 +8453,13 @@
         function availableActiveReceiverListenModes(receiver) {
             const parsedModes = parseActiveReceiverListenModes(receiver && receiver.mode);
             if (!parsedModes.length) {
-                return [resolveActiveReceiverListenMode(receiver && receiver.mode, receiver && receiver.freq_khz)];
+                const fallbackMode = resolveActiveReceiverListenMode(receiver && receiver.mode, receiver && receiver.freq_khz);
+                return fallbackMode === "WSPR" ? [] : [fallbackMode];
             }
-            const availableModes = parsedModes.filter((modeName) => isActiveReceiverListenModeReachable(receiver, modeName));
-            return availableModes.length ? availableModes : parsedModes;
+            const availableModes = parsedModes
+                .filter((modeName) => modeName !== "WSPR")
+                .filter((modeName) => isActiveReceiverListenModeReachable(receiver, modeName));
+            return availableModes;
         }
 
         function resolveActiveReceiverListenFrequencyKHz(receiver, modeValue) {
@@ -8372,7 +8479,31 @@
         }
 
         function canListenToActiveReceiver(user) {
-            return Number.isFinite(Number(user && user.freq_khz)) && Number(user.freq_khz) > 0;
+            if (!Number.isFinite(Number(user && user.freq_khz)) || Number(user.freq_khz) <= 0) return false;
+            return availableActiveReceiverListenModes(user).length > 0;
+        }
+
+        function buildActiveReceiverAudioDataAttrs(user) {
+            if (!canListenToActiveReceiver(user)) return "";
+            const displayName = safeText(user && user.display_name, safeText(user && user.name, `RX${safeText(user && user.rx, "--")}`));
+            return `data-active-receiver-audio="1" data-rx="${escapeHtml(safeText(user && user.rx, ""))}" data-kiwi-rx="${escapeHtml(Number.isFinite(Number(user && user.kiwi_rx)) ? String(Number(user.kiwi_rx)) : "")}" data-name="${escapeHtml(safeText(user && user.name, ""))}" data-display-name="${escapeHtml(safeText(user && user.display_name, safeText(user && user.name, "Receiver")))}" data-band="${escapeHtml(safeText(user && user.band, ""))}" data-mode="${escapeHtml(safeText(user && user.mode, "USB"))}" data-preferred-mode="${escapeHtml(safeText(user && user.preferred_listen_mode, ""))}" data-freq-khz="${escapeHtml(Number(user.freq_khz).toFixed(3))}" data-host="${escapeHtml(safeText(user && user.host, ""))}" data-port="${escapeHtml(Number.isFinite(Number(user && user.port)) ? String(Number(user.port)) : "")}" aria-label="Listen to ${escapeHtml(displayName)}" title="Listen to ${escapeHtml(displayName)}"`;
+        }
+
+        function buildActiveReceiverAudioButtonHtml(user, extraClassName = "") {
+            const dataAttrs = buildActiveReceiverAudioDataAttrs(user);
+            if (!dataAttrs) return "";
+            const classNames = ["active-rx-audio-btn", safeText(extraClassName, "")].filter(Boolean).join(" ");
+            return `<button type="button" class="${classNames}" ${dataAttrs}>${buildIconMarkup("audio")}</button>`;
+        }
+
+        function buildReceiverCardListenPillHtml(user, rxLabel, color) {
+            const safeLabel = safeText(rxLabel, `RX${safeText(user && user.rx, "--")}`);
+            const safeColor = safeText(color, "var(--accent)");
+            const dataAttrs = buildActiveReceiverAudioDataAttrs(user);
+            if (!dataAttrs) {
+                return `<span class="rx-id-pill" style="color:${safeColor}">${escapeHtml(safeLabel)}</span>`;
+            }
+            return `<button type="button" class="rx-id-pill rx-card-listen-pill" style="color:${safeColor}" ${dataAttrs}>${escapeHtml(safeLabel)}</button>`;
         }
 
         function readActiveReceiverAudioButtonPayload(button) {
@@ -8388,6 +8519,7 @@
                 display_name: safeText(button.getAttribute("data-display-name"), safeText(button.getAttribute("data-name"), "Receiver")),
                 band: safeText(button.getAttribute("data-band"), ""),
                 mode: safeText(button.getAttribute("data-mode"), "USB"),
+                preferred_listen_mode: safeText(button.getAttribute("data-preferred-mode"), ""),
                 freq_khz: Number.isFinite(freqKHz) ? freqKHz : null,
                 host: safeText(button.getAttribute("data-host"), ""),
                 port: Number.isFinite(port) && port > 0 ? port : null,
@@ -8676,19 +8808,25 @@
 
         function initActiveReceiverAudioPopup() {
             const tableEl = byId("active-receivers-table");
+            const cardsEl = byId("assignments-band-cards");
             const muteBtn = byId("active-receiver-audio-mute");
             const closeBtn = byId("active-receiver-audio-close");
             const volumeInput = byId("active-receiver-audio-volume");
             const modeButtonsEl = byId("active-receiver-audio-modes");
+            const handleAudioTriggerClick = (event) => {
+                const target = event.target instanceof Element ? event.target.closest("[data-active-receiver-audio]") : null;
+                if (!target) return;
+                const receiver = readActiveReceiverAudioButtonPayload(target);
+                if (!receiver) return;
+                openActiveReceiverAudioPopup(receiver);
+            };
             if (tableEl && tableEl.dataset.audioBound !== "1") {
-                tableEl.addEventListener("click", (event) => {
-                    const target = event.target instanceof Element ? event.target.closest("[data-active-receiver-audio]") : null;
-                    if (!target) return;
-                    const receiver = readActiveReceiverAudioButtonPayload(target);
-                    if (!receiver) return;
-                    openActiveReceiverAudioPopup(receiver);
-                });
+                tableEl.addEventListener("click", handleAudioTriggerClick);
                 tableEl.dataset.audioBound = "1";
+            }
+            if (cardsEl && cardsEl.dataset.audioBound !== "1") {
+                cardsEl.addEventListener("click", handleAudioTriggerClick);
+                cardsEl.dataset.audioBound = "1";
             }
             if (muteBtn && muteBtn.dataset.bound !== "1") {
                 muteBtn.addEventListener("click", () => {
@@ -8896,6 +9034,11 @@
                     const preferredDisplayName = (hasReceiverContext && populated && !synthesizedName.startsWith("(connecting"))
                         ? synthesizedName
                         : (fallbackDisplayName || synthesizedName || "Unassigned");
+                    const resolvedMode = safeText(channel.mode, safeText(assignment.mode, safeText(systemUser.mode, safeText(rawUser.mode, "--"))));
+                    const preferredListenMode = preferredActiveReceiverListenModeFromDecodeRates(
+                        resolvedMode,
+                        channel && channel.decode_rates_by_mode,
+                    );
                     return {
                         rx: rxNum,
                         kiwi_rx: Number.isFinite(liveKiwiRx) ? liveKiwiRx : (Number.isFinite(Number(systemUser.kiwi_rx)) ? Number(systemUser.kiwi_rx) : null),
@@ -8918,7 +9061,8 @@
                                 : (Number.isFinite(Number(rawUser.freq_khz))
                                     ? Number(rawUser.freq_khz)
                                     : (Number.isFinite(freqHz) ? freqHz / 1000.0 : null))),
-                        mode: safeText(channel.mode, safeText(assignment.mode, safeText(systemUser.mode, safeText(rawUser.mode, "--")))),
+                        mode: resolvedMode,
+                        preferred_listen_mode: preferredListenMode || null,
                         host: safeText(channel.host, safeText(systemUser.host, safeText(rawUser.host, latestAssignmentsHost))),
                         port: Number.isFinite(Number(channel.port))
                             ? Number(channel.port)
@@ -9057,7 +9201,7 @@
                     <td class="mono">${escapeHtml(Number.isFinite(Number(user.freq_khz)) ? `${Number(user.freq_khz).toFixed(3)} kHz` : "--")}</td>
                     <td>${escapeHtml(safeText(user.mode, "--"))}</td>
                     <td class="mono">${escapeHtml(Number.isFinite(Number(user.connected_seconds)) ? fmtDurationCompact(user.connected_seconds) : "--")}</td>
-                    <td class="active-rx-audio-col">${canListenToActiveReceiver(user) ? `<button type="button" class="active-rx-audio-btn" data-active-receiver-audio="1" data-rx="${escapeHtml(safeText(user.rx, ""))}" data-kiwi-rx="${escapeHtml(Number.isFinite(Number(user.kiwi_rx)) ? String(Number(user.kiwi_rx)) : "")}" data-name="${escapeHtml(safeText(user.name, ""))}" data-display-name="${escapeHtml(safeText(user.display_name, safeText(user.name, "Receiver")))}" data-band="${escapeHtml(safeText(user.band, ""))}" data-mode="${escapeHtml(safeText(user.mode, "USB"))}" data-freq-khz="${escapeHtml(Number(user.freq_khz).toFixed(3))}" data-host="${escapeHtml(safeText(user.host, ""))}" data-port="${escapeHtml(Number.isFinite(Number(user.port)) ? String(Number(user.port)) : "")}" aria-label="Listen to ${escapeHtml(safeText(user.display_name, safeText(user.name, `RX${safeText(user.rx, "--")}`)))}">${buildIconMarkup("audio")}</button>` : ""}</td>
+                    <td class="active-rx-audio-col">${buildActiveReceiverAudioButtonHtml(user)}</td>
                 </tr>
             `).join("");
             usersEl.innerHTML = `
@@ -13331,6 +13475,8 @@
                     source: cfg.discovery_source,
                 });
                 renderConfiguredKiwiSettings(nextConfiguredKiwis, cfg.discovered_kiwis);
+                setKiwiPasswordUiState(!!cfg.kiwi_password_set);
+                setKiwiAdminPasswordUiState(!!cfg.kiwi_admin_password_set);
                 const primaryConfiguredKiwi = collectConfiguredKiwiInputs({ includeBlank: true })[0] || buildDefaultConfiguredKiwiEntry();
                 const nextKiwiSettings = normalizeKiwiSettingsSnapshot(primaryConfiguredKiwi);
                 const shouldAutoDiscoverKiwi = !kiwiAutoDiscoverAttempted && !hasConfiguredKiwiIp(nextConfiguredKiwis);
@@ -13447,9 +13593,13 @@
         async function saveConfiguredKiwiConfig(options = {}) {
             const autosave = !!options.autosave;
             const payload = buildKiwiConfigPayloadFromInputs();
+            const savedPassword = typeof payload.kiwi_password === "string" && payload.kiwi_password.length > 0;
+            const savedAdminPassword = typeof payload.kiwi_admin_password === "string" && payload.kiwi_admin_password.length > 0;
             setConfigStatus(autosave ? "autosaving Kiwi settings..." : "saving Kiwi settings...");
             try {
                 await postJson("/config", payload);
+                if (savedPassword) setKiwiPasswordUiState(true);
+                if (savedAdminPassword) setKiwiAdminPasswordUiState(true);
                 const stamp = new Date().toLocaleTimeString();
                 setConfigStatus(autosave ? `autosaved Kiwi settings (${stamp})` : "saved Kiwi settings");
                 return true;
@@ -13472,6 +13622,8 @@
                 retune_pause_s: readNumberInput("cfg-retune-pause-s", 0.5),
                 fast_scan_enabled: readSelectBool("cfg-fast-scan-enabled", true),
             };
+            const savedPassword = typeof payload.kiwi_password === "string" && payload.kiwi_password.length > 0;
+            const savedAdminPassword = typeof payload.kiwi_admin_password === "string" && payload.kiwi_admin_password.length > 0;
             const automationPayload = {
                 uiThemeMode: normalizeUiThemeMode(readTextInput("cfg-ui-theme-mode", "auto"), "auto"),
                 uiThemeNightHour: readNumberInput("cfg-ui-theme-night-hour", 21),
@@ -13489,6 +13641,8 @@
                     postJson("/config", payload),
                     postJson("/automation/settings", automationPayload),
                 ]);
+                if (savedPassword) setKiwiPasswordUiState(true);
+                if (savedAdminPassword) setKiwiAdminPasswordUiState(true);
                 // Keep latestAutomationSettings in sync so saveAutomationSection
                 // doesn't overwrite these values with a stale snapshot.
                 if (latestAutomationSettings && typeof latestAutomationSettings === "object") {
@@ -14371,6 +14525,8 @@
             const cfgDiscover = byId("cfg-discover");
             const cfgSave = byId("cfg-save");
             const cfgKiwiCards = byId("cfg-discovered-kiwi-cards");
+            const cfgClearPassword = byId("cfg-clear-password");
+            const cfgClearAdminPassword = byId("cfg-clear-admin-password");
             const cfgDepsRefresh = byId("cfg-deps-refresh");
             const cfgDepsTest = byId("cfg-deps-test");
             const cfgCheckUpdates = byId("cfg-check-updates");
@@ -14443,6 +14599,30 @@
                 });
             }
             if (cfgSave) cfgSave.addEventListener("click", () => { saveConfigSection(); });
+            if (cfgClearPassword) {
+                cfgClearPassword.addEventListener("click", async () => {
+                    setConfigStatus("clearing Kiwi user password...");
+                    try {
+                        await postJson("/config", { clear_kiwi_password: true });
+                        setKiwiPasswordUiState(false);
+                        setConfigStatus("cleared Kiwi user password");
+                    } catch (err) {
+                        setConfigStatus(`clear failed: ${String((err && err.message) || err)}`);
+                    }
+                });
+            }
+            if (cfgClearAdminPassword) {
+                cfgClearAdminPassword.addEventListener("click", async () => {
+                    setConfigStatus("clearing Kiwi admin password...");
+                    try {
+                        await postJson("/config", { clear_kiwi_admin_password: true });
+                        setKiwiAdminPasswordUiState(false);
+                        setConfigStatus("cleared Kiwi admin password");
+                    } catch (err) {
+                        setConfigStatus(`clear failed: ${String((err && err.message) || err)}`);
+                    }
+                });
+            }
             if (cfgDepsRefresh) cfgDepsRefresh.addEventListener("click", () => { refreshRuntimeDeps(); });
             if (cfgDepsTest) cfgDepsTest.addEventListener("click", () => { testRuntimeDepPathFailures(); });
             if (cfgCheckUpdates) cfgCheckUpdates.addEventListener("click", () => { checkForUpdates(); });
@@ -14480,7 +14660,18 @@
                     if (!Number.isFinite(kiwiIndex) || kiwiIndex < 1) return;
                     const entries = collectConfiguredKiwiInputs({ includeBlank: true });
                     if (kiwiIndex >= entries.length) return;
+                    const removedEntry = normalizeConfiguredKiwiEntry(entries[kiwiIndex], { preserveBlankHost: true });
                     entries.splice(kiwiIndex, 1);
+                    if (removedEntry && isConfiguredKiwiHost(removedEntry.host)) {
+                        updateDiscoveredKiwiState(
+                            latestDiscoveredKiwiEntries.filter((entry) => {
+                                const host = safeText(entry && entry.host, "");
+                                const port = Number.isFinite(Number(entry && entry.port)) ? Number(entry.port) : KIWI_SETTINGS_DEFAULTS.port;
+                                return host !== removedEntry.host || port !== removedEntry.port;
+                            }),
+                            { source: latestDiscoverySource },
+                        );
+                    }
                     renderConfiguredKiwiSettings(entries, latestDiscoveredKiwiEntries);
                     scheduleConfigAutosave();
                 });
@@ -16099,6 +16290,11 @@
             const kiwi = latestSystemInfo && latestSystemInfo.kiwi && typeof latestSystemInfo.kiwi === "object"
                 ? latestSystemInfo.kiwi
                 : {};
+            const activeUsersByRx = new Map(
+                buildActiveReceiverRows(kiwi.active_users, kiwi.raw_users)
+                    .map((user) => [Number(user && user.rx), user])
+                    .filter(([rxNum, user]) => Number.isFinite(rxNum) && !!user)
+            );
             if (!managedModeActive) {
                 currentBandAssignments = {};
                 _bandChartLiveBands = [];
@@ -16172,6 +16368,39 @@
                 return iconLine("spark", "Score", "rx-score-line", sc === "--" ? "--" : `Score: ${sc}`, color);
             };
             const modeColor = (m) => ({ FT8: "#60a5fa", FT4: "#4ade80", SSB: "#f87171", WSPR: "#c084fc" })[String(m).toUpperCase()] || "var(--muted)";
+            const buildCardAudioReceiver = (row, channel) => {
+                const activeUser = activeUsersByRx.get(Number(row && row.rxNum)) || {};
+                const freqKHz = Number.isFinite(Number(activeUser.freq_khz))
+                    ? Number(activeUser.freq_khz)
+                    : (Number.isFinite(Number(channel && channel.freq_hz)) ? (Number(channel.freq_hz) / 1000.0) : null);
+                const resolvedMode = safeText(activeUser.mode, safeText(row && row.mode, safeText(channel && channel.mode, "USB")));
+                const preferredListenMode = safeText(
+                    activeUser.preferred_listen_mode,
+                    preferredActiveReceiverListenModeFromDecodeRates(resolvedMode, channel && channel.decode_rates_by_mode),
+                );
+                const kiwiRx = Number.isFinite(Number(activeUser.kiwi_rx))
+                    ? Number(activeUser.kiwi_rx)
+                    : (Number.isFinite(Number(channel && channel.kiwi_actual_rx))
+                        ? Number(channel.kiwi_actual_rx)
+                        : (Number.isFinite(Number(channel && channel.kiwi_rx)) ? Number(channel.kiwi_rx) : null));
+                const port = Number.isFinite(Number(activeUser.port))
+                    ? Number(activeUser.port)
+                    : (Number.isFinite(Number(channel && channel.port))
+                        ? Number(channel.port)
+                        : (Number.isFinite(Number(latestAssignmentsPort)) ? Number(latestAssignmentsPort) : null));
+                return {
+                    rx: Number.isFinite(Number(row && row.rxNum)) ? Number(row.rxNum) : null,
+                    kiwi_rx: kiwiRx,
+                    name: safeText(activeUser.name, row && row.rxLabel),
+                    display_name: safeText(activeUser.display_name, row && row.rxLabel),
+                    band: safeText(activeUser.band, row && row.band),
+                    mode: resolvedMode,
+                    preferred_listen_mode: preferredListenMode || null,
+                    freq_khz: freqKHz,
+                    host: safeText(activeUser.host, safeText(channel && channel.host, latestAssignmentsHost)),
+                    port,
+                };
+            };
             const fmtModeHtml = (raw) => {
                 const mn = String(raw || "").trim().toUpperCase().replace(/\s+/g, "");
                 const mu = "var(--muted)";
@@ -16198,7 +16427,9 @@
                     // r.rxNum is the worker RX number (0-7) because list is built from
                     // latestChannelsMap which is always keyed by worker RX.
                     const rxPills = bandRows.map((r) => {
+                        const rch = latestChannelsMap[String(r.rxNum)] || {};
                         const displayRx = r.rxLabel;
+                        const rxPillHtml = buildReceiverCardListenPillHtml(buildCardAudioReceiver(r, rch), displayRx, rxColor(r.rxNum));
                         const _modes = String(r.mode || "").split(" / ").map((m) => m.trim()).filter(Boolean);
                         let modeLabelHtml;
                         if (_modes.length >= 3) {
@@ -16208,7 +16439,7 @@
                         } else {
                             modeLabelHtml = `<span class="rx-pill-mode">${_modes.map((m) => `<span style="color:${modeColor(m)}">${safeText(m)}</span>`).join(`<span class="rx-pill-mode-divider">/</span>`)}</span>`;
                         }
-                        return `<div class="rx-pill-stack"><span class="rx-id-pill" style="color:${rxColor(r.rxNum)}">${displayRx}</span>${modeLabelHtml}</div>`;
+                        return `<div class="rx-pill-stack">${rxPillHtml}${modeLabelHtml}</div>`;
                     }).join("");
                     const heartColor = level === "fault" ? "#f87171" : level === "warning" ? "#f59e0b" : "#4ade80";
                     // Aggregate decode rates by mode across all receivers on this band

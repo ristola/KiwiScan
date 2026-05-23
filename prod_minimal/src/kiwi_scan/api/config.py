@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import logging
 import re
 import socket
 import time
@@ -9,6 +10,9 @@ from urllib.request import urlopen
 from typing import Dict
 
 from fastapi import APIRouter, HTTPException, Request
+
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_KIWI_HOST = "0.0.0.0"
@@ -45,7 +49,31 @@ def _get_configured_kiwis(mgr: object) -> list[dict[str, object]]:
     return [dict(item) for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
 
 
-def make_router(*, mgr: object, waterholes: Dict[str, float]) -> APIRouter:
+def _has_kiwi_password(mgr: object) -> bool:
+    if hasattr(mgr, "has_kiwi_password"):
+        try:
+            return bool(mgr.has_kiwi_password())  # type: ignore[attr-defined]
+        except Exception:
+            logger.debug("Failed reading Kiwi password state", exc_info=True)
+    return bool(str(getattr(mgr, "password", "") or "").strip())
+
+
+def _has_kiwi_admin_password(mgr: object) -> bool:
+    if hasattr(mgr, "has_kiwi_admin_password"):
+        try:
+            return bool(mgr.has_kiwi_admin_password())  # type: ignore[attr-defined]
+        except Exception:
+            logger.debug("Failed reading Kiwi admin password state", exc_info=True)
+    return bool(str(getattr(mgr, "admin_password", "") or "").strip())
+
+
+def make_router(
+    *,
+    mgr: object,
+    waterholes: Dict[str, float],
+    receiver_mgr: object | None = None,
+    auto_set_loop: object | None = None,
+) -> APIRouter:
     """Create router for GET/POST /config.
 
     Extracted from server.py for cleanliness; keeps behavior identical.
@@ -268,6 +296,8 @@ def make_router(*, mgr: object, waterholes: Dict[str, float]) -> APIRouter:
         except Exception:
             pass
 
+        kiwi_password_set = _has_kiwi_password(mgr)
+        kiwi_admin_password_set = _has_kiwi_admin_password(mgr)
         with mgr.lock:  # type: ignore[attr-defined]
             return {
                 "dwell_s": mgr.dwell_s,
@@ -287,6 +317,8 @@ def make_router(*, mgr: object, waterholes: Dict[str, float]) -> APIRouter:
                 "host": mgr.host,
                 "port": mgr.port,
                 "kiwisdrs": _get_configured_kiwis(mgr),
+                "kiwi_password_set": kiwi_password_set,
+                "kiwi_admin_password_set": kiwi_admin_password_set,
                 "kiwi_latitude": kiwi_lat,
                 "kiwi_longitude": kiwi_lon,
                 "kiwi_grid": kiwi_grid,
@@ -296,11 +328,50 @@ def make_router(*, mgr: object, waterholes: Dict[str, float]) -> APIRouter:
     @router.post("/config")
     async def set_config(request: Request):
         data = await request.json()
+        endpoint_changed = False
+        prior_host = ""
+        prior_port = 0
+        try:
+            with mgr.lock:  # type: ignore[attr-defined]
+                prior_host = _normalize_kiwi_host(getattr(mgr, "host", ""))
+                prior_port = int(getattr(mgr, "port", 0) or 0)
+        except Exception:
+            prior_host = _normalize_kiwi_host(getattr(mgr, "host", ""))
+            try:
+                prior_port = int(getattr(mgr, "port", 0) or 0)
+            except Exception:
+                prior_port = 0
+        kiwi_password_changed = False
+        kiwi_admin_password_changed = False
         if "kiwisdrs" in data and hasattr(mgr, "set_configured_kiwis"):
             try:
                 mgr.set_configured_kiwis(data.get("kiwisdrs"), save=False)  # type: ignore[attr-defined]
             except Exception as exc:
                 raise HTTPException(status_code=400, detail=f"invalid value for kiwisdrs: {exc}") from exc
+        if "kiwi_password" in data and hasattr(mgr, "set_kiwi_password"):
+            try:
+                mgr.set_kiwi_password(data.get("kiwi_password"), save=False)  # type: ignore[attr-defined]
+                kiwi_password_changed = True
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"invalid value for kiwi_password: {exc}") from exc
+        elif bool(data.get("clear_kiwi_password")) and hasattr(mgr, "set_kiwi_password"):
+            try:
+                mgr.set_kiwi_password("", save=False)  # type: ignore[attr-defined]
+                kiwi_password_changed = True
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"invalid value for clear_kiwi_password: {exc}") from exc
+        if "kiwi_admin_password" in data and hasattr(mgr, "set_kiwi_admin_password"):
+            try:
+                mgr.set_kiwi_admin_password(data.get("kiwi_admin_password"), save=False)  # type: ignore[attr-defined]
+                kiwi_admin_password_changed = True
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"invalid value for kiwi_admin_password: {exc}") from exc
+        elif bool(data.get("clear_kiwi_admin_password")) and hasattr(mgr, "set_kiwi_admin_password"):
+            try:
+                mgr.set_kiwi_admin_password("", save=False)  # type: ignore[attr-defined]
+                kiwi_admin_password_changed = True
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"invalid value for clear_kiwi_admin_password: {exc}") from exc
         # rx_chan is intentionally not user-configurable: let Kiwi choose.
         allowed = {
             "dwell_s",
@@ -432,6 +503,36 @@ def make_router(*, mgr: object, waterholes: Dict[str, float]) -> APIRouter:
                     merged.extend(existing[1:])
                 mgr.set_configured_kiwis(merged, save=False)  # type: ignore[attr-defined]
             mgr._save_config()  # type: ignore[attr-defined]
+        if (kiwi_password_changed or kiwi_admin_password_changed) and hasattr(mgr, "_save_secrets"):
+            try:
+                mgr._save_secrets()  # type: ignore[attr-defined]
+            except Exception:
+                logger.debug("Failed saving Kiwi secret", exc_info=True)
+
+        try:
+            current_host = _normalize_kiwi_host(getattr(mgr, "host", ""))
+            current_port = int(getattr(mgr, "port", 0) or 0)
+        except Exception:
+            current_host = prior_host
+            current_port = prior_port
+        endpoint_changed = (current_host != prior_host) or (current_port != prior_port)
+        if endpoint_changed and auto_set_loop is not None:
+            applied = False
+            if hasattr(auto_set_loop, "apply_current_settings"):
+                try:
+                    applied = bool(auto_set_loop.apply_current_settings(force=True, sync_state=True))  # type: ignore[attr-defined]
+                except Exception:
+                    logger.warning(
+                        "Config update changed Kiwi endpoint to %s:%s but immediate receiver reapply failed",
+                        current_host,
+                        current_port,
+                        exc_info=True,
+                    )
+            if not applied and hasattr(auto_set_loop, "notify_settings_changed"):
+                try:
+                    auto_set_loop.notify_settings_changed()  # type: ignore[attr-defined]
+                except Exception:
+                    logger.debug("Failed waking auto-set loop after Kiwi endpoint change", exc_info=True)
 
         return {"ok": True}
 

@@ -67,9 +67,10 @@ class AutoSetLoop:
         # before checking health again.  This prevents thundering-herd restarts while
         # workers are still settling into their correct Kiwi slots (eviction loop can
         # take up to ~3 min for 8 receivers over VPN).
-        self._recovery_backoff_until_ts: float = time.time() + 180.0
+        self._recovery_backoff_until_ts: float = 0.0
         self._RECOVERY_BACKOFF_S: float = 180.0
         self._EMPTY_ROAMING_RECHECK_BACKOFF_S: float = 30.0
+        self._FIXED_INVISIBLE_GRACE_S: float = 30.0
         self._external_hold_reason: str | None = None
 
     def set_smart_scheduler(self, smart_scheduler: Any) -> None:
@@ -320,7 +321,11 @@ class AutoSetLoop:
                 closed_bands = []
         selected_bands: list[str] = []
         num_roaming_slots = 2
-        current_roaming = self._current_roaming_bands()
+        current_roaming = [
+            band
+            for band in self._current_roaming_bands()
+            if band in base_band_modes
+        ]
 
         fixed_health_state, _sick_fixed = self._fixed_health_state()
         if self._smart_scheduler is not None:
@@ -517,17 +522,45 @@ class AutoSetLoop:
         channels = data.get("channels") if isinstance(data, dict) else None
         if not isinstance(channels, dict):
             return "sick", list(_FIXED_ASSIGNMENTS)
+        with self._state_lock:
+            last_success_ts = self._last_success_ts
+        now = time.time()
         sick: list[dict] = []
         for entry in _FIXED_ASSIGNMENTS:
             rx_key = str(entry["rx"])
             ch = channels.get(rx_key)
             if not isinstance(ch, dict):
                 logger.info("Fixed receiver RX%s missing from health channels", rx_key)
-                sick.append(entry)
+                sick.append({**entry, "_reason": "missing"})
                 continue
             elif not ch.get("active"):
+                last_reason = str(ch.get("last_reason") or "").strip().lower()
+                try:
+                    decoder_output_age_s = (
+                        float(ch.get("decoder_output_age_s"))
+                        if ch.get("decoder_output_age_s") is not None
+                        else None
+                    )
+                except Exception:
+                    decoder_output_age_s = None
+                recent_apply_grace = bool(
+                    last_success_ts is not None
+                    and (now - float(last_success_ts)) <= self._FIXED_INVISIBLE_GRACE_S
+                )
+                if (
+                    last_reason == "kiwi_not_visible"
+                    and decoder_output_age_s is not None
+                    and decoder_output_age_s <= 15.0
+                    and recent_apply_grace
+                ):
+                    logger.debug(
+                        "Fixed receiver RX%s has fresh decoder output (age=%.1fs) during post-apply kiwi_not_visible grace; suppressing recovery",
+                        rx_key,
+                        decoder_output_age_s,
+                    )
+                    continue
                 logger.info("Fixed receiver RX%s is inactive", rx_key)
-                sick.append(entry)
+                sick.append({**entry, "_reason": "inactive"})
                 continue
             else:
                 kiwi_rx_raw = ch.get("kiwi_rx")
@@ -541,11 +574,11 @@ class AutoSetLoop:
                         rx_key,
                         kiwi_rx,
                     )
-                    sick.append(entry)
+                    sick.append({**entry, "_reason": "drift"})
                     continue
             if ch.get("status_level") == "fault":
                 logger.info("Fixed receiver RX%s is faulted (%s)", rx_key, ch.get("last_reason"))
-                sick.append(entry)
+                sick.append({**entry, "_reason": "fault"})
         if sick:
             return "sick", sick
         return "healthy", []

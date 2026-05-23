@@ -113,6 +113,28 @@ def test_smart_scheduler_night_pool_uses_lower_quiet_threshold(monkeypatch) -> N
     assert ranked == ["60m", "160m", "80m"]
 
 
+def test_smart_scheduler_ignores_non_roaming_bands_in_rank_inputs(monkeypatch) -> None:
+    class _ReceiverMgrQuietRoamingStub:
+        def health_summary(self):
+            return {
+                "overall": "healthy",
+                "channels": {
+                    "0": {"band": "20m", "decode_rate_per_hour": 20},
+                    "1": {"band": "12m", "decode_rate_per_hour": 9},
+                },
+            }
+
+    monkeypatch.setattr("kiwi_scan.smart_scheduler.get_recent_decodes", lambda _seconds: [])
+
+    scheduler = SmartScheduler(receiver_mgr=_ReceiverMgrQuietRoamingStub())
+    ranked = scheduler.rank_roaming_bands(["20m", "10m", "12m", "15m"], ["20m", "12m"])
+
+    assert ranked == ["12m", "10m", "15m"]
+    status = scheduler.get_status()
+    assert status["roaming_decision"]["available_bands"] == ["10m", "12m", "15m"]
+    assert status["roaming_decision"]["current_roaming"] == ["12m"]
+
+
 def test_smart_scheduler_status_includes_last_roaming_decision(monkeypatch) -> None:
     class _ReceiverMgrQuietRoamingStub:
         def health_summary(self):
@@ -136,7 +158,7 @@ def test_smart_scheduler_status_includes_last_roaming_decision(monkeypatch) -> N
     assert status["roaming_decision"]["low_rate_bands"] == ["10m"]
 
 
-def test_smart_scheduler_scores_combo_digital_modes() -> None:
+def test_smart_scheduler_scores_combo_digital_modes(monkeypatch) -> None:
     class _ReceiverMgrComboModeStub:
         def health_summary(self):
             return {

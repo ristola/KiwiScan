@@ -112,6 +112,13 @@ New user Docker quick start:
 	docker run --rm -v kiwiscan-outputs:/data alpine cat /data/config.json
 	```
 
+6. If your Kiwi requires authentication, save the Kiwi User Password and Kiwi Admin Password in KiwiSDR Settings after the UI comes up.
+
+	Notes:
+	The user password is used for normal receiver connections when only limited no-password slots are available.
+	The admin password is used for admin kick / slot recovery.
+	These secrets are stored in `config/kiwi_secrets.json`, so the `config` volume or bind mount must persist.
+
 If you started the container from an empty folder and nothing appeared there, that is expected: the command above uses Docker named volumes, not files in the current directory.
 
 Use this version instead when you want KiwiScan to save `config` and `outputs` directly in the folder you run it from:
@@ -129,6 +136,7 @@ docker run -d --name kiwiscan --pull always --restart unless-stopped --platform 
 ```
 
 With that folder-backed version, your saved config will be written to `./outputs/config.json`.
+Saved Kiwi passwords are written to `./config/kiwi_secrets.json`.
 
 Ports exposed by that command:
 

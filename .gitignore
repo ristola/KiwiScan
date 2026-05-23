@@ -39,3 +39,6 @@ _backups/
 /tmp_logs.txt
 /tools/fix_*.py
 /tools/patch_*.py
+
+# Local secrets
+/config/kiwi_secrets.json

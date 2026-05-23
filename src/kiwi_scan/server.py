@@ -678,9 +678,19 @@ app.include_router(
     )
 )
 try:
-    app.include_router(make_config_router(mgr=mgr, waterholes=FT8_WATERHOLES, receiver_mgr=receiver_mgr))
+    app.include_router(
+        make_config_router(
+            mgr=mgr,
+            waterholes=FT8_WATERHOLES,
+            receiver_mgr=receiver_mgr,
+            auto_set_loop=auto_set_loop,
+        )
+    )
 except TypeError:
-    app.include_router(make_config_router(mgr=mgr, waterholes=FT8_WATERHOLES))
+    try:
+        app.include_router(make_config_router(mgr=mgr, waterholes=FT8_WATERHOLES, auto_set_loop=auto_set_loop))
+    except TypeError:
+        app.include_router(make_config_router(mgr=mgr, waterholes=FT8_WATERHOLES))
 app.include_router(make_status_router(mgr=mgr, waterholes=FT8_WATERHOLES))
 app.include_router(make_schedule_router())
 app.include_router(

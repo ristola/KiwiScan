@@ -33,10 +33,16 @@ class _MgrStub:
         self.discovered_kiwis: list[dict[str, object]] = []
         self.discovery_source = ""
         self.discovery_updated_unix = 0.0
+        self.password: str | None = None
+        self.admin_password: str | None = None
         self.save_calls = 0
+        self.secret_save_calls = 0
 
     def _save_config(self) -> None:
         self.save_calls += 1
+
+    def _save_secrets(self) -> None:
+        self.secret_save_calls += 1
 
     def set_discovered_kiwis(self, discovery: dict[str, object], *, save: bool = True) -> None:
         found = discovery.get("found")
@@ -110,6 +116,63 @@ class _MgrStub:
             "source": self.discovery_source,
             "updated_unix": self.discovery_updated_unix,
         }
+
+    def set_kiwi_password(self, password: object, *, save: bool = True) -> None:
+        self.password = str(password or "").strip() or None
+
+    def set_kiwi_admin_password(self, password: object, *, save: bool = True) -> None:
+        self.admin_password = str(password or "").strip() or None
+
+    def has_kiwi_password(self) -> bool:
+        return bool(str(getattr(self, "password", "") or "").strip())
+
+    def has_kiwi_admin_password(self) -> bool:
+        return bool(str(getattr(self, "admin_password", "") or "").strip())
+
+
+class _LockingMgrStub(_MgrStub):
+    def get_configured_kiwis(self) -> list[dict[str, object]]:
+        with self.lock:
+            return list(self.configured_kiwis)
+
+    def has_kiwi_password(self) -> bool:
+        with self.lock:
+            return bool(str(getattr(self, "password", "") or "").strip())
+
+    def has_kiwi_admin_password(self) -> bool:
+        with self.lock:
+            return bool(str(getattr(self, "admin_password", "") or "").strip())
+
+    def set_kiwi_password(self, password: object, *, save: bool = True) -> None:
+        with self.lock:
+            value = str(password or "").strip()
+            self.password = value or None
+            if save:
+                self._save_secrets()
+
+    def set_kiwi_admin_password(self, password: object, *, save: bool = True) -> None:
+        with self.lock:
+            value = str(password or "").strip()
+            self.admin_password = value or None
+            if save:
+                self._save_secrets()
+
+
+class _AutoSetLoopStub:
+    def __init__(self, *, apply_result: bool = True, raise_on_apply: bool = False) -> None:
+        self.apply_result = bool(apply_result)
+        self.raise_on_apply = bool(raise_on_apply)
+        self.apply_calls: list[tuple[bool, bool]] = []
+        self.notify_calls = 0
+
+    def apply_current_settings(self, *, force: bool = False, sync_state: bool = True) -> bool:
+        self.apply_calls.append((bool(force), bool(sync_state)))
+        if self.raise_on_apply:
+            raise RuntimeError("apply failed")
+        return self.apply_result
+
+    def notify_settings_changed(self) -> None:
+        self.notify_calls += 1
 
 
 def test_config_discover_probes_default_and_configured_ports(monkeypatch) -> None:
@@ -214,3 +277,196 @@ def test_post_config_persists_configured_kiwis(monkeypatch) -> None:
         {"host": "10.13.1.235", "port": 8073, "latitude": 38.1, "longitude": -78.2, "grid": "FM08so"},
         {"host": "10.13.1.236", "port": 8074, "latitude": 39.1, "longitude": -77.2, "grid": "FM09aa"},
     ]
+
+
+def test_post_config_reapplies_receivers_when_endpoint_changes(monkeypatch) -> None:
+    mgr = _MgrStub()
+    auto_set_loop = _AutoSetLoopStub(apply_result=True)
+    app = FastAPI()
+    app.include_router(config_api.make_router(mgr=mgr, waterholes={"20m": 14074.0}, auto_set_loop=auto_set_loop))
+    client = TestClient(app)
+
+    monkeypatch.setattr(config_api, "read_kiwi_status", lambda host, port, timeout_s: {})
+
+    response = client.post(
+        "/config",
+        json={
+            "host": "10.13.1.250",
+            "port": 8073,
+        },
+    )
+
+    assert response.status_code == 200
+    assert mgr.host == "10.13.1.250"
+    assert mgr.port == 8073
+    assert auto_set_loop.apply_calls == [(True, True)]
+    assert auto_set_loop.notify_calls == 0
+
+
+def test_post_config_wakes_loop_when_endpoint_reapply_not_available(monkeypatch) -> None:
+    mgr = _MgrStub()
+    auto_set_loop = _AutoSetLoopStub(apply_result=False)
+    app = FastAPI()
+    app.include_router(config_api.make_router(mgr=mgr, waterholes={"20m": 14074.0}, auto_set_loop=auto_set_loop))
+    client = TestClient(app)
+
+    monkeypatch.setattr(config_api, "read_kiwi_status", lambda host, port, timeout_s: {})
+
+    response = client.post(
+        "/config",
+        json={
+            "host": "10.13.1.251",
+            "port": 8075,
+        },
+    )
+
+    assert response.status_code == 200
+    assert auto_set_loop.apply_calls == [(True, True)]
+    assert auto_set_loop.notify_calls == 1
+
+
+def test_post_config_can_prune_discovered_kiwis_to_configured(monkeypatch) -> None:
+    mgr = _MgrStub()
+    app = FastAPI()
+    app.include_router(config_api.make_router(mgr=mgr, waterholes={"20m": 14074.0}))
+    client = TestClient(app)
+
+    monkeypatch.setattr(config_api, "read_kiwi_status", lambda host, port, timeout_s: {})
+
+    response = client.post(
+        "/config",
+        json={
+            "kiwisdrs": [
+                {"host": "10.13.1.236", "port": 8074, "latitude": 39.1, "longitude": -77.2, "grid": "FM09aa"},
+            ],
+            "discovered_kiwis": [
+                {"host": "10.13.1.235", "port": 8073, "sdr_hw": "KiwiSDR 1"},
+                {"host": "10.13.1.236", "port": 8074, "sdr_hw": "KiwiSDR 2"},
+            ],
+            "discovery_source": "lan_scan",
+            "sync_discovered_to_configured": True,
+        },
+    )
+
+    assert response.status_code == 200
+
+    config_response = client.get("/config")
+
+    assert config_response.status_code == 200
+    payload = config_response.json()
+    assert payload["kiwisdrs"] == [
+        {"host": "10.13.1.236", "port": 8074, "latitude": 39.1, "longitude": -77.2, "grid": "FM09aa"},
+    ]
+    assert payload["discovered_kiwis"] == [
+        {"host": "10.13.1.236", "port": 8074, "sdr_hw": "KiwiSDR 2"},
+    ]
+
+
+def test_get_config_does_not_deadlock_with_locking_password_helper(monkeypatch) -> None:
+    mgr = _LockingMgrStub()
+    mgr.password = "user-secret"
+    mgr.admin_password = "secret"
+    app = FastAPI()
+    app.include_router(config_api.make_router(mgr=mgr, waterholes={"20m": 14074.0}))
+    client = TestClient(app)
+
+    monkeypatch.setattr(config_api, "read_kiwi_status", lambda host, port, timeout_s: {})
+
+    response = client.get("/config")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["kiwi_password_set"] is True
+    assert payload["kiwi_admin_password_set"] is True
+
+
+def test_post_config_password_only_does_not_deadlock(monkeypatch) -> None:
+    mgr = _LockingMgrStub()
+    app = FastAPI()
+    app.include_router(config_api.make_router(mgr=mgr, waterholes={"20m": 14074.0}))
+    client = TestClient(app)
+
+    monkeypatch.setattr(config_api, "read_kiwi_status", lambda host, port, timeout_s: {})
+
+    response = client.post(
+        "/config",
+        json={"kiwi_password": "user-secret", "kiwi_admin_password": "secret"},
+    )
+
+    assert response.status_code == 200
+    assert mgr.has_kiwi_password() is True
+    assert mgr.has_kiwi_admin_password() is True
+
+
+def test_post_config_persists_kiwi_password_state(monkeypatch) -> None:
+    mgr = _MgrStub()
+    app = FastAPI()
+    app.include_router(config_api.make_router(mgr=mgr, waterholes={"20m": 14074.0}))
+    client = TestClient(app)
+
+    monkeypatch.setattr(config_api, "read_kiwi_status", lambda host, port, timeout_s: {})
+
+    response = client.post(
+        "/config",
+        json={
+            "kiwi_password": "user-pass",
+        },
+    )
+
+    assert response.status_code == 200
+    assert mgr.password == "user-pass"
+    assert mgr.secret_save_calls == 1
+
+    payload = client.get("/config").json()
+    assert payload["kiwi_password_set"] is True
+
+    clear_response = client.post(
+        "/config",
+        json={
+            "clear_kiwi_password": True,
+        },
+    )
+
+    assert clear_response.status_code == 200
+    assert mgr.password is None
+    assert mgr.secret_save_calls == 2
+
+    cleared_payload = client.get("/config").json()
+    assert cleared_payload["kiwi_password_set"] is False
+
+
+def test_post_config_persists_kiwi_admin_password_state(monkeypatch) -> None:
+    mgr = _MgrStub()
+    app = FastAPI()
+    app.include_router(config_api.make_router(mgr=mgr, waterholes={"20m": 14074.0}))
+    client = TestClient(app)
+
+    monkeypatch.setattr(config_api, "read_kiwi_status", lambda host, port, timeout_s: {})
+
+    response = client.post(
+        "/config",
+        json={
+            "kiwi_admin_password": "secret-pass",
+        },
+    )
+
+    assert response.status_code == 200
+    assert mgr.admin_password == "secret-pass"
+    assert mgr.secret_save_calls == 1
+
+    payload = client.get("/config").json()
+    assert payload["kiwi_admin_password_set"] is True
+
+    clear_response = client.post(
+        "/config",
+        json={
+            "clear_kiwi_admin_password": True,
+        },
+    )
+
+    assert clear_response.status_code == 200
+    assert mgr.admin_password is None
+    assert mgr.secret_save_calls == 2
+
+    cleared_payload = client.get("/config").json()
+    assert cleared_payload["kiwi_admin_password_set"] is False

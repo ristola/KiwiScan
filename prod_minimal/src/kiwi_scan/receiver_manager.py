@@ -23,27 +23,21 @@ from .bandplan import bandplan_ranges_for_label
 
 logger = logging.getLogger(__name__)
 
-# FT8 and FT4 dial frequencies (Hz) per band, used to compute the IQ centre
-# and sub-band offsets when running dual-mode (FT4 / FT8).
-# 60m has no standard FT4 frequency and is excluded.
-# Bands where the two separations are > 10 kHz fall back to USB+fanout.
 _BAND_DUAL_FREQS: dict[str, tuple[float, float]] = {
-    "10m":  (28.074e6, 28.180e6),   # 106 kHz apart — too wide for IQ
-    "12m":  (24.915e6, 24.919e6),   # 4 kHz — IQ OK
-    "15m":  (21.074e6, 21.140e6),   # 66 kHz apart — too wide for IQ
-    "17m":  (18.100e6, 18.104e6),   # 4 kHz — IQ OK
-    "20m":  (14.074e6, 14.080e6),   # 6 kHz — IQ OK
-    "30m":  (10.136e6, 10.140e6),   # 4 kHz — IQ OK
-    "40m":  (7.074e6,  7.0475e6),   # 26.5 kHz apart — too wide for IQ
-    "80m":  (3.573e6,  3.575e6),    # 2 kHz — IQ OK
-    "160m": (1.840e6,  1.843e6),    # 3 kHz — IQ OK
+    "10m":  (28.074e6, 28.180e6),
+    "12m":  (24.915e6, 24.919e6),
+    "15m":  (21.074e6, 21.140e6),
+    "17m":  (18.100e6, 18.104e6),
+    "20m":  (14.074e6, 14.080e6),
+    "30m":  (10.136e6, 10.140e6),
+    "40m":  (7.074e6,  7.0475e6),
+    "80m":  (3.573e6,  3.575e6),
+    "160m": (1.840e6,  1.843e6),
 }
-# FT4 + WSPR IQ pairs (bands where FT4 and WSPR dial freqs are < 10 kHz apart)
 _BAND_FT4_WSPR_PAIRS: dict[str, tuple[float, float]] = {
-    "40m": (7.0475e6, 7.0386e6),   # 8.9 kHz span — IQ OK
+    "40m": (7.0475e6, 7.0386e6),
 }
 
-# WSPR dial frequencies (Hz) per band
 _BAND_WSPR_FREQS: dict[str, float] = {
     "160m": 1.8366e6,
     "80m":  3.5686e6,
@@ -56,7 +50,7 @@ _BAND_WSPR_FREQS: dict[str, float] = {
     "10m":  28.1246e6,
     "60m":  5.2887e6,
 }
-_IQ_MAX_SEPARATION_HZ = 10_000  # ±5 kHz fits safely within 12 kHz IQ bandwidth
+_IQ_MAX_SEPARATION_HZ = 10_000
 
 
 def _read_env_bool(name: str, default: bool) -> bool:
@@ -224,6 +218,7 @@ class _ReceiverWorker(threading.Thread):
         sox_path: str,
         host: str,
         port: int,
+        password: Optional[str] = None,
         rx: int,
         band: str,
         freq_hz: float,
@@ -243,6 +238,7 @@ class _ReceiverWorker(threading.Thread):
         self._sox_path = sox_path
         self._host = host
         self._port = int(port)
+        self._password = str(password or "").strip()
         self._rx = int(rx)
         self._band = str(band)
         self._freq_hz = float(freq_hz)
@@ -708,9 +704,20 @@ class _ReceiverWorker(threading.Thread):
                 if bool(strict):
                     valid = (found_rx == expected)
                 else:
-                    valid = found_rx >= 0
+                    if expected < 2:
+                        valid = found_rx in {0, 1}
+                    else:
+                        valid = found_rx >= 0
                 if valid:
                     if not bool(strict) and found_rx != expected:
+                        if expected < 2:
+                            logger.info(
+                                "Kiwi swapped roaming worker user=%s expected_rx=%s actual_rx=%s within RX0/RX1 pool; keeping worker",
+                                wanted,
+                                expected,
+                                found_rx,
+                            )
+                            return True
                         grace_s = self._digital_remap_grace_s()
                         if found_age_s is not None and found_age_s >= grace_s:
                             self._adapt_rx_chan_adjust(expected_rx=expected, actual_rx=found_rx, user_label=wanted)
@@ -1113,6 +1120,11 @@ class _ReceiverWorker(threading.Thread):
             return None
         freq_khz = self._format_freq_khz(self._freq_hz)
         user_label = _compact_user_label(self._user_prefix, self._band, self._mode_label)
+        password_arg = f" --password {shlex.quote(self._password)}" if self._password else ""
+        kiwirecorder_base_cmd = (
+            f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
+            f"-s {self._host} -p {self._port}{password_arg}"
+        )
         self._active_user_label = user_label
         self._kill_local_kiwi_user_processes(user_label)
         logger.info(
@@ -1145,8 +1157,7 @@ class _ReceiverWorker(threading.Thread):
                         self._rx, self._band, iq_centre_khz, ft8_off, ft4_off, wspr_off,
                     )
                     pipeline_cmd = (
-                        f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-                        f"-s {self._host} -p {self._port} -f {iq_centre_khz} -m iq "
+                        f"{kiwirecorder_base_cmd} -f {iq_centre_khz} -m iq "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._python_cmd} -u {iq_splitter_path} "
                         f"{ft8_off:.1f} {udp_port_ft8} "
@@ -1165,8 +1176,7 @@ class _ReceiverWorker(threading.Thread):
                             self._band,
                         )
                         pipeline_cmd = (
-                            f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-                            f"-s {self._host} -p {self._port} -f {iq_centre_khz} -m iq "
+                            f"{kiwirecorder_base_cmd} -f {iq_centre_khz} -m iq "
                             f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                             f"{self._python_cmd} -u {iq_splitter_path} "
                             f"{ft8_off:.1f} {udp_port_ft8} {ft4_off:.1f} {udp_port_ft4}"
@@ -1180,8 +1190,7 @@ class _ReceiverWorker(threading.Thread):
                             udp_port=udp_port_ft8, af2udp_path=af2udp_path
                         )
                         pipeline_cmd = (
-                            f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-                            f"-s {self._host} -p {self._port} -f {freq_khz} -m usb {self._digital_usb_cut_args()} "
+                            f"{kiwirecorder_base_cmd} -f {freq_khz} -m usb {self._digital_usb_cut_args()} "
                             f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                             f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
                                 f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
@@ -1204,8 +1213,7 @@ class _ReceiverWorker(threading.Thread):
                         self._rx, self._band, iq_centre_khz, ft8_off_hz, ft4_off_hz,
                     )
                     pipeline_cmd = (
-                        f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-                        f"-s {self._host} -p {self._port} -f {iq_centre_khz} -m iq "
+                        f"{kiwirecorder_base_cmd} -f {iq_centre_khz} -m iq "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._python_cmd} -u {iq_splitter_path} "
                         f"{ft8_off_hz:.1f} {udp_port_ft8} {ft4_off_hz:.1f} {udp_port_ft4}"
@@ -1219,8 +1227,7 @@ class _ReceiverWorker(threading.Thread):
                         self._rx, self._band,
                     )
                     pipeline_cmd = (
-                        f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-                        f"-s {self._host} -p {self._port} -f {freq_khz} -m usb {self._digital_usb_cut_args()} "
+                        f"{kiwirecorder_base_cmd} -f {freq_khz} -m usb {self._digital_usb_cut_args()} "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
                             f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
@@ -1241,8 +1248,7 @@ class _ReceiverWorker(threading.Thread):
                         self._rx, self._band, iq_centre_khz, ft4_off_hz, wspr_off_hz,
                     )
                     pipeline_cmd = (
-                        f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-                        f"-s {self._host} -p {self._port} -f {iq_centre_khz} -m iq "
+                        f"{kiwirecorder_base_cmd} -f {iq_centre_khz} -m iq "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._python_cmd} -u {iq_splitter_path} "
                         f"{ft4_off_hz:.1f} {udp_port_ft4} {wspr_off_hz:.1f} {udp_port_wspr}"
@@ -1262,8 +1268,7 @@ class _ReceiverWorker(threading.Thread):
                         udp_port=udp_port_wspr, af2udp_path=af2udp_path
                     )
                     pipeline_cmd = (
-                        f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-                        f"-s {self._host} -p {self._port} -f {wspr_freq_khz} -m usb {self._digital_usb_cut_args()} "
+                        f"{kiwirecorder_base_cmd} -f {wspr_freq_khz} -m usb {self._digital_usb_cut_args()} "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                         f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
                             f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
@@ -1274,8 +1279,7 @@ class _ReceiverWorker(threading.Thread):
                 self._start_decoder(udp_port, self._decoder_mode())
                 udp_sender_cmd = self._udp_audio_sender_cmd(udp_port=udp_port, af2udp_path=af2udp_path)
                 pipeline_cmd = (
-                    f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-                    f"-s {self._host} -p {self._port} -f {freq_khz} -m usb {self._digital_usb_cut_args()} "
+                    f"{kiwirecorder_base_cmd} -f {freq_khz} -m usb {self._digital_usb_cut_args()} "
                     f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
                     f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
                         f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
@@ -1502,6 +1506,48 @@ class ReceiverManager:
     def _env_int(name: str, default: int, *, min_v: int, max_v: int) -> int:
         return _read_env_int(name, default, min_v=min_v, max_v=max_v)
 
+    @staticmethod
+    def _kiwi_password() -> Optional[str]:
+        value = str(os.environ.get("KIWISCAN_KIWI_PASSWORD", "") or "").strip()
+        if value:
+            return value
+        here = Path(__file__).resolve()
+        for parent in here.parents:
+            candidate = parent / "config" / "kiwi_secrets.json"
+            if not candidate.exists():
+                continue
+            try:
+                data = json.loads(candidate.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            value = str(data.get("kiwi_password") or "").strip()
+            if value:
+                return value
+        return None
+
+    @staticmethod
+    def _kiwi_admin_password() -> Optional[str]:
+        value = str(os.environ.get("KIWISCAN_KIWI_ADMIN_PASSWORD", "") or "").strip()
+        if value:
+            return value
+        here = Path(__file__).resolve()
+        for parent in here.parents:
+            candidate = parent / "config" / "kiwi_secrets.json"
+            if not candidate.exists():
+                continue
+            try:
+                data = json.loads(candidate.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not isinstance(data, dict):
+                continue
+            value = str(data.get("kiwi_admin_password") or "").strip()
+            if value:
+                return value
+        return None
+
     def _stale_recovery_enabled(self) -> bool:
         return self._env_bool("KIWISCAN_STALE_RECOVERY_ENABLED", True)
 
@@ -1641,7 +1687,7 @@ class ReceiverManager:
         else:
             for target in kick_targets:
                 cmd.extend(["--kick", str(int(target))])
-        password = str(os.environ.get("KIWISCAN_KIWI_ADMIN_PASSWORD", "") or "").strip()
+        password = self._kiwi_admin_password() or ""
         if password:
             cmd.extend(["--password", password])
         if self._env_bool("KIWISCAN_MISMATCH_AUTOKICK_TAKE_ADMIN", True):
@@ -1955,6 +2001,7 @@ class ReceiverManager:
             sox_path=self._sox_path,
             host=host,
             port=port,
+            password=self._kiwi_password(),
             rx=assignment.rx,
             band=assignment.band,
             freq_hz=assignment.freq_hz,
@@ -4253,6 +4300,7 @@ class ReceiverManager:
             _startup_short_pause_s = self._startup_short_pause_s()
             _startup_retry_pause_s = self._startup_retry_pause_s()
             _startup_slot_clear_stable_s = self._startup_slot_clear_stable_s()
+            _startup_preclear_roaming_slots: list[int] = []
 
             if did_full_reset:
                 self._cleanup_orphan_processes()
@@ -4319,28 +4367,54 @@ class ReceiverManager:
                     # the wrong slot from a prior P-pointer misalignment).  This clears
                     # exactly the slots the roaming workers need without disconnecting the
                     # healthy fixed receivers.
-                    _roaming_target_slots = sorted(
-                        int(rx) for rx in to_stop if int(rx) in desired_rxs
+                    _startup_preclear_roaming_slots = sorted(
+                        int(rx)
+                        for rx in desired_rxs
+                        if int(rx) < 2
+                        and (
+                            int(rx) not in current_rxs
+                            or int(rx) in to_stop
+                            or int(rx) in reconcile_rxs
+                        )
                     )
-                    if _roaming_target_slots:
-                        _live_fk = self._fetch_live_auto_users(str(host), int(port))
-                        _blocked_slots = [s for s in _roaming_target_slots if s in _live_fk]
-                        if _blocked_slots:
-                            logger.info(
-                                "Roaming update: target slot(s) %s occupied; kicking before restart",
-                                _blocked_slots,
-                            )
-                            self._run_admin_kick_all(
-                                host=str(host), port=int(port), kick_only_slots=_blocked_slots
-                            )
-                            # Wait for kicked slots to clear in /users before workers start
-                            _fk_deadline = time.time() + 8.0
-                            while time.time() < _fk_deadline:
-                                _lv_fk2 = self._fetch_live_auto_users(str(host), int(port))
-                                if not any(s in _lv_fk2 for s in _blocked_slots):
-                                    break
-                                time.sleep(0.5)
-                            time.sleep(0.5)  # Brief extra pause for Kiwi internal state
+            elif desired_rxs:
+                _startup_preclear_roaming_slots = sorted(
+                    int(rx)
+                    for rx in desired_rxs
+                    if int(rx) < 2
+                    and (
+                        int(rx) not in current_rxs
+                        or int(rx) in to_stop
+                        or int(rx) in reconcile_rxs
+                    )
+                )
+
+            if _startup_preclear_roaming_slots:
+                _live_fk = self._fetch_live_auto_users(str(host), int(port))
+                _blocked_slots = [s for s in _startup_preclear_roaming_slots if s in _live_fk]
+                if _blocked_slots:
+                    logger.info(
+                        "Roaming update: target slot(s) %s occupied; kicking before restart",
+                        _blocked_slots,
+                    )
+                    self._run_admin_kick_all(
+                        host=str(host), port=int(port), kick_only_slots=_blocked_slots
+                    )
+                    # Wait for kicked slots to clear in /users before workers start.
+                    _fk_deadline = time.time() + 8.0
+                    while time.time() < _fk_deadline:
+                        _lv_fk2 = self._fetch_live_auto_users(str(host), int(port))
+                        if not any(s in _lv_fk2 for s in _blocked_slots):
+                            break
+                        time.sleep(0.5)
+                self._wait_for_kiwi_slots_clear(
+                    host=str(host),
+                    port=int(port),
+                    slots=set(_startup_preclear_roaming_slots),
+                    stable_secs=_startup_slot_clear_stable_s,
+                    timeout_s=8.0,
+                )
+                time.sleep(0.5)  # Brief extra pause for Kiwi internal state
 
             # Suppress monitoring-thread autokick for the entire initial connection
             # phase + eviction loop so the two code paths don't fight each other.
@@ -4444,6 +4518,57 @@ class ReceiverManager:
                         )
                 self._refresh_starting_health_summary_cache(host=str(host), port=int(port), assignments=assignments)
 
+            fixed_only_bootstrap = bool(starting_from_empty and desired_fixed_rxs and not any(int(rx) < 2 for rx in desired_rxs))
+            bootstrap_placeholder_workers: list[tuple[int, _ReceiverWorker, set[str]]] = []
+
+            def _start_fixed_bootstrap_placeholder(rx: int, template_assignment: ReceiverAssignment) -> None:
+                placeholder = ReceiverAssignment(
+                    rx=int(rx),
+                    band=str(template_assignment.band),
+                    freq_hz=float(template_assignment.freq_hz),
+                    mode_label=str(template_assignment.mode_label),
+                    sideband=template_assignment.sideband,
+                    ignore_slot_check=False,
+                )
+                worker = self._make_worker(host=host, port=port, assignment=placeholder, rx_chan_adjust=0)
+                labels = self._expected_user_label_aliases(placeholder)
+                worker.start()
+                _poll_deadline = time.time() + 8.0
+                _stable_slot: Optional[int] = None
+                _stable_since: float = 0.0
+                while time.time() < _poll_deadline:
+                    _live_p = self._fetch_live_users(str(host), int(port))
+                    _cur_slot = next(
+                        (int(_s) for _s, _l in _live_p.items() if self._label_matches_any(labels, _l)),
+                        None,
+                    )
+                    if _cur_slot is not None and _cur_slot == _stable_slot:
+                        if time.time() - _stable_since >= _startup_slot_stable_s:
+                            break
+                    else:
+                        _stable_slot = _cur_slot
+                        _stable_since = time.time()
+                    time.sleep(_startup_poll_interval_s)
+                if _stable_slot == int(rx):
+                    logger.info(
+                        "Fixed-only bootstrap placeholder rx=%d: connected in slot=%d",
+                        int(rx),
+                        int(rx),
+                    )
+                elif _stable_slot is not None:
+                    logger.warning(
+                        "Fixed-only bootstrap placeholder rx=%d: landed in slot=%d (expected %d)",
+                        int(rx),
+                        _stable_slot,
+                        int(rx),
+                    )
+                else:
+                    logger.warning(
+                        "Fixed-only bootstrap placeholder rx=%d: not connected before fixed startup",
+                        int(rx),
+                    )
+                bootstrap_placeholder_workers.append((int(rx), worker, labels))
+
             _startup_order = sorted(desired_rxs)
             _defer_roaming_start = bool(bootstrap_fixed_first)
             if _defer_roaming_start:
@@ -4458,8 +4583,30 @@ class ReceiverManager:
                 )
             elif starting_from_empty and desired_fixed_rxs:
                 _startup_order = desired_fixed_rxs + [int(rx) for rx in sorted(desired_rxs) if int(rx) not in desired_fixed_rxs]
+            if fixed_only_bootstrap and desired_fixed_rxs:
+                logger.info(
+                    "Fixed-only bootstrap: temporarily occupying RX0/RX1 so fixed RX2-RX7 claim canonical Kiwi slots"
+                )
+                _probe_templates = [assignments[int(rx)] for rx in desired_fixed_rxs[:2]]
+                for _probe_rx, _template in zip((0, 1), _probe_templates):
+                    _start_fixed_bootstrap_placeholder(int(_probe_rx), _template)
             for rx in _startup_order:
                 _start_worker_sequential(int(rx))
+
+            if bootstrap_placeholder_workers:
+                logger.info("Fixed-only bootstrap: releasing temporary RX0/RX1 placeholders")
+                placeholder_labels: set[str] = set()
+                for _probe_rx, _probe_worker, _probe_labels in bootstrap_placeholder_workers:
+                    placeholder_labels.update(_probe_labels)
+                    self._stop_worker(_probe_worker, join_timeout_s=0.5)
+                    self._activity_by_rx.pop(int(_probe_rx), None)
+                if placeholder_labels:
+                    self._wait_for_kiwi_auto_users_missing(
+                        host=str(host),
+                        port=int(port),
+                        labels=placeholder_labels,
+                        timeout_s=6.0,
+                    )
 
             _deferred_roaming_rxs = sorted(
                 int(rx)
@@ -4498,29 +4645,50 @@ class ReceiverManager:
                             if self._label_matches_any(_expected_labels, _label):
                                 _actual_slots.setdefault(int(_rx), int(_slot))
                                 break
-                    _needs_fix = [
-                        int(_rx)
-                        for _rx in roaming_rxs_to_verify
-                        if _actual_slots.get(int(_rx)) != int(_rx)
-                    ]
-                    _blocked_targets = [
-                        int(_slot)
-                        for _slot in roaming_rxs_to_verify
-                        if int(_slot) in _live_roam
-                        and not self._label_matches_any(_expected_roam[int(_slot)], _live_roam[int(_slot)])
-                    ]
-                    if not _needs_fix and not _blocked_targets:
-                        break
-
-                    _rxs_to_restart = sorted(set(_needs_fix) | set(_blocked_targets))
-                    _slots_to_kick = sorted(
-                        set(int(_rx) for _rx in _rxs_to_restart)
-                        | {
-                            int(_slot)
-                            for _rx, _slot in _actual_slots.items()
-                            if int(_rx) in _rxs_to_restart
-                        }
+                    _relaxed_low_slot_pool = bool(roaming_rxs_to_verify) and all(
+                        int(_rx) < 2 for _rx in roaming_rxs_to_verify
                     )
+                    if _relaxed_low_slot_pool:
+                        _expected_any = list(_expected_roam.values())
+                        _rxs_to_restart = [
+                            int(_rx)
+                            for _rx in roaming_rxs_to_verify
+                            if int(_rx) not in _actual_slots
+                        ]
+                        _slots_to_kick = [
+                            int(_slot)
+                            for _slot in roaming_rxs_to_verify
+                            if int(_slot) in _live_roam
+                            and not any(
+                                self._label_matches_any(_labels, _live_roam[int(_slot)])
+                                for _labels in _expected_any
+                            )
+                        ]
+                        _rxs_to_restart = sorted(set(_rxs_to_restart) | set(_slots_to_kick))
+                        _slots_to_kick = sorted(set(_slots_to_kick))
+                    else:
+                        _needs_fix = [
+                            int(_rx)
+                            for _rx in roaming_rxs_to_verify
+                            if _actual_slots.get(int(_rx)) != int(_rx)
+                        ]
+                        _blocked_targets = [
+                            int(_slot)
+                            for _slot in roaming_rxs_to_verify
+                            if int(_slot) in _live_roam
+                            and not self._label_matches_any(_expected_roam[int(_slot)], _live_roam[int(_slot)])
+                        ]
+                        _rxs_to_restart = sorted(set(_needs_fix) | set(_blocked_targets))
+                        _slots_to_kick = sorted(
+                            set(int(_rx) for _rx in _rxs_to_restart)
+                            | {
+                                int(_slot)
+                                for _rx, _slot in _actual_slots.items()
+                                if int(_rx) in _rxs_to_restart
+                            }
+                        )
+                    if not _rxs_to_restart and not _slots_to_kick:
+                        break
                     logger.info(
                         "Roaming slot correction (attempt %d/%d): restart roaming RXs %s kick slots %s actual=%s",
                         _roam_attempt + 1,
@@ -4760,7 +4928,7 @@ class ReceiverManager:
 
                         For non-probe workers (probe=False) the target slot is the_rx itself
                         (P-rotation guarantees each rx lands in its matching slot), so we
-                        look only at that specific slot.  This prevents shared-label
+                        look only at that specific slot. This prevents shared-label
                         workers (e.g. two 20 m FT8 peers) from spoofing each other.
 
                         The freshness filter (age ≤ elapsed + 5 s) rejects ghost connections
@@ -4772,6 +4940,7 @@ class ReceiverManager:
                         that grab the target slot immediately after a single kick.
                         """
                         _r = assignments[int(the_rx)]
+                        _strict_target_slot = not probe
                         _MAX_TRIES = 1 if probe else 3
                         _lv_raw: dict = {}
                         for _try_n in range(_MAX_TRIES):
@@ -4785,7 +4954,7 @@ class ReceiverManager:
                             # Re-kick every 3 s if the slot remains occupied; give up after
                             # 8 s and proceed anyway to avoid stalling indefinitely on a
                             # truly persistent VPNKit zombie.
-                            if not probe:
+                            if _strict_target_slot:
                                 _pre_kick_slot = int(the_rx)
                                 _clear_deadline = time.time() + 8.0
                                 _last_rekick_t: float = 0.0
@@ -4814,7 +4983,7 @@ class ReceiverManager:
                             _w.start()
                             _lbl = self._expected_user_label(_r)
                             _lbls = self._expected_user_label_aliases(_r)
-                            _target_slot = None if probe else int(the_rx)
+                            _target_slot = int(the_rx) if _strict_target_slot else None
                             logger.info(
                                 "_ev_start_one rx=%d probe=%s lbl=%s target_slot=%s",
                                 int(the_rx), probe, _lbl, _target_slot,

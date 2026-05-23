@@ -87,6 +87,9 @@ def test_pro_dashboard_serves_receiver_scan_and_net_monitor_without_utility_moni
     assert response.headers["cache-control"] == "no-store, no-cache, must-revalidate, max-age=0"
 
     _assert_dashboard_core(response.text)
+    assert 'function preferredActiveReceiverListenModeFromDecodeRates(modeValue, decodeRatesByMode) {' in response.text
+    assert 'data-preferred-mode="${escapeHtml(safeText(user && user.preferred_listen_mode, ""))}"' in response.text
+    assert '.filter((modeName) => modeName !== "WSPR")' in response.text
     assert response.text.count('await postJson("/admin/force-reassign", {});') == 1
 
 

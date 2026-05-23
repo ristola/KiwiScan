@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -153,6 +154,28 @@ def test_fixed_roaming_payload_passes_current_roaming_to_smart_scheduler(monkeyp
 
     assert scheduler.calls == [(["10m", "12m", "15m"], ["10m", "12m"])]
     assert payload.get("selected_bands") == ["15m", "12m"]
+
+
+def test_fixed_roaming_payload_filters_non_roaming_current_bands(monkeypatch) -> None:
+    loop = AutoSetLoop()
+    monkeypatch.setattr(loop, "_fixed_health_state", lambda: ("healthy", []))
+
+    class _SmartSchedulerStub:
+        def __init__(self) -> None:
+            self.calls: list[tuple[list[str], list[str]]] = []
+
+        def rank_roaming_bands(self, available_bands: list[str], current_roaming: list[str]) -> list[str]:
+            self.calls.append((list(available_bands), list(current_roaming)))
+            return ["12m", "10m", "15m"]
+
+    scheduler = _SmartSchedulerStub()
+    loop.set_smart_scheduler(scheduler)
+    monkeypatch.setattr(loop, "_current_roaming_bands", lambda: ["20m", "12m"])
+
+    payload = loop._build_fixed_roaming_payload({}, "day")
+
+    assert scheduler.calls == [(["10m", "12m", "15m"], ["12m"])]
+    assert payload.get("selected_bands") == ["12m", "10m"]
 
 
 def test_fixed_roaming_payload_excludes_closed_bands(monkeypatch) -> None:
@@ -758,7 +781,77 @@ def test_fixed_health_state_marks_fixed_slot_drift_as_sick(monkeypatch) -> None:
     state, sick = loop._fixed_health_state()
 
     assert state == "sick"
-    assert sick == [{"rx": 2, "band": "20m", "mode": "FT4 / FT8", "freq_hz": 14_077_000.0}]
+    assert sick == [{"rx": 2, "band": "20m", "mode": "FT4 / FT8", "freq_hz": 14_077_000.0, "_reason": "drift"}]
+
+
+def test_fixed_health_state_suppresses_recent_kiwi_not_visible_after_apply(monkeypatch) -> None:
+    loop = AutoSetLoop()
+    loop._last_success_ts = time.time()
+
+    channels = {
+        str(rx): {
+            "active": True,
+            "visible_on_kiwi": True,
+            "status_level": "healthy",
+            "kiwi_rx": rx,
+        }
+        for rx in range(2, 8)
+    }
+    channels["4"] = {
+        "active": False,
+        "visible_on_kiwi": False,
+        "status_level": "healthy",
+        "last_reason": "kiwi_not_visible",
+        "decoder_output_age_s": 2.0,
+    }
+
+    def _fake_urlopen(request, timeout=0.0):
+        del timeout
+        url = request.full_url if hasattr(request, "full_url") else str(request)
+        assert url.endswith("/health/rx")
+        return _LoopResponse({"overall": "degraded", "channels": channels})
+
+    monkeypatch.setattr("kiwi_scan.auto_set_loop.urllib.request.urlopen", _fake_urlopen)
+
+    state, sick = loop._fixed_health_state()
+
+    assert state == "healthy"
+    assert sick == []
+
+
+def test_fixed_health_state_marks_persistent_kiwi_not_visible_as_sick(monkeypatch) -> None:
+    loop = AutoSetLoop()
+    loop._last_success_ts = time.time() - 120.0
+
+    channels = {
+        str(rx): {
+            "active": True,
+            "visible_on_kiwi": True,
+            "status_level": "healthy",
+            "kiwi_rx": rx,
+        }
+        for rx in range(2, 8)
+    }
+    channels["4"] = {
+        "active": False,
+        "visible_on_kiwi": False,
+        "status_level": "healthy",
+        "last_reason": "kiwi_not_visible",
+        "decoder_output_age_s": 2.0,
+    }
+
+    def _fake_urlopen(request, timeout=0.0):
+        del timeout
+        url = request.full_url if hasattr(request, "full_url") else str(request)
+        assert url.endswith("/health/rx")
+        return _LoopResponse({"overall": "degraded", "channels": channels})
+
+    monkeypatch.setattr("kiwi_scan.auto_set_loop.urllib.request.urlopen", _fake_urlopen)
+
+    state, sick = loop._fixed_health_state()
+
+    assert state == "sick"
+    assert sick == [{"rx": 4, "band": "40m", "mode": "FT8", "freq_hz": 7_074_000.0, "_reason": "inactive"}]
 
 
 def test_restart_sick_receivers_posts_mismatch_reason(monkeypatch) -> None:

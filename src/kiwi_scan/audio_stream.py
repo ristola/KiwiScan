@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 
 _ACTIVE_AUDIO_STREAMS_LOCK = threading.Lock()
 _ACTIVE_AUDIO_STREAMS: dict[str, "_KiwiLiveAudioWavStream"] = {}
+_CAMP_BUSY_RETRY_DELAY_S = 0.35
+_CAMP_BUSY_RETRY_TIMEOUT_S = 8.0
+_KIWI_SND_FLAG_COMPRESSED = 0x10
+_KIWI_SND_FLAG_LITTLE_ENDIAN = 0x80
 _IQ_USB_LOW_CUT_HZ = 300.0
 _IQ_USB_HIGH_CUT_HZ = 2700.0
 _IQ_USB_AUDIO_CENTER_HZ = (_IQ_USB_LOW_CUT_HZ + _IQ_USB_HIGH_CUT_HZ) / 2.0
@@ -168,6 +172,21 @@ def _pcm16le_bytes(samples: object) -> bytes:
     return pcm.tobytes()
 
 
+def _normalize_camp_audio_samples(
+    samples: object,
+    *,
+    is_camping: bool,
+    is_compressed: bool,
+    is_little_endian: bool,
+) -> np.ndarray:
+    pcm = np.asarray(samples, dtype=np.int16)
+    if pcm.size == 0:
+        return pcm
+    if is_camping and is_compressed and not is_little_endian:
+        return pcm.byteswap(inplace=False)
+    return pcm
+
+
 def _demodulate_iq_to_mono_pcm(
     samples: object,
     *,
@@ -313,6 +332,7 @@ class _KiwiLiveAudioWavStream:
             if KiwiSDRStream is None:
                 raise KiwiClientUnavailable("KiwiSDRStream is unavailable")
             KiwiRedirectError = getattr(kiwi, "KiwiRedirectError", RuntimeError)
+            KiwiTooBusyError = getattr(kiwi, "KiwiTooBusyError", RuntimeError)
 
             controller = self
             modulation = self._mode
@@ -320,8 +340,18 @@ class _KiwiLiveAudioWavStream:
             iq_shift_hz = float(self._freq_hz - self._source_freq_hz)
             self._iq_demodulator = _IQSubbandDemodulator(shift_hz=iq_shift_hz)
             lp_cut, hp_cut = _default_preview_passband(modulation)
+            camp_busy_deadline = (time.monotonic() + _CAMP_BUSY_RETRY_TIMEOUT_S) if self._camp_rx is not None else None
 
             class _LiveAudioStream(KiwiSDRStream):
+                def _process_aud(self_inner, body) -> None:
+                    try:
+                        flags = int(body[0]) if body else 0
+                    except Exception:
+                        flags = 0
+                    self_inner._camp_packet_is_compressed = bool(flags & _KIWI_SND_FLAG_COMPRESSED)
+                    self_inner._camp_packet_is_little_endian = bool(flags & _KIWI_SND_FLAG_LITTLE_ENDIAN)
+                    super()._process_aud(body)
+
                 def _on_sample_rate_change(self_inner) -> None:
                     controller._set_ready(getattr(self_inner, "_sample_rate", None))
 
@@ -335,7 +365,13 @@ class _KiwiLiveAudioWavStream:
                         pass
 
                 def _process_audio_samples(self_inner, seq, samples, rssi, is_compressed):
-                    controller._push_audio(_pcm16le_bytes(samples))
+                    normalized_samples = _normalize_camp_audio_samples(
+                        samples,
+                        is_camping=bool(getattr(self_inner, "_camping", False)),
+                        is_compressed=bool(getattr(self_inner, "_camp_packet_is_compressed", False)),
+                        is_little_endian=bool(getattr(self_inner, "_camp_packet_is_little_endian", False)),
+                    )
+                    controller._push_audio(_pcm16le_bytes(normalized_samples))
 
                 def _process_iq_samples(self_inner, seq, samples, rssi, gps, is_compressed=None):
                     try:
@@ -454,6 +490,26 @@ class _KiwiLiveAudioWavStream:
                     while not self._stop_event.is_set():
                         stream.run()
                     break
+                except KiwiTooBusyError as exc:
+                    if self._camp_rx is None:
+                        raise KiwiAudioStreamError(str(exc)) from exc
+                    now = time.monotonic()
+                    if camp_busy_deadline is None or now >= camp_busy_deadline:
+                        raise KiwiAudioStreamError(str(exc)) from exc
+                    logger.info(
+                        "Kiwi audio camp waiting for rx=%s on %s:%s after busy response; retrying",
+                        self._camp_rx,
+                        self._host,
+                        self._port,
+                    )
+                    try:
+                        stream.close()
+                    except Exception:
+                        pass
+                    self._stream = None
+                    remaining_s = max(0.0, camp_busy_deadline - now)
+                    self._stop_event.wait(timeout=min(_CAMP_BUSY_RETRY_DELAY_S, remaining_s))
+                    continue
                 except KiwiRedirectError as exc:
                     redirect_count += 1
                     if redirect_count > max_redirects:

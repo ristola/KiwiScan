@@ -6424,12 +6424,34 @@
                                     <input id="cfg-kiwi-grid" type="text" placeholder="FM08so"
                                         title="Maidenhead grid square for the configured KiwiSDR">
                                 </label>
+                                <label class="control-field">Kiwi User Password
+                                    <input id="cfg-kiwi-password" type="password" placeholder="Optional"
+                                        autocomplete="new-password"
+                                        title="Stored locally for normal Kiwi receiver connections when only limited no-password channels are available">
+                                </label>
+                                <div class="control-field">User Password Status
+                                    <div class="control-status" id="cfg-kiwi-password-status">Not saved</div>
+                                </div>
+                                <label class="control-field">Kiwi Admin Password
+                                    <input id="cfg-kiwi-admin-password" type="password" placeholder="Optional"
+                                        autocomplete="new-password"
+                                        title="Stored locally for Kiwi admin kick and receiver slot recovery">
+                                </label>
+                                <div class="control-field">Admin Password Status
+                                    <div class="control-status" id="cfg-kiwi-admin-password-status">Not saved</div>
+                                </div>
                             </div>
                             <div class="control-actions" style="margin-top: 0;">
                                 <button class="action-btn" id="cfg-add-kiwi" type="button" data-icon="plus">Add
                                     Kiwi</button>
                                 <button class="action-btn" id="cfg-discover" type="button" data-icon="search">Discover
                                     Kiwi</button>
+                                <button class="action-btn" id="cfg-clear-password" type="button"
+                                    data-icon="lock-open">Forget
+                                    User Password</button>
+                                <button class="action-btn" id="cfg-clear-admin-password" type="button"
+                                    data-icon="lock-open">Forget
+                                    Admin Password</button>
                             </div>
                         </section>
                         <div id="cfg-discovered-kiwi-cards" class="settings-subcard-grid"></div>
@@ -8416,13 +8438,46 @@
             const allEntries = collectConfiguredKiwiInputs({ includeBlank: true });
             const primary = allEntries[0] || buildDefaultConfiguredKiwiEntry();
             const normalizedPrimary = normalizeConfiguredKiwiEntry(primary, { preserveBlankHost: true }) || buildDefaultConfiguredKiwiEntry();
-            return {
+            const password = readTextInput("cfg-kiwi-password", "").trim();
+            const adminPassword = readTextInput("cfg-kiwi-admin-password", "").trim();
+            const payload = {
                 host: normalizedPrimary.host || KIWI_SETTINGS_DEFAULTS.host,
                 port: normalizedPrimary.port || KIWI_SETTINGS_DEFAULTS.port,
                 latitude: Number.isFinite(Number(normalizedPrimary.latitude)) ? Number(normalizedPrimary.latitude) : KIWI_SETTINGS_DEFAULTS.latitude,
                 longitude: Number.isFinite(Number(normalizedPrimary.longitude)) ? Number(normalizedPrimary.longitude) : KIWI_SETTINGS_DEFAULTS.longitude,
                 kiwisdrs: collectConfiguredKiwiInputs({ includeBlank: false }),
             };
+            if (password) payload.kiwi_password = password;
+            if (adminPassword) payload.kiwi_admin_password = adminPassword;
+            return payload;
+        }
+
+        function setKiwiPasswordUiState(isSet = false) {
+            const input = byId("cfg-kiwi-password");
+            const statusEl = byId("cfg-kiwi-password-status");
+            if (input) {
+                input.value = "";
+                input.placeholder = isSet ? "Saved locally; enter a new value to replace" : "Optional";
+            }
+            if (statusEl) {
+                statusEl.textContent = isSet
+                    ? "Saved locally for Kiwi receiver connections"
+                    : "Not saved";
+            }
+        }
+
+        function setKiwiAdminPasswordUiState(isSet = false) {
+            const input = byId("cfg-kiwi-admin-password");
+            const statusEl = byId("cfg-kiwi-admin-password-status");
+            if (input) {
+                input.value = "";
+                input.placeholder = isSet ? "Saved locally; enter a new value to replace" : "Optional";
+            }
+            if (statusEl) {
+                statusEl.textContent = isSet
+                    ? "Saved locally for admin kick / slot recovery"
+                    : "Not saved";
+            }
         }
 
         function renderConfiguredKiwiSettings(entries = []) {
@@ -12356,6 +12411,8 @@
                     { preserveBlankHost: true },
                 );
                 renderConfiguredKiwiSettings(nextConfiguredKiwis);
+                setKiwiPasswordUiState(!!cfg.kiwi_password_set);
+                setKiwiAdminPasswordUiState(!!cfg.kiwi_admin_password_set);
                 const nextKiwiSettings = normalizeKiwiSettingsSnapshot(collectConfiguredKiwiInputs({ includeBlank: true })[0] || buildDefaultConfiguredKiwiEntry());
                 const shouldAutoDiscoverKiwi = !kiwiAutoDiscoverAttempted && !hasConfiguredKiwiIp(nextConfiguredKiwis);
                 const _cfgDwellS = byId("cfg-dwell-s"); if (_cfgDwellS) _cfgDwellS.value = Number.isFinite(Number(cfg.dwell_s)) ? String(Number(cfg.dwell_s)) : "";
@@ -12469,9 +12526,13 @@
         async function saveConfiguredKiwiConfig(options = {}) {
             const autosave = !!options.autosave;
             const payload = buildKiwiConfigPayloadFromInputs();
+            const savedPassword = typeof payload.kiwi_password === "string" && payload.kiwi_password.length > 0;
+            const savedAdminPassword = typeof payload.kiwi_admin_password === "string" && payload.kiwi_admin_password.length > 0;
             setConfigStatus(autosave ? "autosaving Kiwi settings..." : "saving Kiwi settings...");
             try {
                 await postJson("/config", payload);
+                if (savedPassword) setKiwiPasswordUiState(true);
+                if (savedAdminPassword) setKiwiAdminPasswordUiState(true);
                 const stamp = new Date().toLocaleTimeString();
                 setConfigStatus(autosave ? `autosaved Kiwi settings (${stamp})` : "saved Kiwi settings");
                 return true;
@@ -12494,6 +12555,8 @@
                 retune_pause_s: readNumberInput("cfg-retune-pause-s", 0.5),
                 fast_scan_enabled: readSelectBool("cfg-fast-scan-enabled", true),
             };
+            const savedPassword = typeof payload.kiwi_password === "string" && payload.kiwi_password.length > 0;
+            const savedAdminPassword = typeof payload.kiwi_admin_password === "string" && payload.kiwi_admin_password.length > 0;
             const automationPayload = {
                 uiThemeMode: normalizeUiThemeMode(readTextInput("cfg-ui-theme-mode", "auto"), "auto"),
                 uiThemeNightHour: readNumberInput("cfg-ui-theme-night-hour", 21),
@@ -12511,6 +12574,8 @@
                     postJson("/config", payload),
                     postJson("/automation/settings", automationPayload),
                 ]);
+                if (savedPassword) setKiwiPasswordUiState(true);
+                if (savedAdminPassword) setKiwiAdminPasswordUiState(true);
                 // Keep latestAutomationSettings in sync so saveAutomationSection
                 // doesn't overwrite these values with a stale snapshot.
                 if (latestAutomationSettings && typeof latestAutomationSettings === "object") {
@@ -13393,6 +13458,8 @@
             const cfgDiscover = byId("cfg-discover");
             const cfgSave = byId("cfg-save");
             const cfgKiwiCards = byId("cfg-discovered-kiwi-cards");
+            const cfgClearPassword = byId("cfg-clear-password");
+            const cfgClearAdminPassword = byId("cfg-clear-admin-password");
             const cfgDepsRefresh = byId("cfg-deps-refresh");
             const cfgDepsTest = byId("cfg-deps-test");
             const cfgCheckUpdates = byId("cfg-check-updates");
@@ -13465,6 +13532,30 @@
                 });
             }
             if (cfgSave) cfgSave.addEventListener("click", () => { saveConfigSection(); });
+            if (cfgClearPassword) {
+                cfgClearPassword.addEventListener("click", async () => {
+                    setConfigStatus("clearing Kiwi user password...");
+                    try {
+                        await postJson("/config", { clear_kiwi_password: true });
+                        setKiwiPasswordUiState(false);
+                        setConfigStatus("cleared Kiwi user password");
+                    } catch (err) {
+                        setConfigStatus(`clear failed: ${String((err && err.message) || err)}`);
+                    }
+                });
+            }
+            if (cfgClearAdminPassword) {
+                cfgClearAdminPassword.addEventListener("click", async () => {
+                    setConfigStatus("clearing Kiwi admin password...");
+                    try {
+                        await postJson("/config", { clear_kiwi_admin_password: true });
+                        setKiwiAdminPasswordUiState(false);
+                        setConfigStatus("cleared Kiwi admin password");
+                    } catch (err) {
+                        setConfigStatus(`clear failed: ${String((err && err.message) || err)}`);
+                    }
+                });
+            }
             if (cfgDepsRefresh) cfgDepsRefresh.addEventListener("click", () => { refreshRuntimeDeps(); });
             if (cfgDepsTest) cfgDepsTest.addEventListener("click", () => { testRuntimeDepPathFailures(); });
             if (cfgCheckUpdates) cfgCheckUpdates.addEventListener("click", () => { checkForUpdates(); });

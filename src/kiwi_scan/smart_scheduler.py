@@ -68,6 +68,7 @@ _FT8_BLOCK_STARTS: tuple[int, ...] = (0, 4, 8, 10, 16, 20)
 _SCORE_WEIGHT: Dict[str, float] = {"OPEN": 3.0, "MARGINAL": 1.0, "CLOSED": 0.0}
 _DAY_ROAMING_BANDS: frozenset[str] = frozenset({"10m", "12m", "15m"})
 _NIGHT_ROAMING_BANDS: frozenset[str] = frozenset({"60m", "80m", "160m"})
+_ROAMING_ELIGIBLE_BANDS: frozenset[str] = frozenset(_DAY_ROAMING_BANDS | _NIGHT_ROAMING_BANDS)
 _ROAMING_LOW_DECODES_PER_HOUR_DEFAULT = 3
 _ROAMING_LOW_DECODES_PER_HOUR_DAY = 3
 _ROAMING_LOW_DECODES_PER_HOUR_NIGHT = 1
@@ -803,12 +804,41 @@ class SmartScheduler:
         """Rank available bands using the smart score.
         Calculates all variables: live_activity, unique calls, snr, distance, setup, etc.
         """
+        normalized_available: list[str] = []
+        seen_available: set[str] = set()
+        for band in available_bands:
+            band_text = str(band).strip()
+            if not band_text or band_text in seen_available or band_text not in _ROAMING_ELIGIBLE_BANDS:
+                continue
+            normalized_available.append(band_text)
+            seen_available.add(band_text)
+        available_bands = normalized_available
+        if not available_bands:
+            with self._lock:
+                self._last_roaming_decision = {
+                    "available_bands": [],
+                    "current_roaming": [],
+                    "ranked_bands": [],
+                    "selected_bands": [],
+                    "decode_rates_per_hour": {},
+                    "low_decode_threshold_per_hour": int(_ROAMING_LOW_DECODES_PER_HOUR_DEFAULT),
+                    "low_rate_bands": [],
+                    "promoted_bands": [],
+                    "displaced_bands": [],
+                    "updated_ts": time.time(),
+                }
+            return []
         try:
             recent_decodes = get_recent_decodes(900)
         except Exception:
             recent_decodes = []
 
-        current_roaming = [str(band).strip() for band in current_roaming if str(band).strip()]
+        available_lookup = set(available_bands)
+        current_roaming = [
+            str(band).strip()
+            for band in current_roaming
+            if str(band).strip() in available_lookup
+        ]
         roaming_health = self._current_roaming_health_snapshot(available_bands)
         if not current_roaming:
             current_roaming = list(roaming_health["bands"])

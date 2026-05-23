@@ -61,6 +61,7 @@ class DiscoveryManager:
         self.host = DEFAULT_KIWI_HOST
         self.port = 8073
         self.password = str(os.environ.get("KIWISCAN_KIWI_PASSWORD", "") or "").strip() or None
+        self.admin_password = str(os.environ.get("KIWISCAN_KIWI_ADMIN_PASSWORD", "") or "").strip() or None
         # Disable debug logging by default; enable via /config if needed
         self.debug = False
         # Let the kiwi server choose an available receiver for discovery.
@@ -91,7 +92,9 @@ class DiscoveryManager:
         root = Path(__file__).resolve().parents[2]
         self._config_path = root / "outputs" / "config.json"
         self._thresholds_path = root / "outputs" / "thresholds_by_band.json"
+        self._secrets_path = root / "config" / "kiwi_secrets.json"
         self._load_config()
+        self._load_secrets()
         try:
             if self._thresholds_path.exists():
                 data = json.loads(self._thresholds_path.read_text(encoding="utf-8"))
@@ -229,6 +232,41 @@ class DiscoveryManager:
         val = _read_float("discovery_updated_unix")
         if val is not None and val >= 0:
             self.discovery_updated_unix = val
+
+    def _load_secrets(self) -> None:
+        try:
+            if not self._secrets_path.exists():
+                return
+            data = json.loads(self._secrets_path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                return
+        except Exception:
+            return
+
+        if not self.password:
+            value = str(data.get("kiwi_password") or "").strip()
+            self.password = value or None
+        if not self.admin_password:
+            value = str(data.get("kiwi_admin_password") or "").strip()
+            self.admin_password = value or None
+
+    def _save_secrets(self) -> None:
+        try:
+            kiwi_password = str(self.password or "").strip()
+            kiwi_admin_password = str(self.admin_password or "").strip()
+            if not kiwi_password and not kiwi_admin_password:
+                if self._secrets_path.exists():
+                    self._secrets_path.unlink()
+                return
+            self._secrets_path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {"saved_unix": time.time()}
+            if kiwi_password:
+                payload["kiwi_password"] = kiwi_password
+            if kiwi_admin_password:
+                payload["kiwi_admin_password"] = kiwi_admin_password
+            self._secrets_path.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+        except Exception:
+            pass
 
     @staticmethod
     def _sanitize_discovered_kiwis(raw: object) -> list[dict[str, object]]:
@@ -427,6 +465,28 @@ class DiscoveryManager:
     def get_configured_kiwis(self) -> list[dict[str, object]]:
         with self.lock:
             return list(self._configured_kiwi_payload())
+
+    def set_kiwi_password(self, password: object, *, save: bool = True) -> None:
+        with self.lock:
+            value = str(password or "").strip()
+            self.password = value or None
+            if save:
+                self._save_secrets()
+
+    def has_kiwi_password(self) -> bool:
+        with self.lock:
+            return bool(str(self.password or "").strip())
+
+    def set_kiwi_admin_password(self, password: object, *, save: bool = True) -> None:
+        with self.lock:
+            value = str(password or "").strip()
+            self.admin_password = value or None
+            if save:
+                self._save_secrets()
+
+    def has_kiwi_admin_password(self) -> bool:
+        with self.lock:
+            return bool(str(self.admin_password or "").strip())
 
     def set_discovered_kiwis(self, discovery: Dict[str, object], *, save: bool = True) -> None:
         found = self._sanitize_discovered_kiwis(discovery.get("found"))
