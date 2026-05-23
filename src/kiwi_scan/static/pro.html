@@ -16832,6 +16832,13 @@
                     representedReasonCounts[effectiveReason] = Number(representedReasonCounts[effectiveReason] || 0) + 1;
                     const subjectParts = getFaultLogSubjectParts(rx, ch);
                     const detailBits = [];
+                    let detailText = meta.detail;
+
+                    if (effectiveReason === "silent_no_decodes" && Number.isFinite(Number(ch.decoder_output_age_s))) {
+                        detailText = ch.is_stalled
+                            ? "Decoder heartbeat looks stale; receiver stayed visible on Kiwi but produced no decodes past the silent threshold."
+                            : "Decoder heartbeat is current; receiver stayed visible on Kiwi but produced no decodes past the silent threshold.";
+                    }
 
                     if ((ch.is_silent || ch.is_no_decode_warning) && Number.isFinite(Number(ch.decode_age_s))) {
                         detailBits.push(`last decode ${fmtAge(ch.decode_age_s)} ago`);
@@ -16856,7 +16863,7 @@
                         reasonKey: effectiveReason,
                         rx: ch.rx != null ? ch.rx : rx,
                         subject: subjectParts.join(" · "),
-                        message: detailBits.length ? `${meta.detail} ${detailBits.join(" · ")}.` : meta.detail,
+                        message: detailBits.length ? `${detailText} ${detailBits.join(" · ")}.` : detailText,
                         updatedUnix: ch.last_updated_unix,
                         ageText: Number.isFinite(Number(ch.last_updated_unix))
                             ? `${fmtAge((Date.now() / 1000) - Number(ch.last_updated_unix))} ago`

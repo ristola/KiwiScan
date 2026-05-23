@@ -54,6 +54,7 @@ def _assert_dashboard_core(html: str) -> None:
         'await postJson("/net_monitor/deactivate", {})',
         'const MAP_MODE_FILTERS = ["FT8", "FT4", "WSPR", "SSB"]',
         'const digits = mode === "WSPR" ? 4 : 3;',
+        'Decoder heartbeat is current; receiver stayed visible on Kiwi but produced no decodes past the silent threshold.',
     ]
 
     forbidden_snippets = [

@@ -373,6 +373,27 @@ def test_receiver_worker_digital_usb_cut_args_match_ft8_decoder_window() -> None
     assert _ReceiverWorker._digital_usb_cut_args() == "-L 0 -H 3100"
 
 
+def test_receiver_worker_digital_resample_gain_defaults_to_headroom() -> None:
+    assert _ReceiverWorker._digital_resample_gain() == 0.25
+
+
+def test_receiver_worker_digital_resample_gain_honors_env(monkeypatch) -> None:
+    monkeypatch.setenv("KIWISCAN_DIGITAL_RESAMPLE_GAIN", "0.5")
+
+    assert _ReceiverWorker._digital_resample_gain() == 0.5
+
+
+def test_receiver_worker_digital_resample_cmd_includes_gain(monkeypatch) -> None:
+    monkeypatch.setenv("KIWISCAN_DIGITAL_RESAMPLE_GAIN", "0.5")
+    worker = _make_worker()
+
+    assert worker._digital_resample_cmd() == (
+        f"{receiver_manager.shlex.quote(worker._sox_path)} -v 0.5 "
+        "-t raw -r 12000 -e signed -b 16 -c 1 - "
+        "-t raw -r 48000 -e signed -b 16 -c 1 -"
+    )
+
+
 def test_receiver_worker_decoder_temp_roots_are_isolated_by_mode_and_port(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("KIWISCAN_FT8MODEM_TMP", str(tmp_path / "ft8modem"))
 

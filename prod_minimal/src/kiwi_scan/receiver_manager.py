@@ -208,6 +208,7 @@ class ReceiverAssignment:
 class _ReceiverWorker(threading.Thread):
     _DIGITAL_USB_LOW_CUT_HZ = 0
     _DIGITAL_USB_HIGH_CUT_HZ = 3100
+    _DIGITAL_RESAMPLE_GAIN = 0.25
 
     def __init__(
         self,
@@ -807,6 +808,24 @@ class _ReceiverWorker(threading.Thread):
     def _digital_usb_cut_args(cls) -> str:
         return f"-L {int(cls._DIGITAL_USB_LOW_CUT_HZ)} -H {int(cls._DIGITAL_USB_HIGH_CUT_HZ)}"
 
+    @classmethod
+    def _digital_resample_gain(cls) -> float:
+        return cls._env_float(
+            "KIWISCAN_DIGITAL_RESAMPLE_GAIN",
+            cls._DIGITAL_RESAMPLE_GAIN,
+            min_v=0.05,
+            max_v=1.0,
+        )
+
+    def _digital_resample_cmd(self) -> str:
+        gain = self._digital_resample_gain()
+        gain_text = f"{gain:.4g}"
+        return (
+            f"{shlex.quote(self._sox_path)} -v {gain_text} "
+            "-t raw -r 12000 -e signed -b 16 -c 1 - "
+            "-t raw -r 48000 -e signed -b 16 -c 1 -"
+        )
+
     @staticmethod
     def _decoder_keep_wavs_enabled() -> bool:
         return _ReceiverWorker._env_bool("KIWISCAN_FT8MODEM_KEEP", False)
@@ -1192,8 +1211,7 @@ class _ReceiverWorker(threading.Thread):
                         pipeline_cmd = (
                             f"{kiwirecorder_base_cmd} -f {freq_khz} -m usb {self._digital_usb_cut_args()} "
                             f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
-                            f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
-                                f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
+                            f"{self._digital_resample_cmd()} | "
                             f"{udp_sender_cmd}"
                         )
             elif self._is_dual_mode():
@@ -1229,8 +1247,7 @@ class _ReceiverWorker(threading.Thread):
                     pipeline_cmd = (
                         f"{kiwirecorder_base_cmd} -f {freq_khz} -m usb {self._digital_usb_cut_args()} "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
-                        f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
-                            f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
+                        f"{self._digital_resample_cmd()} | "
                         f"{self._python_cmd} -u {fanout_path} 127.0.0.1 {udp_port_ft8} {udp_port_ft4}"
                     )
             elif self._is_ft4_wspr_mode():
@@ -1270,8 +1287,7 @@ class _ReceiverWorker(threading.Thread):
                     pipeline_cmd = (
                         f"{kiwirecorder_base_cmd} -f {wspr_freq_khz} -m usb {self._digital_usb_cut_args()} "
                         f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
-                        f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
-                            f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
+                        f"{self._digital_resample_cmd()} | "
                         f"{udp_sender_cmd}"
                     )
             else:
@@ -1281,8 +1297,7 @@ class _ReceiverWorker(threading.Thread):
                 pipeline_cmd = (
                     f"{kiwirecorder_base_cmd} -f {freq_khz} -m usb {self._digital_usb_cut_args()} "
                     f"--rx-chan {self._kiwi_rx_chan()} --user '{user_label}' --nc --quiet | "
-                    f"{self._sox_path} -t raw -r 12000 -e signed -b 16 -c 1 - "
-                        f"-t raw -r 48000 -e signed -b 16 -c 1 - | "
+                    f"{self._digital_resample_cmd()} | "
                     f"{udp_sender_cmd}"
                 )
             try:
