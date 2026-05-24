@@ -2,6 +2,7 @@
 <html lang="en">
 
 <head>
+            updateServerChipFromState();
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>KiwiScan Pro Console</title>
@@ -480,7 +481,6 @@
 
         .topbar {
             display: flex;
-            justify-content: space-between;
             align-items: center;
             gap: 14px;
             margin-bottom: 14px;
@@ -489,6 +489,18 @@
             border-radius: 16px;
             box-shadow: var(--shadow);
             padding: 12px 16px;
+        }
+
+        .topbar-brand {
+            flex: 0 0 auto;
+            min-width: 0;
+        }
+
+        .topbar-center {
+            flex: 1 1 auto;
+            min-width: 0;
+            display: flex;
+            justify-content: center;
         }
 
         .title {
@@ -502,8 +514,8 @@
             display: inline-flex;
             align-items: center;
             gap: 10px;
-            margin-left: auto;
             position: relative;
+            flex: 0 0 auto;
         }
 
         .subtitle {
@@ -549,6 +561,67 @@
             border-radius: 12px;
             padding: 3px;
             gap: 2px;
+        }
+
+        .topbar-kiwi-group {
+            display: inline-flex;
+            align-items: center;
+            background: color-mix(in srgb, var(--panel), white 3%);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: 3px;
+            gap: 2px;
+        }
+
+        .topbar-kiwi-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            height: 30px;
+            padding: 0 12px;
+            border: 1px solid transparent;
+            border-radius: 9px;
+            background: transparent;
+            color: var(--muted);
+            font-size: 0.76rem;
+            font-family: inherit;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
+        }
+
+        .topbar-kiwi-btn:hover:not(:disabled) {
+            background: color-mix(in srgb, var(--ink), transparent 88%);
+            color: var(--ink);
+        }
+
+        .topbar-kiwi-btn[aria-pressed="true"] {
+            background: color-mix(in srgb, var(--accent), white 12%);
+            border-color: color-mix(in srgb, var(--accent), white 28%);
+            color: #fff;
+        }
+
+        .topbar-kiwi-btn:disabled {
+            opacity: 0.45;
+            cursor: default;
+        }
+
+        .topbar-kiwi-btn[hidden] {
+            display: none !important;
+        }
+
+        .topbar-kiwi-meta {
+            font-size: 0.62rem;
+            font-weight: 800;
+            letter-spacing: 0.07em;
+            text-transform: uppercase;
+            opacity: 0.78;
+        }
+
+        .topbar-kiwi-btn[aria-pressed="true"] .topbar-kiwi-meta {
+            opacity: 0.88;
         }
 
         .topbar-mode-btn {
@@ -1133,6 +1206,47 @@
             word-break: break-word;
         }
 
+        #chip-server-endpoint {
+            white-space: normal;
+            line-height: 1.35;
+        }
+
+        .server-chip-list {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .server-chip-entry {
+            word-break: break-word;
+        }
+
+        .server-chip-section-heading {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            margin-top: 6px;
+            color: var(--muted);
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .server-chip-section-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 14px;
+            height: 14px;
+            color: color-mix(in srgb, var(--accent), white 22%);
+        }
+
+        .server-chip-section-icon svg {
+            width: 14px;
+            height: 14px;
+        }
+
         .layout {
             display: grid;
             grid-template-columns: 1fr;
@@ -1419,6 +1533,20 @@
             flex-wrap: wrap;
             gap: 8px;
             margin-top: 10px;
+        }
+
+        .kiwi-config-actions {
+            align-items: center;
+            background: transparent;
+            border: 0;
+            box-shadow: none;
+            padding: 0;
+        }
+
+        .kiwi-config-actions .action-btn {
+            flex: 0 0 auto;
+            width: auto;
+            max-width: 100%;
         }
 
         .settings-card {
@@ -2836,6 +2964,11 @@
             padding: 7px 10px;
             cursor: pointer;
             transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+        }
+
+        .action-btn[hidden],
+        .action-btn-sm[hidden] {
+            display: none !important;
         }
 
         .action-btn:hover {
@@ -5421,6 +5554,20 @@
                 grid-template-columns: 1fr;
             }
 
+            .topbar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .topbar-center {
+                justify-content: flex-start;
+            }
+
+            .topbar-actions {
+                justify-content: flex-start;
+                flex-wrap: wrap;
+            }
+
             .status-overview-items {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
@@ -5524,10 +5671,30 @@
 
         <main class="main">
             <div class="topbar" id="overview">
-                <div>
+                <div class="topbar-brand">
                     <h1 class="title">KiwiScan Pro</h1>
                     <p class="subtitle" id="subtitle">Realtime operations dashboard for receiver health and propagation
                     </p>
+                </div>
+                <div class="topbar-center">
+                    <div class="topbar-kiwi-group" id="topbar-kiwi-selector" aria-label="Select KiwiSDR">
+                        <button class="topbar-kiwi-btn" type="button" data-kiwi-select-index="0" aria-pressed="true">
+                            <span class="topbar-kiwi-label">KIWI 1</span>
+                            <span class="topbar-kiwi-meta">ACTIVE</span>
+                        </button>
+                        <button class="topbar-kiwi-btn" type="button" data-kiwi-select-index="1" aria-pressed="false">
+                            <span class="topbar-kiwi-label">KIWI 2</span>
+                            <span class="topbar-kiwi-meta">UNSET</span>
+                        </button>
+                        <button class="topbar-kiwi-btn" type="button" data-kiwi-select-index="2" aria-pressed="false">
+                            <span class="topbar-kiwi-label">KIWI 3</span>
+                            <span class="topbar-kiwi-meta">UNSET</span>
+                        </button>
+                        <button class="topbar-kiwi-btn" type="button" data-kiwi-select-index="3" aria-pressed="false">
+                            <span class="topbar-kiwi-label">KIWI 4</span>
+                            <span class="topbar-kiwi-meta">UNSET</span>
+                        </button>
+                    </div>
                 </div>
                 <div class="topbar-actions" aria-label="Top bar actions">
                     <div class="rx-mode-group" role="radiogroup" aria-label="Receiver mode">
@@ -5609,7 +5776,7 @@
                 <article class="panel status-overview-card">
                     <div class="status-overview-items">
                         <article class="status-chip" data-icon="server">
-                            <div class="chip-label">Server</div>
+                            <div class="chip-label" id="chip-server-label">Kiwi Server</div>
                             <div class="chip-value" id="chip-server">Connecting...</div>
                             <div class="chip-sub mono" id="chip-server-endpoint">--</div>
                         </article>
@@ -6402,7 +6569,8 @@
                             </div>
                         </section>
 
-                        <section class="settings-card" aria-labelledby="settings-kiwisdr-title">
+                        <section class="settings-card" id="cfg-primary-kiwi-card"
+                            aria-labelledby="settings-kiwisdr-title">
                             <div class="settings-card-title" id="settings-kiwisdr-title">KiwiSdr Settings</div>
                             <div class="meta" id="settings-kiwisdr-meta" hidden></div>
                             <div class="control-grid" style="margin-top: 0;">
@@ -6441,20 +6609,27 @@
                                     <div class="control-status" id="cfg-kiwi-admin-password-status">Not saved</div>
                                 </div>
                             </div>
-                            <div class="control-actions" style="margin-top: 0;">
-                                <button class="action-btn" id="cfg-add-kiwi" type="button" data-icon="plus">Add
-                                    Kiwi</button>
-                                <button class="action-btn" id="cfg-discover" type="button" data-icon="search">Discover
-                                    Kiwi</button>
+                            <div class="control-actions kiwi-config-actions" id="cfg-primary-kiwi-actions"
+                                style="margin-top: 0;">
                                 <button class="action-btn" id="cfg-clear-password" type="button"
                                     data-icon="lock-open">Forget
                                     User Password</button>
                                 <button class="action-btn" id="cfg-clear-admin-password" type="button"
                                     data-icon="lock-open">Forget
                                     Admin Password</button>
+                                <button class="action-btn" id="cfg-remove-primary-kiwi" type="button" hidden>Remove
+                                    Kiwi</button>
                             </div>
                         </section>
                         <div id="cfg-discovered-kiwi-cards" class="settings-subcard-grid"></div>
+                        <div class="control-actions kiwi-config-actions" id="cfg-kiwi-list-actions"
+                            style="margin-top: 0; display: none;">
+                            <button class="action-btn" id="cfg-add-kiwi" type="button" data-action="add-kiwi"
+                                data-icon="plus">Add
+                                Kiwi</button>
+                            <button class="action-btn" id="cfg-discover" type="button" data-icon="search">Discover
+                                Kiwi</button>
+                        </div>
 
                         <section class="settings-card" aria-labelledby="settings-layout-title">
                             <div class="settings-card-title" id="settings-layout-title">Layout</div>
@@ -6747,6 +6922,8 @@
         let latestPublishedDecodeStatsByRx = {};
         let latestAssignments = {};
         let latestAssignmentsSource = "";
+        let latestAssignmentsHost = "";
+        let latestAssignmentsPort = 0;
         const FAULT_LOG_NEW_WINDOW_S = 90;
         let lastRateTickMs = Date.now();
         let refreshTimer = null;
@@ -6775,6 +6952,10 @@
         let automationSaveInFlight = false;
         let latestAutomationSettings = {};
         let latestConfiguredKiwiEntries = [];
+        let activeConfiguredKiwiIndex = 0;
+        let activeConfiguredKiwiSaveInFlight = false;
+        let latestDiscoveredKiwiEntries = [];
+        let latestDiscoverySource = "";
         let pendingConfigAutosave = false;
         let pendingAutomationAutosave = false;
         let lastBandActivitySampleMs = Date.now();
@@ -6800,7 +6981,7 @@
         const UI_THEME_DEFAULT_HOUR_OFFSET = 0;
         const UI_THEME_AUTO_DAY_HOUR = 7;
         const UI_DENSITY_DEFAULT_MODE = "normal";
-        const MAX_CONFIGURED_KIWIS = 2;
+        const MAX_CONFIGURED_KIWIS = 4;
         const KIWI_SETTINGS_DEFAULTS = Object.freeze({
             host: "0.0.0.0",
             port: 8073,
@@ -7520,6 +7701,33 @@
                     <div class="system-info-value ${/^(Host|Python|Current UTC|Time|Active Users|Users|Receiver|Software)$/i.test(String(label)) ? "mono" : ""}">${escapeHtml(value)}</div>
                 </div>
             `).join("");
+        }
+
+        function normalizeDiscoveredKiwiEntries(raw = []) {
+            if (!Array.isArray(raw)) return [];
+            const seen = new Set();
+            return raw.map((entry) => {
+                if (!entry || typeof entry !== "object") return null;
+                const host = safeText(entry.host, "");
+                const port = Number(entry.port);
+                if (!host || !Number.isFinite(port) || port <= 0) return null;
+                const key = `${host}:${port}`;
+                if (seen.has(key)) return null;
+                seen.add(key);
+                return {
+                    host,
+                    port,
+                    known_source: safeText(entry.known_source, ""),
+                    known_order: Number.isFinite(Number(entry.known_order)) ? Number(entry.known_order) : null,
+                    name: safeText(entry.name, ""),
+                    sdr_hw: safeText(entry.sdr_hw, ""),
+                    sw_version: safeText(entry.sw_version, ""),
+                    loc: safeText(entry.loc, ""),
+                    grid: safeText(entry.grid, ""),
+                    latitude: Number.isFinite(Number(entry.latitude)) ? Number(entry.latitude) : null,
+                    longitude: Number.isFinite(Number(entry.longitude)) ? Number(entry.longitude) : null,
+                };
+            }).filter(Boolean);
         }
 
         function renderSystemMetrics(container, metrics) {
@@ -8381,6 +8589,107 @@
             return out.slice(0, MAX_CONFIGURED_KIWIS);
         }
 
+        function configuredKiwiEntryKey(entry = null) {
+            const normalized = normalizeConfiguredKiwiEntry(entry || {}, { preserveBlankHost: true });
+            if (!normalized || !isConfiguredKiwiHost(normalized.host)) return "";
+            return `${normalized.host}:${normalized.port}`;
+        }
+
+        function configuredKiwiEntryIdentity(entry = null, kiwiIndex = -1) {
+            const key = configuredKiwiEntryKey(entry);
+            if (key) return key;
+            return Number.isFinite(Number(kiwiIndex)) && Number(kiwiIndex) >= 0
+                ? `blank:${Number(kiwiIndex)}`
+                : "";
+        }
+
+        function buildConfiguredKiwiEntryFromDiscovered(entry = null) {
+            return normalizeConfiguredKiwiEntry({
+                host: safeText(entry && entry.host, ""),
+                port: Number.isFinite(Number(entry && entry.port)) ? Number(entry.port) : KIWI_SETTINGS_DEFAULTS.port,
+                latitude: entry && entry.latitude,
+                longitude: entry && entry.longitude,
+                grid: entry && entry.grid,
+            });
+        }
+
+        function sortDiscoveredKiwiEntries(entries = []) {
+            return [...entries].sort((left, right) => {
+                const leftOrder = Number(left && left.known_order);
+                const rightOrder = Number(right && right.known_order);
+                const leftHasOrder = Number.isFinite(leftOrder);
+                const rightHasOrder = Number.isFinite(rightOrder);
+                if (leftHasOrder || rightHasOrder) {
+                    if (!leftHasOrder) return 1;
+                    if (!rightHasOrder) return -1;
+                    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+                }
+                const leftPrimary = Number(left && left.port) === 8073 ? 0 : 1;
+                const rightPrimary = Number(right && right.port) === 8073 ? 0 : 1;
+                if (leftPrimary !== rightPrimary) return leftPrimary - rightPrimary;
+                const leftPort = Number(left && left.port);
+                const rightPort = Number(right && right.port);
+                if (leftPort !== rightPort) return leftPort - rightPort;
+                return safeText(left && left.host, "").localeCompare(safeText(right && right.host, ""));
+            });
+        }
+
+        function updateDiscoveredKiwiState(entries = [], meta = {}) {
+            latestDiscoveredKiwiEntries = sortDiscoveredKiwiEntries(normalizeDiscoveredKiwiEntries(entries));
+            latestDiscoverySource = safeText(meta && meta.source, latestDiscoverySource || "");
+            updateServerChipFromState();
+            return latestDiscoveredKiwiEntries;
+        }
+
+        function formatDiscoveredKiwiSoftwareText(entry = null) {
+            const raw = safeText(entry && entry.sw_version, "");
+            if (!raw) return "";
+            return /\bkiwi\b|\bdebian\b/i.test(raw) ? raw : `Kiwi v${raw}`;
+        }
+
+        function buildDiscoveredKiwiSettingsMeta(entry = null) {
+            if (!entry || typeof entry !== "object") return "";
+            const parts = [];
+            const name = safeText(entry.name, "");
+            const hardware = safeText(entry.sdr_hw, "");
+            const location = safeText(entry.loc, "");
+            const software = formatDiscoveredKiwiSoftwareText(entry);
+            if (name && name.toLowerCase() !== hardware.toLowerCase()) parts.push(name);
+            if (location) parts.push(location);
+            if (software) parts.push(software);
+            if (!parts.length && latestDiscoverySource) parts.push(`Discovered via ${latestDiscoverySource}`);
+            return parts.join(" · ");
+        }
+
+        function mergeConfiguredKiwiEntriesWithDiscovered(entries = [], discoveredEntries = []) {
+            const merged = normalizeConfiguredKiwiEntries(entries, { preserveBlankHost: true });
+            const discovered = sortDiscoveredKiwiEntries(normalizeDiscoveredKiwiEntries(discoveredEntries));
+            const seen = new Set(merged.map((entry) => configuredKiwiEntryKey(entry)).filter(Boolean));
+            const configuredCount = merged.filter((entry) => isConfiguredKiwiHost(entry && entry.host)).length;
+            let shouldFillBlankSlots = configuredCount === 0;
+
+            discovered.forEach((entry) => {
+                const candidate = buildConfiguredKiwiEntryFromDiscovered(entry);
+                if (!candidate) return;
+                const key = configuredKiwiEntryKey(candidate);
+                if (!key || seen.has(key)) return;
+                const blankIndex = shouldFillBlankSlots
+                    ? merged.findIndex((configuredEntry) => !isConfiguredKiwiHost(configuredEntry && configuredEntry.host))
+                    : -1;
+                if (blankIndex >= 0) {
+                    merged[blankIndex] = candidate;
+                    shouldFillBlankSlots = false;
+                } else if (merged.length < MAX_CONFIGURED_KIWIS) {
+                    merged.push(candidate);
+                } else {
+                    return;
+                }
+                seen.add(key);
+            });
+
+            return (merged.length ? merged : [buildDefaultConfiguredKiwiEntry()]).slice(0, MAX_CONFIGURED_KIWIS);
+        }
+
         function buildDefaultConfiguredKiwiEntry() {
             return {
                 host: "",
@@ -8389,6 +8698,20 @@
                 longitude: null,
                 grid: "",
             };
+        }
+
+        function normalizeActiveConfiguredKiwiIndex(index, entries = latestConfiguredKiwiEntries) {
+            const total = Array.isArray(entries) ? entries.length : 0;
+            if (total <= 0) return 0;
+            const parsed = Math.floor(Number(index));
+            if (!Number.isFinite(parsed) || parsed < 0) return 0;
+            return Math.min(parsed, total - 1);
+        }
+
+        function getActiveConfiguredKiwiEntry(entries = collectConfiguredKiwiInputs({ includeBlank: true })) {
+            if (!Array.isArray(entries) || !entries.length) return buildDefaultConfiguredKiwiEntry();
+            const activeIndex = normalizeActiveConfiguredKiwiIndex(activeConfiguredKiwiIndex, entries);
+            return entries[activeIndex] || buildDefaultConfiguredKiwiEntry();
         }
 
         function hasConfiguredKiwiIp(entries = []) {
@@ -8421,7 +8744,7 @@
             ];
             const cardsEl = byId("cfg-discovered-kiwi-cards");
             if (cardsEl) {
-                cardsEl.querySelectorAll("[data-secondary-kiwi-index]").forEach((card) => {
+                cardsEl.querySelectorAll("section[data-secondary-kiwi-index]").forEach((card) => {
                     entries.push(normalizeConfiguredKiwiEntry({
                         host: card.querySelector('[data-field="host"]')?.value || "",
                         port: card.querySelector('[data-field="port"]')?.value || KIWI_SETTINGS_DEFAULTS.port,
@@ -8434,10 +8757,14 @@
             return includeBlank ? entries.slice(0, MAX_CONFIGURED_KIWIS) : normalizeConfiguredKiwiEntries(entries);
         }
 
-        function buildKiwiConfigPayloadFromInputs() {
-            const allEntries = collectConfiguredKiwiInputs({ includeBlank: true });
-            const primary = allEntries[0] || buildDefaultConfiguredKiwiEntry();
-            const normalizedPrimary = normalizeConfiguredKiwiEntry(primary, { preserveBlankHost: true }) || buildDefaultConfiguredKiwiEntry();
+        function buildKiwiConfigPayloadFromInputs(options = {}) {
+            const overrideEntries = Array.isArray(options.kiwiEntries)
+                ? normalizeConfiguredKiwiEntries(options.kiwiEntries, { preserveBlankHost: true })
+                : null;
+            const allEntries = overrideEntries || collectConfiguredKiwiInputs({ includeBlank: true });
+            const activeIndex = normalizeActiveConfiguredKiwiIndex(activeConfiguredKiwiIndex, allEntries);
+            const activeEntry = allEntries[activeIndex] || buildDefaultConfiguredKiwiEntry();
+            const normalizedPrimary = normalizeConfiguredKiwiEntry(activeEntry, { preserveBlankHost: true }) || buildDefaultConfiguredKiwiEntry();
             const password = readTextInput("cfg-kiwi-password", "").trim();
             const adminPassword = readTextInput("cfg-kiwi-admin-password", "").trim();
             const payload = {
@@ -8445,11 +8772,49 @@
                 port: normalizedPrimary.port || KIWI_SETTINGS_DEFAULTS.port,
                 latitude: Number.isFinite(Number(normalizedPrimary.latitude)) ? Number(normalizedPrimary.latitude) : KIWI_SETTINGS_DEFAULTS.latitude,
                 longitude: Number.isFinite(Number(normalizedPrimary.longitude)) ? Number(normalizedPrimary.longitude) : KIWI_SETTINGS_DEFAULTS.longitude,
-                kiwisdrs: collectConfiguredKiwiInputs({ includeBlank: false }),
+                kiwisdrs: normalizeConfiguredKiwiEntries(allEntries),
+                active_kiwi_index: activeIndex,
+                discovered_kiwis: latestDiscoveredKiwiEntries,
+                discovery_source: latestDiscoverySource,
+                sync_discovered_to_configured: true,
             };
             if (password) payload.kiwi_password = password;
             if (adminPassword) payload.kiwi_admin_password = adminPassword;
             return payload;
+        }
+
+        function applySavedKiwiDiscoveryState(saveResult, entries = collectConfiguredKiwiInputs({ includeBlank: true })) {
+            if (!saveResult || typeof saveResult !== "object" || !Array.isArray(saveResult.discovered_kiwis)) return;
+            const discovered = saveResult.discovered_kiwis;
+            const source = safeText(saveResult.discovery_source, latestDiscoverySource || "");
+            updateDiscoveredKiwiState(discovered, { source });
+            renderConfiguredKiwiSettings(entries, discovered);
+        }
+
+        function renderTopbarKiwiSelector(entries = collectConfiguredKiwiInputs({ includeBlank: true })) {
+            const selectorEl = byId("topbar-kiwi-selector");
+            if (!selectorEl) return;
+            const safeEntries = Array.isArray(entries) && entries.length ? entries : [buildDefaultConfiguredKiwiEntry()];
+            activeConfiguredKiwiIndex = normalizeActiveConfiguredKiwiIndex(activeConfiguredKiwiIndex, safeEntries);
+            selectorEl.setAttribute("aria-busy", activeConfiguredKiwiSaveInFlight ? "true" : "false");
+            selectorEl.querySelectorAll("[data-kiwi-select-index]").forEach((button) => {
+                const index = Number(button.getAttribute("data-kiwi-select-index"));
+                const entry = Number.isFinite(index) ? safeEntries[index] : null;
+                const configured = !!entry && isConfiguredKiwiHost(entry.host);
+                const isActive = configured && index === activeConfiguredKiwiIndex;
+                const labelEl = button.querySelector(".topbar-kiwi-label");
+                const metaEl = button.querySelector(".topbar-kiwi-meta");
+                button.hidden = !configured;
+                if (labelEl) labelEl.textContent = `KIWI ${Number.isFinite(index) ? index + 1 : "?"}`;
+                if (metaEl) metaEl.textContent = configured ? (isActive ? "ACTIVE" : "READY") : "UNSET";
+                button.setAttribute("aria-pressed", isActive ? "true" : "false");
+                button.disabled = activeConfiguredKiwiSaveInFlight || !configured;
+                if (configured) {
+                    button.title = `Use KiwiSDR #${index + 1} (${entry.host}:${entry.port || KIWI_SETTINGS_DEFAULTS.port})`;
+                } else {
+                    button.title = `Configure KiwiSDR #${index + 1} in Settings`;
+                }
+            });
         }
 
         function setKiwiPasswordUiState(isSet = false) {
@@ -8464,6 +8829,7 @@
                     ? "Saved locally for Kiwi receiver connections"
                     : "Not saved";
             }
+            syncSharedKiwiPasswordUi();
         }
 
         function setKiwiAdminPasswordUiState(isSet = false) {
@@ -8478,25 +8844,113 @@
                     ? "Saved locally for admin kick / slot recovery"
                     : "Not saved";
             }
+            syncSharedKiwiPasswordUi();
         }
 
-        function renderConfiguredKiwiSettings(entries = []) {
-            const normalized = normalizeConfiguredKiwiEntries(entries, { preserveBlankHost: true });
-            const safeEntries = normalized.length ? normalized : [buildDefaultConfiguredKiwiEntry()];
+        function buildSharedKiwiPasswordMirrorMarkup() {
+            const passwordInput = byId("cfg-kiwi-password");
+            const passwordStatusEl = byId("cfg-kiwi-password-status");
+            const adminPasswordInput = byId("cfg-kiwi-admin-password");
+            const adminPasswordStatusEl = byId("cfg-kiwi-admin-password-status");
+            const passwordValue = passwordInput ? passwordInput.value : "";
+            const passwordPlaceholder = (passwordInput && passwordInput.placeholder) || "Optional";
+            const passwordStatus = safeText(passwordStatusEl && passwordStatusEl.textContent, "Not saved");
+            const adminPasswordValue = adminPasswordInput ? adminPasswordInput.value : "";
+            const adminPasswordPlaceholder = (adminPasswordInput && adminPasswordInput.placeholder) || "Optional";
+            const adminPasswordStatus = safeText(adminPasswordStatusEl && adminPasswordStatusEl.textContent, "Not saved");
+            return {
+                fieldsHtml: `
+                                <label class="control-field">Kiwi User Password
+                                    <input type="password" data-shared-kiwi-password="user" value="${escapeHtml(passwordValue)}" placeholder="${escapeHtml(passwordPlaceholder)}"
+                                        autocomplete="new-password"
+                                        title="Stored locally for normal Kiwi receiver connections when only limited no-password channels are available">
+                                </label>
+                                <div class="control-field">User Password Status
+                                    <div class="control-status" data-shared-kiwi-password-status="user">${escapeHtml(passwordStatus)}</div>
+                                </div>
+                                <label class="control-field">Kiwi Admin Password
+                                    <input type="password" data-shared-kiwi-password="admin" value="${escapeHtml(adminPasswordValue)}" placeholder="${escapeHtml(adminPasswordPlaceholder)}"
+                                        autocomplete="new-password"
+                                        title="Stored locally for Kiwi admin kick and receiver slot recovery">
+                                </label>
+                                <div class="control-field">Admin Password Status
+                                    <div class="control-status" data-shared-kiwi-password-status="admin">${escapeHtml(adminPasswordStatus)}</div>
+                                </div>
+                `,
+                actionsHtml: `
+                                <button class="action-btn" type="button" data-action="clear-kiwi-password"
+                                    data-icon="lock-open">Forget User Password</button>
+                                <button class="action-btn" type="button" data-action="clear-kiwi-admin-password"
+                                    data-icon="lock-open">Forget Admin Password</button>
+                `,
+            };
+        }
+
+        function syncSharedKiwiPasswordUi() {
+            const passwordInput = byId("cfg-kiwi-password");
+            const passwordStatusEl = byId("cfg-kiwi-password-status");
+            const adminPasswordInput = byId("cfg-kiwi-admin-password");
+            const adminPasswordStatusEl = byId("cfg-kiwi-admin-password-status");
+            const passwordValue = passwordInput ? passwordInput.value : "";
+            const passwordPlaceholder = (passwordInput && passwordInput.placeholder) || "Optional";
+            const passwordStatus = safeText(passwordStatusEl && passwordStatusEl.textContent, "Not saved");
+            const adminPasswordValue = adminPasswordInput ? adminPasswordInput.value : "";
+            const adminPasswordPlaceholder = (adminPasswordInput && adminPasswordInput.placeholder) || "Optional";
+            const adminPasswordStatus = safeText(adminPasswordStatusEl && adminPasswordStatusEl.textContent, "Not saved");
+            document.querySelectorAll('[data-shared-kiwi-password="user"]').forEach((input) => {
+                if (!(input instanceof HTMLInputElement)) return;
+                input.value = passwordValue;
+                input.placeholder = passwordPlaceholder;
+            });
+            document.querySelectorAll('[data-shared-kiwi-password-status="user"]').forEach((statusEl) => {
+                statusEl.textContent = passwordStatus;
+            });
+            document.querySelectorAll('[data-shared-kiwi-password="admin"]').forEach((input) => {
+                if (!(input instanceof HTMLInputElement)) return;
+                input.value = adminPasswordValue;
+                input.placeholder = adminPasswordPlaceholder;
+            });
+            document.querySelectorAll('[data-shared-kiwi-password-status="admin"]').forEach((statusEl) => {
+                statusEl.textContent = adminPasswordStatus;
+            });
+        }
+
+        function renderConfiguredKiwiSettings(entries = [], discoveredEntries = []) {
+            const discovered = sortDiscoveredKiwiEntries(normalizeDiscoveredKiwiEntries(discoveredEntries));
+            const safeEntries = mergeConfiguredKiwiEntriesWithDiscovered(entries, discovered);
             latestConfiguredKiwiEntries = safeEntries;
-            setPrimaryConfiguredKiwiInputs(safeEntries[0]);
+            activeConfiguredKiwiIndex = normalizeActiveConfiguredKiwiIndex(activeConfiguredKiwiIndex, safeEntries);
+            const primaryEntry = safeEntries[0] || buildDefaultConfiguredKiwiEntry();
+            const matchedDiscovered = discovered.find((entry) => entry.host === primaryEntry.host && entry.port === primaryEntry.port) || null;
+            setPrimaryConfiguredKiwiInputs(primaryEntry);
             const titleEl = byId("settings-kiwisdr-title");
             const metaEl = byId("settings-kiwisdr-meta");
             const cardsEl = byId("cfg-discovered-kiwi-cards");
+            const primaryCardEl = byId("cfg-primary-kiwi-card");
+            const primaryActionsEl = byId("cfg-primary-kiwi-actions");
+            const kiwiListActionsEl = byId("cfg-kiwi-list-actions");
+            const addBtn = byId("cfg-add-kiwi");
+            const discoverBtn = byId("cfg-discover");
+            const removePrimaryBtn = byId("cfg-remove-primary-kiwi");
             if (titleEl) titleEl.textContent = "KiwiSDR Settings - Kiwi 1";
-            if (metaEl) metaEl.hidden = true;
+            if (removePrimaryBtn) removePrimaryBtn.hidden = safeEntries.length <= 1;
+            if (metaEl) {
+                const subtitle = buildDiscoveredKiwiSettingsMeta(matchedDiscovered);
+                metaEl.textContent = subtitle;
+                metaEl.hidden = !subtitle;
+            }
             if (cardsEl) {
                 const secondaryEntries = safeEntries.slice(1, MAX_CONFIGURED_KIWIS);
                 cardsEl.innerHTML = secondaryEntries.map((entry, index) => {
                     const kiwiIndex = index + 1;
+                    const entryIdentity = configuredKiwiEntryIdentity(entry, kiwiIndex);
+                    const matchedSecondary = discovered.find((candidate) => candidate.host === entry.host && candidate.port === entry.port) || null;
+                    const metaText = buildDiscoveredKiwiSettingsMeta(matchedSecondary);
+                    const passwordMarkup = buildSharedKiwiPasswordMirrorMarkup();
                     return `
-                        <section class="settings-card" aria-label="Kiwi ${kiwiIndex + 1} settings" data-secondary-kiwi-index="${kiwiIndex}">
+                        <section class="settings-card" aria-label="Kiwi ${kiwiIndex + 1} settings" data-secondary-kiwi-index="${kiwiIndex}" data-secondary-kiwi-key="${escapeHtml(entryIdentity)}">
                             <div class="settings-card-title">KiwiSDR Settings - Kiwi ${kiwiIndex + 1}</div>
+                            ${metaText ? `<div class="meta">${escapeHtml(metaText)}</div>` : ""}
                             <div class="control-grid" style="margin-top: 0;">
                                 <label class="control-field">Kiwi Host
                                     <input type="text" data-field="host" value="${escapeHtml(entry.host || "")}" placeholder="0.0.0.0">
@@ -8513,16 +8967,29 @@
                                 <label class="control-field">Grid Square
                                     <input type="text" data-field="grid" value="${escapeHtml(entry.grid || "")}" placeholder="FM08so">
                                 </label>
+${passwordMarkup.fieldsHtml}
                             </div>
-                            <div class="control-actions" style="margin-top: 0;">
-                                <button class="action-btn" type="button" data-action="remove-kiwi" data-secondary-kiwi-index="${kiwiIndex}">Remove Kiwi</button>
+                            <div class="control-actions kiwi-config-actions" data-secondary-kiwi-actions="${kiwiIndex}" style="margin-top: 0;">
+${passwordMarkup.actionsHtml}
+                                <button class="action-btn" type="button" data-action="remove-kiwi" data-secondary-kiwi-index="${kiwiIndex}" data-secondary-kiwi-key="${escapeHtml(entryIdentity)}">Remove Kiwi</button>
                             </div>
                         </section>
                     `;
                 }).join("");
             }
-            const addBtn = byId("cfg-add-kiwi");
             if (addBtn) addBtn.hidden = safeEntries.length >= MAX_CONFIGURED_KIWIS;
+            if (kiwiListActionsEl) {
+                const secondaryActionRows = cardsEl ? Array.from(cardsEl.querySelectorAll("[data-secondary-kiwi-actions]")) : [];
+                const targetActionsEl = secondaryActionRows[secondaryActionRows.length - 1] || primaryActionsEl;
+                if (targetActionsEl && addBtn && addBtn.parentElement !== targetActionsEl) {
+                    targetActionsEl.appendChild(addBtn);
+                }
+                if (targetActionsEl && discoverBtn && discoverBtn.parentElement !== targetActionsEl) {
+                    targetActionsEl.appendChild(discoverBtn);
+                }
+            }
+            syncSharedKiwiPasswordUi();
+            renderTopbarKiwiSelector(safeEntries);
         }
 
         function setServiceToggleState(next = {}) {
@@ -8546,9 +9013,14 @@
         }
 
         function syncTopbarMenuState() {
-            const host = readTextInput("cfg-host", "");
-            const port = readTextInput("cfg-port", "");
-            const hostText = host ? `${host}${port ? `:${port}` : ""}` : "Kiwi host: --";
+            const entries = Array.isArray(latestConfiguredKiwiEntries) && latestConfiguredKiwiEntries.length
+                ? latestConfiguredKiwiEntries.slice(0, MAX_CONFIGURED_KIWIS)
+                : collectConfiguredKiwiInputs({ includeBlank: true });
+            const activeEntry = getActiveConfiguredKiwiEntry(entries);
+            const host = safeText(activeEntry && activeEntry.host, "");
+            const port = Number(activeEntry && activeEntry.port);
+            const activeLabel = `KiwiSDR #${normalizeActiveConfiguredKiwiIndex(activeConfiguredKiwiIndex, entries) + 1}`;
+            const hostText = host ? `${activeLabel}: ${host}${Number.isFinite(port) ? `:${port}` : ""}` : "Kiwi host: --";
             const hostEl = byId("topbar-menu-host");
             const hostStatusEl = byId("topbar-menu-host-status");
             const runtimeStatusEl = byId("topbar-menu-runtime-status");
@@ -8572,6 +9044,7 @@
 
             applyToggleState(headlessBtn, headlessEnabled);
             applyToggleState(launchdBtn, launchdEnabled);
+            renderTopbarKiwiSelector(entries);
         }
 
         function normalizeUiThemeMode(value, fallback = "auto") {
@@ -8878,6 +9351,36 @@
             recentDecodeIds.clear();
             if (options.resetSeenModes) decodeSeenModes.clear();
             if (options.resetMap) mapPoints.clear();
+        }
+
+        function resetDecodeDashboardState() {
+            decodeCursor = 0;
+            decodeCursorPrimed = true;
+            rateHistory = [];
+            currentDecodeRatePerMin = 0;
+            currentHfActivityDisplayPercent = 0;
+            summaryDecodeRateHistory = [];
+            bandActivityHistory = {};
+            bandBreakdownHistory = {};
+            receiverDecodeTotals = {};
+            receiverDecodeSnrHistory = {};
+            lastKnownSnrByRx = {};
+            latestPublishedDecodeStatsByRx = {};
+            bandChartTimestamps = [];
+            bandChartViewportEndMs = null;
+            _bandChartLastBands = [];
+            _bandChartLastColorMap = {};
+            _bandChartLiveBands = [];
+            _bandChartLiveColorMap = {};
+            resetRecentDecodeState({ resetSeenModes: true, resetMap: true });
+            const busiestBandEl = byId("chip-busiest-band");
+            const allDecodesEl = byId("chip-all-decodes");
+            if (busiestBandEl) busiestBandEl.textContent = "None";
+            if (allDecodesEl) allDecodesEl.textContent = fmtCount(0);
+            renderRecentDecodePanel();
+            schedulePropagationMapRender();
+            renderTrend();
+            updateDecodeStreamActivityChip();
         }
 
         async function reloadRecentDecodeState(latestCursor) {
@@ -12410,10 +12913,12 @@
                         }],
                     { preserveBlankHost: true },
                 );
-                renderConfiguredKiwiSettings(nextConfiguredKiwis);
+                activeConfiguredKiwiIndex = normalizeActiveConfiguredKiwiIndex(cfg.active_kiwi_index, nextConfiguredKiwis);
+                updateDiscoveredKiwiState(cfg.discovered_kiwis, { source: cfg.discovery_source });
+                renderConfiguredKiwiSettings(nextConfiguredKiwis, cfg.discovered_kiwis);
                 setKiwiPasswordUiState(!!cfg.kiwi_password_set);
                 setKiwiAdminPasswordUiState(!!cfg.kiwi_admin_password_set);
-                const nextKiwiSettings = normalizeKiwiSettingsSnapshot(collectConfiguredKiwiInputs({ includeBlank: true })[0] || buildDefaultConfiguredKiwiEntry());
+                const nextKiwiSettings = normalizeKiwiSettingsSnapshot(getActiveConfiguredKiwiEntry(collectConfiguredKiwiInputs({ includeBlank: true })));
                 const shouldAutoDiscoverKiwi = !kiwiAutoDiscoverAttempted && !hasConfiguredKiwiIp(nextConfiguredKiwis);
                 const _cfgDwellS = byId("cfg-dwell-s"); if (_cfgDwellS) _cfgDwellS.value = Number.isFinite(Number(cfg.dwell_s)) ? String(Number(cfg.dwell_s)) : "";
                 const _cfgSpanHz = byId("cfg-span-hz"); if (_cfgSpanHz) _cfgSpanHz.value = Number.isFinite(Number(cfg.span_hz)) ? String(Number(cfg.span_hz)) : "";
@@ -12466,6 +12971,8 @@
                 const candidates = Array.isArray(res.candidates)
                     ? res.candidates
                     : (Array.isArray(res.found) ? res.found : []);
+                updateDiscoveredKiwiState(candidates, { source: res.source });
+                renderConfiguredKiwiSettings(collectConfiguredKiwiInputs({ includeBlank: true }), candidates);
                 if (candidates.length) {
                     const first = candidates[0] || {};
                     const configuredEntries = collectConfiguredKiwiInputs({ includeBlank: true });
@@ -12476,7 +12983,7 @@
                     if (Number.isFinite(Number(first.longitude))) primary.longitude = Number(first.longitude);
                     primary.grid = normalizeKiwiGridText(first.grid);
                     configuredEntries[0] = primary;
-                    renderConfiguredKiwiSettings(configuredEntries);
+                    renderConfiguredKiwiSettings(configuredEntries, candidates);
                     const total = Number.isFinite(Number(res.total_candidates))
                         ? Number(res.total_candidates)
                         : candidates.length;
@@ -12493,7 +13000,7 @@
                         if (Number.isFinite(Number(verification.latitude))) verifiedEntries[0].latitude = Number(verification.latitude);
                         if (Number.isFinite(Number(verification.longitude))) verifiedEntries[0].longitude = Number(verification.longitude);
                         verifiedEntries[0].grid = normalizeKiwiGridText(verification.grid || verifiedEntries[0].grid);
-                        renderConfiguredKiwiSettings(verifiedEntries);
+                        renderConfiguredKiwiSettings(verifiedEntries, candidates);
                     }
                     let saved = true;
                     if (saveOnSuccess) {
@@ -12525,12 +13032,14 @@
 
         async function saveConfiguredKiwiConfig(options = {}) {
             const autosave = !!options.autosave;
-            const payload = buildKiwiConfigPayloadFromInputs();
+            const payload = buildKiwiConfigPayloadFromInputs({ kiwiEntries: options.kiwiEntries });
+            const currentEntries = Array.isArray(payload.kiwisdrs) ? payload.kiwisdrs : [];
             const savedPassword = typeof payload.kiwi_password === "string" && payload.kiwi_password.length > 0;
             const savedAdminPassword = typeof payload.kiwi_admin_password === "string" && payload.kiwi_admin_password.length > 0;
             setConfigStatus(autosave ? "autosaving Kiwi settings..." : "saving Kiwi settings...");
             try {
-                await postJson("/config", payload);
+                const saveResult = await postJson("/config", payload);
+                applySavedKiwiDiscoveryState(saveResult, currentEntries);
                 if (savedPassword) setKiwiPasswordUiState(true);
                 if (savedAdminPassword) setKiwiAdminPasswordUiState(true);
                 const stamp = new Date().toLocaleTimeString();
@@ -12540,6 +13049,46 @@
                 setConfigStatus(`save failed: ${String((err && err.message) || err)}`);
                 return false;
             }
+        }
+
+        async function saveActiveConfiguredKiwiSelection(index) {
+            const entries = collectConfiguredKiwiInputs({ includeBlank: true });
+            const nextIndex = normalizeActiveConfiguredKiwiIndex(index, entries);
+            if (nextIndex === activeConfiguredKiwiIndex && !activeConfiguredKiwiSaveInFlight) return true;
+            const previousIndex = activeConfiguredKiwiIndex;
+            activeConfiguredKiwiIndex = nextIndex;
+            activeConfiguredKiwiSaveInFlight = true;
+            renderTopbarKiwiSelector(entries);
+            syncTopbarMenuState();
+            setConfigStatus(`switching to KiwiSDR #${nextIndex + 1}...`);
+            const ok = await saveConfiguredKiwiConfig({ autosave: true });
+            activeConfiguredKiwiSaveInFlight = false;
+            if (!ok) {
+                activeConfiguredKiwiIndex = previousIndex;
+                renderTopbarKiwiSelector(entries);
+                syncTopbarMenuState();
+                return false;
+            }
+            try {
+                await postJson("/decodes/reset", {});
+            } catch (err) {
+                setConfigStatus(`switched to KiwiSDR #${nextIndex + 1}, but decode reset failed: ${String((err && err.message) || err)}`);
+            }
+            resetDecodeDashboardState();
+            if (nextIndex === 1) {
+                try {
+                    await postJson("/admin/force-reassign", {});
+                    setConfigStatus("switched to KiwiSDR #2, reset decode stats, and restarting receiver assignments...");
+                } catch (err) {
+                    setConfigStatus(`switched to KiwiSDR #2 and reset decode stats, but receiver reassign failed: ${String((err && err.message) || err)}`);
+                }
+            } else {
+                setConfigStatus(`switched to KiwiSDR #${nextIndex + 1} and reset decode stats`);
+            }
+            renderTopbarKiwiSelector(entries);
+            syncTopbarMenuState();
+            await refresh();
+            return true;
         }
 
         async function saveConfigSection(options = {}) {
@@ -12555,6 +13104,7 @@
                 retune_pause_s: readNumberInput("cfg-retune-pause-s", 0.5),
                 fast_scan_enabled: readSelectBool("cfg-fast-scan-enabled", true),
             };
+            const currentEntries = Array.isArray(payload.kiwisdrs) ? payload.kiwisdrs : [];
             const savedPassword = typeof payload.kiwi_password === "string" && payload.kiwi_password.length > 0;
             const savedAdminPassword = typeof payload.kiwi_admin_password === "string" && payload.kiwi_admin_password.length > 0;
             const automationPayload = {
@@ -12570,10 +13120,11 @@
             authoritativeUiThemeHourOffset = clampUiThemeHourOffset(automationPayload.uiThemeHourOffset);
 
             try {
-                await Promise.all([
+                const [configResult] = await Promise.all([
                     postJson("/config", payload),
                     postJson("/automation/settings", automationPayload),
                 ]);
+                applySavedKiwiDiscoveryState(configResult, currentEntries);
                 if (savedPassword) setKiwiPasswordUiState(true);
                 if (savedAdminPassword) setKiwiAdminPasswordUiState(true);
                 // Keep latestAutomationSettings in sync so saveAutomationSection
@@ -13458,8 +14009,11 @@
             const cfgDiscover = byId("cfg-discover");
             const cfgSave = byId("cfg-save");
             const cfgKiwiCards = byId("cfg-discovered-kiwi-cards");
+            const cfgKiwiPassword = byId("cfg-kiwi-password");
+            const cfgKiwiAdminPassword = byId("cfg-kiwi-admin-password");
             const cfgClearPassword = byId("cfg-clear-password");
             const cfgClearAdminPassword = byId("cfg-clear-admin-password");
+            const cfgRemovePrimaryKiwi = byId("cfg-remove-primary-kiwi");
             const cfgDepsRefresh = byId("cfg-deps-refresh");
             const cfgDepsTest = byId("cfg-deps-test");
             const cfgCheckUpdates = byId("cfg-check-updates");
@@ -13515,15 +14069,13 @@
             };
 
             if (cfgReload) cfgReload.addEventListener("click", () => { loadConfigSection(); });
-            if (cfgAddKiwi) {
-                cfgAddKiwi.addEventListener("click", () => {
-                    const entries = collectConfiguredKiwiInputs({ includeBlank: true });
-                    if (entries.length >= MAX_CONFIGURED_KIWIS) return;
-                    entries.push(buildDefaultConfiguredKiwiEntry());
-                    renderConfiguredKiwiSettings(entries);
-                    scheduleConfigAutosave();
-                });
-            }
+            const addBlankConfiguredKiwi = () => {
+                const entries = collectConfiguredKiwiInputs({ includeBlank: true });
+                if (entries.length >= MAX_CONFIGURED_KIWIS) return;
+                entries.push(buildDefaultConfiguredKiwiEntry());
+                renderConfiguredKiwiSettings(entries, latestDiscoveredKiwiEntries);
+            };
+            if (cfgAddKiwi) cfgAddKiwi.addEventListener("click", addBlankConfiguredKiwi);
             if (cfgDiscover) {
                 cfgDiscover.addEventListener("click", async () => {
                     setConfigActionState(cfgDiscover, "busy");
@@ -13532,29 +14084,74 @@
                 });
             }
             if (cfgSave) cfgSave.addEventListener("click", () => { saveConfigSection(); });
-            if (cfgClearPassword) {
-                cfgClearPassword.addEventListener("click", async () => {
-                    setConfigStatus("clearing Kiwi user password...");
-                    try {
-                        await postJson("/config", { clear_kiwi_password: true });
-                        setKiwiPasswordUiState(false);
-                        setConfigStatus("cleared Kiwi user password");
-                    } catch (err) {
-                        setConfigStatus(`clear failed: ${String((err && err.message) || err)}`);
-                    }
+            const clearKiwiPassword = async () => {
+                setConfigStatus("clearing Kiwi user password...");
+                try {
+                    await postJson("/config", { clear_kiwi_password: true });
+                    setKiwiPasswordUiState(false);
+                    setConfigStatus("cleared Kiwi user password");
+                } catch (err) {
+                    setConfigStatus(`clear failed: ${String((err && err.message) || err)}`);
+                }
+            };
+            const clearKiwiAdminPassword = async () => {
+                setConfigStatus("clearing Kiwi admin password...");
+                try {
+                    await postJson("/config", { clear_kiwi_admin_password: true });
+                    setKiwiAdminPasswordUiState(false);
+                    setConfigStatus("cleared Kiwi admin password");
+                } catch (err) {
+                    setConfigStatus(`clear failed: ${String((err && err.message) || err)}`);
+                }
+            };
+            const removeConfiguredKiwiAtIndex = async (kiwiIndex, entryIdentity = "") => {
+                if (!Number.isFinite(kiwiIndex) || kiwiIndex < 0) return;
+                const inputEntries = collectConfiguredKiwiInputs({ includeBlank: true });
+                const latestEntries = normalizeConfiguredKiwiEntries(latestConfiguredKiwiEntries, { preserveBlankHost: true });
+                const entries = latestEntries.length > inputEntries.length ? latestEntries.slice(0, MAX_CONFIGURED_KIWIS) : inputEntries;
+                const matchedIndex = entryIdentity
+                    ? entries.findIndex((entry, index) => configuredKiwiEntryIdentity(entry, index) === entryIdentity)
+                    : -1;
+                const removalIndex = matchedIndex >= 0 ? matchedIndex : kiwiIndex;
+                if (entries.length <= 1 || removalIndex >= entries.length) return;
+                const removedEntry = normalizeConfiguredKiwiEntry(entries[removalIndex], { preserveBlankHost: true });
+                entries.splice(removalIndex, 1);
+                if (removedEntry && isConfiguredKiwiHost(removedEntry.host)) {
+                    updateDiscoveredKiwiState(
+                        latestDiscoveredKiwiEntries.filter((entry) => {
+                            const host = safeText(entry && entry.host, "");
+                            const port = Number.isFinite(Number(entry && entry.port)) ? Number(entry.port) : KIWI_SETTINGS_DEFAULTS.port;
+                            return host !== removedEntry.host || port !== removedEntry.port;
+                        }),
+                        { source: latestDiscoverySource },
+                    );
+                }
+                renderConfiguredKiwiSettings(entries, latestDiscoveredKiwiEntries);
+                await saveConfiguredKiwiConfig({ autosave: true, kiwiEntries: entries });
+            };
+            if (cfgKiwiPassword) {
+                cfgKiwiPassword.addEventListener("input", syncSharedKiwiPasswordUi);
+                cfgKiwiPassword.addEventListener("change", syncSharedKiwiPasswordUi);
+            }
+            if (cfgKiwiAdminPassword) {
+                cfgKiwiAdminPassword.addEventListener("input", syncSharedKiwiPasswordUi);
+                cfgKiwiAdminPassword.addEventListener("change", syncSharedKiwiPasswordUi);
+            }
+            if (cfgClearPassword) cfgClearPassword.addEventListener("click", clearKiwiPassword);
+            if (cfgClearAdminPassword) cfgClearAdminPassword.addEventListener("click", clearKiwiAdminPassword);
+            if (cfgRemovePrimaryKiwi) {
+                cfgRemovePrimaryKiwi.addEventListener("click", async () => {
+                    await removeConfiguredKiwiAtIndex(0);
                 });
             }
-            if (cfgClearAdminPassword) {
-                cfgClearAdminPassword.addEventListener("click", async () => {
-                    setConfigStatus("clearing Kiwi admin password...");
-                    try {
-                        await postJson("/config", { clear_kiwi_admin_password: true });
-                        setKiwiAdminPasswordUiState(false);
-                        setConfigStatus("cleared Kiwi admin password");
-                    } catch (err) {
-                        setConfigStatus(`clear failed: ${String((err && err.message) || err)}`);
-                    }
+            if (document.body && document.body.dataset.kiwiAddButtonBound !== "1") {
+                document.addEventListener("click", (event) => {
+                    const target = event.target instanceof Element ? event.target.closest('[data-action="add-kiwi"]') : null;
+                    if (!target) return;
+                    if (target.id === "cfg-add-kiwi") return;
+                    addBlankConfiguredKiwi();
                 });
+                document.body.dataset.kiwiAddButtonBound = "1";
             }
             if (cfgDepsRefresh) cfgDepsRefresh.addEventListener("click", () => { refreshRuntimeDeps(); });
             if (cfgDepsTest) cfgDepsTest.addEventListener("click", () => { testRuntimeDepPathFailures(); });
@@ -13583,19 +14180,48 @@
                 });
             });
             if (cfgKiwiCards && cfgKiwiCards.dataset.bound !== "1") {
-                const queueKiwiAutosave = () => { scheduleConfigAutosave(); };
-                cfgKiwiCards.addEventListener("input", queueKiwiAutosave);
-                cfgKiwiCards.addEventListener("change", queueKiwiAutosave);
-                cfgKiwiCards.addEventListener("click", (event) => {
-                    const target = event.target instanceof Element ? event.target.closest('[data-action="remove-kiwi"]') : null;
-                    if (!target) return;
-                    const kiwiIndex = Number(target.getAttribute("data-secondary-kiwi-index"));
-                    if (!Number.isFinite(kiwiIndex) || kiwiIndex < 1) return;
-                    const entries = collectConfiguredKiwiInputs({ includeBlank: true });
-                    if (kiwiIndex >= entries.length) return;
-                    entries.splice(kiwiIndex, 1);
-                    renderConfiguredKiwiSettings(entries);
+                const queueKiwiAutosave = (event) => {
+                    const mirrorInput = event.target instanceof Element ? event.target.closest('[data-shared-kiwi-password]') : null;
+                    if (mirrorInput) return;
                     scheduleConfigAutosave();
+                };
+                const syncMirrorInput = (event) => {
+                    const target = event.target instanceof Element ? event.target.closest('[data-shared-kiwi-password]') : null;
+                    if (!(target instanceof HTMLInputElement)) return;
+                    const kind = safeText(target.getAttribute("data-shared-kiwi-password"), "");
+                    if (kind === "user" && cfgKiwiPassword) {
+                        cfgKiwiPassword.value = target.value;
+                    } else if (kind === "admin" && cfgKiwiAdminPassword) {
+                        cfgKiwiAdminPassword.value = target.value;
+                    }
+                    syncSharedKiwiPasswordUi();
+                };
+                cfgKiwiCards.addEventListener("input", (event) => {
+                    syncMirrorInput(event);
+                    queueKiwiAutosave(event);
+                });
+                cfgKiwiCards.addEventListener("change", (event) => {
+                    syncMirrorInput(event);
+                    queueKiwiAutosave(event);
+                });
+                cfgKiwiCards.addEventListener("click", async (event) => {
+                    const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
+                    if (!target) return;
+                    const action = safeText(target.getAttribute("data-action"), "");
+                    if (action === "clear-kiwi-password") {
+                        await clearKiwiPassword();
+                        return;
+                    }
+                    if (action === "clear-kiwi-admin-password") {
+                        await clearKiwiAdminPassword();
+                        return;
+                    }
+                    if (action !== "remove-kiwi") return;
+                    const card = target.closest('section[data-secondary-kiwi-index]');
+                    const kiwiIndex = Number(card ? card.getAttribute("data-secondary-kiwi-index") : target.getAttribute("data-secondary-kiwi-index"));
+                    const entryIdentity = safeText(card ? card.getAttribute("data-secondary-kiwi-key") : target.getAttribute("data-secondary-kiwi-key"), "");
+                    if (!Number.isFinite(kiwiIndex) || kiwiIndex < 1) return;
+                    await removeConfiguredKiwiAtIndex(kiwiIndex, entryIdentity);
                 });
                 cfgKiwiCards.dataset.bound = "1";
             }
@@ -14810,6 +15436,7 @@
 
         function initTopbarActions() {
             const notificationsBtn = byId("topbar-notifications");
+            const kiwiSelectorEl = byId("topbar-kiwi-selector");
             const menuBtn = byId("topbar-menu");
             const menuPopout = byId("topbar-menu-popout");
             const openSettingsBtn = byId("topbar-menu-open-settings");
@@ -14856,6 +15483,19 @@
                         window.kiwiProSetView("faults", true);
                     }
                 });
+            }
+
+            if (kiwiSelectorEl && kiwiSelectorEl.dataset.bound !== "1") {
+                kiwiSelectorEl.addEventListener("click", async (event) => {
+                    const target = event.target instanceof Element
+                        ? event.target.closest("[data-kiwi-select-index]")
+                        : null;
+                    if (!target) return;
+                    const requestedIndex = Number(target.getAttribute("data-kiwi-select-index"));
+                    if (!Number.isFinite(requestedIndex) || target.disabled) return;
+                    await saveActiveConfiguredKiwiSelection(requestedIndex);
+                });
+                kiwiSelectorEl.dataset.bound = "1";
             }
 
             if (menuBtn) {
@@ -16270,19 +16910,142 @@
             });
         }
 
-        function setServerChip(statusText, endpointText = "--") {
+        function setServerChip(statusText, endpointText = "--", options = {}) {
+            const labelEl = byId("chip-server-label");
             const statusEl = byId("chip-server");
             const endpointEl = byId("chip-server-endpoint");
+            const labelText = safeText(options && options.labelText, "Kiwi Server");
+            const endpointHtml = safeText(options && options.endpointHtml, "");
+            if (labelEl) labelEl.textContent = labelText;
             if (statusEl) statusEl.textContent = statusText;
-            if (endpointEl) endpointEl.textContent = endpointText;
+            if (endpointEl) {
+                if (endpointHtml) {
+                    endpointEl.innerHTML = endpointHtml;
+                } else {
+                    endpointEl.textContent = endpointText;
+                }
+            }
+        }
+
+        function formatServerChipTitle(count, prefix = "") {
+            const base = count === 1 ? "Kiwi Server" : "Kiwi Servers";
+            return prefix ? `${prefix} ${base}` : base;
+        }
+
+        function isLocalServerChipEntry(entry = null) {
+            const knownSource = safeText(entry && entry.known_source, "").toLowerCase();
+            if (!knownSource) return true;
+            if (knownSource === "configured" || knownSource === "manual" || knownSource === "manual_config") return false;
+            return knownSource.includes("discovered")
+                || knownSource.includes("kiwisdr")
+                || knownSource.includes("lan_scan")
+                || Number.isFinite(Number(entry && entry.known_order));
+        }
+
+        function mergeServerChipDiscoveredEntries(entries = [], fallbackEntries = []) {
+            const primary = normalizeDiscoveredKiwiEntries(entries);
+            const fallback = normalizeDiscoveredKiwiEntries(fallbackEntries);
+            if (!primary.length) return sortDiscoveredKiwiEntries(fallback);
+            const fallbackByKey = new Map(fallback.map((entry) => [`${safeText(entry && entry.host, "")}:${Number(entry && entry.port) || 0}`, entry]));
+            const merged = [];
+            const seen = new Set();
+
+            primary.forEach((entry) => {
+                const key = `${safeText(entry && entry.host, "")}:${Number(entry && entry.port) || 0}`;
+                const fallbackEntry = fallbackByKey.get(key);
+                seen.add(key);
+                if (!fallbackEntry) {
+                    merged.push(entry);
+                    return;
+                }
+                merged.push({
+                    ...fallbackEntry,
+                    ...entry,
+                    known_source: safeText(entry && entry.known_source, "") || safeText(fallbackEntry && fallbackEntry.known_source, ""),
+                    known_order: Number.isFinite(Number(entry && entry.known_order))
+                        ? Number(entry.known_order)
+                        : (Number.isFinite(Number(fallbackEntry && fallbackEntry.known_order)) ? Number(fallbackEntry.known_order) : null),
+                });
+            });
+
+            fallback.forEach((entry) => {
+                const key = `${safeText(entry && entry.host, "")}:${Number(entry && entry.port) || 0}`;
+                if (seen.has(key)) return;
+                seen.add(key);
+                merged.push(entry);
+            });
+
+            return sortDiscoveredKiwiEntries(merged);
+        }
+
+        function buildServerChipEndpointHtml(localEntries = [], remoteEntries = []) {
+            const lines = [];
+            const configuredIndexByKey = new Map(
+                normalizeConfiguredKiwiEntries(latestConfiguredKiwiEntries)
+                    .map((entry, index) => [`${safeText(entry && entry.host, "")}:${Number(entry && entry.port) || 0}`, index + 1]),
+            );
+            const pushEntry = (displayIndex, host, port) => {
+                lines.push(
+                    `<div class="server-chip-entry">${escapeHtml(`KiwiSDR ${displayIndex}`)} - ${escapeHtml(`${host}:${port}`)}</div>`,
+                );
+            };
+
+            localEntries.forEach((entry, index) => {
+                const key = `${safeText(entry && entry.host, "")}:${Number(entry && entry.port) || 0}`;
+                const configuredDisplayIndex = Number(configuredIndexByKey.get(key));
+                const knownOrder = Number(entry && entry.known_order);
+                const displayIndex = Number.isFinite(configuredDisplayIndex)
+                    ? configuredDisplayIndex
+                    : (Number.isFinite(knownOrder) ? knownOrder + 1 : index + 1);
+                pushEntry(displayIndex, safeText(entry && entry.host, "--"), Number(entry && entry.port) || 0);
+            });
+
+            if (remoteEntries.length) {
+                lines.push(
+                    `<div class="server-chip-section-heading"><span class="server-chip-section-icon">${UI_ICONS.server || ""}</span><span>${escapeHtml(formatServerChipTitle(remoteEntries.length, "Remote"))}</span></div>`,
+                );
+                remoteEntries.forEach((entry) => {
+                    const displayIndex = Number(entry && entry.displayIndex) || 1;
+                    pushEntry(displayIndex, safeText(entry && entry.host, "--"), Number(entry && entry.port) || 0);
+                });
+            }
+
+            return `<div class="server-chip-list">${lines.join("")}</div>`;
+        }
+
+        function updateServerChipFromState() {
+            const fallbackDiscovered = normalizeDiscoveredKiwiEntries(
+                Array.isArray(latestSystemInfo && latestSystemInfo.kiwi && latestSystemInfo.kiwi.discovered_kiwis)
+                    ? latestSystemInfo.kiwi.discovered_kiwis
+                    : []
+            );
+            const discovered = mergeServerChipDiscoveredEntries(latestDiscoveredKiwiEntries, fallbackDiscovered);
+            const localEntries = sortDiscoveredKiwiEntries(discovered.filter((entry) => isLocalServerChipEntry(entry)));
+            const localKeys = new Set(localEntries.map((entry) => `${safeText(entry && entry.host, "")}:${Number(entry && entry.port) || 0}`));
+            const remoteEntries = normalizeConfiguredKiwiEntries(latestConfiguredKiwiEntries)
+                .map((entry, index) => ({ ...entry, displayIndex: index + 1 }))
+                .filter((entry) => !localKeys.has(`${entry.host}:${entry.port}`));
+            const totalKnownCount = localEntries.length + remoteEntries.length;
+            if (totalKnownCount > 0) {
+                setServerChip("", "--", {
+                    labelText: formatServerChipTitle(totalKnownCount),
+                    endpointHtml: buildServerChipEndpointHtml(localEntries, remoteEntries),
+                });
+                return;
+            }
+            const endpoint = latestAssignmentsHost && Number.isFinite(Number(latestAssignmentsPort)) && Number(latestAssignmentsPort) > 0
+                ? `${latestAssignmentsHost}:${Number(latestAssignmentsPort)}`
+                : "--";
+            setServerChip(endpoint !== "--" ? "Online" : "Connecting...", endpoint, {
+                labelText: formatServerChipTitle(endpoint !== "--" ? 1 : 0),
+            });
         }
 
         function applyStatus(status) {
             const s = status && typeof status === "object" ? status : {};
-            const host = safeText(s.assignments_host, "");
-            const port = Number(s.assignments_port || 0);
-            const endpoint = host && Number.isFinite(port) && port > 0 ? `${host}:${port}` : "--";
-            setServerChip("Online", endpoint);
+            latestAssignmentsHost = safeText(s.assignments_host, "");
+            latestAssignmentsPort = Number(s.assignments_port || 0);
+            updateServerChipFromState();
             latestAssignmentsSource = safeText(s.assignments_source, "");
             latestAssignments = s.assignments || {};
             latestPublishedDecodeStatsByRx = (s.published_decode_stats_by_rx && typeof s.published_decode_stats_by_rx === "object")
@@ -16808,7 +17571,7 @@
                 // Show a soft connecting state and schedule a fast retry so the UI
                 // comes alive as soon as the server is ready (not after a full 2 s interval).
                 if (!health && !status) {
-                    setServerChip("Connecting\u2026", "--");
+                    updateServerChipFromState();
                     updateRefreshStatus();
                     if (lastSuccessfulRefreshMs === null) {
                         setTimeout(() => { if (lastSuccessfulRefreshMs === null && !refreshInFlight) refresh(); }, 500);
@@ -16864,7 +17627,7 @@
             } catch (err) {
                 // Unexpected JS error in apply logic (not a server timeout — those are
                 // handled above as null results and never reach here).
-                setServerChip("Degraded", "--");
+                updateServerChipFromState();
                 console.error("refresh error:", err);
                 updateRefreshStatus();
             } finally {

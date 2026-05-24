@@ -58,6 +58,18 @@ def _get_configured_kiwis(mgr: object) -> list[dict]:
     return [dict(item) for item in data if isinstance(item, dict)] if isinstance(data, list) else []
 
 
+def _get_active_kiwi_index(mgr: object) -> int:
+    if hasattr(mgr, "get_active_kiwi_index"):
+        try:
+            return max(0, int(mgr.get_active_kiwi_index()))  # type: ignore[attr-defined]
+        except Exception:
+            logger.debug("Failed reading active Kiwi index", exc_info=True)
+    try:
+        return max(0, int(getattr(mgr, "active_kiwi_index", 0) or 0))
+    except Exception:
+        return 0
+
+
 def _has_kiwi_admin_password(mgr: object) -> bool:
     if hasattr(mgr, "has_kiwi_admin_password"):
         try:
@@ -111,6 +123,54 @@ def _filter_discovered_kiwis_to_configured(discovered: object, configured: objec
             continue
         filtered.append(dict(item))
     return filtered
+
+
+def _augment_discovered_kiwis_with_status(discovered: object, configured: object, *, timeout_s: float = 0.75) -> list[dict]:
+    configured_items = [dict(item) for item in configured if isinstance(item, dict)] if isinstance(configured, list) else []
+    out = [dict(item) for item in discovered if isinstance(item, dict)] if isinstance(discovered, list) else []
+    by_key: dict[tuple[str, int], int] = {}
+    for index, item in enumerate(out):
+        host = normalize_kiwi_host(item.get("host"))
+        try:
+            port = int(item.get("port") or 0)
+        except Exception:
+            port = 0
+        if is_unconfigured_kiwi_host(host) or not (1 <= port <= 65535):
+            continue
+        by_key[(host, port)] = index
+
+    for item in configured_items:
+        host = normalize_kiwi_host(item.get("host"))
+        try:
+            port = int(item.get("port") or 0)
+        except Exception:
+            port = 0
+        if is_unconfigured_kiwi_host(host) or not (1 <= port <= 65535):
+            continue
+        existing_index = by_key.get((host, port))
+        merged = dict(out[existing_index]) if existing_index is not None else {}
+        merged["host"] = host
+        merged["port"] = port
+        known_source = str(merged.get("known_source") or "").strip()
+        if existing_index is None and not known_source:
+            merged["known_source"] = "configured"
+        status = read_kiwi_status(host, port, timeout_s=timeout_s)
+        if status:
+            latitude, longitude = extract_gps_lat_lon(status)
+            if latitude is not None:
+                merged["latitude"] = latitude
+            if longitude is not None:
+                merged["longitude"] = longitude
+            for key in ("grid", "gps_good", "name", "sdr_hw", "sw_version", "loc"):
+                value = str(status.get(key) or "").strip()
+                if value:
+                    merged[key] = value
+        if existing_index is not None:
+            out[existing_index] = merged
+        elif len(merged) > 2:
+            by_key[(host, port)] = len(out)
+            out.append(merged)
+    return out
 
 
 def make_router(
@@ -173,11 +233,15 @@ def make_router(
         grid = None
         gps_good = None
         name = None
+        sdr_hw = None
+        sw_version = None
         if status:
             latitude, longitude = extract_gps_lat_lon(status)
             grid = status.get("grid")
             gps_good = status.get("gps_good")
             name = status.get("name")
+            sdr_hw = status.get("sdr_hw")
+            sw_version = status.get("sw_version")
 
         return {
             "ok": True,
@@ -189,6 +253,8 @@ def make_router(
             "grid": grid,
             "gps_good": gps_good,
             "name": name,
+            "sdr_hw": sdr_hw,
+            "sw_version": sw_version,
         }
 
     @router.get("/config")
@@ -211,6 +277,7 @@ def make_router(
 
         cached_discovery = _get_cached_discovery(mgr)
         configured_kiwis = _get_configured_kiwis(mgr)
+        active_kiwi_index = _get_active_kiwi_index(mgr)
         kiwi_password_set = _has_kiwi_password(mgr)
         kiwi_admin_password_set = _has_kiwi_admin_password(mgr)
         with mgr.lock:  # type: ignore[attr-defined]
@@ -237,6 +304,7 @@ def make_router(
                 "host": mgr.host,
                 "port": mgr.port,
                 "kiwisdrs": configured_kiwis,
+                "active_kiwi_index": active_kiwi_index,
                 "kiwi_password_set": kiwi_password_set,
                 "kiwi_admin_password_set": kiwi_admin_password_set,
                 "kiwi_latitude": kiwi_lat,
@@ -308,9 +376,10 @@ def make_router(
     @router.post("/config")
     async def set_config(request: Request):
         data = await request.json()
-        endpoint_changed = False
         prior_host = ""
         prior_port = 0
+        prior_active_kiwi_index = _get_active_kiwi_index(mgr)
+        prior_configured_keys = _configured_kiwi_keys(_get_configured_kiwis(mgr))
         try:
             with mgr.lock:  # type: ignore[attr-defined]
                 prior_host = normalize_kiwi_host(getattr(mgr, "host", ""))
@@ -322,6 +391,7 @@ def make_router(
             except Exception:
                 prior_port = 0
         configured_kiwis = data.get("kiwisdrs") if isinstance(data, dict) else None
+        active_kiwi_index = data.get("active_kiwi_index") if isinstance(data, dict) else None
         sync_discovered_to_configured = bool(data.get("sync_discovered_to_configured") is True) if isinstance(data, dict) else False
         kiwi_password_changed = False
         kiwi_admin_password_changed = False
@@ -331,6 +401,11 @@ def make_router(
                 mgr.set_configured_kiwis(configured_kiwis, save=False)  # type: ignore[attr-defined]
             except Exception as exc:
                 raise HTTPException(status_code=400, detail=f"invalid value for kiwisdrs: {exc}") from exc
+        if "active_kiwi_index" in data and hasattr(mgr, "set_active_kiwi_index"):
+            try:
+                mgr.set_active_kiwi_index(active_kiwi_index, save=False)  # type: ignore[attr-defined]
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"invalid value for active_kiwi_index: {exc}") from exc
         if "kiwi_password" in data and hasattr(mgr, "set_kiwi_password"):
             try:
                 mgr.set_kiwi_password(data.get("kiwi_password"), save=False)  # type: ignore[attr-defined]
@@ -394,6 +469,7 @@ def make_router(
             "retune_pause_s",
         }
         merged_configured = None
+        active_index_for_merge = _get_active_kiwi_index(mgr)
         with mgr.lock:  # type: ignore[attr-defined]
             for k, v in data.items():
                 if k not in allowed:
@@ -497,14 +573,53 @@ def make_router(
                     "longitude": float(mgr.longitude),
                 }
                 if existing_configured:
-                    grid = str(existing_configured[0].get("grid") or "").strip()
+                    merge_index = min(max(0, int(active_index_for_merge)), len(existing_configured) - 1)
+                    grid = str(existing_configured[merge_index].get("grid") or "").strip()
                     if grid:
                         primary["grid"] = grid
-                merged_configured = [] if is_unconfigured_kiwi_host(primary["host"]) else [primary]
-                if len(existing_configured) > 1:
-                    merged_configured.extend(existing_configured[1:])
+                    merged_configured = list(existing_configured)
+                    if is_unconfigured_kiwi_host(primary["host"]):
+                        del merged_configured[merge_index]
+                    else:
+                        merged_configured[merge_index] = primary
+                else:
+                    merged_configured = [] if is_unconfigured_kiwi_host(primary["host"]) else [primary]
         if merged_configured is not None and hasattr(mgr, "set_configured_kiwis"):
             mgr.set_configured_kiwis(merged_configured, save=False)  # type: ignore[attr-defined]
+        configured_snapshot = _get_configured_kiwis(mgr)
+        if configured_snapshot:
+            active_index = min(max(0, _get_active_kiwi_index(mgr)), len(configured_snapshot) - 1)
+            active_entry = configured_snapshot[active_index]
+            if isinstance(active_entry, dict):
+                active_host = normalize_kiwi_host(active_entry.get("host"))
+                try:
+                    active_port = int(active_entry.get("port") or 0)
+                except Exception:
+                    active_port = 0
+                if not is_unconfigured_kiwi_host(active_host) and 1 <= active_port <= 65535:
+                    with mgr.lock:  # type: ignore[attr-defined]
+                        mgr.host = active_host
+                        mgr.port = active_port
+                        if active_entry.get("latitude") is not None:
+                            mgr.latitude = float(active_entry.get("latitude"))
+                        if active_entry.get("longitude") is not None:
+                            mgr.longitude = float(active_entry.get("longitude"))
+        cached_discovery = _get_cached_discovery(mgr)
+        enriched_discovery = _augment_discovered_kiwis_with_status(
+            cached_discovery.get("found"),
+            configured_snapshot,
+        )
+        discovery_source = str(cached_discovery.get("source") or "").strip()
+        if enriched_discovery and not discovery_source:
+            discovery_source = "status"
+        if hasattr(mgr, "set_discovered_kiwis"):
+            mgr.set_discovered_kiwis(  # type: ignore[attr-defined]
+                {
+                    "found": enriched_discovery,
+                    "source": discovery_source,
+                },
+                save=False,
+            )
         mgr._save_config()  # type: ignore[attr-defined]
         if (kiwi_password_changed or kiwi_admin_password_changed) and hasattr(mgr, "_save_secrets"):
             try:
@@ -518,8 +633,15 @@ def make_router(
         except Exception:
             current_host = prior_host
             current_port = prior_port
+        current_active_kiwi_index = _get_active_kiwi_index(mgr)
+        current_configured_keys = _configured_kiwi_keys(configured_snapshot)
         endpoint_changed = (current_host != prior_host) or (current_port != prior_port)
-        if endpoint_changed and auto_set_loop is not None:
+        reapply_required = (
+            endpoint_changed
+            or current_active_kiwi_index != prior_active_kiwi_index
+            or current_configured_keys != prior_configured_keys
+        )
+        if reapply_required and auto_set_loop is not None:
             applied = False
             if hasattr(auto_set_loop, "apply_current_settings"):
                 try:
@@ -537,6 +659,11 @@ def make_router(
                 except Exception:
                     logger.debug("Failed waking auto-set loop after Kiwi endpoint change", exc_info=True)
 
-        return {"ok": True}
+        cached_discovery = _get_cached_discovery(mgr)
+        return {
+            "ok": True,
+            "discovered_kiwis": cached_discovery.get("found", []),
+            "discovery_source": cached_discovery.get("source", ""),
+        }
 
     return router

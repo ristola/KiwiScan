@@ -1464,6 +1464,11 @@ def reset_decode_metrics() -> Dict[str, int]:
     }
 
 
+@router.post("/decodes/reset")
+def reset_decodes():
+    return reset_decode_metrics()
+
+
 @router.get("/decodes")
 def get_decodes(since: int = 0):
     with _decode_lock:

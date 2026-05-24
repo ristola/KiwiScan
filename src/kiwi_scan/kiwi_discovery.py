@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+from html import unescape
 import ipaddress
 import re
 import socket
@@ -97,6 +98,50 @@ def _parse_my_kiwisdr_for_lan_hosts(html: str) -> list[tuple[str, int]]:
             continue
         seen.add(item)
         out.append(item)
+    return out
+
+
+def _collapse_html_text(value: str) -> str:
+    return re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", value or ""))).strip()
+
+
+def _parse_my_kiwisdr_entries(html: str) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    seen: set[tuple[str, int]] = set()
+    for known_order, match in enumerate(re.finditer(r"<tr\b[^>]*>(.*?)</tr>", html or "", re.IGNORECASE | re.DOTALL)):
+        row_html = match.group(1) or ""
+        endpoint: tuple[str, int] | None = None
+        for candidate in re.finditer(r"\b((?:\d{1,3}\.){3}\d{1,3}):(\d{1,5})\b", row_html):
+            host = str(candidate.group(1) or "").strip()
+            try:
+                ip_obj = ipaddress.IPv4Address(host)
+                port = int(candidate.group(2) or 0)
+            except Exception:
+                continue
+            if not ip_obj.is_private or not (1 <= port <= 65535):
+                continue
+            endpoint = (host, port)
+            break
+        if not endpoint or endpoint in seen:
+            continue
+        seen.add(endpoint)
+        row_text = _collapse_html_text(row_html)
+        entry: dict[str, Any] = {
+            "host": endpoint[0],
+            "port": endpoint[1],
+            "known_source": "my.kiwisdr.com",
+            "known_order": known_order,
+        }
+        sw_version_match = re.search(r"Kiwi\s+v[^,<>]*,\s*Debian\s+[^\s<>]+", row_text, re.IGNORECASE)
+        if sw_version_match:
+            entry["sw_version"] = sw_version_match.group(0).strip()
+        name_match = re.search(r"\((kiwisdr-[^)]+)\)", row_text, re.IGNORECASE)
+        if name_match:
+            entry["name"] = name_match.group(1).strip()
+        hardware_match = re.search(r"(KiwiSDR\s+\d+\s+\([^)]+\))", row_text)
+        if hardware_match:
+            entry["sdr_hw"] = hardware_match.group(1).strip()
+        out.append(entry)
     return out
 
 
@@ -212,16 +257,26 @@ def discover_kiwis(
 
     started = time.time()
     candidates: list[tuple[str, int]] = []
+    discovered_meta: dict[tuple[str, int], dict[str, Any]] = {}
     source = ""
 
     try:
         with urlopen("http://my.kiwisdr.com/", timeout=2.0) as response:
             html = response.read(1024 * 1024).decode("utf-8", errors="ignore")
-        candidates = _parse_my_kiwisdr_for_lan_hosts(html)
+        my_kiwi_entries = _parse_my_kiwisdr_entries(html)
+        candidates = [(str(entry.get("host") or ""), int(entry.get("port") or 0)) for entry in my_kiwi_entries]
+        discovered_meta = {
+            (str(entry.get("host") or ""), int(entry.get("port") or 0)): dict(entry)
+            for entry in my_kiwi_entries
+            if str(entry.get("host") or "") and 1 <= int(entry.get("port") or 0) <= 65535
+        }
+        if not candidates:
+            candidates = _parse_my_kiwisdr_for_lan_hosts(html)
         if candidates:
             source = "my.kiwisdr.com"
     except Exception:
         candidates = []
+        discovered_meta = {}
 
     if not candidates:
         prefixes = _private_prefixes_for_lan_scan(client_ip)
@@ -253,27 +308,29 @@ def discover_kiwis(
             break
         if not _looks_like_kiwi_http(host, candidate_port, timeout_s=timeout_s):
             continue
+        row_meta = discovered_meta.get((host, candidate_port), {})
         status = read_kiwi_status(host, candidate_port, timeout_s=timeout_s)
         latitude, longitude = (None, None)
-        name = None
+        name = str(row_meta.get("name") or "").strip() or None
         grid = None
         gps_good = None
+        sdr_hw = str(row_meta.get("sdr_hw") or "").strip() or None
+        sw_version = str(row_meta.get("sw_version") or "").strip() or None
         if status:
             latitude, longitude = extract_gps_lat_lon(status)
-            name = status.get("name")
+            name = name or status.get("name")
             grid = status.get("grid")
             gps_good = status.get("gps_good")
-            sdr_hw = status.get("sdr_hw")
-            sw_version = status.get("sw_version")
+            sdr_hw = sdr_hw or status.get("sdr_hw")
+            sw_version = sw_version or status.get("sw_version")
             loc = status.get("loc")
         else:
-            sdr_hw = None
-            sw_version = None
             loc = None
         found.append(
             {
                 "host": host,
                 "port": candidate_port,
+                "known_source": str(row_meta.get("known_source") or source or "").strip(),
                 "latitude": latitude,
                 "longitude": longitude,
                 "grid": grid,
@@ -282,6 +339,7 @@ def discover_kiwis(
                 "sdr_hw": sdr_hw,
                 "sw_version": sw_version,
                 "loc": loc,
+                "known_order": row_meta.get("known_order"),
             }
         )
 

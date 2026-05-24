@@ -1464,6 +1464,11 @@ def reset_decode_metrics() -> Dict[str, int]:
     }
 
 
+@router.post("/decodes/reset")
+def reset_decodes():
+    return reset_decode_metrics()
+
+
 @router.get("/decodes")
 def get_decodes(since: int = 0):
     with _decode_lock:
@@ -1573,6 +1578,23 @@ async def websocket_decodes(websocket: WebSocket):
             try:
                 await websocket.receive_text()
             except WebSocketDisconnect:
+                break
+            except Exception:
+                break
+    finally:
+        with _decode_ws_lock:
+            _decode_ws_clients.discard(websocket)
+
+
+async def websocket_decodes_4010(websocket: WebSocket) -> None:
+    """WebSocket handler for the dedicated WS:4010 server.
+
+    Uses a separate client set because it runs on a different uvicorn server.
+    """
+
+    is_dashboard = str(websocket.query_params.get("role") or "").strip().lower() == "dashboard"
+
+    await websocket.accept()
     with _decode_ws4010_lock:
         _decode_ws4010_clients.add(websocket)
         if is_dashboard:

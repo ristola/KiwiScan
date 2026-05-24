@@ -100,6 +100,10 @@ class DiscoveryManager:
         self._pause = threading.Event()
         self._paused = threading.Event()
         self.configured_kiwis: list[dict[str, object]] = []
+        self.active_kiwi_index: int = 0
+        self.discovered_kiwis: list[dict[str, object]] = []
+        self.discovery_source: str = ""
+        self.discovery_updated_unix: float = 0.0
 
         # Persist thresholds between restarts
         root = Path(__file__).resolve().parents[2]
@@ -224,9 +228,20 @@ class DiscoveryManager:
         val = _read_bool("debug")
         if val is not None:
             self.debug = val
+        discovered = self._sanitize_discovered_kiwis(data.get("discovered_kiwis"))
+        if discovered:
+            self.discovered_kiwis = discovered
+        val = _read_str("discovery_source")
+        if val is not None:
+            self.discovery_source = val
+        updated = _read_float("discovery_updated_unix")
+        if updated is not None and updated >= 0:
+            self.discovery_updated_unix = updated
+        active_kiwi_index = _read_int("active_kiwi_index")
         configured = self._sanitize_configured_kiwis(data.get("kiwisdrs"))
         if configured:
             self.configured_kiwis = configured
+            self.active_kiwi_index = self._normalize_active_kiwi_index(active_kiwi_index, configured)
             self._apply_primary_configured_kiwi()
         elif not _normalize_kiwi_host(self.host) == DEFAULT_KIWI_HOST:
             self.configured_kiwis = [{
@@ -235,6 +250,9 @@ class DiscoveryManager:
                 "latitude": float(self.latitude),
                 "longitude": float(self.longitude),
             }]
+            self.active_kiwi_index = 0
+        else:
+            self.active_kiwi_index = 0
 
     def _load_secrets(self) -> None:
         try:
@@ -252,6 +270,52 @@ class DiscoveryManager:
         if not self.admin_password:
             value = str(data.get("kiwi_admin_password") or "").strip()
             self.admin_password = value or None
+
+    @staticmethod
+    def _sanitize_discovered_kiwis(raw: object) -> list[dict[str, object]]:
+        if not isinstance(raw, list):
+            return []
+        out: list[dict[str, object]] = []
+        seen: set[tuple[str, int]] = set()
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            host = str(item.get("host") or "").strip()
+            try:
+                port = int(item.get("port") or 0)
+            except Exception:
+                port = 0
+            if not host or not (1 <= port <= 65535):
+                continue
+            key = (host, port)
+            if key in seen:
+                continue
+            seen.add(key)
+            entry: dict[str, object] = {"host": host, "port": port}
+            for text_key in ("name", "grid", "sdr_hw", "sw_version", "loc", "known_source"):
+                value = str(item.get(text_key) or "").strip()
+                if value:
+                    entry[text_key] = value
+            try:
+                known_order = int(item.get("known_order"))
+            except Exception:
+                known_order = None
+            if known_order is not None and known_order >= 0:
+                entry["known_order"] = known_order
+            for float_key in ("latitude", "longitude"):
+                try:
+                    value = float(item.get(float_key))
+                except Exception:
+                    continue
+                entry[float_key] = value
+            try:
+                gps_good = int(item.get("gps_good"))
+            except Exception:
+                gps_good = None
+            if gps_good is not None:
+                entry["gps_good"] = gps_good
+            out.append(entry)
+        return out
 
     def _save_secrets(self) -> None:
         try:
@@ -305,10 +369,27 @@ class DiscoveryManager:
             out.append(entry)
         return out
 
+    @staticmethod
+    def _normalize_active_kiwi_index(raw: object, entries: object) -> int:
+        try:
+            index = int(raw)
+        except Exception:
+            index = 0
+        count = len(entries) if isinstance(entries, list) else 0
+        if count <= 0:
+            return 0
+        if index < 0:
+            return 0
+        if index >= count:
+            return count - 1
+        return index
+
     def _apply_primary_configured_kiwi(self) -> None:
         if not self.configured_kiwis:
+            self.active_kiwi_index = 0
             return
-        primary = self.configured_kiwis[0]
+        self.active_kiwi_index = self._normalize_active_kiwi_index(self.active_kiwi_index, self.configured_kiwis)
+        primary = self.configured_kiwis[self.active_kiwi_index]
         host = _normalize_kiwi_host(primary.get("host"))
         try:
             port = int(primary.get("port") or self.port)
@@ -330,15 +411,18 @@ class DiscoveryManager:
         entries = self._sanitize_configured_kiwis(self.configured_kiwis)
         host = _normalize_kiwi_host(self.host)
         if entries:
+            self.active_kiwi_index = self._normalize_active_kiwi_index(self.active_kiwi_index, entries)
             if host != DEFAULT_KIWI_HOST:
-                entries[0]["host"] = host
-                entries[0]["port"] = int(self.port)
-                entries[0]["latitude"] = float(self.latitude)
-                entries[0]["longitude"] = float(self.longitude)
+                active_entry = entries[self.active_kiwi_index]
+                active_entry["host"] = host
+                active_entry["port"] = int(self.port)
+                active_entry["latitude"] = float(self.latitude)
+                active_entry["longitude"] = float(self.longitude)
             self.configured_kiwis = entries
             return entries
         if host == DEFAULT_KIWI_HOST:
             self.configured_kiwis = []
+            self.active_kiwi_index = 0
             return []
         entry = {
             "host": host,
@@ -347,6 +431,7 @@ class DiscoveryManager:
             "longitude": float(self.longitude),
         }
         self.configured_kiwis = [entry]
+        self.active_kiwi_index = 0
         return [dict(entry)]
 
     def _save_config(self) -> None:
@@ -370,6 +455,10 @@ class DiscoveryManager:
                 "host": _normalize_kiwi_host(self.host),
                 "port": int(self.port),
                 "kiwisdrs": configured_kiwis,
+                "active_kiwi_index": int(self.active_kiwi_index),
+                "discovered_kiwis": self._sanitize_discovered_kiwis(self.discovered_kiwis),
+                "discovery_source": str(self.discovery_source or ""),
+                "discovery_updated_unix": float(self.discovery_updated_unix or 0.0),
                 "debug": bool(self.debug),
                 "saved_unix": time.time(),
             }
@@ -382,14 +471,58 @@ class DiscoveryManager:
         with self.lock:
             self.configured_kiwis = entries
             if entries:
+                self.active_kiwi_index = self._normalize_active_kiwi_index(self.active_kiwi_index, entries)
                 self._apply_primary_configured_kiwi()
                 self.rx_chan = None
+            else:
+                self.active_kiwi_index = 0
             if save:
                 self._save_config()
 
     def get_configured_kiwis(self) -> list[dict[str, object]]:
         with self.lock:
             return list(self._configured_kiwi_payload())
+
+    def set_active_kiwi_index(self, index: object, *, save: bool = True) -> None:
+        with self.lock:
+            self.active_kiwi_index = self._normalize_active_kiwi_index(index, self.configured_kiwis)
+            if self.configured_kiwis:
+                self._apply_primary_configured_kiwi()
+                self.rx_chan = None
+            if save:
+                self._save_config()
+
+    def get_active_kiwi_index(self) -> int:
+        with self.lock:
+            return int(self._normalize_active_kiwi_index(self.active_kiwi_index, self.configured_kiwis))
+
+    def set_discovered_kiwis(self, payload: object, *, save: bool = True) -> None:
+        discovered: list[dict[str, object]] = []
+        source = ""
+        updated_unix = time.time()
+        if isinstance(payload, dict):
+            discovered = self._sanitize_discovered_kiwis(payload.get("found"))
+            source = str(payload.get("source") or "").strip()
+            try:
+                updated_unix = float(payload.get("updated_unix") or updated_unix)
+            except Exception:
+                updated_unix = time.time()
+        else:
+            discovered = self._sanitize_discovered_kiwis(payload)
+        with self.lock:
+            self.discovered_kiwis = discovered
+            self.discovery_source = source
+            self.discovery_updated_unix = updated_unix if updated_unix >= 0 else time.time()
+            if save:
+                self._save_config()
+
+    def get_discovered_kiwis(self) -> dict[str, object]:
+        with self.lock:
+            return {
+                "found": self._sanitize_discovered_kiwis(self.discovered_kiwis),
+                "source": str(self.discovery_source or ""),
+                "updated_unix": float(self.discovery_updated_unix or 0.0),
+            }
 
     def set_kiwi_password(self, password: object, *, save: bool = True) -> None:
         with self.lock:

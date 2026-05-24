@@ -19,6 +19,39 @@ _SYSTEM_INFO_CACHE_LOCK: threading.Lock = threading.Lock()
 _SYSTEM_INFO_CACHE: dict[str, Any] = {"payload": None, "timestamp": 0.0, "future": None}
 
 
+def _get_configured_kiwis(mgr: object) -> list[dict[str, object]]:
+    if hasattr(mgr, "get_configured_kiwis"):
+        try:
+            data = mgr.get_configured_kiwis()  # type: ignore[attr-defined]
+            if isinstance(data, list):
+                return [dict(entry) for entry in data if isinstance(entry, dict)]
+        except Exception:
+            pass
+    data = getattr(mgr, "configured_kiwis", [])
+    return [dict(entry) for entry in data if isinstance(entry, dict)] if isinstance(data, list) else []
+
+
+def _get_cached_discovery(mgr: object) -> dict[str, object]:
+    if hasattr(mgr, "get_discovered_kiwis"):
+        try:
+            data = mgr.get_discovered_kiwis()  # type: ignore[attr-defined]
+            if isinstance(data, dict):
+                found = data.get("found")
+                return {
+                    "found": list(found) if isinstance(found, list) else [],
+                    "source": str(data.get("source") or "").strip(),
+                    "updated_unix": data.get("updated_unix"),
+                }
+        except Exception:
+            pass
+    found = getattr(mgr, "discovered_kiwis", [])
+    return {
+        "found": list(found) if isinstance(found, list) else [],
+        "source": str(getattr(mgr, "discovery_source", "") or "").strip(),
+        "updated_unix": getattr(mgr, "discovery_updated_unix", None),
+    }
+
+
 def _read_proc_uptime_seconds() -> float | None:
     try:
         with open("/proc/uptime", "r", encoding="utf-8") as handle:
@@ -59,6 +92,72 @@ def _safe_float(value: object) -> float | None:
         return float(value)  # type: ignore[arg-type]
     except Exception:
         return None
+
+
+def _normalize_known_kiwi_entry(entry: object) -> dict[str, object] | None:
+    if not isinstance(entry, dict):
+        return None
+    host = str(entry.get("host") or "").strip()
+    port = _safe_int(entry.get("port")) or 0
+    if not host or port <= 0:
+        return None
+    normalized = dict(entry)
+    normalized["host"] = host
+    normalized["port"] = port
+    return normalized
+
+
+def _merge_known_kiwi_source(existing: object, incoming: object) -> str:
+    values: list[str] = []
+    for candidate in (existing, incoming):
+        text = str(candidate or "").strip().lower()
+        if not text:
+            continue
+        for part in text.split("_"):
+            if part and part not in values:
+                values.append(part)
+    if not values:
+        return ""
+    if values == ["configured", "discovered"]:
+        return "configured_discovered"
+    if len(values) == 1:
+        return values[0]
+    return "_".join(values)
+
+
+def _build_known_kiwi_seed_entries(
+    *,
+    configured_entries: list[dict[str, object]],
+    discovered_entries: list[object],
+) -> list[dict[str, object]]:
+    merged: dict[tuple[str, int], dict[str, object]] = {}
+
+    for index, raw_entry in enumerate(configured_entries):
+        entry = _normalize_known_kiwi_entry(raw_entry)
+        if entry is None:
+            continue
+        entry["known_source"] = "configured"
+        entry["known_order"] = index
+        merged[(str(entry["host"]), int(entry["port"]))] = entry
+
+    for raw_entry in discovered_entries:
+        entry = _normalize_known_kiwi_entry(raw_entry)
+        if entry is None:
+            continue
+        key = (str(entry["host"]), int(entry["port"]))
+        existing = merged.get(key)
+        if existing is None:
+            merged[key] = entry
+            continue
+        known_order = existing.get("known_order")
+        merged_entry = dict(existing)
+        merged_entry.update(entry)
+        merged_entry["known_source"] = _merge_known_kiwi_source(existing.get("known_source"), "discovered")
+        if known_order is not None:
+            merged_entry["known_order"] = known_order
+        merged[key] = merged_entry
+
+    return list(merged.values())
 
 
 def _parse_elapsed_seconds(value: object) -> int | None:
@@ -174,7 +273,20 @@ def _build_kiwi_payload(mgr: object, receiver_mgr: object | None = None) -> dict
         "status": {},
         "active_users": [],
         "raw_users": [],
+        "configured_kiwis": [],
+        "discovered_kiwis": [],
+        "discovery_source": "",
+        "discovery_updated_unix": None,
     }
+    cached_discovery = _get_cached_discovery(mgr)
+    configured_kiwis = _get_configured_kiwis(mgr)
+    out["configured_kiwis"] = configured_kiwis
+    out["discovered_kiwis"] = _build_known_kiwi_seed_entries(
+        configured_entries=configured_kiwis,
+        discovered_entries=list(cached_discovery.get("found", [])) if isinstance(cached_discovery.get("found"), list) else [],
+    )
+    out["discovery_source"] = cached_discovery.get("source", "")
+    out["discovery_updated_unix"] = cached_discovery.get("updated_unix")
     if not host or port <= 0:
         return out
 

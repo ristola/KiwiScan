@@ -30,6 +30,7 @@ class _MgrStub:
         self.debug = False
         self.runtime_dependencies = {}
         self.configured_kiwis: list[dict[str, object]] = []
+        self.active_kiwi_index = 0
         self.discovered_kiwis: list[dict[str, object]] = []
         self.discovery_source = ""
         self.discovery_updated_unix = 0.0
@@ -97,18 +98,47 @@ class _MgrStub:
                 out.append(entry)
         self.configured_kiwis = out
         if out:
-            self.host = str(out[0]["host"])
-            self.port = int(out[0]["port"])
-            if "latitude" in out[0]:
-                self.latitude = float(out[0]["latitude"])
-            if "longitude" in out[0]:
-                self.longitude = float(out[0]["longitude"])
+            self.active_kiwi_index = min(max(0, int(self.active_kiwi_index)), len(out) - 1)
+        else:
+            self.active_kiwi_index = 0
+        if out:
+            active = out[self.active_kiwi_index]
+            self.host = str(active["host"])
+            self.port = int(active["port"])
+            if "latitude" in active:
+                self.latitude = float(active["latitude"])
+            if "longitude" in active:
+                self.longitude = float(active["longitude"])
             self.rx_chan = None
         if save:
             self._save_config()
 
     def get_configured_kiwis(self) -> list[dict[str, object]]:
         return list(self.configured_kiwis)
+
+    def set_active_kiwi_index(self, index: object, *, save: bool = True) -> None:
+        try:
+            next_index = int(index)
+        except Exception:
+            next_index = 0
+        if self.configured_kiwis:
+            next_index = min(max(0, next_index), len(self.configured_kiwis) - 1)
+            active = self.configured_kiwis[next_index]
+            self.host = str(active["host"])
+            self.port = int(active["port"])
+            if "latitude" in active:
+                self.latitude = float(active["latitude"])
+            if "longitude" in active:
+                self.longitude = float(active["longitude"])
+            self.rx_chan = None
+        else:
+            next_index = 0
+        self.active_kiwi_index = next_index
+        if save:
+            self._save_config()
+
+    def get_active_kiwi_index(self) -> int:
+        return int(self.active_kiwi_index)
 
     def get_discovered_kiwis(self) -> dict[str, object]:
         return {
@@ -277,6 +307,40 @@ def test_post_config_persists_configured_kiwis(monkeypatch) -> None:
         {"host": "10.13.1.235", "port": 8073, "latitude": 38.1, "longitude": -78.2, "grid": "FM08so"},
         {"host": "10.13.1.236", "port": 8074, "latitude": 39.1, "longitude": -77.2, "grid": "FM09aa"},
     ]
+    assert payload["active_kiwi_index"] == 0
+
+
+def test_post_config_can_select_secondary_active_kiwi(monkeypatch) -> None:
+    mgr = _MgrStub()
+    auto_set_loop = _AutoSetLoopStub(apply_result=True)
+    app = FastAPI()
+    app.include_router(config_api.make_router(mgr=mgr, waterholes={"20m": 14074.0}, auto_set_loop=auto_set_loop))
+    client = TestClient(app)
+
+    monkeypatch.setattr(config_api, "read_kiwi_status", lambda host, port, timeout_s: {})
+
+    response = client.post(
+        "/config",
+        json={
+            "kiwisdrs": [
+                {"host": "10.13.1.235", "port": 8073, "latitude": 38.1, "longitude": -78.2, "grid": "FM08so"},
+                {"host": "10.13.1.236", "port": 8074, "latitude": 39.1, "longitude": -77.2, "grid": "FM09aa"},
+            ],
+            "active_kiwi_index": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    assert mgr.host == "10.13.1.236"
+    assert mgr.port == 8074
+    assert mgr.active_kiwi_index == 1
+    assert auto_set_loop.apply_calls == [(True, True)]
+    assert auto_set_loop.notify_calls == 0
+
+    payload = client.get("/config").json()
+    assert payload["active_kiwi_index"] == 1
+    assert payload["host"] == "10.13.1.236"
+    assert payload["port"] == 8074
 
 
 def test_post_config_reapplies_receivers_when_endpoint_changes(monkeypatch) -> None:

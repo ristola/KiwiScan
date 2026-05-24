@@ -52,6 +52,35 @@ def test_decodes_endpoint_hides_events_without_grid() -> None:
     assert all(item.get("source") != "utility_monitor" for item in body["items"])
 
 
+def test_decodes_reset_endpoint_clears_buffer_and_published_stats() -> None:
+    app = FastAPI()
+    app.include_router(decodes_api.router)
+    client = TestClient(app)
+
+    decodes_api.publish_decode(
+        {
+            "timestamp": "16:16:22",
+            "frequency_mhz": 14.074,
+            "mode": "FT8",
+            "callsign": "K1ABC",
+            "grid": "FN31",
+            "message": "CQ K1ABC FN31",
+            "band": "20m",
+            "rx": 2,
+        }
+    )
+
+    response = client.post("/decodes/reset")
+
+    assert response.status_code == 200
+    assert response.json() == {"total_decodes": 0, "buffer_size": 0}
+    assert decodes_api.get_published_decode_stats_by_rx() == {}
+
+    decodes_response = client.get("/decodes")
+    assert decodes_response.status_code == 200
+    assert decodes_response.json() == {"latest": 0, "items": []}
+
+
 def test_parse_decode_line_handles_short_wspr_format() -> None:
     parsed = decodes_api._parse_decode_line(
         "D: WSPR 1777127280 -22 -0.3 0.001416 0 N9KBV EM30 37"
