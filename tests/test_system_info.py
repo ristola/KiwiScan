@@ -14,6 +14,7 @@ class _MgrStub:
         self.host = "192.168.1.93"
         self.port = 8073
         self.configured_kiwis: list[dict[str, object]] = []
+        self.active_target: tuple[str, int] | None = None
 
     def get_discovered_kiwis(self) -> dict[str, object]:
         return {"found": [], "source": "", "updated_unix": 0.0}
@@ -21,11 +22,24 @@ class _MgrStub:
     def get_configured_kiwis(self) -> list[dict[str, object]]:
         return list(self.configured_kiwis)
 
+    def resolve_runtime_target(self, *, kiwi_key: object | None = None) -> dict[str, object]:
+        if kiwi_key is not None and str(kiwi_key).strip():
+            host, port_text = str(kiwi_key).strip().split(":", 1)
+            return {"host": host, "port": int(port_text), "kiwi_key": str(kiwi_key).strip()}
+        if self.active_target is not None:
+            return {
+                "host": str(self.active_target[0]),
+                "port": int(self.active_target[1]),
+                "kiwi_key": f"{self.active_target[0]}:{self.active_target[1]}",
+            }
+        return {"host": self.host, "port": self.port, "kiwi_key": f"{self.host}:{self.port}"}
+
 
 class _ReceiverMgrStub:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._assignments: dict[int, object] = {}
+        self.last_target: tuple[str, int] | None = None
 
     def active_label_to_rx(self) -> dict[str, int]:
         # Mimic the real implementation: use a short timeout so tests don't hang.
@@ -37,12 +51,20 @@ class _ReceiverMgrStub:
         finally:
             self._lock.release()
 
+    def active_label_to_rx_for_target(self, host: str, port: int) -> dict[str, int]:
+        self.last_target = (str(host), int(port))
+        return self.active_label_to_rx()
+
     def health_summary(self) -> dict[str, object]:
         return {
             "channels": {
                 "2": {"host": "10.13.1.236", "port": 8074, "kiwi_actual_rx": 6}
             }
         }
+
+    def health_summary_for_target(self, host: str, port: int) -> dict[str, object]:
+        self.last_target = (str(host), int(port))
+        return self.health_summary()
 
 
 def test_system_info_returns_raw_users_when_receiver_manager_lock_is_busy(monkeypatch) -> None:
@@ -268,6 +290,34 @@ def test_system_info_includes_configured_kiwis_in_known_entries(monkeypatch) -> 
     ]
 
 
+def test_system_info_defaults_to_selected_runtime_target(monkeypatch) -> None:
+    mgr = _MgrStub()
+    mgr.host = "10.13.1.235"
+    mgr.port = 8073
+    mgr.active_target = ("10.13.1.236", 8074)
+    receiver_mgr = _ReceiverMgrStub()
+
+    seen_endpoints: list[tuple[str, int]] = []
+
+    monkeypatch.setattr(
+        system_info,
+        "read_kiwi_status",
+        lambda host, port, timeout_s: seen_endpoints.append((str(host), int(port))) or {"name": "Selected Kiwi"},
+    )
+    monkeypatch.setattr(
+        system_info,
+        "_fetch_kiwi_users",
+        lambda host, port: [{"i": 5, "n": "AUTO_20M_FT8", "g": "", "f": 14074000, "m": "usb", "a": "127.0.0.1", "t": "0:00:05"}],
+    )
+
+    payload = system_info._build_kiwi_payload(mgr, receiver_mgr=receiver_mgr)
+
+    assert payload["host"] == "10.13.1.236"
+    assert payload["port"] == 8074
+    assert seen_endpoints == [("10.13.1.236", 8074)]
+    assert receiver_mgr.last_target == ("10.13.1.236", 8074)
+
+
 def test_system_audio_stream_uses_requested_kiwi_endpoint_and_slot(monkeypatch) -> None:
     mgr = _MgrStub()
     mgr.host = "10.13.1.235"
@@ -391,10 +441,11 @@ def test_system_audio_stream_prefers_receiver_health_mapping_over_stale_client_s
     )
 
     assert response.status_code == 200
-    assert captured["host"] == "10.13.1.236"
-    assert captured["port"] == 8074
+    assert captured["host"] == "10.13.1.235"
+    assert captured["port"] == 8073
     assert captured["required_rx"] is None
     assert captured["camp_rx"] == 6
+    assert receiver_mgr.last_target == ("10.13.1.235", 8073)
 
 
 def test_system_audio_stream_prefers_managed_assignment_center_frequency(monkeypatch) -> None:

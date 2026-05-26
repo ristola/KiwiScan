@@ -56,6 +56,64 @@ def _configured_kiwi_keys(entries: object) -> set[tuple[str, int]]:
     return keys
 
 
+def _normalize_configured_kiwi_entry(entry: object) -> dict[str, object] | None:
+    if not isinstance(entry, dict):
+        return None
+    host = _normalize_kiwi_host(entry.get("host"))
+    try:
+        port = int(entry.get("port") or 0)
+    except Exception:
+        port = 0
+    if _is_unconfigured_kiwi_host(host) or not (1 <= port <= 65535):
+        return None
+    normalized: dict[str, object] = {
+        "host": host,
+        "port": port,
+    }
+    for key in ("grid", "name", "loc", "sdr_hw", "sw_version"):
+        value = str(entry.get(key) or "").strip()
+        if value:
+            normalized[key] = value
+    for key, lower, upper in (("latitude", -90.0, 90.0), ("longitude", -180.0, 180.0)):
+        try:
+            value = float(entry.get(key))
+        except Exception:
+            continue
+        if lower <= value <= upper:
+            normalized[key] = value
+    return normalized
+
+
+def _preserve_configured_kiwi_order(requested: object, existing: object) -> list[dict[str, object]] | object:
+    if not isinstance(requested, list):
+        return requested
+    requested_entries = [
+        normalized
+        for normalized in (_normalize_configured_kiwi_entry(item) for item in requested)
+        if normalized is not None
+    ]
+    if not isinstance(existing, list) or not existing:
+        return requested_entries
+    existing_entries = [
+        normalized
+        for normalized in (_normalize_configured_kiwi_entry(item) for item in existing)
+        if normalized is not None
+    ]
+    if len(requested_entries) != len(existing_entries):
+        return requested_entries
+    requested_by_key = {
+        (str(entry["host"]), int(entry["port"])): entry
+        for entry in requested_entries
+    }
+    existing_keys = [
+        (str(entry["host"]), int(entry["port"]))
+        for entry in existing_entries
+    ]
+    if len(requested_by_key) != len(requested_entries) or set(requested_by_key) != set(existing_keys):
+        return requested_entries
+    return [dict(requested_by_key[key]) for key in existing_keys]
+
+
 def _filter_discovered_kiwis_to_configured(discovered: object, configured: object) -> list[dict[str, object]]:
     configured_keys = _configured_kiwi_keys(configured)
     if not configured_keys or not isinstance(discovered, list):
@@ -510,11 +568,14 @@ def make_router(
                 prior_port = int(getattr(mgr, "port", 0) or 0)
             except Exception:
                 prior_port = 0
+        configured_kiwis = data.get("kiwisdrs") if isinstance(data, dict) else None
         kiwi_password_changed = False
         kiwi_admin_password_changed = False
         if "kiwisdrs" in data and hasattr(mgr, "set_configured_kiwis"):
+            existing_configured = _get_configured_kiwis(mgr)
+            configured_kiwis = _preserve_configured_kiwi_order(configured_kiwis, existing_configured)
             try:
-                mgr.set_configured_kiwis(data.get("kiwisdrs"), save=False)  # type: ignore[attr-defined]
+                mgr.set_configured_kiwis(configured_kiwis, save=False)  # type: ignore[attr-defined]
             except Exception as exc:
                 raise HTTPException(status_code=400, detail=f"invalid value for kiwisdrs: {exc}") from exc
             if "active_kiwi_index" in data and hasattr(mgr, "set_active_kiwi_index"):
@@ -573,7 +634,6 @@ def make_router(
             "fast_scan_min_duration_s",
             "retune_pause_s",
         }
-        active_index_for_merge = _get_active_kiwi_index(mgr)
         with mgr.lock:  # type: ignore[attr-defined]
             for k, v in data.items():
                 if k not in allowed:
@@ -678,7 +738,7 @@ def make_router(
                     "longitude": float(mgr.longitude),
                 }
                 if existing:
-                    merge_index = min(max(0, int(active_index_for_merge)), len(existing) - 1)
+                    merge_index = 0
                     grid = str(existing[merge_index].get("grid") or "").strip()
                     if grid:
                         primary["grid"] = grid
@@ -693,22 +753,21 @@ def make_router(
         existing_discovered = list(getattr(mgr, "discovered_kiwis", []) or [])
         configured_snapshot = _get_configured_kiwis(mgr)
         if configured_snapshot:
-            active_index = min(max(0, _get_active_kiwi_index(mgr)), len(configured_snapshot) - 1)
-            active_entry = configured_snapshot[active_index]
-            if isinstance(active_entry, dict):
-                active_host = _normalize_kiwi_host(active_entry.get("host"))
+            primary_entry = configured_snapshot[0]
+            if isinstance(primary_entry, dict):
+                active_host = _normalize_kiwi_host(primary_entry.get("host"))
                 try:
-                    active_port = int(active_entry.get("port") or 0)
+                    active_port = int(primary_entry.get("port") or 0)
                 except Exception:
                     active_port = 0
                 if not _is_unconfigured_kiwi_host(active_host) and 1 <= active_port <= 65535:
                     with mgr.lock:  # type: ignore[attr-defined]
                         mgr.host = active_host
                         mgr.port = active_port
-                        if active_entry.get("latitude") is not None:
-                            mgr.latitude = float(active_entry.get("latitude"))
-                        if active_entry.get("longitude") is not None:
-                            mgr.longitude = float(active_entry.get("longitude"))
+                        if primary_entry.get("latitude") is not None:
+                            mgr.latitude = float(primary_entry.get("latitude"))
+                        if primary_entry.get("longitude") is not None:
+                            mgr.longitude = float(primary_entry.get("longitude"))
         enriched_discovery = _augment_discovered_kiwis_with_status(
             existing_discovered,
             configured_snapshot,
@@ -740,7 +799,6 @@ def make_router(
         endpoint_changed = (current_host != prior_host) or (current_port != prior_port)
         reapply_required = (
             endpoint_changed
-            or current_active_kiwi_index != prior_active_kiwi_index
             or current_configured_keys != prior_configured_keys
         )
         if reapply_required and auto_set_loop is not None:

@@ -66,6 +66,7 @@ def test_decodes_status_accepts_compact_live_labels(monkeypatch) -> None:
             "message": "CQ K1ABC FN31",
             "band": "40m",
             "rx": 5,
+            "kiwi_key": "kiwi.local:8073",
         }
     )
 
@@ -108,6 +109,7 @@ def test_decodes_status_accepts_compact_live_labels(monkeypatch) -> None:
     assert body["assignments"]["7"] == {"band": "17m", "mode": "FT8", "freq_hz": 18102300.0}
     assert body["published_decode_stats_by_rx"]["5"]["bands"]["40m"]["decode_total"] == 1
     assert body["published_decode_stats_by_rx"]["5"]["bands"]["40m"]["decode_rates_by_mode"]["FT8"]["decode_total"] == 1
+    assert body["published_decode_stats_by_kiwi"]["kiwi.local:8073"]["bands"]["40m"]["decode_total"] == 1
 
 
 def test_decodes_status_returns_cached_payload_when_lock_is_busy(monkeypatch) -> None:
@@ -151,6 +153,33 @@ def test_decodes_status_returns_cached_payload_when_lock_is_busy(monkeypatch) ->
     assert second_body["assignments"] == first_body["assignments"]
     assert second_body["assignments_source"] == first_body["assignments_source"]
     assert second_body["_from_cache"] is True
+
+
+def test_decodes_status_busy_fallback_exposes_stable_stats_shape() -> None:
+    receiver_mgr = _ReceiverMgrStub()
+    app = FastAPI()
+    app.include_router(
+        decodes_status_api.make_router(
+            receiver_mgr=receiver_mgr,
+            af2udp_path=Path("/tmp/af2udp"),
+            ft8modem_path=Path("/tmp/ft8modem"),
+        )
+    )
+    client = TestClient(app)
+
+    held = receiver_mgr._lock.acquire(blocking=False)
+    assert held is True
+    try:
+        response = client.get("/decodes/status")
+    finally:
+        receiver_mgr._lock.release()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["assignments_source"] == "busy"
+    assert body["published_decode_stats_by_rx"] == {}
+    assert body["published_decode_stats_by_kiwi"] == {}
+    assert body["_from_cache"] is True
 
 
 def test_decodes_status_accepts_readable_live_labels_with_mix_and_all(monkeypatch) -> None:

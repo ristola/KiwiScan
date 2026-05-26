@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 
 def _merge_receiver_scan_health(summary: dict[str, Any], receiver_scan: object | None) -> dict[str, Any]:
@@ -93,13 +93,30 @@ def _merge_receiver_scan_health(summary: dict[str, Any], receiver_scan: object |
     return result
 
 
-def make_router(*, receiver_mgr: object, receiver_scan: object | None = None) -> APIRouter:
+def _resolve_runtime_target(mgr: object | None, kiwi_key: str | None = None) -> tuple[str, int] | None:
+    if mgr is None or not hasattr(mgr, "resolve_runtime_target"):
+        return None
+    try:
+        resolved = mgr.resolve_runtime_target(kiwi_key=str(kiwi_key or "").strip() or None)  # type: ignore[attr-defined]
+    except Exception:
+        return None
+    host = str((resolved or {}).get("host") or "").strip()
+    port = int((resolved or {}).get("port") or 0)
+    if not host or port <= 0:
+        return None
+    return host, port
+
+
+def make_router(*, receiver_mgr: object, receiver_scan: object | None = None, mgr: object | None = None) -> APIRouter:
     """Create router for receiver health summary endpoints."""
 
     router = APIRouter()
 
     @router.get("/health/rx")
-    def get_receiver_health() -> dict:
+    def get_receiver_health(kiwi_key: str | None = Query(default=None)) -> dict:
+        target = _resolve_runtime_target(mgr, kiwi_key)
+        if target is not None and hasattr(receiver_mgr, "health_summary_for_target"):
+            return _merge_receiver_scan_health(receiver_mgr.health_summary_for_target(target[0], target[1]), receiver_scan)
         if hasattr(receiver_mgr, "health_summary"):
             return _merge_receiver_scan_health(receiver_mgr.health_summary(), receiver_scan)
         return _merge_receiver_scan_health({

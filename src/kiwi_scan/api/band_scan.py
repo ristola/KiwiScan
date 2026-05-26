@@ -3,9 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Dict
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 
 from .decodes import publish_decode
+from ..targeted_service_registry import resolve_targeted_service
 
 
 def make_router(*, mgr: object, band_scanner: object) -> APIRouter:
@@ -16,10 +17,56 @@ def make_router(*, mgr: object, band_scanner: object) -> APIRouter:
 
 	router = APIRouter()
 
+	def _resolved_runtime_target(*, kiwi_key: str | None = None, kiwi_index: object | None = None) -> dict[str, object]:
+		resolved_target = None
+		resolve_runtime_target = getattr(mgr, "resolve_runtime_target", None)
+		if callable(resolve_runtime_target):
+			try:
+				resolved_target = resolve_runtime_target(kiwi_key=kiwi_key, kiwi_index=kiwi_index)
+			except ValueError as exc:
+				raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+		with mgr.lock:  # type: ignore[attr-defined]
+			if resolved_target is None:
+				host = str(mgr.host)  # type: ignore[attr-defined]
+				port = int(mgr.port)  # type: ignore[attr-defined]
+				password = mgr.password if hasattr(mgr, "password") else None  # type: ignore[attr-defined]
+				return {
+					"host": host,
+					"port": port,
+					"password": password,
+					"kiwi_index": None,
+					"kiwi_key": f"{host}:{port}" if host else "",
+				}
+			return dict(resolved_target)
+
+	def _request_kiwi_selector(payload: object) -> tuple[str | None, object | None]:
+		if not isinstance(payload, dict):
+			return None, None
+		kiwi_key = payload.get("kiwi_key")
+		if kiwi_key is None:
+			kiwi_key = payload.get("kiwiKey")
+		kiwi_index = payload.get("kiwi_index")
+		if kiwi_index is None:
+			kiwi_index = payload.get("kiwiIndex")
+		kiwi_key_text = str(kiwi_key).strip() if kiwi_key is not None else ""
+		return kiwi_key_text or None, kiwi_index
+
+	def _manager_target(*, band: str, target: dict[str, object]) -> tuple[str, int, str | None, float]:
+		with mgr.lock:  # type: ignore[attr-defined]
+			threshold_db = float(mgr.threshold_db_by_band.get(band, mgr.threshold_db))  # type: ignore[attr-defined]
+		host = str(target.get("host") or "")
+		port = int(target.get("port") or 0)
+		password = target.get("password")
+		return host, port, password, threshold_db
+
 	@router.post("/band_scan")
 	async def start_band_scan(request: Request):
 		payload = await request.json() if request is not None else {}
 		band = str(payload.get("band") or "20m")
+		requested_kiwi_key, requested_kiwi_index = _request_kiwi_selector(payload)
+		target = _resolved_runtime_target(kiwi_key=requested_kiwi_key, kiwi_index=requested_kiwi_index)
+		scanner = resolve_targeted_service(band_scanner, target=target)
 		rx_chan = payload.get("rx_chan", 0)
 		wf_rx_chan = payload.get("wf_rx_chan", 0)
 		span_hz = payload.get("span_hz", 30000.0)
@@ -57,11 +104,10 @@ def make_router(*, mgr: object, band_scanner: object) -> APIRouter:
 			wf_rx_chan = rx
 			allow_rx_fallback = False
 
-		with mgr.lock:  # type: ignore[attr-defined]
-			host = str(mgr.host)  # type: ignore[attr-defined]
-			port = int(mgr.port)  # type: ignore[attr-defined]
-			password = mgr.password if hasattr(mgr, "password") else None  # type: ignore[attr-defined]
-			threshold_db = float(mgr.threshold_db_by_band.get(band, mgr.threshold_db))  # type: ignore[attr-defined]
+		host, port, password, threshold_db = _manager_target(
+			band=band,
+			target=target,
+		)
 
 		def _emit_scan_hit(hit: Dict) -> None:
 			try:
@@ -89,7 +135,7 @@ def make_router(*, mgr: object, band_scanner: object) -> APIRouter:
 			except Exception:
 				pass
 
-		return band_scanner.start(  # type: ignore[attr-defined]
+		return scanner.start(  # type: ignore[attr-defined]
 			band=band,
 			host=host,
 			port=port,
@@ -113,15 +159,23 @@ def make_router(*, mgr: object, band_scanner: object) -> APIRouter:
 		)
 
 	@router.get("/band_scan/status")
-	def band_scan_status():
-		return band_scanner.status()  # type: ignore[attr-defined]
+	def band_scan_status(kiwi_key: str | None = None, kiwi_index: int | None = None):
+		target = _resolved_runtime_target(kiwi_key=kiwi_key, kiwi_index=kiwi_index)
+		scanner = resolve_targeted_service(band_scanner, target=target)
+		return scanner.status()  # type: ignore[attr-defined]
 
 	@router.get("/band_scan/results")
-	def band_scan_results():
-		return band_scanner.results()  # type: ignore[attr-defined]
+	def band_scan_results(kiwi_key: str | None = None, kiwi_index: int | None = None):
+		target = _resolved_runtime_target(kiwi_key=kiwi_key, kiwi_index=kiwi_index)
+		scanner = resolve_targeted_service(band_scanner, target=target)
+		return scanner.results()  # type: ignore[attr-defined]
 
 	@router.post("/band_scan/stop")
-	def stop_band_scan():
-		return band_scanner.stop()  # type: ignore[attr-defined]
+	async def stop_band_scan(request: Request):
+		payload = await request.json() if request is not None else {}
+		requested_kiwi_key, requested_kiwi_index = _request_kiwi_selector(payload)
+		target = _resolved_runtime_target(kiwi_key=requested_kiwi_key, kiwi_index=requested_kiwi_index)
+		scanner = resolve_targeted_service(band_scanner, target=target)
+		return scanner.stop()  # type: ignore[attr-defined]
 
 	return router

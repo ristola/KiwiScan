@@ -579,14 +579,20 @@ def make_router(
             if auto_set_loop is not None:
                 auto_set_loop.pause_for_external(semi_hold_reason)  # type: ignore[attr-defined]
                 paused_external = True
-            manager_lock = getattr(mgr, "lock", None)
-            if manager_lock is not None:
-                with manager_lock:  # type: ignore[union-attr]
+            _resolve_rt = getattr(mgr, "resolve_runtime_target", None)
+            if callable(_resolve_rt):
+                _target = _resolve_rt()
+                host = str(_target.get("host") or getattr(mgr, "host", ""))
+                port = int(_target.get("port") or getattr(mgr, "port", 8073))
+            else:
+                manager_lock = getattr(mgr, "lock", None)
+                if manager_lock is not None:
+                    with manager_lock:  # type: ignore[union-attr]
+                        host = str(getattr(mgr, "host"))
+                        port = int(getattr(mgr, "port"))
+                else:
                     host = str(getattr(mgr, "host"))
                     port = int(getattr(mgr, "port"))
-            else:
-                host = str(getattr(mgr, "host"))
-                port = int(getattr(mgr, "port"))
 
             if not _wait_for_receiver_manager_settle():
                 raise RuntimeError("receiver manager startup is still settling")

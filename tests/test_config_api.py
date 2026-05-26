@@ -102,13 +102,13 @@ class _MgrStub:
         else:
             self.active_kiwi_index = 0
         if out:
-            active = out[self.active_kiwi_index]
-            self.host = str(active["host"])
-            self.port = int(active["port"])
-            if "latitude" in active:
-                self.latitude = float(active["latitude"])
-            if "longitude" in active:
-                self.longitude = float(active["longitude"])
+            primary = out[0]
+            self.host = str(primary["host"])
+            self.port = int(primary["port"])
+            if "latitude" in primary:
+                self.latitude = float(primary["latitude"])
+            if "longitude" in primary:
+                self.longitude = float(primary["longitude"])
             self.rx_chan = None
         if save:
             self._save_config()
@@ -123,14 +123,6 @@ class _MgrStub:
             next_index = 0
         if self.configured_kiwis:
             next_index = min(max(0, next_index), len(self.configured_kiwis) - 1)
-            active = self.configured_kiwis[next_index]
-            self.host = str(active["host"])
-            self.port = int(active["port"])
-            if "latitude" in active:
-                self.latitude = float(active["latitude"])
-            if "longitude" in active:
-                self.longitude = float(active["longitude"])
-            self.rx_chan = None
         else:
             next_index = 0
         self.active_kiwi_index = next_index
@@ -312,6 +304,50 @@ def test_post_config_persists_configured_kiwis(monkeypatch) -> None:
 
 def test_post_config_can_select_secondary_active_kiwi(monkeypatch) -> None:
     mgr = _MgrStub()
+    mgr.set_configured_kiwis(
+        [
+            {"host": "10.13.1.235", "port": 8073, "latitude": 38.1, "longitude": -78.2, "grid": "FM08so"},
+            {"host": "10.13.1.236", "port": 8074, "latitude": 39.1, "longitude": -77.2, "grid": "FM09aa"},
+        ],
+        save=False,
+    )
+    auto_set_loop = _AutoSetLoopStub(apply_result=True)
+    app = FastAPI()
+    app.include_router(config_api.make_router(mgr=mgr, waterholes={"20m": 14074.0}, auto_set_loop=auto_set_loop))
+    client = TestClient(app)
+
+    monkeypatch.setattr(config_api, "read_kiwi_status", lambda host, port, timeout_s: {})
+
+    response = client.post(
+        "/config",
+        json={
+            "active_kiwi_index": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    assert mgr.host == "10.13.1.235"
+    assert mgr.port == 8073
+    assert mgr.active_kiwi_index == 1
+    assert auto_set_loop.apply_calls == []
+    assert auto_set_loop.notify_calls == 0
+
+    payload = client.get("/config").json()
+    assert payload["active_kiwi_index"] == 1
+    assert payload["host"] == "10.13.1.235"
+    assert payload["port"] == 8073
+
+
+def test_post_config_preserves_existing_primary_order_when_request_reorders_kiwis(monkeypatch) -> None:
+    mgr = _MgrStub()
+    mgr.set_configured_kiwis(
+        [
+            {"host": "10.13.1.235", "port": 8073, "latitude": 38.1, "longitude": -78.2, "grid": "FM08so"},
+            {"host": "10.13.1.236", "port": 8074, "latitude": 39.1, "longitude": -77.2, "grid": "FM09aa"},
+            {"host": "10.13.1.237", "port": 8075, "latitude": 40.1, "longitude": -76.2, "grid": "FM10bb"},
+        ],
+        save=False,
+    )
     auto_set_loop = _AutoSetLoopStub(apply_result=True)
     app = FastAPI()
     app.include_router(config_api.make_router(mgr=mgr, waterholes={"20m": 14074.0}, auto_set_loop=auto_set_loop))
@@ -323,24 +359,27 @@ def test_post_config_can_select_secondary_active_kiwi(monkeypatch) -> None:
         "/config",
         json={
             "kiwisdrs": [
+                {"host": "10.13.1.237", "port": 8075, "latitude": 40.1, "longitude": -76.2, "grid": "FM10bb"},
                 {"host": "10.13.1.235", "port": 8073, "latitude": 38.1, "longitude": -78.2, "grid": "FM08so"},
                 {"host": "10.13.1.236", "port": 8074, "latitude": 39.1, "longitude": -77.2, "grid": "FM09aa"},
             ],
-            "active_kiwi_index": 1,
         },
     )
 
     assert response.status_code == 200
-    assert mgr.host == "10.13.1.236"
-    assert mgr.port == 8074
-    assert mgr.active_kiwi_index == 1
-    assert auto_set_loop.apply_calls == [(True, True)]
+    assert mgr.host == "10.13.1.235"
+    assert mgr.port == 8073
+    assert auto_set_loop.apply_calls == []
     assert auto_set_loop.notify_calls == 0
 
     payload = client.get("/config").json()
-    assert payload["active_kiwi_index"] == 1
-    assert payload["host"] == "10.13.1.236"
-    assert payload["port"] == 8074
+    assert payload["kiwisdrs"] == [
+        {"host": "10.13.1.235", "port": 8073, "latitude": 38.1, "longitude": -78.2, "grid": "FM08so"},
+        {"host": "10.13.1.236", "port": 8074, "latitude": 39.1, "longitude": -77.2, "grid": "FM09aa"},
+        {"host": "10.13.1.237", "port": 8075, "latitude": 40.1, "longitude": -76.2, "grid": "FM10bb"},
+    ]
+    assert payload["host"] == "10.13.1.235"
+    assert payload["port"] == 8073
 
 
 def test_post_config_reapplies_receivers_when_endpoint_changes(monkeypatch) -> None:

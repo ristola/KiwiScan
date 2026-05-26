@@ -57,6 +57,24 @@ def _get_cached_discovery(mgr: object) -> dict[str, object]:
     }
 
 
+def _resolve_runtime_target(mgr: object, kiwi_key: str | None = None) -> tuple[str, int]:
+    requested_key = str(kiwi_key or "").strip()
+    if hasattr(mgr, "resolve_runtime_target"):
+        try:
+            resolved = mgr.resolve_runtime_target(kiwi_key=requested_key or None)  # type: ignore[attr-defined]
+            host = str((resolved or {}).get("host") or "").strip()
+            port = int((resolved or {}).get("port") or 0)
+            if host and port > 0:
+                return host, port
+        except Exception:
+            pass
+    with mgr.lock:  # type: ignore[attr-defined]
+        return (
+            str(getattr(mgr, "host", "") or "").strip(),
+            int(getattr(mgr, "port", 0) or 0),
+        )
+
+
 def _read_proc_uptime_seconds() -> float | None:
     try:
         with open("/proc/uptime", "r", encoding="utf-8") as handle:
@@ -354,8 +372,19 @@ def _resolve_audio_stream_receiver_target(
     if requested_rx is None or receiver_mgr is None or not hasattr(receiver_mgr, "health_summary"):
         return resolved_kiwi_rx, resolved_host, resolved_port
 
+    summary: dict[str, object] | None = None
+    if resolved_host and resolved_port is not None and resolved_port > 0 and hasattr(receiver_mgr, "health_summary_for_target"):
+        try:
+            summary = receiver_mgr.health_summary_for_target(resolved_host, resolved_port)  # type: ignore[attr-defined]
+        except Exception:
+            logger.exception(
+                "Failed reading targeted receiver health summary for audio stream resolution host=%s port=%s",
+                resolved_host,
+                resolved_port,
+            )
     try:
-        summary = receiver_mgr.health_summary()  # type: ignore[attr-defined]
+        if summary is None:
+            summary = receiver_mgr.health_summary()  # type: ignore[attr-defined]
     except Exception:
         logger.exception("Failed reading receiver health summary for audio stream resolution")
         return resolved_kiwi_rx, resolved_host, resolved_port
@@ -373,7 +402,7 @@ def _resolve_audio_stream_receiver_target(
 
     if channel_kiwi_rx is not None and channel_kiwi_rx >= 0:
         resolved_kiwi_rx = channel_kiwi_rx
-    if channel_host and channel_port is not None and channel_port > 0:
+    if (not resolved_host or resolved_port is None or resolved_port <= 0) and channel_host and channel_port is not None and channel_port > 0:
         resolved_host = channel_host
         resolved_port = channel_port
     return resolved_kiwi_rx, resolved_host, resolved_port
@@ -384,13 +413,28 @@ def _resolve_audio_stream_source_freq_hz(
     receiver_mgr: object | None,
     requested_rx: int | None,
     requested_source_freq_hz: float | None,
+    requested_host: str | None,
+    requested_port: int | None,
 ) -> float | None:
     resolved_source_freq_hz = float(requested_source_freq_hz) if requested_source_freq_hz is not None else None
     if requested_rx is None or receiver_mgr is None:
         return resolved_source_freq_hz
 
+    summary: dict[str, object] | None = None
+    normalized_host = str(requested_host or "").strip() or None
+    normalized_port = int(requested_port) if requested_port is not None else None
+    if normalized_host and normalized_port is not None and normalized_port > 0 and hasattr(receiver_mgr, "health_summary_for_target"):
+        try:
+            summary = receiver_mgr.health_summary_for_target(normalized_host, normalized_port)  # type: ignore[attr-defined]
+        except Exception:
+            logger.exception(
+                "Failed reading targeted receiver health summary for audio source frequency host=%s port=%s",
+                normalized_host,
+                normalized_port,
+            )
     try:
-        summary = receiver_mgr.health_summary()  # type: ignore[attr-defined]
+        if summary is None:
+            summary = receiver_mgr.health_summary()  # type: ignore[attr-defined]
     except Exception:
         logger.exception("Failed reading receiver health summary for audio source frequency resolution")
     else:
@@ -466,10 +510,8 @@ def _build_container_payload() -> dict[str, object]:
     }
 
 
-def _build_kiwi_payload(mgr: object, receiver_mgr: object | None = None) -> dict[str, object]:
-    with mgr.lock:  # type: ignore[attr-defined]
-        host = str(getattr(mgr, "host", "") or "").strip()
-        port = int(getattr(mgr, "port", 0) or 0)
+def _build_kiwi_payload(mgr: object, receiver_mgr: object | None = None, *, kiwi_key: str | None = None) -> dict[str, object]:
+    host, port = _resolve_runtime_target(mgr, kiwi_key)
 
     out: dict[str, object] = {
         "host": host,
@@ -517,7 +559,12 @@ def _build_kiwi_payload(mgr: object, receiver_mgr: object | None = None) -> dict
     # active_label_to_rx() uses its own short-timeout lock internally; call it directly.
     label_to_rx: dict[str, Any] = {}
     label_source = receiver_mgr if receiver_mgr is not None else mgr
-    if hasattr(label_source, "active_label_to_rx"):
+    if hasattr(label_source, "active_label_to_rx_for_target"):
+        try:
+            label_to_rx = label_source.active_label_to_rx_for_target(host, port)  # type: ignore[union-attr]
+        except Exception:
+            pass
+    elif hasattr(label_source, "active_label_to_rx"):
         try:
             label_to_rx = label_source.active_label_to_rx()  # type: ignore[union-attr]
         except Exception:
@@ -569,10 +616,10 @@ def make_router(*, mgr: object, receiver_mgr: object | None = None) -> APIRouter
     router = APIRouter()
 
     @router.get("/system/info")
-    def get_system_info() -> Dict[str, object]:
+    def get_system_info(kiwi_key: str | None = Query(default=None)) -> Dict[str, object]:
         return {
             "container": _build_container_payload(),
-            "kiwi": _build_kiwi_payload(mgr, receiver_mgr=receiver_mgr),
+            "kiwi": _build_kiwi_payload(mgr, receiver_mgr=receiver_mgr, kiwi_key=kiwi_key),
         }
 
     @router.get("/system/audio_stream")
@@ -609,6 +656,8 @@ def make_router(*, mgr: object, receiver_mgr: object | None = None) -> APIRouter
             receiver_mgr=receiver_mgr,
             requested_rx=rx,
             requested_source_freq_hz=float(source_freq_khz) * 1000.0 if source_freq_khz is not None else None,
+            requested_host=requested_host,
+            requested_port=requested_port,
         )
         stream_host, stream_port = _resolve_audio_stream_endpoint(
             mgr=mgr,

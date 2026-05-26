@@ -45,6 +45,7 @@ _decode_seq = 0
 _decode_buffer: deque[Dict] = deque(maxlen=5000)
 _decode_times: deque[float] = deque(maxlen=5000)
 _published_decode_stats_by_rx: Dict[int, Dict[str, Any]] = {}
+_published_decode_stats_by_kiwi: Dict[str, Dict[str, Any]] = {}
 
 # Server-side band activity chart buckets: fixed 15-second wall-clock intervals so the
 # data is accurate regardless of browser tab visibility or polling throttling.
@@ -53,7 +54,7 @@ _CHART_RETENTION_S = 24 * 60 * 60
 _CHART_MAX_BUCKETS = int(_CHART_RETENTION_S / _CHART_BUCKET_S)  # 24 hours of history
 _chart_lock = threading.Lock()
 _chart_buckets: deque = deque(maxlen=_CHART_MAX_BUCKETS)
-_chart_running: Dict[str, Any] = {}  # {"ts": float, "bands": {band: {"RXn|MODE": count}}}
+_chart_running: Dict[str, Any] = {}  # {"ts": float, "bands": {band: {"RXn|MODE": count}}, "bands_by_kiwi": {kiwi_key: {band: {"RXn|MODE": count}}}}
 
 _loop: asyncio.AbstractEventLoop | None = None
 _loop_4010: asyncio.AbstractEventLoop | None = None
@@ -237,6 +238,34 @@ def _update_published_decode_stats(payload: Dict[str, Any], now: float) -> None:
     current["bands"] = bands
     _published_decode_stats_by_rx[rx] = current
 
+    kiwi_key = str(payload.get("kiwi_key") or "").strip()
+    if kiwi_key:
+        kcurrent = dict(_published_decode_stats_by_kiwi.get(kiwi_key, {}) or {})
+        kbands = dict(kcurrent.get("bands") or {})
+        kband_entry = dict(kbands.get(band, {}) or {})
+
+        ktimestamps = [float(ts) for ts in list(kband_entry.get("decode_timestamps") or []) if float(ts) >= cutoff_1h]
+        ktimestamps.append(float(now))
+        kband_entry["decode_timestamps"] = ktimestamps
+        kband_entry["decode_total"] = int(kband_entry.get("decode_total", 0) or 0) + 1
+
+        kts_by_mode = {
+            str(key): [float(ts) for ts in list(value or []) if float(ts) >= cutoff_1h]
+            for key, value in dict(kband_entry.get("_decode_ts_by_mode") or {}).items()
+        }
+        kmode_timestamps = list(kts_by_mode.get(mode, []) or [])
+        kmode_timestamps.append(float(now))
+        kts_by_mode[mode] = kmode_timestamps
+        kband_entry["_decode_ts_by_mode"] = kts_by_mode
+
+        ktotals_by_mode = dict(kband_entry.get("_decode_total_by_mode") or {})
+        ktotals_by_mode[mode] = int(ktotals_by_mode.get(mode, 0) or 0) + 1
+        kband_entry["_decode_total_by_mode"] = ktotals_by_mode
+
+        kbands[band] = kband_entry
+        kcurrent["bands"] = kbands
+        _published_decode_stats_by_kiwi[kiwi_key] = kcurrent
+
 
 def get_published_decode_stats_by_rx() -> Dict[str, Dict[str, Any]]:
     with _decode_lock:
@@ -268,6 +297,39 @@ def get_published_decode_stats_by_rx() -> Dict[str, Dict[str, Any]]:
                     },
                 }
             out[str(int(rx))] = {"bands": band_stats}
+        return out
+
+
+def get_published_decode_stats_by_kiwi() -> Dict[str, Dict[str, Any]]:
+    with _decode_lock:
+        now = time.time()
+        out: Dict[str, Dict[str, Any]] = {}
+        for kiwi_key, raw in _published_decode_stats_by_kiwi.items():
+            current = dict(raw or {})
+            bands_raw = dict(current.get("bands") or {})
+            band_stats: Dict[str, Dict[str, Any]] = {}
+            for band, band_raw in bands_raw.items():
+                band_entry = dict(band_raw or {})
+                timestamps = [float(ts) for ts in list(band_entry.get("decode_timestamps") or []) if float(ts) >= now - 3600.0]
+                ts_by_mode = {
+                    str(key): [float(ts) for ts in list(value or []) if float(ts) >= now - 3600.0]
+                    for key, value in dict(band_entry.get("_decode_ts_by_mode") or {}).items()
+                }
+                totals_by_mode = dict(band_entry.get("_decode_total_by_mode") or {})
+                band_stats[str(band)] = {
+                    "decode_total": int(band_entry.get("decode_total", 0) or 0),
+                    "decode_rate_per_min": sum(1 for ts in timestamps if ts >= now - 60.0),
+                    "decode_rate_per_hour": len(timestamps),
+                    "decode_rates_by_mode": {
+                        str(mode): {
+                            "decode_total": int(totals_by_mode.get(mode, 0) or 0),
+                            "decode_rate_per_min": sum(1 for ts in mode_timestamps if ts >= now - 60.0),
+                            "decode_rate_per_hour": len(mode_timestamps),
+                        }
+                        for mode, mode_timestamps in ts_by_mode.items()
+                    },
+                }
+            out[str(kiwi_key)] = {"bands": band_stats}
         return out
 
 
@@ -1157,6 +1219,16 @@ def prune_decode_buffer(allowed_bands: Optional[set[str]]) -> None:
         _decode_buffer.extend(filtered)
 
 
+def _normalized_kiwi_key(value: object | None) -> str:
+    return str(value or "").strip()
+
+
+def _decode_matches_kiwi(payload: Dict[str, Any], kiwi_key: str) -> bool:
+    if not kiwi_key:
+        return True
+    return _normalized_kiwi_key(payload.get("kiwi_key")) == kiwi_key
+
+
 def _parse_decode_line(line: str) -> Dict[str, Optional[str]]:
     raw = (line or "").strip()
     ts = None
@@ -1424,6 +1496,7 @@ def decode_callback(event: Dict) -> None:
             "power": parsed.get("power"),
             "band": event.get("band"),
             "rx": event.get("rx"),
+                "kiwi_key": event.get("kiwi_key"),
         }
         _add_decode_distance(payload)
         publish_decode(payload)
@@ -1453,6 +1526,7 @@ def reset_decode_metrics() -> Dict[str, int]:
         _decode_buffer.clear()
         _decode_times.clear()
         _published_decode_stats_by_rx.clear()
+        _published_decode_stats_by_kiwi.clear()
     with _grid_country_lock:
         _grid_country_cache.clear()
     with _chart_lock:
@@ -1470,12 +1544,14 @@ def reset_decodes():
 
 
 @router.get("/decodes")
-def get_decodes(since: int = 0):
+def get_decodes(since: int = 0, kiwi_key: str | None = None):
+    requested_kiwi_key = _normalized_kiwi_key(kiwi_key)
     with _decode_lock:
         items = [
             d for d in list(_decode_buffer)
             if int(d.get("id", 0)) > int(since or 0)
             and _decode_visible(d)
+            and _decode_matches_kiwi(d, requested_kiwi_key)
         ]
         latest = _decode_seq
     return {"latest": latest, "items": items}
@@ -1487,6 +1563,7 @@ def _chart_ingest(payload: Dict, now: float) -> None:
     band = str(payload.get("band") or "").strip()
     if not band or band.lower() == "control":
         return
+    kiwi_key = _normalized_kiwi_key(payload.get("kiwi_key"))
     rx_raw = payload.get("rx")
     if rx_raw is None or rx_raw == -1:
         rx_label = "RX?"
@@ -1502,30 +1579,48 @@ def _chart_ingest(payload: Dict, now: float) -> None:
         if not _chart_running or _chart_running.get("ts") != bucket_ts:
             if _chart_running:
                 _chart_buckets.append(_chart_running)
-            _chart_running = {"ts": bucket_ts, "bands": {}}
+            _chart_running = {"ts": bucket_ts, "bands": {}, "bands_by_kiwi": {}}
         bands = _chart_running["bands"]
         if band not in bands:
             bands[band] = {}
         bands[band][key] = bands[band].get(key, 0) + 1
+        if kiwi_key:
+            bands_by_kiwi = _chart_running.setdefault("bands_by_kiwi", {})
+            kiwi_bands = bands_by_kiwi.setdefault(kiwi_key, {})
+            if band not in kiwi_bands:
+                kiwi_bands[band] = {}
+            kiwi_bands[band][key] = kiwi_bands[band].get(key, 0) + 1
+
+
+def _serialize_chart_bands(bands: Dict[str, Dict[str, int]] | None) -> Dict[str, Dict[str, Any]]:
+    out: Dict[str, Dict[str, Any]] = {}
+    for band, breakdown in (bands or {}).items():
+        if not isinstance(breakdown, dict):
+            continue
+        out[str(band)] = {
+            "total": sum(int(v or 0) for v in breakdown.values()),
+            "breakdown": dict(breakdown),
+        }
+    return out
 
 
 @router.get("/decodes/chart")
-def get_decodes_chart():
+def get_decodes_chart(kiwi_key: str | None = None):
     """Return completed server-side band activity buckets (fixed 15s slots)."""
+    requested_kiwi_key = _normalized_kiwi_key(kiwi_key)
     with _chart_lock:
         completed = list(_chart_buckets)
 
     result: List[Dict] = []
     for b in completed:
+        source_bands = (
+            ((b.get("bands_by_kiwi") or {}).get(requested_kiwi_key, {}))
+            if requested_kiwi_key
+            else (b.get("bands") or {})
+        )
         result.append({
             "ts": b["ts"],
-            "bands": {
-                band: {
-                    "total": sum(breakdown.values()),
-                    "breakdown": dict(breakdown),
-                }
-                for band, breakdown in b.get("bands", {}).items()
-            },
+            "bands": _serialize_chart_bands(source_bands),
         })
     return {"bucket_s": _CHART_BUCKET_S, "buckets": result}
 

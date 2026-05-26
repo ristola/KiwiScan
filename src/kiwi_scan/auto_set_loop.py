@@ -7,6 +7,7 @@ import os
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict
@@ -57,7 +58,9 @@ class AutoSetLoop:
         self._last_schedule_key: tuple[str, str] | None = None
         self._last_apply_signature: str | None = None
         self._manual_mode_cleared = False
+        self._last_active_kiwi_key: str = ""
         self._state_lock = threading.Lock()
+        self._per_kiwi_state: Dict[str, Dict[str, Any]] = {}
         self._last_run_ts: float | None = None
         self._last_success_ts: float | None = None
         self._last_error: str | None = None
@@ -113,6 +116,81 @@ class AutoSetLoop:
         except Exception:
             return {}
         return {}
+
+    @staticmethod
+    def _normalize_kiwi_key(value: object | None) -> str:
+        return str(value or "").strip()
+
+    def _kiwi_state_locked(self, kiwi_key: str) -> Dict[str, Any]:
+        key = self._normalize_kiwi_key(kiwi_key)
+        state = self._per_kiwi_state.get(key)
+        if state is None:
+            state = {
+                "did_startup_apply": False,
+                "last_schedule_key": None,
+                "last_apply_signature": None,
+                "manual_mode_cleared": False,
+                "last_applied_band_config": None,
+                "recovery_backoff_until_ts": 0.0,
+                "last_success_ts": None,
+                "last_error": None,
+            }
+            self._per_kiwi_state[key] = state
+        return state
+
+    def _reset_kiwi_state_locked(self, kiwi_key: str, *, manual_mode_cleared: bool = False) -> Dict[str, Any]:
+        state = self._kiwi_state_locked(kiwi_key)
+        state["did_startup_apply"] = False
+        state["last_schedule_key"] = None
+        state["last_apply_signature"] = None
+        state["manual_mode_cleared"] = bool(manual_mode_cleared)
+        state["last_applied_band_config"] = None
+        state["recovery_backoff_until_ts"] = 0.0
+        state["last_error"] = None
+        return state
+
+    def _sync_selected_kiwi_state_locked(self, settings: Dict[str, Any]) -> None:
+        active_key = self._normalize_kiwi_key(settings.get("activeKiwiKey"))
+        state = self._kiwi_state_locked(active_key)
+        self._last_active_kiwi_key = active_key
+        self._did_startup_apply = bool(state.get("did_startup_apply"))
+        self._last_schedule_key = state.get("last_schedule_key")
+        self._last_apply_signature = state.get("last_apply_signature")
+        self._manual_mode_cleared = bool(state.get("manual_mode_cleared"))
+        self._last_applied_band_config = state.get("last_applied_band_config")
+        self._recovery_backoff_until_ts = float(state.get("recovery_backoff_until_ts") or 0.0)
+        self._last_success_ts = state.get("last_success_ts")
+        self._last_error = state.get("last_error")
+
+    def _clear_all_kiwi_state_locked(self, *, manual_mode_cleared: bool = False) -> None:
+        for kiwi_key in list(self._per_kiwi_state.keys()):
+            self._reset_kiwi_state_locked(kiwi_key, manual_mode_cleared=manual_mode_cleared)
+        self._did_startup_apply = False
+        self._last_schedule_key = None
+        self._last_apply_signature = None
+        self._manual_mode_cleared = bool(manual_mode_cleared)
+        self._last_applied_band_config = None
+        self._recovery_backoff_until_ts = 0.0
+        self._last_error = None
+
+    def _target_kiwi_keys(self, settings: Dict[str, Any]) -> list[str]:
+        keys: list[str] = []
+        seen: set[str] = set()
+        kiwi_modes = settings.get("kiwiModes")
+        if isinstance(kiwi_modes, dict):
+            for raw_key in kiwi_modes.keys():
+                key = self._normalize_kiwi_key(raw_key)
+                if not key or key in seen:
+                    continue
+                keys.append(key)
+                seen.add(key)
+        active_key = self._normalize_kiwi_key(settings.get("activeKiwiKey"))
+        if active_key and active_key not in seen:
+            keys.append(active_key)
+            seen.add(active_key)
+        if not keys:
+            keys.append("")
+        return keys
 
     def notify_settings_changed(self) -> None:
         self._wake.set()
@@ -232,12 +310,18 @@ class AutoSetLoop:
 
         return selected, band_modes
 
-    def _build_payload(self, settings: Dict[str, Any], schedule_key: tuple[str, str] | None = None) -> Dict[str, Any]:
+    def _build_payload(
+        self,
+        settings: Dict[str, Any],
+        schedule_key: tuple[str, str] | None = None,
+        *,
+        kiwi_key: str | None = None,
+    ) -> Dict[str, Any]:
         if schedule_key is None:
-            schedule_key = self._current_schedule_key(settings)
+            schedule_key = self._current_schedule_key(settings, kiwi_key=kiwi_key)
 
         if schedule_key[0] == "fixed":
-            return self._build_fixed_roaming_payload(settings, schedule_key[1])
+            return self._build_fixed_roaming_payload(settings, schedule_key[1], kiwi_key=kiwi_key)
 
         mode = "ft8"
 
@@ -280,14 +364,14 @@ class AutoSetLoop:
 
         return payload
 
-    def _build_fixed_roaming_payload(self, settings: Dict[str, Any], day_night: str) -> Dict[str, Any]:
+    def _build_fixed_roaming_payload(self, settings: Dict[str, Any], day_night: str, *, kiwi_key: str | None = None) -> Dict[str, Any]:
         """Build a payload with fixed RX2-RX7 plus scored RX0/RX1 roaming.
 
         RX0/RX1 stay empty until all 6 mandatory fixed receivers are healthy. Once
         healthy, SmartScheduler ranks only the configured day/night roaming pool and
         fills the 2 spare receivers with the top-scored bands.
         """
-        if not self._roaming_enabled(settings):
+        if not self._roaming_enabled(settings, kiwi_key=kiwi_key):
             return {
                 "enabled": True,
                 "mode": "ft8",
@@ -323,11 +407,11 @@ class AutoSetLoop:
         num_roaming_slots = 2
         current_roaming = [
             band
-            for band in self._current_roaming_bands()
+            for band in self._current_roaming_bands(kiwi_key=kiwi_key)
             if band in base_band_modes
         ]
 
-        fixed_health_state, _sick_fixed = self._fixed_health_state()
+        fixed_health_state, _sick_fixed = self._fixed_health_state(kiwi_key=kiwi_key)
         if self._smart_scheduler is not None:
             try:
                 ranked_bands = self._smart_scheduler.rank_roaming_bands(
@@ -378,7 +462,7 @@ class AutoSetLoop:
             payload["closed_bands"] = closed_bands
         return payload
 
-    def _current_roaming_bands(self) -> list[str]:
+    def _current_roaming_bands(self, kiwi_key: str | None = None) -> list[str]:
         """Return the currently active RX0/RX1 roaming bands from /health/rx."""
         port_raw = str(os.environ.get("PORT", "4020") or "4020").strip()
         try:
@@ -386,7 +470,7 @@ class AutoSetLoop:
         except Exception:
             port = 4020
         try:
-            url = f"http://127.0.0.1:{port}/health/rx"
+            url = self._service_url("/health/rx", kiwi_key=kiwi_key)
             with urllib.request.urlopen(url, timeout=2.0) as resp:
                 data = json.loads(resp.read(1024 * 1024).decode("utf-8", errors="ignore"))
         except Exception:
@@ -410,7 +494,13 @@ class AutoSetLoop:
         return current
 
     @staticmethod
-    def _receivers_mode(settings: Dict[str, Any]) -> str:
+    def _receivers_mode(settings: Dict[str, Any], kiwi_key: str | None = None) -> str:
+        kiwi_key = str(kiwi_key if kiwi_key is not None else settings.get("activeKiwiKey") or "").strip()
+        kiwi_modes = settings.get("kiwiModes")
+        if kiwi_key and isinstance(kiwi_modes, dict) and kiwi_key in kiwi_modes:
+            per_kiwi = str(kiwi_modes[kiwi_key] or "").strip().lower()
+            if per_kiwi in {"auto", "semi", "manual", "scan"}:
+                return per_kiwi
         raw = str(settings.get("receiversMode") or "").strip().lower()
         if raw in {"auto", "semi", "manual", "scan"}:
             return raw
@@ -419,14 +509,15 @@ class AutoSetLoop:
         return "auto"
 
     @staticmethod
-    def _roaming_enabled(settings: Dict[str, Any]) -> bool:
-        return AutoSetLoop._receivers_mode(settings) == "auto"
+    def _roaming_enabled(settings: Dict[str, Any], kiwi_key: str | None = None) -> bool:
+        return AutoSetLoop._receivers_mode(settings, kiwi_key=kiwi_key) == "auto"
 
     @staticmethod
-    def _current_schedule_key(settings: Dict[str, Any]) -> tuple[str, str]:
-        if AutoSetLoop._receivers_mode(settings) == "scan":
+    def _current_schedule_key(settings: Dict[str, Any], kiwi_key: str | None = None) -> tuple[str, str]:
+        receivers_mode = AutoSetLoop._receivers_mode(settings, kiwi_key=kiwi_key)
+        if receivers_mode == "scan":
             return ("scan", "parked")
-        if AutoSetLoop._safe_bool(settings.get("fixedModeEnabled"), default=True):
+        if receivers_mode in {"auto", "semi"}:
             local_hour = datetime.now().astimezone().hour
             day_night = "day" if 7 <= local_hour < 21 else "night"
             return ("fixed", day_night)
@@ -434,14 +525,29 @@ class AutoSetLoop:
         return ("ft8", block_for_hour(local_dt.hour, mode="ft8"))
 
     @staticmethod
-    def _apply_signature(settings: Dict[str, Any], schedule_key: tuple[str, str]) -> str:
+    def _apply_signature(settings: Dict[str, Any], schedule_key: tuple[str, str], *, kiwi_key: str | None = None) -> str:
         relevant = {
+            "kiwi_key": str(kiwi_key or ""),
             "schedule_key": [str(schedule_key[0]), str(schedule_key[1])],
             "scheduleProfiles": settings.get("scheduleProfiles"),
             "fixedModeEnabled": settings.get("fixedModeEnabled"),
-            "receiversMode": AutoSetLoop._receivers_mode(settings),
+            "receiversMode": AutoSetLoop._receivers_mode(settings, kiwi_key=kiwi_key),
         }
         return json.dumps(relevant, sort_keys=True, separators=(",", ":"))
+
+    @staticmethod
+    def _service_url(path: str, *, kiwi_key: str | None = None) -> str:
+        port_raw = str(os.environ.get("PORT", "4020") or "4020").strip()
+        try:
+            port = int(port_raw)
+        except Exception:
+            port = 4020
+        url = f"http://127.0.0.1:{port}{path}"
+        target_key = str(kiwi_key or "").strip()
+        if not target_key:
+            return url
+        separator = "&" if "?" in url else "?"
+        return f"{url}{separator}kiwi_key={urllib.parse.quote(target_key, safe='')}"
 
     @staticmethod
     def _band_config_signature(payload: Dict[str, Any]) -> str:
@@ -480,6 +586,14 @@ class AutoSetLoop:
             return float(min(self._RECOVERY_BACKOFF_S, max(self._loop_interval_s(), self._EMPTY_ROAMING_RECHECK_BACKOFF_S)))
         return float(self._RECOVERY_BACKOFF_S)
 
+    @staticmethod
+    def _target_auto_set_payload(settings: Dict[str, Any], payload: Dict[str, Any], *, kiwi_key: str | None = None) -> Dict[str, Any]:
+        targeted = dict(payload)
+        target_key = str(kiwi_key if kiwi_key is not None else settings.get("activeKiwiKey") or "").strip()
+        if target_key:
+            targeted["kiwi_key"] = target_key
+        return targeted
+
     def _post_auto_set(self, payload: Dict[str, Any]) -> None:
         body = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
@@ -504,15 +618,10 @@ class AutoSetLoop:
             else:
                 logger.debug("POST /auto_set_receivers error (processing in background): %s", e)
 
-    def _fixed_health_state(self) -> tuple[str, list[dict]]:
+    def _fixed_health_state(self, kiwi_key: str | None = None) -> tuple[str, list[dict]]:
         """Return fixed receiver health as (healthy|sick|unknown, sick_entries)."""
-        port_raw = str(os.environ.get("PORT", "4020") or "4020").strip()
         try:
-            port = int(port_raw)
-        except Exception:
-            port = 4020
-        try:
-            url = f"http://127.0.0.1:{port}/health/rx"
+            url = self._service_url("/health/rx", kiwi_key=kiwi_key)
             with urllib.request.urlopen(url, timeout=2.0) as resp:
                 data = json.loads(resp.read(1024 * 1024).decode("utf-8", errors="ignore"))
         except Exception:
@@ -523,7 +632,9 @@ class AutoSetLoop:
         if not isinstance(channels, dict):
             return "sick", list(_FIXED_ASSIGNMENTS)
         with self._state_lock:
-            last_success_ts = self._last_success_ts
+            last_success_ts = self._kiwi_state_locked(self._normalize_kiwi_key(kiwi_key)).get("last_success_ts")
+            if last_success_ts is None:
+                last_success_ts = self._last_success_ts
         now = time.time()
         sick: list[dict] = []
         for entry in _FIXED_ASSIGNMENTS:
@@ -583,27 +694,22 @@ class AutoSetLoop:
             return "sick", sick
         return "healthy", []
 
-    def _sick_fixed_receivers(self) -> list[dict]:
+    def _sick_fixed_receivers(self, kiwi_key: str | None = None) -> list[dict]:
         """Return only authoritative sick fixed receivers."""
-        state, sick = self._fixed_health_state()
+        state, sick = self._fixed_health_state(kiwi_key=kiwi_key)
         if state == "unknown":
             return []
         return sick
 
-    def _fixed_receivers_healthy(self) -> bool:
+    def _fixed_receivers_healthy(self, kiwi_key: str | None = None) -> bool:
         """Return True only if all fixed receivers are at their expected Kiwi slots
         and the correct band is occupying each slot.
 
         Stricter than _fixed_health_state(): also verifies exact Kiwi slot alignment
         and Kiwi occupant band labels to confirm roaming can be safely activated.
         """
-        port_raw = str(os.environ.get("PORT", "4020") or "4020").strip()
         try:
-            port = int(port_raw)
-        except Exception:
-            port = 4020
-        try:
-            url = f"http://127.0.0.1:{port}/health/rx"
+            url = self._service_url("/health/rx", kiwi_key=kiwi_key)
             with urllib.request.urlopen(url, timeout=2.0) as resp:
                 health_data = json.loads(resp.read(1024 * 1024).decode("utf-8", errors="ignore"))
         except Exception:
@@ -621,7 +727,7 @@ class AutoSetLoop:
             if ch.get("kiwi_rx") != rx:
                 return False
         try:
-            url = f"http://127.0.0.1:{port}/system/info"
+            url = self._service_url("/system/info", kiwi_key=kiwi_key)
             with urllib.request.urlopen(url, timeout=2.0) as resp:
                 sysinfo = json.loads(resp.read(1024 * 1024).decode("utf-8", errors="ignore"))
         except Exception:
@@ -642,15 +748,10 @@ class AutoSetLoop:
                 return False
         return True
 
-    def _roaming_health_state(self) -> tuple[str, list[int]]:
+    def _roaming_health_state(self, kiwi_key: str | None = None) -> tuple[str, list[int]]:
         """Return roaming RX0/RX1 health as (healthy|sick|unknown, sick_rxs)."""
-        port_raw = str(os.environ.get("PORT", "4020") or "4020").strip()
         try:
-            port = int(port_raw)
-        except Exception:
-            port = 4020
-        try:
-            url = f"http://127.0.0.1:{port}/health/rx"
+            url = self._service_url("/health/rx", kiwi_key=kiwi_key)
             with urllib.request.urlopen(url, timeout=2.0) as resp:
                 data = json.loads(resp.read(1024 * 1024).decode("utf-8", errors="ignore"))
         except Exception:
@@ -706,22 +807,198 @@ class AutoSetLoop:
         except Exception:
             logger.debug("Failed to POST /admin/restart-receivers", exc_info=True)
 
+    def _run_for_kiwi(self, settings: Dict[str, Any], kiwi_key: str) -> None:
+        target_key = self._normalize_kiwi_key(kiwi_key)
+        target_label = target_key or "<default>"
+        receivers_mode = self._receivers_mode(settings, kiwi_key=target_key)
+        schedule_key = self._current_schedule_key(settings, kiwi_key=target_key)
+        apply_signature = self._apply_signature(settings, schedule_key, kiwi_key=target_key)
+
+        if receivers_mode == "scan":
+            with self._state_lock:
+                self._reset_kiwi_state_locked(target_key, manual_mode_cleared=False)
+                self._sync_selected_kiwi_state_locked(settings)
+            return
+
+        with self._state_lock:
+            state = self._kiwi_state_locked(target_key)
+            manual_mode_cleared = bool(state.get("manual_mode_cleared"))
+
+        if receivers_mode == "manual":
+            if not manual_mode_cleared:
+                logger.info("Auto-set loop: Manual Mode detected for %s — clearing receivers and parking loop", target_label)
+                try:
+                    self._post_auto_set(self._target_auto_set_payload(settings, {"enabled": False, "force": True}, kiwi_key=target_key))
+                except Exception:
+                    pass
+            with self._state_lock:
+                self._reset_kiwi_state_locked(target_key, manual_mode_cleared=True)
+                self._sync_selected_kiwi_state_locked(settings)
+            return
+
+        with self._state_lock:
+            state = self._kiwi_state_locked(target_key)
+            state["manual_mode_cleared"] = False
+            did_startup_apply = bool(state.get("did_startup_apply"))
+            last_schedule_key = state.get("last_schedule_key")
+            last_apply_signature = state.get("last_apply_signature")
+            last_applied_band_config = state.get("last_applied_band_config")
+            recovery_backoff_until_ts = float(state.get("recovery_backoff_until_ts") or 0.0)
+
+        should_apply = bool(
+            (not did_startup_apply)
+            or last_schedule_key != schedule_key
+            or last_apply_signature != apply_signature
+        )
+        payload: Dict[str, Any] | None = None
+        new_band_config: str | None = None
+        force_health_recovery = False
+        in_recovery_backoff = time.time() < recovery_backoff_until_ts
+
+        if not should_apply and did_startup_apply and not in_recovery_backoff:
+            fixed_health_state, sick = self._fixed_health_state(kiwi_key=target_key)
+            if fixed_health_state == "unknown":
+                logger.debug("Auto-set loop: fixed receiver health unknown for %s — skipping recovery check", target_label)
+            elif sick:
+                rx_nums = [int(e["rx"]) for e in sick]
+                with self._state_lock:
+                    state = self._kiwi_state_locked(target_key)
+                    state["recovery_backoff_until_ts"] = time.time() + self._RECOVERY_BACKOFF_S
+                    self._sync_selected_kiwi_state_locked(settings)
+                if len(sick) == len(_FIXED_ASSIGNMENTS):
+                    logger.info(
+                        "Auto-set loop: all fixed receivers missing for %s — triggering full re-apply "
+                        "(next health check suppressed for %.0fs)",
+                        target_label,
+                        self._RECOVERY_BACKOFF_S,
+                    )
+                    force_health_recovery = True
+                    should_apply = True
+                else:
+                    logger.info(
+                        "Auto-set loop: fixed receiver(s) RX%s unhealthy for %s — restarting targeted "
+                        "(next health check suppressed for %.0fs)",
+                        "/".join(str(r) for r in rx_nums),
+                        target_label,
+                        self._RECOVERY_BACKOFF_S,
+                    )
+                    self._restart_sick_receivers(sick)
+            else:
+                if self._roaming_enabled(settings, kiwi_key=target_key) and last_applied_band_config is not None and '"bands":[]' in str(last_applied_band_config):
+                    logger.info(
+                        "Auto-set loop: fixed receivers now healthy for %s — re-applying to fill scored roaming slots",
+                        target_label,
+                    )
+                    force_health_recovery = True
+                    should_apply = True
+            if not should_apply and self._roaming_enabled(settings, kiwi_key=target_key):
+                roaming_state, sick_roaming = self._roaming_health_state(kiwi_key=target_key)
+                if roaming_state == "sick" and sick_roaming:
+                    with self._state_lock:
+                        state = self._kiwi_state_locked(target_key)
+                        state["recovery_backoff_until_ts"] = time.time() + self._RECOVERY_BACKOFF_S
+                        self._sync_selected_kiwi_state_locked(settings)
+                    logger.info(
+                        "Auto-set loop: roaming receiver(s) RX%s unhealthy for %s — forcing re-apply "
+                        "(next health check suppressed for %.0fs)",
+                        "/".join(str(r) for r in sick_roaming),
+                        target_label,
+                        self._RECOVERY_BACKOFF_S,
+                    )
+                    force_health_recovery = True
+                    should_apply = True
+            if not should_apply:
+                payload = self._build_payload(settings, schedule_key=schedule_key, kiwi_key=target_key)
+                new_band_config = self._band_config_signature(payload)
+                if new_band_config != last_applied_band_config:
+                    logger.info(
+                        "Auto-set loop: scored band config changed for %s on %s — applying updated assignments",
+                        schedule_key,
+                        target_label,
+                    )
+                    should_apply = True
+        elif in_recovery_backoff:
+            logger.debug(
+                "Auto-set loop: skipping health check for %s — recovery backoff active for %.0fs more",
+                target_label,
+                max(0.0, recovery_backoff_until_ts - time.time()),
+            )
+
+        if not should_apply:
+            return
+
+        with self._state_lock:
+            self._last_run_ts = time.time()
+            state = self._kiwi_state_locked(target_key)
+            last_applied_band_config = state.get("last_applied_band_config")
+
+        if payload is None:
+            payload = self._build_payload(settings, schedule_key=schedule_key, kiwi_key=target_key)
+        payload = self._target_auto_set_payload(settings, payload, kiwi_key=target_key)
+        if force_health_recovery:
+            payload["force"] = True
+        if new_band_config is None:
+            new_band_config = self._band_config_signature(payload)
+
+        if (
+            not force_health_recovery
+            and did_startup_apply
+            and last_applied_band_config is not None
+            and new_band_config == last_applied_band_config
+        ):
+            logger.info(
+                "Auto-set loop: block changed to %s for %s but band/mode config unchanged — skipping reassign",
+                schedule_key,
+                target_label,
+            )
+            with self._state_lock:
+                state = self._kiwi_state_locked(target_key)
+                state["last_schedule_key"] = schedule_key
+                state["last_apply_signature"] = apply_signature
+                self._sync_selected_kiwi_state_locked(settings)
+            return
+
+        try:
+            self._post_auto_set(payload)
+            now = time.time()
+            with self._state_lock:
+                state = self._kiwi_state_locked(target_key)
+                state["did_startup_apply"] = True
+                state["last_schedule_key"] = schedule_key
+                state["last_apply_signature"] = apply_signature
+                state["last_applied_band_config"] = new_band_config
+                state["last_success_ts"] = now
+                state["last_error"] = None
+                state["recovery_backoff_until_ts"] = now + self._recovery_backoff_seconds_for_payload(payload)
+                self._last_success_ts = now
+                self._last_error = None
+                self._sync_selected_kiwi_state_locked(settings)
+        except urllib.error.HTTPError as e:
+            with self._state_lock:
+                state = self._kiwi_state_locked(target_key)
+                state["last_error"] = f"HTTP {getattr(e, 'code', '?')}"
+                self._last_error = state["last_error"]
+                self._sync_selected_kiwi_state_locked(settings)
+            logger.warning("Auto-set loop request failed for %s: HTTP %s", target_label, getattr(e, "code", "?"))
+        except Exception:
+            with self._state_lock:
+                state = self._kiwi_state_locked(target_key)
+                state["last_error"] = "request failed"
+                self._last_error = str(state["last_error"])
+                self._sync_selected_kiwi_state_locked(settings)
+            logger.debug("Auto-set loop request failed for %s", target_label, exc_info=True)
+
     def _run(self) -> None:
         interval_s = self._loop_interval_s()
         logger.info("Auto-set loop started (interval=%ss)", interval_s)
         while not self._stop.is_set():
             settings = self._load_settings()
             headless_enabled = self._safe_bool(settings.get("headlessEnabled"), default=True)
-            receivers_mode = self._receivers_mode(settings)
-            schedule_key = self._current_schedule_key(settings)
-            apply_signature = self._apply_signature(settings, schedule_key)
 
             if not headless_enabled:
-                self._manual_mode_cleared = False
-                self._did_startup_apply = False
-                self._last_schedule_key = None
-                self._last_apply_signature = None
-                self._last_applied_band_config = None
+                with self._state_lock:
+                    self._clear_all_kiwi_state_locked(manual_mode_cleared=False)
+                    self._sync_selected_kiwi_state_locked(settings)
                 self._wait_for_notification(timeout_s=interval_s)
                 continue
 
@@ -729,174 +1006,17 @@ class AutoSetLoop:
                 external_hold_reason = self._external_hold_reason
             if external_hold_reason:
                 logger.info("Auto-set loop: external hold active (%s) — parking loop", external_hold_reason)
-                self._manual_mode_cleared = True
-                self._did_startup_apply = False
-                self._last_schedule_key = None
-                self._last_apply_signature = None
-                self._last_applied_band_config = None
-                self._wait_for_notification()
-                continue
-
-            if receivers_mode == "scan":
-                self._manual_mode_cleared = False
-                self._did_startup_apply = False
-                self._last_schedule_key = None
-                self._last_apply_signature = None
-                self._last_applied_band_config = None
-                self._wait_for_notification()
-                continue
-
-            fixed_mode_enabled = self._safe_bool(settings.get("fixedModeEnabled"), default=True)
-            if not fixed_mode_enabled:
-                if not self._manual_mode_cleared:
-                    logger.info("Auto-set loop: Manual Mode detected — clearing receivers and parking loop")
-                    try:
-                        self._post_auto_set({"enabled": False, "force": True})
-                    except Exception:
-                        pass
-                    self._manual_mode_cleared = True
-                self._did_startup_apply = False
-                self._last_schedule_key = None
-                self._last_apply_signature = None
-                self._last_applied_band_config = None
-                self._wait_for_notification()
-                continue
-
-            self._manual_mode_cleared = False
-
-            should_apply = bool(
-                (not self._did_startup_apply)
-                or self._last_schedule_key != schedule_key
-                or self._last_apply_signature != apply_signature
-            )
-            payload: Dict[str, Any] | None = None
-            new_band_config: str | None = None
-
-            # Even when nothing logically changed, verify fixed receivers are still live.
-            # This recovers from unexpected restarts or external kicks without waiting for
-            # a schedule change to trigger the normal should_apply path.
-            # Backoff guard: after a recovery re-apply fires, skip health checks for
-            # _RECOVERY_BACKOFF_S seconds so workers have time to settle into correct
-            # Kiwi slots before we re-trigger.  Without this, the 30s loop interval fires
-            # again before apply_assignments even releases its lock, causing a thundering
-            # herd of re-applies that fight the eviction loop and make things worse.
-            force_health_recovery = False
-            _in_recovery_backoff = time.time() < self._recovery_backoff_until_ts
-            if not should_apply and self._did_startup_apply and not _in_recovery_backoff:
-                fixed_health_state, sick = self._fixed_health_state()
-                if fixed_health_state == "unknown":
-                    logger.debug("Auto-set loop: fixed receiver health unknown — skipping recovery check")
-                elif sick:
-                    rx_nums = [int(e["rx"]) for e in sick]
-                    self._recovery_backoff_until_ts = time.time() + self._RECOVERY_BACKOFF_S
-                    if len(sick) == len(_FIXED_ASSIGNMENTS):
-                        # All fixed receivers missing — targeted restart can fail silently
-                        # when assignments were cleared by an earlier recovery or reset.
-                        # Skip the targeted restart and force a full re-apply instead.
-                        logger.info(
-                            "Auto-set loop: all fixed receivers missing — triggering full re-apply "
-                            "(next health check suppressed for %.0fs)",
-                            self._RECOVERY_BACKOFF_S,
-                        )
-                        force_health_recovery = True
-                        should_apply = True
-                    else:
-                        logger.info(
-                            "Auto-set loop: fixed receiver(s) RX%s unhealthy — restarting targeted "
-                            "(next health check suppressed for %.0fs)",
-                            "/".join(str(r) for r in rx_nums),
-                            self._RECOVERY_BACKOFF_S,
-                        )
-                        self._restart_sick_receivers(sick)
-                else:
-                    with self._state_lock:
-                        last_band_config = self._last_applied_band_config
-                    if self._roaming_enabled(settings) and last_band_config is not None and '"bands":[]' in last_band_config:
-                        logger.info(
-                            "Auto-set loop: fixed receivers now healthy — re-applying to fill scored roaming slots"
-                        )
-                        force_health_recovery = True
-                        should_apply = True
-                if not should_apply and self._roaming_enabled(settings):
-                    roaming_state, sick_roaming = self._roaming_health_state()
-                    if roaming_state == "sick" and sick_roaming:
-                        self._recovery_backoff_until_ts = time.time() + self._RECOVERY_BACKOFF_S
-                        logger.info(
-                            "Auto-set loop: roaming receiver(s) RX%s unhealthy — forcing re-apply "
-                            "(next health check suppressed for %.0fs)",
-                            "/".join(str(r) for r in sick_roaming),
-                            self._RECOVERY_BACKOFF_S,
-                        )
-                        force_health_recovery = True
-                        should_apply = True
-                if not should_apply:
-                    with self._state_lock:
-                        last_band_config = self._last_applied_band_config
-                    payload = self._build_payload(settings, schedule_key=schedule_key)
-                    new_band_config = self._band_config_signature(payload)
-                    if new_band_config != last_band_config:
-                        logger.info(
-                            "Auto-set loop: scored band config changed for %s — applying updated assignments",
-                            schedule_key,
-                        )
-                        should_apply = True
-            elif _in_recovery_backoff:
-                logger.debug(
-                    "Auto-set loop: skipping health check — recovery backoff active for %.0fs more",
-                    max(0.0, self._recovery_backoff_until_ts - time.time()),
-                )
-
-            if should_apply:
                 with self._state_lock:
-                    self._last_run_ts = time.time()
-                    last_applied_band_config = self._last_applied_band_config
-                if payload is None:
-                    payload = self._build_payload(settings, schedule_key=schedule_key)
-                # Force-flag health-recovery applies so the endpoint's dedup cache
-                # doesn't suppress the re-kick when an identical payload was recently
-                # used but failed to connect all workers.
-                if force_health_recovery:
-                    payload["force"] = True
-                if new_band_config is None:
-                    new_band_config = self._band_config_signature(payload)
-                # If only the time block changed but the resulting band/mode config is
-                # identical to what was last applied, skip the reassign entirely.
-                if (
-                    not force_health_recovery
-                    and self._did_startup_apply
-                    and last_applied_band_config is not None
-                    and new_band_config == last_applied_band_config
-                ):
-                    logger.info(
-                        "Auto-set loop: block changed to %s but band/mode config unchanged — skipping reassign",
-                        schedule_key,
-                    )
-                    self._last_schedule_key = schedule_key
-                    self._last_apply_signature = apply_signature
-                else:
-                    try:
-                        self._post_auto_set(payload)
-                        self._last_schedule_key = schedule_key
-                        self._last_apply_signature = apply_signature
-                        self._last_applied_band_config = new_band_config
-                        with self._state_lock:
-                            self._last_success_ts = time.time()
-                            self._last_error = None
+                    self._clear_all_kiwi_state_locked(manual_mode_cleared=True)
+                    self._sync_selected_kiwi_state_locked(settings)
+                self._wait_for_notification()
+                continue
 
-                        # Set backoff after applying new assignments to prevent targeted restarts 
-                        # from fighting the eviction loop while receivers are still booting.
-                        self._recovery_backoff_until_ts = time.time() + self._recovery_backoff_seconds_for_payload(payload)
+            for kiwi_key in self._target_kiwi_keys(settings):
+                self._run_for_kiwi(settings, kiwi_key)
 
-                        if not self._did_startup_apply:
-                            self._did_startup_apply = True
-                    except urllib.error.HTTPError as e:
-                        with self._state_lock:
-                            self._last_error = f"HTTP {getattr(e, 'code', '?')}"
-                        logger.warning("Auto-set loop request failed: HTTP %s", getattr(e, "code", "?"))
-                    except Exception:
-                        with self._state_lock:
-                            self._last_error = "request failed"
-                        logger.debug("Auto-set loop request failed", exc_info=True)
+            with self._state_lock:
+                self._sync_selected_kiwi_state_locked(settings)
 
             self._wait_for_notification(timeout_s=interval_s)
 
@@ -933,8 +1053,8 @@ class AutoSetLoop:
             "did_startup_apply": bool(self._did_startup_apply),
             "headless_enabled": bool(self._safe_bool(settings.get("headlessEnabled"), default=True)),
             "receivers_mode": self._receivers_mode(settings),
-            "fixed_mode_enabled": bool(self._safe_bool(settings.get("fixedModeEnabled"), default=True)),
-            "manual_mode_parked": bool(self._manual_mode_cleared and not self._safe_bool(settings.get("fixedModeEnabled"), default=True)),
+            "fixed_mode_enabled": self._receivers_mode(settings) != "manual",
+            "manual_mode_parked": bool(self._manual_mode_cleared and self._receivers_mode(settings) == "manual"),
             "launchd_preferred": bool(self._safe_bool(settings.get("useLaunchd"), default=False)),
             "auto_scan_on_block": bool(self._safe_bool(settings.get("autoScanOnBlock"), default=False)),
             "auto_scan_on_startup": bool(self._safe_bool(settings.get("autoScanOnStartup"), default=False)),
@@ -968,23 +1088,25 @@ class AutoSetLoop:
             return
 
         settings = self._load_settings()
-        if self._receivers_mode(settings) == "scan":
-            logger.debug("force_reassign skipped — Scan Mode is active")
+        applied = False
+        for kiwi_key in self._target_kiwi_keys(settings):
+            receivers_mode = self._receivers_mode(settings, kiwi_key=kiwi_key)
+            if receivers_mode == "scan":
+                logger.debug("force_reassign skipped for %s — Scan Mode is active", kiwi_key or "<default>")
+                continue
+            if receivers_mode == "manual":
+                logger.debug("force_reassign skipped for %s — Auto Mode is OFF", kiwi_key or "<default>")
+                continue
+            payload = self._build_payload(settings, schedule_key=self._current_schedule_key(settings, kiwi_key=kiwi_key), kiwi_key=kiwi_key)
+            payload = self._target_auto_set_payload(settings, payload, kiwi_key=kiwi_key)
+            payload["force"] = True
+            self._post_auto_set(payload)
+            applied = True
+            with self._state_lock:
+                self._reset_kiwi_state_locked(kiwi_key, manual_mode_cleared=False)
+                self._sync_selected_kiwi_state_locked(settings)
+        if not applied:
             return
-        if not self._safe_bool(settings.get("fixedModeEnabled"), default=True):
-            logger.debug("force_reassign skipped — Auto Mode is OFF")
-            return
-        payload = self._build_payload(settings, schedule_key=self._current_schedule_key(settings))
-        payload["force"] = True
-        self._post_auto_set(payload)
-        # Reset so the next loop cycle re-evaluates even if settings haven't changed.
-        # All three fields are cleared atomically under the state lock so that _run()
-        # cannot observe a partially-reset state (e.g. _last_schedule_key=None but
-        # _last_applied_band_config still set) which causes a spurious skip.
-        with self._state_lock:
-            self._last_apply_signature = None
-            self._last_schedule_key = None
-            self._last_applied_band_config = None
 
     def apply_current_settings(self, *, force: bool = False, sync_state: bool = True) -> bool:
         """Apply the current automation payload immediately.
@@ -1002,31 +1124,40 @@ class AutoSetLoop:
             return False
 
         settings = self._load_settings()
-        if self._receivers_mode(settings) == "scan":
-            logger.debug("apply_current_settings skipped — Scan Mode is active")
-            return False
-        if not self._safe_bool(settings.get("fixedModeEnabled"), default=True):
-            logger.debug("apply_current_settings skipped — Auto Mode is OFF")
-            return False
+        applied = False
+        for kiwi_key in self._target_kiwi_keys(settings):
+            receivers_mode = self._receivers_mode(settings, kiwi_key=kiwi_key)
+            if receivers_mode == "scan":
+                logger.debug("apply_current_settings skipped for %s — Scan Mode is active", kiwi_key or "<default>")
+                continue
+            if receivers_mode == "manual":
+                logger.debug("apply_current_settings skipped for %s — Auto Mode is OFF", kiwi_key or "<default>")
+                continue
 
-        schedule_key = self._current_schedule_key(settings)
-        payload = self._build_payload(settings, schedule_key=schedule_key)
-        if force:
-            payload["force"] = True
-        apply_signature = self._apply_signature(settings, schedule_key)
-        band_config = self._band_config_signature(payload)
+            schedule_key = self._current_schedule_key(settings, kiwi_key=kiwi_key)
+            payload = self._build_payload(settings, schedule_key=schedule_key, kiwi_key=kiwi_key)
+            payload = self._target_auto_set_payload(settings, payload, kiwi_key=kiwi_key)
+            if force:
+                payload["force"] = True
+            apply_signature = self._apply_signature(settings, schedule_key, kiwi_key=kiwi_key)
+            band_config = self._band_config_signature(payload)
 
-        self._post_auto_set(payload)
+            self._post_auto_set(payload)
+            applied = True
 
-        now = time.time()
-        with self._state_lock:
-            self._last_success_ts = now
-            self._last_error = None
-            self._manual_mode_cleared = False
-            if sync_state:
-                self._did_startup_apply = True
-                self._last_schedule_key = schedule_key
-                self._last_apply_signature = apply_signature
-                self._last_applied_band_config = band_config
-            self._recovery_backoff_until_ts = now + self._recovery_backoff_seconds_for_payload(payload)
-        return True
+            now = time.time()
+            with self._state_lock:
+                state = self._kiwi_state_locked(kiwi_key)
+                state["last_success_ts"] = now
+                state["last_error"] = None
+                state["manual_mode_cleared"] = False
+                if sync_state:
+                    state["did_startup_apply"] = True
+                    state["last_schedule_key"] = schedule_key
+                    state["last_apply_signature"] = apply_signature
+                    state["last_applied_band_config"] = band_config
+                state["recovery_backoff_until_ts"] = now + self._recovery_backoff_seconds_for_payload(payload)
+                self._last_success_ts = now
+                self._last_error = None
+                self._sync_selected_kiwi_state_locked(settings)
+        return applied

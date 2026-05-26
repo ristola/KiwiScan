@@ -477,24 +477,24 @@ class CaptionMonitorService:
         except TranscriberUnavailable as exc:
             summary = f"Transcription unavailable: {exc}"
             self._set_transcription_error(
-                self._set_transcription_error(
-            summary = f"Caption capture failed: {type(exc).__name__}: {exc}"
-            self._set_capture_error(summary=summary, wav_path=wav_path)
-            self._last_error = summary
-            self._capture = {
-                **self._capture,
-                "status": "error",
-                "running": False,
-                "wav_path": str(wav_path) if wav_path is not None else None,
-                "finished_ts": time.time(),
-                "summary": summary,
-                "transcription": {
-                    **self._idle_transcription_state(),
-                    "status": "error",
-                    "summary": "No transcript generated because audio capture failed",
-                },
-            }
-            self._current_note = summary
+                summary=summary,
+                chunk_index=chunk_index,
+                wav_path=wav_path,
+                capture_finished_ts=capture_finished_ts if isinstance(capture_finished_ts, float) else None,
+                transcription_started_ts=transcription_started_ts,
+            )
+        except Exception as exc:
+            summary = f"Transcription failed: {type(exc).__name__}: {exc}"
+            self._set_transcription_error(
+                summary=summary,
+                chunk_index=chunk_index,
+                wav_path=wav_path,
+                capture_finished_ts=capture_finished_ts if isinstance(capture_finished_ts, float) else None,
+                transcription_started_ts=transcription_started_ts,
+            )
+        finally:
+            self._write_session_summary(self._session_id)
+            self._prune_transcription_threads()
 
     def _set_transcription_error(
         self,

@@ -7,6 +7,9 @@ from kiwi_scan.api.health import make_router
 
 
 class _ReceiverMgrStub:
+    def __init__(self) -> None:
+        self.last_target: tuple[str, int] | None = None
+
     def health_summary(self) -> dict:
         return {
             "overall": "healthy",
@@ -36,6 +39,19 @@ class _ReceiverMgrStub:
             "propagation": {"overall": "good", "counts": {}, "score_avg": 3.0, "sampled_channels": 1},
             "auto_kick": {},
         }
+
+    def health_summary_for_target(self, host: str, port: int) -> dict:
+        self.last_target = (str(host), int(port))
+        payload = self.health_summary()
+        payload["host"] = str(host)
+        payload["port"] = int(port)
+        return payload
+
+
+class _MgrStub:
+    def resolve_runtime_target(self, *, kiwi_key: object | None = None) -> dict[str, object]:
+        host, port_text = str(kiwi_key or "kiwi-1.local:8073").split(":", 1)
+        return {"host": host, "port": int(port_text), "kiwi_key": str(kiwi_key or "kiwi-1.local:8073")}
 
 
 class _ReceiverScanStub:
@@ -90,3 +106,17 @@ def test_health_api_merges_receiver_scan_channels() -> None:
     assert payload["channels"]["0"]["display_name"] == "Receiver Scan CW"
     assert payload["channels"]["1"]["display_name"] == "Receiver Scan Phone"
     assert payload["reason_counts"]["Waiting for CW follow-up"] == 1
+
+
+def test_health_api_routes_requested_kiwi_key_to_target_summary() -> None:
+    receiver_mgr = _ReceiverMgrStub()
+    app = FastAPI()
+    app.include_router(make_router(receiver_mgr=receiver_mgr, receiver_scan=None, mgr=_MgrStub()))
+    client = TestClient(app)
+
+    response = client.get("/health/rx", params={"kiwi_key": "kiwi-2.local:8074"})
+
+    assert response.status_code == 200
+    assert response.json()["host"] == "kiwi-2.local"
+    assert response.json()["port"] == 8074
+    assert receiver_mgr.last_target == ("kiwi-2.local", 8074)

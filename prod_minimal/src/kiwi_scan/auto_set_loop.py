@@ -57,6 +57,7 @@ class AutoSetLoop:
         self._last_schedule_key: tuple[str, str] | None = None
         self._last_apply_signature: str | None = None
         self._manual_mode_cleared = False
+        self._last_active_kiwi_key: str = ""
         self._state_lock = threading.Lock()
         self._last_run_ts: float | None = None
         self._last_success_ts: float | None = None
@@ -406,6 +407,12 @@ class AutoSetLoop:
 
     @staticmethod
     def _receivers_mode(settings: Dict[str, Any]) -> str:
+        kiwi_key = str(settings.get("activeKiwiKey") or "").strip()
+        kiwi_modes = settings.get("kiwiModes")
+        if kiwi_key and isinstance(kiwi_modes, dict) and kiwi_key in kiwi_modes:
+            per_kiwi = str(kiwi_modes[kiwi_key] or "").strip().lower()
+            if per_kiwi in {"auto", "semi", "manual", "scan"}:
+                return per_kiwi
         raw = str(settings.get("receiversMode") or "").strip().lower()
         if raw in {"auto", "semi", "manual", "scan"}:
             return raw
@@ -419,9 +426,10 @@ class AutoSetLoop:
 
     @staticmethod
     def _current_schedule_key(settings: Dict[str, Any]) -> tuple[str, str]:
-        if AutoSetLoop._receivers_mode(settings) == "scan":
+        receivers_mode = AutoSetLoop._receivers_mode(settings)
+        if receivers_mode == "scan":
             return ("scan", "parked")
-        if AutoSetLoop._safe_bool(settings.get("fixedModeEnabled"), default=True):
+        if receivers_mode in {"auto", "semi"}:
             local_hour = datetime.now().astimezone().hour
             day_night = "day" if 7 <= local_hour < 21 else "night"
             return ("fixed", day_night)
@@ -461,6 +469,14 @@ class AutoSetLoop:
             block = str(payload.get("block") or "")
             return json.dumps({"block": block, "modes": modes, "closed": closed}, separators=(",", ":"))
         return json.dumps({"bands": bands, "modes": modes, "closed": closed}, separators=(",", ":"))
+
+    @staticmethod
+    def _target_auto_set_payload(settings: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
+        targeted = dict(payload)
+        kiwi_key = str(settings.get("activeKiwiKey") or "").strip()
+        if kiwi_key:
+            targeted["kiwi_key"] = kiwi_key
+        return targeted
 
     def _post_auto_set(self, payload: Dict[str, Any]) -> None:
         body = json.dumps(payload).encode("utf-8")
@@ -698,6 +714,22 @@ class AutoSetLoop:
             schedule_key = self._current_schedule_key(settings)
             apply_signature = self._apply_signature(settings, schedule_key)
 
+            # When the active Kiwi changes, reset manual-mode park flag so the
+            # loop re-evaluates the incoming Kiwi's mode from scratch.
+            current_kiwi_key = str(settings.get("activeKiwiKey") or "").strip()
+            if current_kiwi_key != self._last_active_kiwi_key:
+                logger.info(
+                    "Auto-set loop: active Kiwi changed (%r → %r) — resetting manual-mode park flag",
+                    self._last_active_kiwi_key,
+                    current_kiwi_key,
+                )
+                self._last_active_kiwi_key = current_kiwi_key
+                self._manual_mode_cleared = False
+                self._did_startup_apply = False
+                self._last_schedule_key = None
+                self._last_apply_signature = None
+                self._last_applied_band_config = None
+
             if not headless_enabled:
                 self._manual_mode_cleared = False
                 self._did_startup_apply = False
@@ -728,12 +760,14 @@ class AutoSetLoop:
                 self._wait_for_notification()
                 continue
 
-            fixed_mode_enabled = self._safe_bool(settings.get("fixedModeEnabled"), default=True)
-            if not fixed_mode_enabled:
+            # Use the per-Kiwi mode (already resolved in receivers_mode) to decide
+            # whether to park the loop.  "semi" mode stays assigned (fixed receivers
+            # keep running); only "manual" clears and parks.
+            if receivers_mode == "manual":
                 if not self._manual_mode_cleared:
                     logger.info("Auto-set loop: Manual Mode detected — clearing receivers and parking loop")
                     try:
-                        self._post_auto_set({"enabled": False, "force": True})
+                        self._post_auto_set(self._target_auto_set_payload(settings, {"enabled": False, "force": True}))
                     except Exception:
                         pass
                     self._manual_mode_cleared = True
@@ -834,6 +868,7 @@ class AutoSetLoop:
                     last_applied_band_config = self._last_applied_band_config
                 if payload is None:
                     payload = self._build_payload(settings, schedule_key=schedule_key)
+                payload = self._target_auto_set_payload(settings, payload)
                 # Force-flag health-recovery applies so the endpoint's dedup cache
                 # doesn't suppress the re-kick when an identical payload was recently
                 # used but failed to connect all workers.
@@ -915,8 +950,8 @@ class AutoSetLoop:
             "did_startup_apply": bool(self._did_startup_apply),
             "headless_enabled": bool(self._safe_bool(settings.get("headlessEnabled"), default=True)),
             "receivers_mode": self._receivers_mode(settings),
-            "fixed_mode_enabled": bool(self._safe_bool(settings.get("fixedModeEnabled"), default=True)),
-            "manual_mode_parked": bool(self._manual_mode_cleared and not self._safe_bool(settings.get("fixedModeEnabled"), default=True)),
+            "fixed_mode_enabled": self._receivers_mode(settings) != "manual",
+            "manual_mode_parked": bool(self._manual_mode_cleared and self._receivers_mode(settings) == "manual"),
             "launchd_preferred": bool(self._safe_bool(settings.get("useLaunchd"), default=False)),
             "auto_scan_on_block": bool(self._safe_bool(settings.get("autoScanOnBlock"), default=False)),
             "auto_scan_on_startup": bool(self._safe_bool(settings.get("autoScanOnStartup"), default=False)),
@@ -953,10 +988,11 @@ class AutoSetLoop:
         if self._receivers_mode(settings) == "scan":
             logger.debug("force_reassign skipped — Scan Mode is active")
             return
-        if not self._safe_bool(settings.get("fixedModeEnabled"), default=True):
+        if self._receivers_mode(settings) == "manual":
             logger.debug("force_reassign skipped — Auto Mode is OFF")
             return
         payload = self._build_payload(settings, schedule_key=self._current_schedule_key(settings))
+        payload = self._target_auto_set_payload(settings, payload)
         payload["force"] = True
         self._post_auto_set(payload)
         # Reset so the next loop cycle re-evaluates even if settings haven't changed.
@@ -987,12 +1023,13 @@ class AutoSetLoop:
         if self._receivers_mode(settings) == "scan":
             logger.debug("apply_current_settings skipped — Scan Mode is active")
             return False
-        if not self._safe_bool(settings.get("fixedModeEnabled"), default=True):
+        if self._receivers_mode(settings) == "manual":
             logger.debug("apply_current_settings skipped — Auto Mode is OFF")
             return False
 
         schedule_key = self._current_schedule_key(settings)
         payload = self._build_payload(settings, schedule_key=schedule_key)
+        payload = self._target_auto_set_payload(settings, payload)
         if force:
             payload["force"] = True
         apply_signature = self._apply_signature(settings, schedule_key)

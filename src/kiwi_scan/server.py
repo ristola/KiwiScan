@@ -63,6 +63,7 @@ from .app_lifecycle import register_lifecycle
 from .auto_set_loop import AutoSetLoop
 from .smart_scheduler import SmartScheduler
 from .api.smart_scheduler import make_router as make_smart_scheduler_router
+from .targeted_service_registry import TargetedServiceRegistry
 
 # Configure logging to output to console (stderr) with timestamps
 logging.basicConfig(
@@ -624,7 +625,7 @@ app.include_router(
         ft8modem_path=_FT8MODEM_PATH,
     )
 )
-band_scanner = BandScanner()
+band_scanner = TargetedServiceRegistry(factory=lambda _target: BandScanner())
 
 
 def _compute_s_metrics_with_offset(results, offset):
@@ -639,13 +640,19 @@ mgr = DiscoveryManager(
 )
 rx_monitor = RxMonitor(kiwirecorder_path=_KIWIRECORDER_PATH, mgr=mgr)
 auto_set_loop = AutoSetLoop()
-receiver_scan = ReceiverScanService(
-    receiver_mgr=receiver_mgr,
-    auto_set_loop=auto_set_loop,
-    band_scanner=band_scanner,
+receiver_scan = TargetedServiceRegistry(
+    factory=lambda target: ReceiverScanService(
+        receiver_mgr=receiver_mgr,
+        auto_set_loop=auto_set_loop,
+        band_scanner=band_scanner.resolve_for_target(target=target),
+    )
 )
-net_monitor = NetMonitorService(receiver_mgr=receiver_mgr, auto_set_loop=auto_set_loop)
-caption_monitor = CaptionMonitorService(receiver_mgr=receiver_mgr, auto_set_loop=auto_set_loop)
+net_monitor = TargetedServiceRegistry(
+    factory=lambda _target: NetMonitorService(receiver_mgr=receiver_mgr, auto_set_loop=auto_set_loop)
+)
+caption_monitor = TargetedServiceRegistry(
+    factory=lambda _target: CaptionMonitorService(receiver_mgr=receiver_mgr, auto_set_loop=auto_set_loop)
+)
 
 # SmartScheduler: merges seasonal tables + live propagation evidence + user pins
 # into a band-condition map.  Fires force_reassign() when conditions change so
@@ -724,7 +731,7 @@ app.include_router(
         reset_api_metrics=_reset_api_metrics,
     )
 )
-app.include_router(make_health_router(receiver_mgr=receiver_mgr, receiver_scan=receiver_scan))
+app.include_router(make_health_router(receiver_mgr=receiver_mgr, receiver_scan=receiver_scan, mgr=mgr))
 app.include_router(make_system_info_router(mgr=mgr, receiver_mgr=receiver_mgr))
 app.include_router(make_smart_scheduler_router(smart_scheduler=smart_scheduler))
 app.include_router(

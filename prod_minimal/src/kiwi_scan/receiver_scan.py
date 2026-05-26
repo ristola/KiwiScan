@@ -10,11 +10,10 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .activity_classifier import classify_activity_width
-from .auto_set_loop import AutoSetLoop, _FIXED_ASSIGNMENTS
+from .auto_set_loop import AutoSetLoop
 from .bandplan import BANDPLAN, bandplan_label
 from .cw_decode import try_decode_cw_wav, validate_cw_message
 from .record import RecordRequest, RecorderUnavailable, run_record
-from .receiver_manager import ReceiverAssignment
 from .scan import classify_candidate_type, run_scan
 
 
@@ -1915,18 +1914,8 @@ class ReceiverScanService:
             if not self._stop_requested.is_set():
                 smart_lane["status"] = "complete"
 
-    def _build_fixed_assignments(self) -> dict[int, ReceiverAssignment]:
-        assignments: dict[int, ReceiverAssignment] = {}
-        for entry in _FIXED_ASSIGNMENTS:
-            rx = int(entry["rx"])
-            assignments[rx] = ReceiverAssignment(
-                rx=rx,
-                band=str(entry["band"]),
-                freq_hz=float(entry["freq_hz"]),
-                mode_label=str(entry["mode"]),
-                ignore_slot_check=True,
-            )
-        return assignments
+    def _build_mode_assignments(self) -> dict[int, object]:
+        return {}
 
     def _clear_reserved_slot(self, *, host: str, port: int, rx_chan: int) -> None:
         kick = getattr(self._receiver_mgr, "_run_admin_kick_all", None)
@@ -2066,11 +2055,9 @@ class ReceiverScanService:
                 return False
             time.sleep(max(0.0, float(self.RECEIVER_MANAGER_SETTLE_POLL_INTERVAL_S)))
 
-    def _restore_fixed_assignments_best_effort(self, *, host: str, port: int) -> bool:
+    def _restore_mode_assignments_best_effort(self, *, host: str, port: int) -> bool:
         recovery_timeout_s = max(0.0, float(self.RECEIVER_MANAGER_RECOVERY_TIMEOUT_S))
-        assignments = self._build_fixed_assignments()
-        if not assignments:
-            return False
+        assignments = self._build_mode_assignments()
         if not self._wait_for_receiver_manager_settle(timeout_s=recovery_timeout_s):
             return False
         if not self._wait_for_receiver_manager_lock(timeout_s=recovery_timeout_s):
@@ -2103,7 +2090,7 @@ class ReceiverScanService:
                     f"Receiver manager is busy applying assignments after {float(self.RECEIVER_MANAGER_LOCK_TIMEOUT_S):.1f}s"
                 )
             self._clear_reserved_slots(host=host, port=int(port), wait_for_clear=False)
-            assignments = self._build_fixed_assignments()
+            assignments = self._build_mode_assignments()
             self._receiver_mgr.apply_assignments(  # type: ignore[attr-defined]
                 host,
                 int(port),
@@ -2116,11 +2103,11 @@ class ReceiverScanService:
         except Exception:
             if paused_external:
                 try:
-                    restored = self._restore_fixed_assignments_best_effort(host=host, port=int(port))
+                    restored = self._restore_mode_assignments_best_effort(host=host, port=int(port))
                     if restored:
-                        logger.info("Receiver Scan restored fixed receivers after activation failure")
+                        logger.info("Receiver Scan restored cleared assignments after activation failure")
                 except Exception:
-                    logger.exception("Receiver Scan failed restoring fixed receivers after activation failure")
+                    logger.exception("Receiver Scan failed restoring cleared assignments after activation failure")
             if paused_external and self._auto_set_loop is not None:
                 try:
                     self._auto_set_loop.resume_from_external(self.HOLD_REASON)
@@ -2182,7 +2169,7 @@ class ReceiverScanService:
                 "listen_seconds": float(self.LISTEN_SECONDS),
                 "session_id": self._session_id,
                 "reserved_receivers": self._reserved_receivers_for_mode(scan_mode),
-                "fixed_receivers": [int(entry["rx"]) for entry in _FIXED_ASSIGNMENTS],
+                "fixed_receivers": [],
                 "plan": {
                     "scan_order": self._scan_order_for_mode(scan_mode),
                     "parallel_lanes": len(self._enabled_lanes(scan_mode)) > 1,

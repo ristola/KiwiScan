@@ -193,6 +193,106 @@ def test_apply_assignments_adds_roaming_without_restarting_fixed_workers(monkeyp
     assert set(manager._assignments.keys()) == {0, 1, 2, 3}
 
 
+def test_apply_assignments_switching_targets_preserves_inactive_runtime_workers(monkeypatch) -> None:
+    manager = _make_manager()
+
+    assignments_a = {
+        0: ReceiverAssignment(rx=0, band="10m", freq_hz=28_074_000.0, mode_label="FT8"),
+    }
+    assignments_b = {
+        0: ReceiverAssignment(rx=0, band="20m", freq_hz=14_074_000.0, mode_label="FT8"),
+    }
+
+    class _FakeWorker:
+        def __init__(self, *, rx: int, label: str, host: str, port: int) -> None:
+            self.rx = int(rx)
+            self._active_user_label = str(label)
+            self._host = str(host)
+            self._port = int(port)
+            self._rx_chan_adjust = 0
+            self.started = False
+
+        def start(self) -> None:
+            self.started = True
+
+        def is_alive(self) -> bool:
+            return True
+
+    make_worker_calls: list[tuple[str, int, int]] = []
+    stop_calls: list[tuple[str, int, int]] = []
+
+    monkeypatch.setattr(manager, "_seed_health_summary_cache", lambda assignments: None)
+    monkeypatch.setattr(manager, "_seed_truth_snapshot_cache", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_required_dependency_errors", lambda assignments: [])
+    monkeypatch.setattr(manager, "_cleanup_orphan_processes", lambda: None)
+    monkeypatch.setattr(manager, "_wait_for_orphan_cleanup", lambda timeout_s=6.0: None)
+    monkeypatch.setattr(manager, "_wait_for_kiwi_auto_users_missing", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_wait_for_kiwi_auto_users_clear", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_wait_for_kiwi_slots_stable_clear", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_wait_for_kiwi_slots_clear", lambda **kwargs: True)
+    monkeypatch.setattr(manager, "_refresh_starting_health_summary_cache", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_run_admin_kick_all", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_fetch_live_auto_users", lambda host, port: {})
+    monkeypatch.setattr(manager, "_startup_slot_stable_s", lambda: 0.0)
+    monkeypatch.setattr(manager, "_startup_poll_interval_s", lambda: 0.0)
+    monkeypatch.setattr(manager, "_startup_short_pause_s", lambda: 0.0)
+    monkeypatch.setattr(manager, "_startup_retry_pause_s", lambda: 0.0)
+    monkeypatch.setattr(manager, "_startup_slot_clear_stable_s", lambda: 0.0)
+    monkeypatch.setattr(
+        manager,
+        "_stop_worker",
+        lambda worker, **kwargs: stop_calls.append(
+            (str(getattr(worker, "_host", "")), int(getattr(worker, "_port", 0) or 0), int(getattr(worker, "rx", -1)))
+        ),
+    )
+
+    def _fake_make_worker(*, host: str, port: int, assignment: ReceiverAssignment, rx_chan_adjust: int = 0, ignore_slot_check=None):
+        make_worker_calls.append((str(host), int(port), int(assignment.rx)))
+        return _FakeWorker(
+            rx=int(assignment.rx),
+            label=manager._expected_user_label(assignment),
+            host=str(host),
+            port=int(port),
+        )
+
+    def _fake_fetch_live_users(host: str, port: int) -> dict[int, str]:
+        return {
+            int(rx): str(getattr(worker, "_active_user_label", ""))
+            for rx, worker in manager._workers.items()
+            if str(getattr(worker, "_active_user_label", ""))
+        }
+
+    monkeypatch.setattr(manager, "_make_worker", _fake_make_worker)
+    monkeypatch.setattr(manager, "_fetch_live_users", _fake_fetch_live_users)
+
+    manager.apply_assignments("kiwi-a.local", 8073, assignments_a, allow_starting_from_empty_full_reset=False)
+    manager.apply_assignments("kiwi-b.local", 8074, assignments_b, allow_starting_from_empty_full_reset=False)
+    manager.apply_assignments("kiwi-a.local", 8073, assignments_a, allow_starting_from_empty_full_reset=False)
+
+    assert make_worker_calls == [
+        ("kiwi-a.local", 8073, 0),
+        ("kiwi-b.local", 8074, 0),
+    ]
+    assert stop_calls == []
+    assert manager.runtime_targets() == {
+        manager._runtime_target_key("kiwi-a.local", 8073): {
+            "host": "kiwi-a.local",
+            "port": 8073,
+            "assigned_receivers": 1,
+            "active_workers": 1,
+            "rxs": [0],
+        },
+        manager._runtime_target_key("kiwi-b.local", 8074): {
+            "host": "kiwi-b.local",
+            "port": 8074,
+            "assigned_receivers": 1,
+            "active_workers": 1,
+            "rxs": [0],
+        },
+    }
+    assert manager._runtime_target_states[manager._runtime_target_key("kiwi-a.local", 8073)].resource_slot != manager._runtime_target_states[manager._runtime_target_key("kiwi-b.local", 8074)].resource_slot
+
+
 def test_roaming_correction_plan_accepts_low_slot_swap() -> None:
     manager = _make_manager()
     assignments = {

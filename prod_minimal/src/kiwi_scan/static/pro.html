@@ -1220,6 +1220,17 @@
             word-break: break-word;
         }
 
+        .server-chip-link {
+            color: color-mix(in srgb, var(--accent), white 14%);
+            font-weight: 700;
+            text-decoration: none;
+        }
+
+        .server-chip-link:hover,
+        .server-chip-link:focus-visible {
+            text-decoration: underline;
+        }
+
         .server-chip-section-heading {
             display: inline-flex;
             align-items: center;
@@ -5798,7 +5809,7 @@
                         <article class="status-chip status-chip-stream" data-icon="stream">
                             <div class="chip-label">WebSocket Stream</div>
                             <div class="chip-value" id="chip-stream">Connecting...</div>
-                            <div class="stream-chip-activity">
+                            <div class="stream-chip-activity" id="chip-stream-activity">
                                 <div class="stream-chip-activity-head">
                                     <div class="stream-chip-activity-label">HF Conditions</div>
                                     <div class="stream-chip-activity-percent mono" id="chip-stream-activity-percent">0%
@@ -5942,7 +5953,7 @@
                             </div>
                             <p class="band-sched-hint" id="receiver-scan-note" style="margin:0;">
                                 Run a 20m or 40m receiver scan. RX0 handles CW anchors, RX1 uses 12 kHz IQ probes to
-                                look for 2-3 kHz phone clusters, and RX2-RX7 stay on the fixed digital plan.
+                                look for 2-3 kHz phone clusters, and the rest of this Kiwi stays unassigned.
                             </p>
                             <div class="receiver-scan-results-grid">
                                 <section class="receiver-scan-lane-card receiver-scan-result-card"
@@ -6854,6 +6865,11 @@
                                         <div class="system-card-section-title">Status</div>
                                         <div id="system-kiwi-status-card" class="system-info-table"></div>
                                     </div>
+                                    <div class="system-card-section" id="system-kiwi-decode-stats-section"
+                                        style="display:none">
+                                        <div class="system-card-section-title">Decode Statistics</div>
+                                        <div id="system-kiwi-decode-stats" class="system-info-table"></div>
+                                    </div>
                                 </div>
                             </section>
 
@@ -6919,6 +6935,7 @@
         let latestFaultLogEntryFingerprints = new Map();
         let hasFaultLogRendered = false;
         let latestPublishedDecodeStatsByRx = {};
+        let latestPublishedDecodeStatsByKiwi = {};
         let latestAssignments = {};
         let latestAssignmentsSource = "";
         let latestAssignmentsHost = "";
@@ -6951,6 +6968,7 @@
         let automationSaveInFlight = false;
         let latestAutomationSettings = {};
         let latestConfiguredKiwiEntries = [];
+        let latestPersistedConfiguredKiwiEntries = [];
         let activeConfiguredKiwiIndex = 0;
         let activeConfiguredKiwiSaveInFlight = false;
         let latestDiscoveredKiwiEntries = [];
@@ -7596,6 +7614,38 @@
             }
         }
 
+        function activeKiwiHealthUrl() {
+            const kiwiKey = String(getActiveRuntimeKiwiKey() || "").trim();
+            return kiwiKey
+                ? `/health/rx?kiwi_key=${encodeURIComponent(kiwiKey)}`
+                : "/health/rx";
+        }
+
+        function appendActiveKiwiKey(url) {
+            const kiwiKey = String(getActiveRuntimeKiwiKey() || "").trim();
+            if (!kiwiKey) return url;
+            const separator = url.includes("?") ? "&" : "?";
+            return `${url}${separator}kiwi_key=${encodeURIComponent(kiwiKey)}`;
+        }
+
+        function activeKiwiTargetPayload(payload = {}) {
+            const kiwiKey = String(getActiveRuntimeKiwiKey() || "").trim();
+            if (!kiwiKey) return payload;
+            return {
+                ...(payload && typeof payload === "object" ? payload : {}),
+                kiwi_key: kiwiKey,
+            };
+        }
+
+        function activeKiwiDecodesUrl(since) {
+            const cursor = Math.max(0, Number(since) || 0);
+            return appendActiveKiwiKey(`/decodes?since=${encodeURIComponent(cursor)}`);
+        }
+
+        function activeKiwiDecodesChartUrl() {
+            return appendActiveKiwiKey("/decodes/chart");
+        }
+
         function isDigitalMode(mode) {
             const value = String(mode || "").trim().toUpperCase();
             return value === "FT8" || value === "FT4" || value === "WSPR";
@@ -7700,6 +7750,33 @@
                     <div class="system-info-value ${/^(Host|Python|Current UTC|Time|Active Users|Users|Receiver|Software)$/i.test(String(label)) ? "mono" : ""}">${escapeHtml(value)}</div>
                 </div>
             `).join("");
+        }
+
+        function _kiwiDecodeStatsRows(kiwiKey) {
+            const stats = latestPublishedDecodeStatsByKiwi[kiwiKey];
+            if (!stats || typeof stats !== "object") return [];
+            const bands = stats.bands && typeof stats.bands === "object" ? stats.bands : {};
+            const bandNames = Object.keys(bands).sort();
+            if (!bandNames.length) return [];
+
+            const rows = [];
+            let totalDecodes = 0;
+            let totalPerMin = 0;
+            let totalPerHour = 0;
+            for (const band of bandNames) {
+                const bandStats = bands[band] || {};
+                const total = Math.max(0, Number(bandStats.decode_total) || 0);
+                const perMin = Math.max(0, Number(bandStats.decode_rate_per_min) || 0);
+                const perHour = Math.max(0, Number(bandStats.decode_rate_per_hour) || 0);
+                totalDecodes += total;
+                totalPerMin += perMin;
+                totalPerHour += perHour;
+                rows.push([`Decodes ${band}`, `${fmtCount(total)} total • ${fmtCount(perMin)}/min • ${fmtCount(perHour)}/hr`]);
+            }
+            if (bandNames.length > 1) {
+                rows.unshift(["Decodes (all bands)", `${fmtCount(totalDecodes)} total • ${fmtCount(totalPerMin)}/min • ${fmtCount(totalPerHour)}/hr`]);
+            }
+            return rows;
         }
 
         function normalizeDiscoveredKiwiEntries(raw = []) {
@@ -7875,7 +7952,7 @@
 
         function getReservedManagedReceiverSet(mode = getCurrentReceiversMode()) {
             const normalizedMode = normalizeReceiversMode(mode, "auto");
-            if (normalizedMode === "semi") return new Set([0, 1]);
+            if (normalizedMode === "semi") return new Set();
             if (normalizedMode !== "scan") return new Set();
             const reserved = getPreparedScanReservedReceiverSet();
             if (latestReceiverScanStatus && latestReceiverScanStatus.running && Array.isArray(latestReceiverScanStatus.reserved_receivers)) {
@@ -7904,7 +7981,10 @@
         }
 
         function syncReceiversModeFromBackendState() {
-            const receiverScanActive = !!(latestReceiverScanStatus && (latestReceiverScanStatus.running || latestReceiverScanStatus.mode_active));
+            const receiverScanActive = !!(
+                receiverScanPreparePending
+                || (latestReceiverScanStatus && (latestReceiverScanStatus.running || latestReceiverScanStatus.mode_active))
+            );
             const netMonitorActive = !!(latestNetMonitorStatus && (latestNetMonitorStatus.running || latestNetMonitorStatus.activating || latestNetMonitorStatus.mode_active));
             const captionMonitorActive = !!(latestCaptionMonitorStatus && (latestCaptionMonitorStatus.running || latestCaptionMonitorStatus.starting));
             if (receiverScanActive || netMonitorActive || captionMonitorActive) {
@@ -7912,14 +7992,7 @@
                 applyAutoModeVisibility("scan");
                 return;
             }
-            const fixedEnabled = !(latestAutomationSettings && latestAutomationSettings.fixedModeEnabled === false);
-            const persistedMode = normalizeReceiversMode(
-                latestAutomationSettings && latestAutomationSettings.receiversMode,
-                fixedEnabled ? "auto" : "manual",
-            );
-            const nextMode = fixedEnabled
-                ? (persistedMode === "manual" ? "auto" : persistedMode)
-                : "manual";
+            const nextMode = resolveKiwiUiProfile(latestAutomationSettings).receiversMode;
             setReceiversMode(nextMode, { persist: false });
             applyAutoModeVisibility(nextMode);
         }
@@ -8126,6 +8199,19 @@
                 ["Uptime", Number.isFinite(Number(kiwiStatus.uptime_seconds)) ? fmtDurationCompact(kiwiStatus.uptime_seconds) : "--"],
                 ["Time", safeText(kiwiStatus.date, "--")],
             ]);
+
+            const activeKiwiKey = kiwi.host && kiwi.port ? `${kiwi.host}:${kiwi.port}` : "";
+            const decodeRows = _kiwiDecodeStatsRows(activeKiwiKey);
+            const decodeStatsSection = byId("system-kiwi-decode-stats-section");
+            if (decodeStatsSection) {
+                if (decodeRows.length) {
+                    renderInfoRows("system-kiwi-decode-stats", decodeRows);
+                    decodeStatsSection.style.display = "";
+                } else {
+                    decodeStatsSection.style.display = "none";
+                    renderInfoRows("system-kiwi-decode-stats", []);
+                }
+            }
 
             const usersEl = byId("active-receivers-table");
             if (!usersEl) return;
@@ -8429,6 +8515,14 @@
             return `<span class="ui-icon" aria-hidden="true">${svg}</span>`;
         }
 
+        function setDecoratedLabelText(labelEl, text) {
+            if (!labelEl) return;
+            const iconName = String(labelEl.dataset.icon || labelEl.closest("[data-icon]")?.dataset.icon || "").trim();
+            labelEl.textContent = safeText(text, "");
+            const iconMarkup = buildIconMarkup(iconName);
+            if (iconMarkup) labelEl.insertAdjacentHTML("afterbegin", iconMarkup);
+        }
+
         function decorateUiIcons() {
             document.querySelectorAll("button[data-icon], a[data-icon]").forEach((el) => {
                 const existing = el.querySelector(":scope > .ui-icon");
@@ -8588,6 +8682,33 @@
             return out.slice(0, MAX_CONFIGURED_KIWIS);
         }
 
+        function preserveConfiguredKiwiEntryOrder(entries = [], referenceEntries = latestPersistedConfiguredKiwiEntries) {
+            const normalizedEntries = normalizeConfiguredKiwiEntries(entries, { preserveBlankHost: true });
+            const normalizedReference = normalizeConfiguredKiwiEntries(referenceEntries, { preserveBlankHost: true });
+            const nextByKey = new Map();
+
+            normalizedEntries.forEach((entry, index) => {
+                nextByKey.set(configuredKiwiEntryIdentity(entry, index), entry);
+            });
+
+            const ordered = [];
+            const seen = new Set();
+            normalizedReference.forEach((entry, index) => {
+                const key = configuredKiwiEntryIdentity(entry, index);
+                if (!nextByKey.has(key) || seen.has(key)) return;
+                ordered.push(nextByKey.get(key));
+                seen.add(key);
+            });
+            normalizedEntries.forEach((entry, index) => {
+                const key = configuredKiwiEntryIdentity(entry, index);
+                if (seen.has(key)) return;
+                ordered.push(entry);
+                seen.add(key);
+            });
+
+            return ordered.slice(0, MAX_CONFIGURED_KIWIS);
+        }
+
         function configuredKiwiEntryKey(entry = null) {
             const normalized = normalizeConfiguredKiwiEntry(entry || {}, { preserveBlankHost: true });
             if (!normalized || !isConfiguredKiwiHost(normalized.host)) return "";
@@ -8600,6 +8721,40 @@
             return Number.isFinite(Number(kiwiIndex)) && Number(kiwiIndex) >= 0
                 ? `blank:${Number(kiwiIndex)}`
                 : "";
+        }
+
+        function resolveDisplayConfiguredKiwiIndex(
+            persistedIndex,
+            displayEntries = latestConfiguredKiwiEntries,
+            persistedEntries = latestPersistedConfiguredKiwiEntries,
+        ) {
+            const normalizedDisplayEntries = normalizeConfiguredKiwiEntries(displayEntries, { preserveBlankHost: true });
+            const normalizedPersistedEntries = normalizeConfiguredKiwiEntries(persistedEntries, { preserveBlankHost: true });
+            const normalizedPersistedIndex = normalizeActiveConfiguredKiwiIndex(persistedIndex, normalizedPersistedEntries);
+            const persistedEntry = normalizedPersistedEntries[normalizedPersistedIndex] || null;
+            const persistedKey = configuredKiwiEntryIdentity(persistedEntry, normalizedPersistedIndex);
+            if (persistedKey) {
+                const displayIndex = normalizedDisplayEntries.findIndex((entry, index) => configuredKiwiEntryIdentity(entry, index) === persistedKey);
+                if (displayIndex >= 0) return displayIndex;
+            }
+            return normalizeActiveConfiguredKiwiIndex(normalizedPersistedIndex, normalizedDisplayEntries);
+        }
+
+        function resolvePersistedConfiguredKiwiIndex(
+            displayIndex,
+            displayEntries = latestConfiguredKiwiEntries,
+            persistedEntries = latestPersistedConfiguredKiwiEntries,
+        ) {
+            const normalizedDisplayEntries = normalizeConfiguredKiwiEntries(displayEntries, { preserveBlankHost: true });
+            const normalizedPersistedEntries = normalizeConfiguredKiwiEntries(persistedEntries, { preserveBlankHost: true });
+            const normalizedDisplayIndex = normalizeActiveConfiguredKiwiIndex(displayIndex, normalizedDisplayEntries);
+            const displayEntry = normalizedDisplayEntries[normalizedDisplayIndex] || null;
+            const displayKey = configuredKiwiEntryIdentity(displayEntry, normalizedDisplayIndex);
+            if (displayKey) {
+                const persistedIndex = normalizedPersistedEntries.findIndex((entry, index) => configuredKiwiEntryIdentity(entry, index) === displayKey);
+                if (persistedIndex >= 0) return persistedIndex;
+            }
+            return normalizeActiveConfiguredKiwiIndex(normalizedDisplayIndex, normalizedPersistedEntries);
         }
 
         function buildConfiguredKiwiEntryFromDiscovered(entry = null) {
@@ -8660,9 +8815,57 @@
             return parts.join(" · ");
         }
 
+        function resolveSettingsDiscoveredKiwiEntries(discoveredEntries = []) {
+            const fallbackDiscovered = normalizeDiscoveredKiwiEntries(
+                Array.isArray(latestSystemInfo && latestSystemInfo.kiwi && latestSystemInfo.kiwi.discovered_kiwis)
+                    ? latestSystemInfo.kiwi.discovered_kiwis
+                    : []
+            );
+            return mergeServerChipDiscoveredEntries(discoveredEntries, fallbackDiscovered);
+        }
+
+        function sortConfiguredKiwiEntriesForSettings(entries = [], discoveredEntries = []) {
+            const safeEntries = normalizeConfiguredKiwiEntries(entries, { preserveBlankHost: true });
+            const discovered = resolveSettingsDiscoveredKiwiEntries(discoveredEntries);
+            const fallbackDiscovered = normalizeDiscoveredKiwiEntries(
+                Array.isArray(latestSystemInfo && latestSystemInfo.kiwi && latestSystemInfo.kiwi.discovered_kiwis)
+                    ? latestSystemInfo.kiwi.discovered_kiwis
+                    : []
+            );
+            const displayIndexByKey = buildServerChipDisplayIndexByConfiguredKey(
+                safeEntries,
+                discovered,
+                fallbackDiscovered,
+            );
+
+            return safeEntries
+                .map((entry, index) => {
+                    const key = configuredKiwiEntryKey(entry);
+                    return {
+                        entry,
+                        index,
+                        rank: key && displayIndexByKey.has(key)
+                            ? Number(displayIndexByKey.get(key))
+                            : null,
+                    };
+                })
+                .sort((left, right) => {
+                    const leftHasRank = Number.isFinite(left.rank);
+                    const rightHasRank = Number.isFinite(right.rank);
+                    if (leftHasRank || rightHasRank) {
+                        if (!leftHasRank) return 1;
+                        if (!rightHasRank) return -1;
+                        if (left.rank !== right.rank) return left.rank - right.rank;
+                    }
+                    return left.index - right.index;
+                })
+                .map(({ entry }) => entry)
+                .slice(0, MAX_CONFIGURED_KIWIS);
+        }
+
         function mergeConfiguredKiwiEntriesWithDiscovered(entries = [], discoveredEntries = []) {
             const merged = normalizeConfiguredKiwiEntries(entries, { preserveBlankHost: true });
-            const discovered = sortDiscoveredKiwiEntries(normalizeDiscoveredKiwiEntries(discoveredEntries));
+            const discovered = resolveSettingsDiscoveredKiwiEntries(discoveredEntries);
             const seen = new Set(merged.map((entry) => configuredKiwiEntryKey(entry)).filter(Boolean));
             const configuredCount = merged.filter((entry) => isConfiguredKiwiHost(entry && entry.host)).length;
             let shouldFillBlankSlots = configuredCount === 0;
@@ -8686,7 +8889,10 @@
                 seen.add(key);
             });
 
-            return (merged.length ? merged : [buildDefaultConfiguredKiwiEntry()]).slice(0, MAX_CONFIGURED_KIWIS);
+            return sortConfiguredKiwiEntriesForSettings(
+                merged.length ? merged : [buildDefaultConfiguredKiwiEntry()],
+                discovered,
+            );
         }
 
         function buildDefaultConfiguredKiwiEntry() {
@@ -8711,6 +8917,15 @@
             if (!Array.isArray(entries) || !entries.length) return buildDefaultConfiguredKiwiEntry();
             const activeIndex = normalizeActiveConfiguredKiwiIndex(activeConfiguredKiwiIndex, entries);
             return entries[activeIndex] || buildDefaultConfiguredKiwiEntry();
+        }
+
+        function getActiveRuntimeKiwiKey() {
+            const entries = Array.isArray(latestPersistedConfiguredKiwiEntries) && latestPersistedConfiguredKiwiEntries.length
+                ? latestPersistedConfiguredKiwiEntries
+                : (Array.isArray(latestConfiguredKiwiEntries) && latestConfiguredKiwiEntries.length
+                    ? latestConfiguredKiwiEntries
+                    : collectConfiguredKiwiInputs({ includeBlank: true }));
+            return configuredKiwiEntryKey(getActiveConfiguredKiwiEntry(entries));
         }
 
         function hasConfiguredKiwiIp(entries = []) {
@@ -8762,8 +8977,9 @@
                 : null;
             const allEntries = overrideEntries || collectConfiguredKiwiInputs({ includeBlank: true });
             const activeIndex = normalizeActiveConfiguredKiwiIndex(activeConfiguredKiwiIndex, allEntries);
-            const activeEntry = allEntries[activeIndex] || buildDefaultConfiguredKiwiEntry();
-            const normalizedPrimary = normalizeConfiguredKiwiEntry(activeEntry, { preserveBlankHost: true }) || buildDefaultConfiguredKiwiEntry();
+            const persistedActiveIndex = resolvePersistedConfiguredKiwiIndex(activeIndex, allEntries);
+            const primaryEntry = allEntries[0] || buildDefaultConfiguredKiwiEntry();
+            const normalizedPrimary = normalizeConfiguredKiwiEntry(primaryEntry, { preserveBlankHost: true }) || buildDefaultConfiguredKiwiEntry();
             const password = readTextInput("cfg-kiwi-password", "").trim();
             const adminPassword = readTextInput("cfg-kiwi-admin-password", "").trim();
             const payload = {
@@ -8772,7 +8988,7 @@
                 latitude: Number.isFinite(Number(normalizedPrimary.latitude)) ? Number(normalizedPrimary.latitude) : KIWI_SETTINGS_DEFAULTS.latitude,
                 longitude: Number.isFinite(Number(normalizedPrimary.longitude)) ? Number(normalizedPrimary.longitude) : KIWI_SETTINGS_DEFAULTS.longitude,
                 kiwisdrs: normalizeConfiguredKiwiEntries(allEntries),
-                active_kiwi_index: activeIndex,
+                active_kiwi_index: persistedActiveIndex,
                 discovered_kiwis: latestDiscoveredKiwiEntries,
                 discovery_source: latestDiscoverySource,
                 sync_discovered_to_configured: true,
@@ -8794,6 +9010,16 @@
             const selectorEl = byId("topbar-kiwi-selector");
             if (!selectorEl) return;
             const safeEntries = Array.isArray(entries) && entries.length ? entries : [buildDefaultConfiguredKiwiEntry()];
+            const fallbackDiscovered = normalizeDiscoveredKiwiEntries(
+                Array.isArray(latestSystemInfo && latestSystemInfo.kiwi && latestSystemInfo.kiwi.discovered_kiwis)
+                    ? latestSystemInfo.kiwi.discovered_kiwis
+                    : []
+            );
+            const displayIndexByKey = buildServerChipDisplayIndexByConfiguredKey(
+                safeEntries,
+                latestDiscoveredKiwiEntries,
+                fallbackDiscovered,
+            );
             activeConfiguredKiwiIndex = normalizeActiveConfiguredKiwiIndex(activeConfiguredKiwiIndex, safeEntries);
             selectorEl.setAttribute("aria-busy", activeConfiguredKiwiSaveInFlight ? "true" : "false");
             selectorEl.querySelectorAll("[data-kiwi-select-index]").forEach((button) => {
@@ -8801,15 +9027,22 @@
                 const entry = Number.isFinite(index) ? safeEntries[index] : null;
                 const configured = !!entry && isConfiguredKiwiHost(entry.host);
                 const isActive = configured && index === activeConfiguredKiwiIndex;
+                const key = configured
+                    ? `${safeText(entry && entry.host, "")}:${Number(entry && entry.port) || 0}`
+                    : "";
+                const mappedDisplayIndex = configured ? Number(displayIndexByKey.get(key)) : NaN;
+                const fallbackDisplayIndex = Number.isFinite(index) ? index + 1 : null;
+                const displayIndex = Number.isFinite(mappedDisplayIndex) ? mappedDisplayIndex : fallbackDisplayIndex;
                 const labelEl = button.querySelector(".topbar-kiwi-label");
                 const metaEl = button.querySelector(".topbar-kiwi-meta");
                 button.hidden = !configured;
-                if (labelEl) labelEl.textContent = `KIWI ${Number.isFinite(index) ? index + 1 : "?"}`;
+                button.style.order = configured && Number.isFinite(displayIndex) ? String(displayIndex) : "";
+                if (labelEl) labelEl.textContent = `KIWI ${Number.isFinite(displayIndex) ? displayIndex : "?"}`;
                 if (metaEl) metaEl.textContent = configured ? (isActive ? "ACTIVE" : "READY") : "UNSET";
                 button.setAttribute("aria-pressed", isActive ? "true" : "false");
                 button.disabled = activeConfiguredKiwiSaveInFlight || !configured;
                 if (configured) {
-                    button.title = `Use KiwiSDR #${index + 1} (${entry.host}:${entry.port || KIWI_SETTINGS_DEFAULTS.port})`;
+                    button.title = `Use KiwiSDR #${Number.isFinite(displayIndex) ? displayIndex : (index + 1)} (${entry.host}:${entry.port || KIWI_SETTINGS_DEFAULTS.port})`;
                 } else {
                     button.title = `Configure KiwiSDR #${index + 1} in Settings`;
                 }
@@ -8915,7 +9148,7 @@
         }
 
         function renderConfiguredKiwiSettings(entries = [], discoveredEntries = []) {
-            const discovered = sortDiscoveredKiwiEntries(normalizeDiscoveredKiwiEntries(discoveredEntries));
+            const discovered = resolveSettingsDiscoveredKiwiEntries(discoveredEntries);
             const safeEntries = mergeConfiguredKiwiEntriesWithDiscovered(entries, discovered);
             latestConfiguredKiwiEntries = safeEntries;
             activeConfiguredKiwiIndex = normalizeActiveConfiguredKiwiIndex(activeConfiguredKiwiIndex, safeEntries);
@@ -9354,17 +9587,19 @@ ${passwordMarkup.actionsHtml}
 
         function resetDecodeDashboardState() {
             decodeCursor = 0;
-            decodeCursorPrimed = true;
+            decodeCursorPrimed = false;
             rateHistory = [];
             currentDecodeRatePerMin = 0;
             currentHfActivityDisplayPercent = 0;
             summaryDecodeRateHistory = [];
             bandActivityHistory = {};
             bandBreakdownHistory = {};
+            receiverActivityHistory = {};
             receiverDecodeTotals = {};
             receiverDecodeSnrHistory = {};
             lastKnownSnrByRx = {};
             latestPublishedDecodeStatsByRx = {};
+            latestPublishedDecodeStatsByKiwi = {};
             bandChartTimestamps = [];
             bandChartViewportEndMs = null;
             _bandChartLastBands = [];
@@ -9385,7 +9620,7 @@ ${passwordMarkup.actionsHtml}
         async function reloadRecentDecodeState(latestCursor) {
             const latest = Math.max(0, Number(latestCursor) || 0);
             resetRecentDecodeState({ resetSeenModes: true, resetMap: true });
-            const recent = await getJson(`/decodes?since=${encodeURIComponent(Math.max(0, latest - RECENT_DECODE_LIMIT))}`);
+            const recent = await getJson(activeKiwiDecodesUrl(Math.max(0, latest - RECENT_DECODE_LIMIT)));
             const recentItems = Array.isArray(recent.items) ? recent.items : [];
             for (const item of recentItems) ingestDecodeItem(item, { renderList: false, renderMap: false });
             scheduleRecentDecodePanelRender();
@@ -9438,7 +9673,10 @@ ${passwordMarkup.actionsHtml}
         }
 
         function applyDecodeListFilters(items) {
+            const activeKiwiKey = String(getActiveRuntimeKiwiKey() || "").trim();
             const filtered = (Array.isArray(items) ? items : []).filter((item) => {
+                const itemKiwiKey = String(item && item.kiwi_key || "").trim();
+                if (activeKiwiKey && itemKiwiKey && itemKiwiKey !== activeKiwiKey) return false;
                 if (!decodeSelectedModes.has(String(item && item.mode || "").toUpperCase())) return false;
                 if (decodeCqOnly && (item && item.mode) !== "WSPR" && !isCqDecodeMessage(item && item.message)) return false;
                 if (decodeDxOnly && !isDxDecodeGrid(item && item.grid)) return false;
@@ -9497,10 +9735,7 @@ ${passwordMarkup.actionsHtml}
                             direction: decodeSortState.direction === "asc" ? "desc" : "asc",
                         };
                     } else {
-                        decodeSortState = {
-                            key,
-                            direction: key === "time" ? "desc" : "asc",
-                        };
+                        return merged.length ? merged.slice(0, MAX_CONFIGURED_KIWIS) : [buildDefaultConfiguredKiwiEntry()];
                     }
                     updateDecodeSortHeaderUi();
                     renderRecentDecodePanel();
@@ -9552,17 +9787,12 @@ ${passwordMarkup.actionsHtml}
             const meta = byId("decode-panel-meta");
             updateDecodeModeToolbar();
             if (!list) return;
-            const filtered = recentDecodeItems.filter((item) => {
-                if (!decodeSelectedModes.has(String(item && item.mode || "").toUpperCase())) return false;
-                if (decodeCqOnly && (item && item.mode) !== "WSPR" && !isCqDecodeMessage(item && item.message)) return false;
-                if (decodeDxOnly && !isDxDecodeGrid(item && item.grid)) return false;
-                return true;
-            });
+            const filtered = applyDecodeListFilters(recentDecodeItems);
             const latestItem = filtered.reduce((latest, item) => {
                 if (!latest) return item;
                 return decodeItemTimestampMs(item) > decodeItemTimestampMs(latest) ? item : latest;
             }, null);
-            const rows = applyDecodeListFilters(recentDecodeItems).slice(0, RECENT_DECODE_RENDER_LIMIT);
+            const rows = filtered.slice(0, RECENT_DECODE_RENDER_LIMIT);
             if (meta) {
                 const latest = latestItem ? formatDecodeClockText(latestItem) : "--";
                 const seenModes = getSeenDecodeModes();
@@ -9929,6 +10159,9 @@ ${passwordMarkup.actionsHtml}
 
         function mapPointMatchesFilters(entry) {
             if (!entry) return false;
+            const activeKiwiKey = String(getActiveRuntimeKiwiKey() || "").trim();
+            const entryKiwiKey = String(entry.kiwi_key || "").trim();
+            if (activeKiwiKey && entryKiwiKey && entryKiwiKey !== activeKiwiKey) return false;
             const bandOk = mapSelectedBand === "ALL" ? true : String(entry.band || "") === mapSelectedBand;
             const modeOk = mapSelectedModes.has(String(entry.mode || "").toUpperCase());
             const ageOk = mapSelectedAgeMs === null ? true : (Number.isFinite(entry.lastSeen) && (Date.now() - entry.lastSeen) <= mapSelectedAgeMs);
@@ -10059,8 +10292,27 @@ ${passwordMarkup.actionsHtml}
             if (!mapInstance || !window.L) return;
             const bounds = L.latLngBounds(entries.map((entry) => [entry.lat, entry.lon]));
             if (!bounds.isValid()) return;
-            mapInstance.fitBounds(bounds, { padding: [24, 24], maxZoom: 6 });
+            mapInstance.fitBounds(bounds, { paddingTopLeft: [24, 88], paddingBottomRight: [24, 48], maxZoom: 6 });
             mapHasAutoFit = true;
+        }
+
+        function handleMapAutoFitButtonClick(event) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            const pageScrollX = window.scrollX;
+            const pageScrollY = window.scrollY;
+            fitMapToVisibleEntries();
+            requestAnimationFrame(() => {
+                if (window.scrollX !== pageScrollX || window.scrollY !== pageScrollY) {
+                    window.scrollTo(pageScrollX, pageScrollY);
+                }
+                const fitBtn = byId("map-fit-btn");
+                if (fitBtn && document.activeElement === fitBtn && typeof fitBtn.blur === "function") {
+                    fitBtn.blur();
+                }
+            });
         }
 
         function computeVisibleMapStats(entries) {
@@ -10381,6 +10633,7 @@ ${passwordMarkup.actionsHtml}
                 band,
                 callsign: sanitizeCallsign(item.callsign, grid),
                 country: String(item.country || "").trim(),
+                kiwi_key: String(item.kiwi_key || "").trim(),
                 snr: Number.isFinite(Number(item.snr)) ? Number(item.snr) : null,
                 lastSeen: resolveDecodeReceivedAtMs(item),
             });
@@ -10399,6 +10652,7 @@ ${passwordMarkup.actionsHtml}
             const normalized = {
                 ...item,
                 band: String(item.band || "").trim(),
+                kiwi_key: String(item.kiwi_key || "").trim(),
                 mode: String(item.mode || "").trim().toUpperCase(),
                 grid: normalizeGridSquare(item.grid),
                 callsign: sanitizeCallsign(item.callsign, item.grid),
@@ -10465,7 +10719,7 @@ ${passwordMarkup.actionsHtml}
             }
             if (fitBtn && !fitBtn.dataset.bound) {
                 fitBtn.dataset.bound = "1";
-                fitBtn.addEventListener("click", () => fitMapToVisibleEntries());
+                fitBtn.addEventListener("click", handleMapAutoFitButtonClick);
             }
             updateMapBandFilterButtons();
             updateMapModeFilterButtons();
@@ -10545,6 +10799,116 @@ ${passwordMarkup.actionsHtml}
 
         function previewOverviewTopicsFromConfig() {
             applyOverviewTopicPrefs(collectOverviewTopicPrefsFromConfig());
+        }
+
+        function defaultKiwiUiProfile(settingsSnapshot = latestAutomationSettings) {
+            const snapshot = settingsSnapshot && typeof settingsSnapshot === "object" ? settingsSnapshot : {};
+            const fallbackMode = snapshot.fixedModeEnabled === false ? "manual" : "auto";
+            const receiversMode = snapshot.fixedModeEnabled === false
+                ? "manual"
+                : normalizeReceiversMode(snapshot.receiversMode, fallbackMode);
+            return {
+                receiversMode,
+                overviewTopics: normalizeOverviewTopicPrefs(snapshot.overviewTopics, defaultOverviewTopicPrefs()),
+            };
+        }
+
+        function normalizeKiwiUiProfile(raw = {}, fallbackProfile = null) {
+            const fallback = fallbackProfile && typeof fallbackProfile === "object"
+                ? fallbackProfile
+                : defaultKiwiUiProfile();
+            const profile = raw && typeof raw === "object" ? raw : {};
+            return {
+                receiversMode: normalizeReceiversMode(profile.receiversMode, fallback.receiversMode),
+                overviewTopics: normalizeOverviewTopicPrefs(profile.overviewTopics, fallback.overviewTopics),
+            };
+        }
+
+        function normalizeKiwiUiProfiles(raw = {}, settingsSnapshot = latestAutomationSettings) {
+            const profiles = raw && typeof raw === "object" ? raw : {};
+            const fallbackProfile = defaultKiwiUiProfile(settingsSnapshot);
+            const next = {};
+            Object.entries(profiles).forEach(([rawKey, rawProfile]) => {
+                const profileKey = safeText(rawKey, "").trim();
+                if (!profileKey) return;
+                next[profileKey] = normalizeKiwiUiProfile(rawProfile, fallbackProfile);
+            });
+            return next;
+        }
+
+        function getConfiguredKiwiProfileKey(entries = collectConfiguredKiwiInputs({ includeBlank: true }), kiwiIndex = activeConfiguredKiwiIndex) {
+            if (!Array.isArray(entries) || !entries.length) return "";
+            const safeIndex = normalizeActiveConfiguredKiwiIndex(kiwiIndex, entries);
+            return configuredKiwiEntryIdentity(entries[safeIndex], safeIndex);
+        }
+
+        function captureKiwiUiProfiles(snapshot = latestAutomationSettings, options = {}) {
+            const settingsSnapshot = snapshot && typeof snapshot === "object" ? snapshot : {};
+            const entries = Array.isArray(options.entries)
+                ? options.entries
+                : collectConfiguredKiwiInputs({ includeBlank: true });
+            const kiwiIndex = Number.isFinite(Number(options.index))
+                ? Number(options.index)
+                : activeConfiguredKiwiIndex;
+            const profileKey = getConfiguredKiwiProfileKey(entries, kiwiIndex);
+            const profiles = normalizeKiwiUiProfiles(settingsSnapshot.kiwiProfiles, settingsSnapshot);
+            if (!profileKey) return profiles;
+            profiles[profileKey] = normalizeKiwiUiProfile({
+                receiversMode: options.receiversMode ?? getCurrentReceiversMode(),
+                overviewTopics: options.overviewTopics ?? collectOverviewTopicPrefsFromConfig(),
+            }, defaultKiwiUiProfile(settingsSnapshot));
+            return profiles;
+        }
+
+        function resolveKiwiUiProfile(snapshot = latestAutomationSettings, options = {}) {
+            const settingsSnapshot = snapshot && typeof snapshot === "object" ? snapshot : {};
+            const entries = Array.isArray(options.entries)
+                ? options.entries
+                : collectConfiguredKiwiInputs({ includeBlank: true });
+            const kiwiIndex = Number.isFinite(Number(options.index))
+                ? Number(options.index)
+                : activeConfiguredKiwiIndex;
+            const profileKey = getConfiguredKiwiProfileKey(entries, kiwiIndex);
+            const defaultProfile = defaultKiwiUiProfile(settingsSnapshot);
+            const profiles = normalizeKiwiUiProfiles(
+                options.kiwiProfiles ?? settingsSnapshot.kiwiProfiles,
+                settingsSnapshot,
+            );
+            if (profileKey && profiles[profileKey]) {
+                return normalizeKiwiUiProfile(profiles[profileKey], defaultProfile);
+            }
+            return defaultProfile;
+        }
+
+        async function applyActiveKiwiUiProfile(profile, options = {}) {
+            const applyRuntime = !!(options && options.applyRuntime);
+            const nextProfile = normalizeKiwiUiProfile(profile, defaultKiwiUiProfile(latestAutomationSettings));
+            applyOverviewTopicPrefs(nextProfile.overviewTopics);
+            setReceiversMode(nextProfile.receiversMode);
+            applyAutoModeVisibility(nextProfile.receiversMode);
+            if (!applyRuntime) return nextProfile;
+            if (nextProfile.receiversMode === "scan") {
+                const prepared = await prepareReceiversScanMode();
+                if (!prepared) return nextProfile;
+                latestAutomationSettings = {
+                    ...(latestAutomationSettings && typeof latestAutomationSettings === "object" ? latestAutomationSettings : {}),
+                    receiversMode: nextProfile.receiversMode,
+                    fixedModeEnabled: nextProfile.receiversMode !== "manual",
+                    overviewTopics: nextProfile.overviewTopics,
+                };
+                await saveAutomationSection({ autosave: true });
+                return nextProfile;
+            }
+            const applied = await applyAutoModeEnabled(nextProfile.receiversMode);
+            if (applied) {
+                latestAutomationSettings = {
+                    ...(latestAutomationSettings && typeof latestAutomationSettings === "object" ? latestAutomationSettings : {}),
+                    receiversMode: nextProfile.receiversMode,
+                    fixedModeEnabled: nextProfile.receiversMode !== "manual",
+                    overviewTopics: nextProfile.overviewTopics,
+                };
+            }
+            return nextProfile;
         }
 
         function getOverviewTopicInsertAfter(container, clientY) {
@@ -10761,6 +11125,7 @@ ${passwordMarkup.actionsHtml}
 
         let latestReceiverScanStatus = null;
         let receiverScanPendingAction = "";
+        let receiverScanPreparePending = false;
         let receiverScanPendingBand = "";
         let receiverScanPendingSource = "";
         let receiverScanActiveSource = "";
@@ -12259,12 +12624,12 @@ ${passwordMarkup.actionsHtml}
                 ? `${fmtReceiverScanFreq(phoneRangeStart)} to ${fmtReceiverScanFreq(phoneRangeEnd)}`
                 : `${bandLabel} Phone anchors`;
             const defaultNote = scanMode === "smart"
-                ? `RX0 scans the full ${bandLabel} band${Number.isFinite(smartRangeStart) && Number.isFinite(smartRangeEnd) ? ` from ${fmtReceiverScanFreq(smartRangeStart)} to ${fmtReceiverScanFreq(smartRangeEnd)}` : ""} in overlapping ${Number.isFinite(smartChunkBw) ? `${Math.round(smartChunkBw)} Hz` : "IQ"} windows stepped ${Number.isFinite(smartStepHz) ? `${Math.round(smartStepHz)} Hz` : "across the band"}, classifies detections by occupied bandwidth and voice profile as CW, PHONE, FT8, FT4, WSPR, SSTV, or UNKNOWN, and leaves RX1 idle while RX2-RX7 stay on the fixed digital plan.`
+                ? `RX0 scans the full ${bandLabel} band${Number.isFinite(smartRangeStart) && Number.isFinite(smartRangeEnd) ? ` from ${fmtReceiverScanFreq(smartRangeStart)} to ${fmtReceiverScanFreq(smartRangeEnd)}` : ""} in overlapping ${Number.isFinite(smartChunkBw) ? `${Math.round(smartChunkBw)} Hz` : "IQ"} windows stepped ${Number.isFinite(smartStepHz) ? `${Math.round(smartStepHz)} Hz` : "across the band"}, classifies detections by occupied bandwidth and voice profile as CW, PHONE, FT8, FT4, WSPR, SSTV, or UNKNOWN, and leaves the rest of this Kiwi unassigned.`
                 : scanMode === "cw"
-                    ? `RX0 scans ${bandLabel} CW anchors and records each confirmed CW hit for 60s. RX1 stays idle while RX2-RX7 stay on the fixed digital plan.`
+                    ? `RX0 scans ${bandLabel} CW anchors and records each confirmed CW hit for 60s. RX1 stays idle while the rest of this Kiwi stays unassigned.`
                     : scanMode === "phone"
-                        ? `RX1 scans ${bandLabel} PHONE with 12 kHz IQ windows across ${defaultPhoneText} and looks for confirmed 2-3 kHz phone clusters. RX0 stays idle while RX2-RX7 stay on the fixed digital plan.`
-                        : `RX0 scans ${bandLabel} CW anchors while RX1 scans ${bandLabel} Phone with 12 kHz IQ windows across ${defaultPhoneText} and looks for confirmed 2-3 kHz phone clusters. After the CW anchor sweep, RX0 records each CW hit for 60s. RX2-RX7 stay on the fixed digital plan.`;
+                        ? `RX1 scans ${bandLabel} PHONE with 12 kHz IQ windows across ${defaultPhoneText} and looks for confirmed 2-3 kHz phone clusters. RX0 stays idle while the rest of this Kiwi stays unassigned.`
+                        : `RX0 scans ${bandLabel} CW anchors while RX1 scans ${bandLabel} Phone with 12 kHz IQ windows across ${defaultPhoneText} and looks for confirmed 2-3 kHz phone clusters. After the CW anchor sweep, RX0 records each CW hit for 60s. The rest of this Kiwi stays unassigned.`;
             if (noteEl) {
                 const followupStatus = safeText(followup && followup.status, "idle").toLowerCase();
                 noteEl.textContent = scan.last_error
@@ -12487,7 +12852,7 @@ ${passwordMarkup.actionsHtml}
             receiverScanPendingAction = "stop";
             syncReceiverScanControls();
             try {
-                const result = await postJson("/receiver_scan/deactivate", {});
+                const result = await postJson("/receiver_scan/deactivate", activeKiwiTargetPayload({}));
                 applyReceiverScanStatus(result);
                 return result;
             } catch (err) {
@@ -12503,7 +12868,7 @@ ${passwordMarkup.actionsHtml}
             netMonitorPendingAction = "stop";
             syncNetMonitorControls();
             try {
-                const result = await postJson("/net_monitor/deactivate", {});
+                const result = await postJson("/net_monitor/deactivate", activeKiwiTargetPayload({}));
                 applyNetMonitorStatus(result);
                 return result;
             } catch (err) {
@@ -12519,7 +12884,7 @@ ${passwordMarkup.actionsHtml}
             captionMonitorPendingAction = "stop";
             syncCaptionMonitorControls();
             try {
-                const result = await postJson("/caption/deactivate", {});
+                const result = await postJson("/caption/deactivate", activeKiwiTargetPayload({}));
                 applyCaptionMonitorStatus(result);
                 return result;
             } catch (err) {
@@ -12606,6 +12971,7 @@ ${passwordMarkup.actionsHtml}
                 btn.setAttribute("aria-pressed", isAutoToggle || btn.dataset.mode === normalizedMode ? "true" : "false");
             });
             if (options.persist !== false) storeReceiversMode(normalizedMode);
+            updateDecodeStreamActivityChip();
         }
 
         function getCurrentReceiversMode() {
@@ -12617,6 +12983,21 @@ ${passwordMarkup.actionsHtml}
                 }
             }
             return fallback;
+        }
+
+        function receiversModeShowsDecodeOverview(mode = getCurrentReceiversMode()) {
+            const normalizedMode = normalizeReceiversMode(mode, "auto");
+            return normalizedMode === "auto" || normalizedMode === "semi";
+        }
+
+        function isOverviewTopicModeVisible(key, mode = getCurrentReceiversMode()) {
+            const topicKey = String(key || "").trim();
+            const normalizedMode = normalizeReceiversMode(mode, "auto");
+            if (topicKey === "receiver-scan") return normalizedMode === "scan";
+            if (topicKey === "assignments" || topicKey === "messages" || topicKey === "map") {
+                return receiversModeShowsDecodeOverview(normalizedMode);
+            }
+            return true;
         }
 
         function applyStoredReceiversModePreference() {
@@ -12646,8 +13027,8 @@ ${passwordMarkup.actionsHtml}
             syncReceiverScanControls();
             try {
                 const result = band
-                    ? await postJson("/receiver_scan/start", { band: targetBand, mode: targetRole })
-                    : await postJson("/receiver_scan/start", { mode: targetRole });
+                    ? await postJson("/receiver_scan/start", activeKiwiTargetPayload({ band: targetBand, mode: targetRole }))
+                    : await postJson("/receiver_scan/start", activeKiwiTargetPayload({ mode: targetRole }));
                 const startedBand = normalizeReceiverScanBand(result && result.band, targetBand);
                 const bandMismatch = !!band && startedBand !== targetBand;
                 applyReceiverScanStatus(result);
@@ -12682,7 +13063,7 @@ ${passwordMarkup.actionsHtml}
                 setReceiversMode("scan");
                 applyAutoModeVisibility(false);
                 if (typeof window.kiwiProSetView === "function") window.kiwiProSetView("receiver-scan", true);
-                const result = await postJson("/net_monitor/start", {});
+                const result = await postJson("/net_monitor/start", activeKiwiTargetPayload({}));
                 applyNetMonitorStatus(result);
                 setAutomationStatus(result && (result.running || result.activating)
                     ? "20m NET monitor active"
@@ -12702,7 +13083,7 @@ ${passwordMarkup.actionsHtml}
             netMonitorPendingAction = "stop";
             syncNetMonitorControls();
             try {
-                const result = await postJson("/net_monitor/deactivate", {});
+                const result = await postJson("/net_monitor/deactivate", activeKiwiTargetPayload({}));
                 applyNetMonitorStatus(result);
                 setAutomationStatus("20m NET monitor stopped");
             } catch (err) {
@@ -12735,12 +13116,12 @@ ${passwordMarkup.actionsHtml}
                 setReceiversMode("scan");
                 applyAutoModeVisibility(false);
                 if (typeof window.kiwiProSetView === "function") window.kiwiProSetView("receiver-scan", true);
-                const result = await postJson("/caption/start", {
+                const result = await postJson("/caption/start", activeKiwiTargetPayload({
                     freq_khz: controls.freqKHz,
                     rx_chan: controls.rxChan,
                     chunk_duration_s: controls.durationS,
                     max_chunks: 0,
-                });
+                }));
                 applyCaptionMonitorStatus(result);
                 setAutomationStatus(result && (result.running || result.starting)
                     ? `Captions active on ${fmtCaptionFreqKHz(result.freq_khz || controls.freqKHz)}`
@@ -12760,7 +13141,7 @@ ${passwordMarkup.actionsHtml}
             captionMonitorPendingAction = "stop";
             syncCaptionMonitorControls();
             try {
-                const result = await postJson("/caption/stop", {});
+                const result = await postJson("/caption/stop", activeKiwiTargetPayload({}));
                 applyCaptionMonitorStatus(result);
                 setAutomationStatus("Caption monitor stopping after the current chunk");
             } catch (err) {
@@ -12776,7 +13157,7 @@ ${passwordMarkup.actionsHtml}
             netMonitorCapturePending = true;
             syncNetMonitorControls();
             try {
-                const result = await postJson("/net_monitor/capture", { duration_s: NET_MONITOR_CAPTURE_DURATION_S });
+                const result = await postJson("/net_monitor/capture", activeKiwiTargetPayload({ duration_s: NET_MONITOR_CAPTURE_DURATION_S }));
                 netMonitorCapturePending = false;
                 applyNetMonitorStatus(result);
                 setAutomationStatus(result && result.capture && result.capture.running
@@ -12797,7 +13178,7 @@ ${passwordMarkup.actionsHtml}
             receiverScanPendingAction = "stop";
             syncReceiverScanControls();
             try {
-                const result = await postJson("/receiver_scan/stop", {});
+                const result = await postJson("/receiver_scan/stop", activeKiwiTargetPayload({}));
                 applyReceiverScanStatus(result);
                 if (!options.quiet) setAutomationStatus("Receiver Scan stopping...");
                 return result;
@@ -12879,6 +13260,7 @@ ${passwordMarkup.actionsHtml}
                     getJson("/config"),
                     getJson("/automation/settings"),
                 ]);
+                latestAutomationSettings = auto && typeof auto === "object" ? { ...auto } : {};
                 const storedThemeMode = readStoredUiThemeMode();
                 const storedNightHour = readStoredUiThemeNightHour();
                 const storedHourOffset = readStoredUiThemeHourOffset();
@@ -12899,7 +13281,6 @@ ${passwordMarkup.actionsHtml}
                     auto.uiDensity,
                     currentUiDensity || storedDensity || UI_DENSITY_DEFAULT_MODE,
                 );
-                const nextOverviewTopics = normalizeOverviewTopicPrefs(auto.overviewTopics, readStoredOverviewTopicPrefs());
                 const nextConfiguredKiwis = normalizeConfiguredKiwiEntries(
                     Array.isArray(cfg.kiwisdrs) && cfg.kiwisdrs.length
                         ? cfg.kiwisdrs
@@ -12912,9 +13293,28 @@ ${passwordMarkup.actionsHtml}
                         }],
                     { preserveBlankHost: true },
                 );
+                latestPersistedConfiguredKiwiEntries = nextConfiguredKiwis.slice(0, MAX_CONFIGURED_KIWIS);
                 activeConfiguredKiwiIndex = normalizeActiveConfiguredKiwiIndex(cfg.active_kiwi_index, nextConfiguredKiwis);
+                const nextProfile = resolveKiwiUiProfile(latestAutomationSettings, {
+                    entries: nextConfiguredKiwis,
+                    index: normalizeActiveConfiguredKiwiIndex(cfg.active_kiwi_index, nextConfiguredKiwis),
+                });
+                const nextOverviewTopics = normalizeOverviewTopicPrefs(nextProfile.overviewTopics, readStoredOverviewTopicPrefs());
+                latestAutomationSettings = {
+                    ...latestAutomationSettings,
+                    receiversMode: nextProfile.receiversMode,
+                    fixedModeEnabled: nextProfile.receiversMode !== "manual",
+                    overviewTopics: nextOverviewTopics,
+                };
                 updateDiscoveredKiwiState(cfg.discovered_kiwis, { source: cfg.discovery_source });
                 renderConfiguredKiwiSettings(nextConfiguredKiwis, cfg.discovered_kiwis);
+                activeConfiguredKiwiIndex = resolveDisplayConfiguredKiwiIndex(
+                    cfg.active_kiwi_index,
+                    latestConfiguredKiwiEntries,
+                    latestPersistedConfiguredKiwiEntries,
+                );
+                renderTopbarKiwiSelector(latestConfiguredKiwiEntries);
+                syncTopbarMenuState();
                 setKiwiPasswordUiState(!!cfg.kiwi_password_set);
                 setKiwiAdminPasswordUiState(!!cfg.kiwi_admin_password_set);
                 const nextKiwiSettings = normalizeKiwiSettingsSnapshot(getActiveConfiguredKiwiEntry(collectConfiguredKiwiInputs({ includeBlank: true })));
@@ -12934,6 +13334,8 @@ ${passwordMarkup.actionsHtml}
                     useLaunchd: !!auto.useLaunchd,
                 });
                 applyAndPersistUiPreferences(nextThemeMode, nextDensity, nextNightHour, nextHourOffset);
+                setReceiversMode(nextProfile.receiversMode);
+                applyAutoModeVisibility(nextProfile.receiversMode);
                 applyOverviewTopicPrefs(nextOverviewTopics);
                 const kiwiLat = Number(cfg.kiwi_latitude);
                 const kiwiLon = Number(cfg.kiwi_longitude);
@@ -13038,6 +13440,7 @@ ${passwordMarkup.actionsHtml}
             setConfigStatus(autosave ? "autosaving Kiwi settings..." : "saving Kiwi settings...");
             try {
                 const saveResult = await postJson("/config", payload);
+                latestPersistedConfiguredKiwiEntries = preserveConfiguredKiwiEntryOrder(currentEntries, latestPersistedConfiguredKiwiEntries);
                 applySavedKiwiDiscoveryState(saveResult, currentEntries);
                 if (savedPassword) setKiwiPasswordUiState(true);
                 if (savedAdminPassword) setKiwiAdminPasswordUiState(true);
@@ -13052,14 +13455,25 @@ ${passwordMarkup.actionsHtml}
 
         async function saveActiveConfiguredKiwiSelection(index) {
             const entries = collectConfiguredKiwiInputs({ includeBlank: true });
-            const nextIndex = normalizeActiveConfiguredKiwiIndex(index, entries);
-            if (nextIndex === activeConfiguredKiwiIndex && !activeConfiguredKiwiSaveInFlight) return true;
+            const nextDisplayIndex = normalizeActiveConfiguredKiwiIndex(index, entries);
+            if (nextDisplayIndex === activeConfiguredKiwiIndex && !activeConfiguredKiwiSaveInFlight) return true;
             const previousIndex = activeConfiguredKiwiIndex;
-            activeConfiguredKiwiIndex = nextIndex;
+            const capturedKiwiProfiles = captureKiwiUiProfiles(latestAutomationSettings, {
+                entries,
+                index: previousIndex,
+                receiversMode: getCurrentReceiversMode(),
+                overviewTopics: collectOverviewTopicPrefsFromConfig(),
+            });
+            const nextProfile = resolveKiwiUiProfile(latestAutomationSettings, {
+                entries,
+                index: nextDisplayIndex,
+                kiwiProfiles: capturedKiwiProfiles,
+            });
+            activeConfiguredKiwiIndex = nextDisplayIndex;
             activeConfiguredKiwiSaveInFlight = true;
             renderTopbarKiwiSelector(entries);
             syncTopbarMenuState();
-            setConfigStatus(`switching to KiwiSDR #${nextIndex + 1}...`);
+            setConfigStatus(`switching to KiwiSDR #${nextDisplayIndex + 1}...`);
             const ok = await saveConfiguredKiwiConfig({ autosave: true });
             activeConfiguredKiwiSaveInFlight = false;
             if (!ok) {
@@ -13068,24 +13482,15 @@ ${passwordMarkup.actionsHtml}
                 syncTopbarMenuState();
                 return false;
             }
-            try {
-                await postJson("/decodes/reset", {});
-            } catch (err) {
-                setConfigStatus(`switched to KiwiSDR #${nextIndex + 1}, but decode reset failed: ${String((err && err.message) || err)}`);
-            }
-            resetDecodeDashboardState();
-            if (nextIndex === 1) {
-                try {
-                    await postJson("/admin/force-reassign", {});
-                    setConfigStatus("switched to KiwiSDR #2, reset decode stats, and restarting receiver assignments...");
-                } catch (err) {
-                    setConfigStatus(`switched to KiwiSDR #2 and reset decode stats, but receiver reassign failed: ${String((err && err.message) || err)}`);
-                }
-            } else {
-                setConfigStatus(`switched to KiwiSDR #${nextIndex + 1} and reset decode stats`);
-            }
+            latestAutomationSettings = {
+                ...(latestAutomationSettings && typeof latestAutomationSettings === "object" ? latestAutomationSettings : {}),
+                kiwiProfiles: capturedKiwiProfiles,
+            };
+            await applyActiveKiwiUiProfile(nextProfile, { applyRuntime: false });
+            setConfigStatus(`switched to KiwiSDR #${nextDisplayIndex + 1} with ${receiversModeStatusLabel(nextProfile.receiversMode)}`);
             renderTopbarKiwiSelector(entries);
             syncTopbarMenuState();
+            resetDecodeDashboardState();
             await refresh();
             return true;
         }
@@ -13104,6 +13509,13 @@ ${passwordMarkup.actionsHtml}
                 fast_scan_enabled: readSelectBool("cfg-fast-scan-enabled", true),
             };
             const currentEntries = Array.isArray(payload.kiwisdrs) ? payload.kiwisdrs : [];
+            const currentOverviewTopics = collectOverviewTopicPrefsFromConfig();
+            const kiwiProfiles = captureKiwiUiProfiles(latestAutomationSettings, {
+                entries: collectConfiguredKiwiInputs({ includeBlank: true }),
+                index: activeConfiguredKiwiIndex,
+                receiversMode: getCurrentReceiversMode(),
+                overviewTopics: currentOverviewTopics,
+            });
             const savedPassword = typeof payload.kiwi_password === "string" && payload.kiwi_password.length > 0;
             const savedAdminPassword = typeof payload.kiwi_admin_password === "string" && payload.kiwi_admin_password.length > 0;
             const automationPayload = {
@@ -13113,7 +13525,8 @@ ${passwordMarkup.actionsHtml}
                 uiDensity: readTextInput("cfg-ui-density", "normal"),
                 headlessEnabled: readServiceToggle("headlessEnabled", true),
                 useLaunchd: readServiceToggle("useLaunchd", false),
-                overviewTopics: collectOverviewTopicPrefsFromConfig(),
+                overviewTopics: currentOverviewTopics,
+                kiwiProfiles,
             };
             authoritativeUiThemeNightHour = clampUiThemeHour(automationPayload.uiThemeNightHour);
             authoritativeUiThemeHourOffset = clampUiThemeHourOffset(automationPayload.uiThemeHourOffset);
@@ -13259,6 +13672,12 @@ ${passwordMarkup.actionsHtml}
             authoritativeUiThemeNightHour = 21;
             authoritativeUiThemeHourOffset = 0;
             const resetOverviewTopics = defaultOverviewTopicPrefs();
+            const resetKiwiProfiles = captureKiwiUiProfiles(latestAutomationSettings, {
+                entries: collectConfiguredKiwiInputs({ includeBlank: true }),
+                index: activeConfiguredKiwiIndex,
+                receiversMode: getCurrentReceiversMode(),
+                overviewTopics: resetOverviewTopics,
+            });
             applyOverviewTopicPrefs(resetOverviewTopics);
             try {
                 await postJson("/automation/settings", {
@@ -13267,7 +13686,17 @@ ${passwordMarkup.actionsHtml}
                     uiThemeHourOffset: 0,
                     uiDensity: "normal",
                     overviewTopics: resetOverviewTopics,
+                    kiwiProfiles: resetKiwiProfiles,
                 });
+                latestAutomationSettings = {
+                    ...(latestAutomationSettings && typeof latestAutomationSettings === "object" ? latestAutomationSettings : {}),
+                    uiThemeMode: "auto",
+                    uiThemeNightHour: 21,
+                    uiThemeHourOffset: 0,
+                    uiDensity: "normal",
+                    overviewTopics: resetOverviewTopics,
+                    kiwiProfiles: resetKiwiProfiles,
+                };
                 applyAndPersistUiPreferences("auto", "normal", 21, 0);
                 setConfigStatus("UI preferences reset");
                 checkForUpdates();
@@ -13323,13 +13752,17 @@ ${passwordMarkup.actionsHtml}
                 const nextHourOffset = Number.isFinite(Number(a.uiThemeHourOffset))
                     ? clampUiThemeHourOffset(a.uiThemeHourOffset)
                     : clampUiThemeHourOffset(authoritativeUiThemeHourOffset || currentUiThemeHourOffset || storedHourOffset || UI_THEME_DEFAULT_HOUR_OFFSET);
-                const nextOverviewTopics = normalizeOverviewTopicPrefs(a.overviewTopics, overviewTopicPrefs);
+                const nextProfile = resolveKiwiUiProfile(latestAutomationSettings);
+                const nextOverviewTopics = normalizeOverviewTopicPrefs(nextProfile.overviewTopics, overviewTopicPrefs);
                 authoritativeUiThemeNightHour = nextNightHour;
                 authoritativeUiThemeHourOffset = nextHourOffset;
-                const savedReceiversMode = normalizeReceiversMode(
-                    a && typeof a === "object" ? a.receiversMode : null,
-                    a.fixedModeEnabled !== false ? "auto" : "manual",
-                );
+                const savedReceiversMode = nextProfile.receiversMode;
+                latestAutomationSettings = {
+                    ...latestAutomationSettings,
+                    receiversMode: savedReceiversMode,
+                    fixedModeEnabled: savedReceiversMode !== "manual",
+                    overviewTopics: nextOverviewTopics,
+                };
                 setReceiversMode(savedReceiversMode);
                 applyAutoModeVisibility(savedReceiversMode);
                 applyAndPersistUiPreferences(nextThemeMode, nextDensity, nextNightHour, nextHourOffset);
@@ -13381,15 +13814,28 @@ ${passwordMarkup.actionsHtml}
             );
             const bsGrid = readBandScheduleFromGrid();
             const currentMode = getCurrentReceiversMode();
+            const currentOverviewTopics = collectOverviewTopicPrefsFromConfig();
+            const kiwiEntries = collectConfiguredKiwiInputs({ includeBlank: true });
+            const kiwiProfiles = captureKiwiUiProfiles(snapshot, {
+                entries: kiwiEntries,
+                index: activeConfiguredKiwiIndex,
+                receiversMode: currentMode,
+                overviewTopics: currentOverviewTopics,
+            });
             const payload = {
                 ...snapshot,
                 receiversMode: currentMode,
                 fixedModeEnabled: currentMode !== "manual",
+                activeKiwiKey: getConfiguredKiwiProfileKey(kiwiEntries, activeConfiguredKiwiIndex),
+                kiwiModes: Object.fromEntries(
+                    Object.entries(kiwiProfiles).map(([k, p]) => [k, (p && p.receiversMode) || "auto"])
+                ),
                 uiThemeMode,
                 uiThemeNightHour,
                 uiThemeHourOffset,
                 uiDensity,
-                overviewTopics: overviewTopicPrefs,
+                overviewTopics: currentOverviewTopics,
+                kiwiProfiles,
                 ...(bsGrid !== null ? { scheduleProfiles: bsGrid } : {}),
             };
             try {
@@ -13752,6 +14198,7 @@ ${passwordMarkup.actionsHtml}
                     selected_bands: selectedBands,
                     band_modes: bandModes,
                     force: true,
+                    kiwi_key: getConfiguredKiwiProfileKey(collectConfiguredKiwiInputs({ includeBlank: true }), activeConfiguredKiwiIndex),
                 };
 
                 const res = await postJson("/auto_set_receivers", payload);
@@ -13821,6 +14268,9 @@ ${passwordMarkup.actionsHtml}
             if (mode !== "scan" && currentSectionNavId === "receiver-scan" && typeof window.kiwiProSetView === "function") {
                 window.kiwiProSetView("overview", true);
             }
+            if (typeof window.kiwiProSetView === "function") {
+                window.kiwiProSetView(currentSectionNavId || "overview", false);
+            }
             if (mode === "auto") applyAutoRoamingDecisionLabel();
         }
 
@@ -13840,12 +14290,13 @@ ${passwordMarkup.actionsHtml}
             while (Date.now() < deadline) {
                 try {
                     const [health, system] = await Promise.all([
-                        getJson("/health/rx"),
+                        getJson(activeKiwiHealthUrl()),
                         getJson("/system/info"),
                     ]);
                     if (system && typeof system === "object") {
                         latestSystemInfo = system;
                     }
+                    if (typeof window.kiwiProSetView === "function") window.kiwiProSetView("overview", false);
                     if (health && typeof health === "object") {
                         applyHealth(health);
                     } else if (latestSystemInfo) {
@@ -13934,11 +14385,15 @@ ${passwordMarkup.actionsHtml}
                 await deactivateNetMonitorMode({ quiet: true });
                 await deactivateReceiverScanMode({ quiet: true });
                 if (targetMode === "manual") {
-                    await postJson("/auto_set_receivers", { enabled: false });
+                    await postJson("/auto_set_receivers", {
+                        enabled: false,
+                        kiwi_key: getConfiguredKiwiProfileKey(collectConfiguredKiwiInputs({ includeBlank: true }), activeConfiguredKiwiIndex),
+                    });
                     setAutomationStatus("Manual Mode ON — waiting for receivers to stop...");
                     const result = await waitForReceiversModeTransition("manual");
                     setAutomationStatus(result.ok ? "Manual Mode ON — all receivers stopped" : result.message);
                     refresh();
+                    return !!result.ok;
                 } else {
                     if (targetMode === "semi") {
                         await postJson("/admin/clear-roaming-receivers", {});
@@ -13966,9 +14421,11 @@ ${passwordMarkup.actionsHtml}
                             : result.message
                     );
                     refresh();
+                    return !!result.ok;
                 }
             } catch (err) {
                 setAutomationStatus(`${receiversModeStatusLabel(targetMode)} toggle failed: ${String((err && err.message) || err)}`);
+                return false;
             } finally {
                 setReceiversBusy(false);
             }
@@ -13977,25 +14434,30 @@ ${passwordMarkup.actionsHtml}
         async function prepareReceiversScanMode() {
             setAutomationStatus("preparing scan mode...");
             setReceiversBusy(true, "Clearing RX0/RX1 assignments...");
+            receiverScanPreparePending = true;
             try {
                 await deactivateCaptionMonitorMode({ quiet: true });
                 await deactivateNetMonitorMode({ quiet: true });
                 await deactivateReceiverScanMode({ quiet: true });
                 setReceiversMode("scan");
                 applyAutoModeVisibility("scan");
-                if (typeof window.kiwiProSetView === "function") window.kiwiProSetView("receiver-scan", true);
 
-                const prepared = await postJson("/receiver_scan/prepare", {});
+                const prepared = await postJson("/receiver_scan/prepare", activeKiwiTargetPayload({}));
                 applyReceiverScanStatus(prepared);
+                receiverScanPreparePending = false;
+                syncReceiversModeFromBackendState();
 
                 receiverScanPendingAction = "";
                 receiverScanPendingBand = "";
                 syncReceiverScanControls();
-                setAutomationStatus("Scan mode ready — RX0/RX1 held unassigned while RX2-RX7 stay assigned. Choose a scan to start.");
+                setAutomationStatus("Scan mode ready — this Kiwi is unassigned until you start a scan.");
                 refresh();
+                return true;
             } catch (err) {
+                receiverScanPreparePending = false;
                 syncReceiversModeFromBackendState();
                 setAutomationStatus(`scan mode preparation failed: ${String((err && err.message) || err)}`);
+                return false;
             } finally {
                 setReceiversBusy(false);
             }
@@ -14399,7 +14861,7 @@ ${passwordMarkup.actionsHtml}
         async function pollDecodeDelta() {
             try {
                 if (!decodeCursorPrimed) {
-                    const seed = await getJson("/decodes?since=999999999");
+                    const seed = await getJson(activeKiwiDecodesUrl(999999999));
                     if (typeof seed.latest === "number") {
                         decodeCursor = Math.max(0, seed.latest);
                         try {
@@ -14412,7 +14874,7 @@ ${passwordMarkup.actionsHtml}
                     return { count: 0, primed: true };
                 }
 
-                const data = await getJson(`/decodes?since=${encodeURIComponent(decodeCursor)}`);
+                const data = await getJson(activeKiwiDecodesUrl(decodeCursor));
                 const latestServer = Number(data && data.latest);
                 if (Number.isFinite(latestServer) && latestServer >= 0 && latestServer < decodeCursor) {
                     decodeCursor = latestServer;
@@ -15315,7 +15777,7 @@ ${passwordMarkup.actionsHtml}
             };
 
             const isNavVisible = (navId) => {
-                if (navId === "receiver-scan") return getCurrentReceiversMode() === "scan";
+                if (!isOverviewTopicModeVisible(navId)) return false;
                 if (!overviewLinkedNavIds.has(navId)) return true;
                 return !!overviewTopicPrefs[navId];
             };
@@ -15363,7 +15825,7 @@ ${passwordMarkup.actionsHtml}
                     show(layout, false);
                     show(rightCol, false);
                     OVERVIEW_TOPIC_KEYS.forEach((key) => {
-                        show(getOverviewTopicSectionElement(key), !!overviewTopicPrefs[key]);
+                        show(getOverviewTopicSectionElement(key), !!overviewTopicPrefs[key] && isOverviewTopicModeVisible(key));
                     });
                 } else {
                     show(overviewBoard, false);
@@ -15692,7 +16154,51 @@ ${passwordMarkup.actionsHtml}
             return { label: "Current HF conditions are poor", pointerClass: "is-low" };
         }
 
+        function hfConditionsEnabledForAllConfiguredKiwis() {
+            const rawEntries = Array.isArray(latestPersistedConfiguredKiwiEntries) && latestPersistedConfiguredKiwiEntries.length
+                ? latestPersistedConfiguredKiwiEntries
+                : (Array.isArray(latestConfiguredKiwiEntries) && latestConfiguredKiwiEntries.length
+                    ? latestConfiguredKiwiEntries
+                    : collectConfiguredKiwiInputs({ includeBlank: true }));
+            const sourceEntries = Array.isArray(rawEntries) && rawEntries.length
+                ? rawEntries
+                : [buildDefaultConfiguredKiwiEntry()];
+            const snapshot = latestAutomationSettings && typeof latestAutomationSettings === "object"
+                ? latestAutomationSettings
+                : {};
+            const defaultProfile = defaultKiwiUiProfile(snapshot);
+            const profiles = normalizeKiwiUiProfiles(snapshot.kiwiProfiles, snapshot);
+            const activeProfileKey = getConfiguredKiwiProfileKey(sourceEntries, activeConfiguredKiwiIndex);
+            if (activeProfileKey) {
+                profiles[activeProfileKey] = normalizeKiwiUiProfile({
+                    ...(profiles[activeProfileKey] && typeof profiles[activeProfileKey] === "object" ? profiles[activeProfileKey] : {}),
+                    receiversMode: getCurrentReceiversMode(),
+                }, defaultProfile);
+            }
+
+            let configuredCount = 0;
+            for (const [index, rawEntry] of sourceEntries.entries()) {
+                const entry = normalizeConfiguredKiwiEntry(rawEntry, { preserveBlankHost: true }) || buildDefaultConfiguredKiwiEntry();
+                if (!isConfiguredKiwiHost(entry.host)) continue;
+                configuredCount += 1;
+                const profileKey = configuredKiwiEntryIdentity(entry, index);
+                const profile = profileKey && profiles[profileKey]
+                    ? normalizeKiwiUiProfile(profiles[profileKey], defaultProfile)
+                    : defaultProfile;
+                const mode = normalizeReceiversMode(profile.receiversMode, defaultProfile.receiversMode);
+                if (mode !== "auto" && mode !== "semi") return false;
+            }
+            return configuredCount > 0;
+        }
+
         function updateDecodeStreamActivityChip() {
+            const activityEl = byId("chip-stream-activity");
+            const showHfConditions = hfConditionsEnabledForAllConfiguredKiwis();
+            if (activityEl) {
+                activityEl.hidden = !showHfConditions;
+                activityEl.style.display = showHfConditions ? "" : "none";
+            }
+            if (!showHfConditions) return;
             const percentEl = byId("chip-stream-activity-percent");
             const barEl = byId("chip-stream-activity-bar");
             const pointerEl = byId("chip-stream-activity-pointer");
@@ -15824,6 +16330,11 @@ ${passwordMarkup.actionsHtml}
                         if (payload && typeof payload === "object") {
                             wsLastMessageMs = Date.now();
                             wsMessageBurst += 1;
+                            const activeKiwiKey = String(getActiveRuntimeKiwiKey() || "").trim();
+                            const payloadKiwiKey = String(payload.kiwi_key || "").trim();
+                            if (activeKiwiKey && payloadKiwiKey && payloadKiwiKey !== activeKiwiKey) {
+                                return;
+                            }
                             ingestDecodeItem(payload, { renderList: false, renderMap: false });
                             scheduleRecentDecodePanelRender();
                             schedulePropagationMapRender();
@@ -15962,37 +16473,74 @@ ${passwordMarkup.actionsHtml}
                         return `<div class="rx-pill-stack"><span class="rx-id-pill" style="color:${rxColor(r.rxNum)}">${displayRx}</span>${modeLabelHtml}</div>`;
                     }).join("");
                     const heartColor = level === "fault" ? "#f87171" : level === "warning" ? "#f59e0b" : "#4ade80";
-                    // Aggregate decode rates by mode across all receivers on this band
+                    // Aggregate decode rates by mode across all receivers on this band.
+                    // When an active Kiwi is selected, prefer the per-Kiwi published stats
+                    // so RX numbers from other Kiwis do not bleed into this card.
                     const modeOrder = [];
                     const modeAgg = {};
-                    for (const r of bandRows) {
-                        const rch = latestChannelsMap[String(r.rxNum)] || {};
-                        const publishedRxStats = latestPublishedDecodeStatsByRx[String(r.rxNum)] || {};
-                        const publishedBandStats = (publishedRxStats.bands && typeof publishedRxStats.bands === "object")
-                            ? (publishedRxStats.bands[String(r.band)] || {})
+                    const activeKiwiKey = getActiveRuntimeKiwiKey();
+                    if (activeKiwiKey) {
+                        const kiwiStats = latestPublishedDecodeStatsByKiwi[activeKiwiKey] || {};
+                        const kiwiBands = (kiwiStats.bands && typeof kiwiStats.bands === "object") ? kiwiStats.bands : {};
+                        const kiwiBandStats = (kiwiBands[String(band)] && typeof kiwiBands[String(band)] === "object")
+                            ? kiwiBands[String(band)]
                             : {};
-                        const publishedByMode = (publishedBandStats.decode_rates_by_mode && typeof publishedBandStats.decode_rates_by_mode === "object")
-                            ? publishedBandStats.decode_rates_by_mode
+                        const kiwiByMode = (kiwiBandStats.decode_rates_by_mode && typeof kiwiBandStats.decode_rates_by_mode === "object")
+                            ? kiwiBandStats.decode_rates_by_mode
                             : {};
-                        const fallbackByMode = rch.decode_rates_by_mode || {};
-                        const subModes = String(r.mode || "").split(" / ").map((m) => m.trim()).filter(Boolean);
-                        if (subModes.length > 1) {
-                            for (const m of subModes) {
-                                if (!modeAgg[m]) { modeAgg[m] = { pm: null, ph: null, tot: null }; modeOrder.push(m); }
-                                const ms = publishedByMode[m] || fallbackByMode[m] || {};
-                                if (ms.decode_rate_per_min != null) modeAgg[m].pm = (modeAgg[m].pm ?? 0) + Number(ms.decode_rate_per_min);
-                                if (ms.decode_rate_per_hour != null) modeAgg[m].ph = (modeAgg[m].ph ?? 0) + Number(ms.decode_rate_per_hour);
-                                if (ms.decode_total != null) modeAgg[m].tot = (modeAgg[m].tot ?? 0) + Number(ms.decode_total);
+                        const seenModes = new Set();
+                        for (const r of bandRows) {
+                            const subModes = String(r.mode || "").split(" / ").map((m) => m.trim()).filter(Boolean);
+                            const rowModes = subModes.length ? subModes : [String(r.mode || "").trim()].filter(Boolean);
+                            for (const modeName of rowModes) {
+                                if (!modeName || seenModes.has(modeName)) continue;
+                                seenModes.add(modeName);
+                                modeOrder.push(modeName);
                             }
-                        } else {
-                            const m = subModes[0] || r.mode;
-                            if (!modeAgg[m]) { modeAgg[m] = { pm: null, ph: null, tot: null }; modeOrder.push(m); }
-                            if (publishedBandStats.decode_rate_per_min != null) modeAgg[m].pm = (modeAgg[m].pm ?? 0) + Number(publishedBandStats.decode_rate_per_min);
-                            else if (rch.decode_rate_per_min != null) modeAgg[m].pm = (modeAgg[m].pm ?? 0) + Number(rch.decode_rate_per_min);
-                            if (publishedBandStats.decode_rate_per_hour != null) modeAgg[m].ph = (modeAgg[m].ph ?? 0) + Number(publishedBandStats.decode_rate_per_hour);
-                            else if (rch.decode_rate_per_hour != null) modeAgg[m].ph = (modeAgg[m].ph ?? 0) + Number(rch.decode_rate_per_hour);
-                            if (publishedBandStats.decode_total != null) modeAgg[m].tot = (modeAgg[m].tot ?? 0) + Number(publishedBandStats.decode_total);
-                            else if (rch.decode_total != null) modeAgg[m].tot = (modeAgg[m].tot ?? 0) + Number(rch.decode_total);
+                        }
+                        for (const modeName of Object.keys(kiwiByMode)) {
+                            if (!modeName || seenModes.has(modeName)) continue;
+                            seenModes.add(modeName);
+                            modeOrder.push(modeName);
+                        }
+                        for (const modeName of modeOrder) {
+                            const stats = kiwiByMode[modeName] || {};
+                            modeAgg[modeName] = {
+                                pm: Math.max(0, Number(stats.decode_rate_per_min) || 0),
+                                ph: Math.max(0, Number(stats.decode_rate_per_hour) || 0),
+                                tot: Math.max(0, Number(stats.decode_total) || 0),
+                            };
+                        }
+                    } else {
+                        for (const r of bandRows) {
+                            const rch = latestChannelsMap[String(r.rxNum)] || {};
+                            const publishedRxStats = latestPublishedDecodeStatsByRx[String(r.rxNum)] || {};
+                            const publishedBandStats = (publishedRxStats.bands && typeof publishedRxStats.bands === "object")
+                                ? (publishedRxStats.bands[String(r.band)] || {})
+                                : {};
+                            const publishedByMode = (publishedBandStats.decode_rates_by_mode && typeof publishedBandStats.decode_rates_by_mode === "object")
+                                ? publishedBandStats.decode_rates_by_mode
+                                : {};
+                            const fallbackByMode = rch.decode_rates_by_mode || {};
+                            const subModes = String(r.mode || "").split(" / ").map((m) => m.trim()).filter(Boolean);
+                            if (subModes.length > 1) {
+                                for (const m of subModes) {
+                                    if (!modeAgg[m]) { modeAgg[m] = { pm: null, ph: null, tot: null }; modeOrder.push(m); }
+                                    const ms = publishedByMode[m] || fallbackByMode[m] || {};
+                                    if (ms.decode_rate_per_min != null) modeAgg[m].pm = (modeAgg[m].pm ?? 0) + Number(ms.decode_rate_per_min);
+                                    if (ms.decode_rate_per_hour != null) modeAgg[m].ph = (modeAgg[m].ph ?? 0) + Number(ms.decode_rate_per_hour);
+                                    if (ms.decode_total != null) modeAgg[m].tot = (modeAgg[m].tot ?? 0) + Number(ms.decode_total);
+                                }
+                            } else {
+                                const m = subModes[0] || r.mode;
+                                if (!modeAgg[m]) { modeAgg[m] = { pm: null, ph: null, tot: null }; modeOrder.push(m); }
+                                if (publishedBandStats.decode_rate_per_min != null) modeAgg[m].pm = (modeAgg[m].pm ?? 0) + Number(publishedBandStats.decode_rate_per_min);
+                                else if (rch.decode_rate_per_min != null) modeAgg[m].pm = (modeAgg[m].pm ?? 0) + Number(rch.decode_rate_per_min);
+                                if (publishedBandStats.decode_rate_per_hour != null) modeAgg[m].ph = (modeAgg[m].ph ?? 0) + Number(publishedBandStats.decode_rate_per_hour);
+                                else if (rch.decode_rate_per_hour != null) modeAgg[m].ph = (modeAgg[m].ph ?? 0) + Number(rch.decode_rate_per_hour);
+                                if (publishedBandStats.decode_total != null) modeAgg[m].tot = (modeAgg[m].tot ?? 0) + Number(publishedBandStats.decode_total);
+                                else if (rch.decode_total != null) modeAgg[m].tot = (modeAgg[m].tot ?? 0) + Number(rch.decode_total);
+                            }
                         }
                     }
                     const MODE_SORT_ORDER = ["FT4", "FT8", "WSPR", "SSB"];
@@ -16915,7 +17463,7 @@ ${passwordMarkup.actionsHtml}
             const endpointEl = byId("chip-server-endpoint");
             const labelText = safeText(options && options.labelText, "Kiwi Server");
             const endpointHtml = safeText(options && options.endpointHtml, "");
-            if (labelEl) labelEl.textContent = labelText;
+            if (labelEl) setDecoratedLabelText(labelEl, labelText);
             if (statusEl) statusEl.textContent = statusText;
             if (endpointEl) {
                 if (endpointHtml) {
@@ -16977,25 +17525,49 @@ ${passwordMarkup.actionsHtml}
             return sortDiscoveredKiwiEntries(merged);
         }
 
+        function buildServerChipDisplayIndexByConfiguredKey(
+            configuredEntries = latestConfiguredKiwiEntries,
+            discoveredEntries = latestDiscoveredKiwiEntries,
+            fallbackDiscoveredEntries = [],
+        ) {
+            const configured = normalizeConfiguredKiwiEntries(configuredEntries);
+            const discovered = mergeServerChipDiscoveredEntries(discoveredEntries, fallbackDiscoveredEntries);
+            const localEntries = sortDiscoveredKiwiEntries(discovered.filter((entry) => isLocalServerChipEntry(entry)));
+            const localKeys = new Set(localEntries.map((entry) => `${safeText(entry && entry.host, "")}:${Number(entry && entry.port) || 0}`));
+            const remoteEntries = configured.filter((entry) => !localKeys.has(`${safeText(entry && entry.host, "")}:${Number(entry && entry.port) || 0}`));
+            const displayIndexByKey = new Map();
+
+            localEntries.forEach((entry, index) => {
+                const key = `${safeText(entry && entry.host, "")}:${Number(entry && entry.port) || 0}`;
+                displayIndexByKey.set(key, index + 1);
+            });
+
+            remoteEntries.forEach((entry, index) => {
+                const key = `${safeText(entry && entry.host, "")}:${Number(entry && entry.port) || 0}`;
+                displayIndexByKey.set(key, localEntries.length + index + 1);
+            });
+
+            return displayIndexByKey;
+        }
+
         function buildServerChipEndpointHtml(localEntries = [], remoteEntries = []) {
             const lines = [];
-            const configuredIndexByKey = new Map(
-                normalizeConfiguredKiwiEntries(latestConfiguredKiwiEntries)
-                    .map((entry, index) => [`${safeText(entry && entry.host, "")}:${Number(entry && entry.port) || 0}`, index + 1]),
-            );
+            const buildKiwiAdminUrl = (host, port) => {
+                const hostText = safeText(host, "").trim();
+                const normalizedHost = hostText.includes(":") && !hostText.startsWith("[") ? `[${hostText}]` : hostText;
+                const portNumber = Number(port) || 0;
+                return `http://${normalizedHost}:${portNumber}/admin`;
+            };
             const pushEntry = (displayIndex, host, port) => {
+                const endpointText = `${host}:${port}`;
+                const adminUrl = buildKiwiAdminUrl(host, port);
                 lines.push(
-                    `<div class="server-chip-entry">${escapeHtml(`KiwiSDR ${displayIndex}`)} - ${escapeHtml(`${host}:${port}`)}</div>`,
+                    `<div class="server-chip-entry">${escapeHtml(`KiwiSDR ${displayIndex}`)} - <a class="server-chip-link" href="${escapeHtml(adminUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(endpointText)}</a></div>`,
                 );
             };
 
             localEntries.forEach((entry, index) => {
-                const key = `${safeText(entry && entry.host, "")}:${Number(entry && entry.port) || 0}`;
-                const configuredDisplayIndex = Number(configuredIndexByKey.get(key));
-                const knownOrder = Number(entry && entry.known_order);
-                const displayIndex = Number.isFinite(configuredDisplayIndex)
-                    ? configuredDisplayIndex
-                    : (Number.isFinite(knownOrder) ? knownOrder + 1 : index + 1);
+                const displayIndex = index + 1;
                 pushEntry(displayIndex, safeText(entry && entry.host, "--"), Number(entry && entry.port) || 0);
             });
 
@@ -17003,8 +17575,8 @@ ${passwordMarkup.actionsHtml}
                 lines.push(
                     `<div class="server-chip-section-heading"><span class="server-chip-section-icon">${UI_ICONS.server || ""}</span><span>${escapeHtml(formatServerChipTitle(remoteEntries.length, "Remote"))}</span></div>`,
                 );
-                remoteEntries.forEach((entry) => {
-                    const displayIndex = Number(entry && entry.displayIndex) || 1;
+                remoteEntries.forEach((entry, index) => {
+                    const displayIndex = localEntries.length + index + 1;
                     pushEntry(displayIndex, safeText(entry && entry.host, "--"), Number(entry && entry.port) || 0);
                 });
             }
@@ -17022,7 +17594,6 @@ ${passwordMarkup.actionsHtml}
             const localEntries = sortDiscoveredKiwiEntries(discovered.filter((entry) => isLocalServerChipEntry(entry)));
             const localKeys = new Set(localEntries.map((entry) => `${safeText(entry && entry.host, "")}:${Number(entry && entry.port) || 0}`));
             const remoteEntries = normalizeConfiguredKiwiEntries(latestConfiguredKiwiEntries)
-                .map((entry, index) => ({ ...entry, displayIndex: index + 1 }))
                 .filter((entry) => !localKeys.has(`${entry.host}:${entry.port}`));
             const totalKnownCount = localEntries.length + remoteEntries.length;
             if (totalKnownCount > 0) {
@@ -17050,6 +17621,9 @@ ${passwordMarkup.actionsHtml}
             latestPublishedDecodeStatsByRx = (s.published_decode_stats_by_rx && typeof s.published_decode_stats_by_rx === "object")
                 ? s.published_decode_stats_by_rx
                 : {};
+            latestPublishedDecodeStatsByKiwi = (s.published_decode_stats_by_kiwi && typeof s.published_decode_stats_by_kiwi === "object")
+                ? s.published_decode_stats_by_kiwi
+                : {};
             renderAssignments(latestAssignments);
             renderAssignmentBalance(latestAssignments);
             if (latestSystemInfo) renderSystemPanel(latestSystemInfo);
@@ -17069,10 +17643,12 @@ ${passwordMarkup.actionsHtml}
 
         function applyExecutiveSummary(status, health, ratePerMin) {
             currentDecodeRatePerMin = Math.max(0, Number(ratePerMin) || 0);
+            const activeKiwiKey = getActiveRuntimeKiwiKey();
             const counts = {};
             let recentDecodeTotal = 0;
             for (const item of recentDecodeItems) {
                 if (!item || typeof item !== "object") continue;
+                if (activeKiwiKey && String(item.kiwi_key || "").trim() !== activeKiwiKey) continue;
                 const band = String(item.band || "").trim();
                 if (!band || band.toLowerCase() === "control") continue;
                 recentDecodeTotal += 1;
@@ -17081,9 +17657,12 @@ ${passwordMarkup.actionsHtml}
 
             const publishedCounts = {};
             let publishedDecodeTotal = 0;
-            for (const rxStats of Object.values(latestPublishedDecodeStatsByRx || {})) {
-                const bands = rxStats && typeof rxStats === "object" && rxStats.bands && typeof rxStats.bands === "object"
-                    ? rxStats.bands
+            const publishedSources = activeKiwiKey
+                ? [latestPublishedDecodeStatsByKiwi[activeKiwiKey] || {}]
+                : Object.values(latestPublishedDecodeStatsByRx || {});
+            for (const statsSource of publishedSources) {
+                const bands = statsSource && typeof statsSource === "object" && statsSource.bands && typeof statsSource.bands === "object"
+                    ? statsSource.bands
                     : {};
                 for (const [band, bandStats] of Object.entries(bands)) {
                     const decodeTotal = Math.max(0, Number(bandStats && bandStats.decode_total) || 0);
@@ -17543,15 +18122,15 @@ ${passwordMarkup.actionsHtml}
 
                 // Fire all requests simultaneously but track whether each core endpoint
                 // has already been applied via its own .then() so we don't re-apply below.
-                const healthP = getJson("/health/rx", TIMEOUT).catch(() => null);
+                const healthP = getJson(activeKiwiHealthUrl(), TIMEOUT).catch(() => null);
                 const statusP = getJson("/decodes/status", TIMEOUT).catch(() => null);
                 const versionP = getJson("/version", TIMEOUT).catch(() => null);
                 const deltaP = pollDecodeDelta().catch(() => null);
-                const chartP = getJson("/decodes/chart", TIMEOUT).catch(() => null);
-                const receiverScanP = getJson("/receiver_scan/status", TIMEOUT).catch(() => null);
+                const chartP = getJson(activeKiwiDecodesChartUrl(), TIMEOUT).catch(() => null);
+                const receiverScanP = getJson(appendActiveKiwiKey("/receiver_scan/status"), TIMEOUT).catch(() => null);
                 const bandScanResultsP = getJson("/band_scan/results", TIMEOUT).catch(() => null);
-                const netMonitorP = getJson("/net_monitor/status", TIMEOUT).catch(() => null);
-                const captionMonitorP = getJson("/caption/status", TIMEOUT).catch(() => null);
+                const netMonitorP = getJson(appendActiveKiwiKey("/net_monitor/status"), TIMEOUT).catch(() => null);
+                const captionMonitorP = getJson(appendActiveKiwiKey("/caption/status"), TIMEOUT).catch(() => null);
 
                 // Apply core data the instant each endpoint responds — don't wait for all.
                 let appliedHealth = false, appliedStatus = false;

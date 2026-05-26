@@ -389,7 +389,7 @@ class DiscoveryManager:
             self.active_kiwi_index = 0
             return
         self.active_kiwi_index = self._normalize_active_kiwi_index(self.active_kiwi_index, self.configured_kiwis)
-        primary = self.configured_kiwis[self.active_kiwi_index]
+        primary = self.configured_kiwis[0]
         host = _normalize_kiwi_host(primary.get("host"))
         try:
             port = int(primary.get("port") or self.port)
@@ -413,11 +413,11 @@ class DiscoveryManager:
         if entries:
             self.active_kiwi_index = self._normalize_active_kiwi_index(self.active_kiwi_index, entries)
             if host != DEFAULT_KIWI_HOST:
-                active_entry = entries[self.active_kiwi_index]
-                active_entry["host"] = host
-                active_entry["port"] = int(self.port)
-                active_entry["latitude"] = float(self.latitude)
-                active_entry["longitude"] = float(self.longitude)
+                primary_entry = entries[0]
+                primary_entry["host"] = host
+                primary_entry["port"] = int(self.port)
+                primary_entry["latitude"] = float(self.latitude)
+                primary_entry["longitude"] = float(self.longitude)
             self.configured_kiwis = entries
             return entries
         if host == DEFAULT_KIWI_HOST:
@@ -486,15 +486,88 @@ class DiscoveryManager:
     def set_active_kiwi_index(self, index: object, *, save: bool = True) -> None:
         with self.lock:
             self.active_kiwi_index = self._normalize_active_kiwi_index(index, self.configured_kiwis)
-            if self.configured_kiwis:
-                self._apply_primary_configured_kiwi()
-                self.rx_chan = None
             if save:
                 self._save_config()
 
     def get_active_kiwi_index(self) -> int:
         with self.lock:
             return int(self._normalize_active_kiwi_index(self.active_kiwi_index, self.configured_kiwis))
+
+    @staticmethod
+    def _configured_kiwi_entry_key(entry: object) -> str:
+        if not isinstance(entry, dict):
+            return ""
+        host = _normalize_kiwi_host(entry.get("host"))
+        try:
+            port = int(entry.get("port") or 0)
+        except Exception:
+            port = 0
+        if host == DEFAULT_KIWI_HOST or not (1 <= port <= 65535):
+            return ""
+        return f"{host}:{port}"
+
+    def resolve_runtime_target(
+        self,
+        *,
+        kiwi_key: object | None = None,
+        kiwi_index: object | None = None,
+    ) -> dict[str, object]:
+        with self.lock:
+            entries = self._sanitize_configured_kiwis(self.configured_kiwis)
+            password = self.password
+
+            if kiwi_key is not None and str(kiwi_key).strip():
+                requested_key = str(kiwi_key).strip().lower()
+                for index, entry in enumerate(entries):
+                    entry_key = self._configured_kiwi_entry_key(entry)
+                    if entry_key and entry_key.lower() == requested_key:
+                        return {
+                            "host": str(entry["host"]),
+                            "port": int(entry["port"]),
+                            "password": password,
+                            "kiwi_index": int(index),
+                            "kiwi_key": entry_key,
+                        }
+                raise ValueError(f"Unknown Kiwi target: {str(kiwi_key).strip()}")
+
+            if kiwi_index is not None and str(kiwi_index).strip() != "":
+                if not entries:
+                    raise ValueError(f"Unknown Kiwi target index: {kiwi_index}")
+                try:
+                    requested_index = int(kiwi_index)
+                except Exception as exc:
+                    raise ValueError(f"Invalid Kiwi target index: {kiwi_index}") from exc
+                if requested_index < 0 or requested_index >= len(entries):
+                    raise ValueError(f"Unknown Kiwi target index: {kiwi_index}")
+                entry = entries[requested_index]
+                return {
+                    "host": str(entry["host"]),
+                    "port": int(entry["port"]),
+                    "password": password,
+                    "kiwi_index": int(requested_index),
+                    "kiwi_key": self._configured_kiwi_entry_key(entry),
+                }
+
+            if entries:
+                resolved_index = self._normalize_active_kiwi_index(self.active_kiwi_index, entries)
+                entry = entries[resolved_index]
+                return {
+                    "host": str(entry["host"]),
+                    "port": int(entry["port"]),
+                    "password": password,
+                    "kiwi_index": int(resolved_index),
+                    "kiwi_key": self._configured_kiwi_entry_key(entry),
+                }
+
+            host = _normalize_kiwi_host(self.host)
+            port = int(self.port)
+            return {
+                "host": host,
+                "port": port,
+                "password": password,
+                "kiwi_index": None,
+                "kiwi_key": "" if host == DEFAULT_KIWI_HOST else f"{host}:{port}",
+            }
 
     def set_discovered_kiwis(self, payload: object, *, save: bool = True) -> None:
         discovered: list[dict[str, object]] = []

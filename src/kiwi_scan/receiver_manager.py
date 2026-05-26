@@ -15,7 +15,7 @@ import json
 import urllib.parse
 import urllib.request
 import importlib.util
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Optional
 
@@ -206,6 +206,26 @@ class ReceiverAssignment:
     user_label_override: Optional[str] = None
 
 
+@dataclass
+class _RuntimeTargetState:
+    host: str
+    port: int
+    resource_slot: int = 0
+    workers: Dict[int, "_ReceiverWorker"] = field(default_factory=dict)
+    assignments: Dict[int, ReceiverAssignment] = field(default_factory=dict)
+    restart_total: int = 0
+    restart_by_rx: Dict[int, int] = field(default_factory=dict)
+    restart_last_unix: Optional[float] = None
+    watchdog_state_by_rx: Dict[int, Dict[str, object]] = field(default_factory=dict)
+    activity_by_rx: Dict[int, Dict[str, object]] = field(default_factory=dict)
+    stale_watch_state_by_rx: Dict[int, Dict[str, object]] = field(default_factory=dict)
+    mismatch_global_streak: int = 0
+    auto_kick_total: int = 0
+    auto_kick_last_unix: Optional[float] = None
+    auto_kick_last_reason: str = ""
+    auto_kick_last_result: str = ""
+
+
 class _ReceiverWorker(threading.Thread):
     _DIGITAL_USB_LOW_CUT_HZ = 0
     _DIGITAL_USB_HIGH_CUT_HZ = 3100
@@ -227,8 +247,9 @@ class _ReceiverWorker(threading.Thread):
         mode_label: str,
         sideband: Optional[str] = None,
         decode_callback: Optional[Callable[[dict], None]] = None,
-        on_restart: Optional[Callable[[int, str, str, float, int], None]] = None,
-        on_activity: Optional[Callable[[int, str, str, str, Optional[float], Optional[float]], None]] = None,
+        on_restart: Optional[Callable[[str, int, int, str, str, float, int], None]] = None,
+        on_activity: Optional[Callable[[str, int, int, str, str, str, Optional[float], Optional[float]], None]] = None,
+        runtime_resource_slot: int = 0,
         initial_rx_chan_adjust: int = 0,
         ignore_slot_check: bool = False,
         user_label_override: Optional[str] = None,
@@ -251,6 +272,8 @@ class _ReceiverWorker(threading.Thread):
         self._decode_callback = decode_callback
         self._on_restart = on_restart
         self._on_activity = on_activity
+        self._runtime_resource_slot = max(0, int(runtime_resource_slot or 0))
+        self._target_token = self._sanitize_target_token(self._host, self._port)
         self._python_cmd = self._resolve_python_cmd()
         self._stop_event = threading.Event()
         self._proc: Optional[subprocess.Popen] = None
@@ -276,6 +299,28 @@ class _ReceiverWorker(threading.Thread):
     @staticmethod
     def _env_int(name: str, default: int, *, min_v: int, max_v: int) -> int:
         return _read_env_int(name, default, min_v=min_v, max_v=max_v)
+
+    @staticmethod
+    def _sanitize_target_token(host: str, port: int) -> str:
+        raw = f"{str(host or '').strip().lower()}_{int(port or 0)}"
+        token = re.sub(r"[^a-z0-9_.-]+", "_", raw)
+        return token or "unknown_0"
+
+    @staticmethod
+    def _kiwirecorder_process_pattern(host: str, port: int, user_label: str | None = None) -> str:
+        host_text = str(host or "").strip()
+        port_value = int(port or 0)
+        pattern = (
+            f"kiwirecorder\\.py.*-s\\s+{re.escape(host_text)}"
+            f".*-p\\s+{port_value}"
+        )
+        label = str(user_label or "").strip()
+        if label:
+            pattern += f".*{re.escape(label)}"
+        return pattern
+
+    def _decoder_udp_port(self, base_port: int) -> int:
+        return int(base_port) + (int(self._runtime_resource_slot) * 1000) + int(self._rx)
 
     def _watchdog_base_backoff_s(self) -> float:
         return self._env_float("KIWISCAN_WATCHDOG_BASE_BACKOFF_S", 0.5, min_v=0.1, max_v=5.0)
@@ -585,14 +630,18 @@ class _ReceiverWorker(threading.Thread):
             return self._user_label_override
         return _compact_user_label(self._user_prefix, self._band, self._mode_label)
 
-    @staticmethod
-    def _kill_local_kiwi_user_processes(user_label: str) -> None:
+    def _kill_local_kiwi_user_processes(self, user_label: str) -> None:
         label = str(user_label or "").strip()
         if not label:
             return
         try:
             subprocess.run(
-                ["pkill", "-9", "-f", f"kiwirecorder.py.*{re.escape(label)}"],
+                [
+                    "pkill",
+                    "-9",
+                    "-f",
+                    self._kiwirecorder_process_pattern(self._host, self._port, label),
+                ],
                 check=False,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -923,7 +972,7 @@ class _ReceiverWorker(threading.Thread):
         except Exception:
             pass
         log_suffix = mode.lower()
-        log_path = Path("/tmp") / f"ft8modem_rx{self._rx}_{log_suffix}.log"
+        log_path = Path("/tmp") / f"ft8modem_{self._target_token}_rx{self._rx}_{log_suffix}.log"
         cmd = [
             str(ft8modem_path),
             "-t",
@@ -1017,7 +1066,7 @@ class _ReceiverWorker(threading.Thread):
                         pass
                 if self._on_activity is not None:
                     try:
-                        self._on_activity(self._rx, self._band, mode, "decoder_output")
+                        self._on_activity(self._host, self._port, self._rx, self._band, mode, "decoder_output")
                     except Exception:
                         pass
                 if not msg.startswith("D:"):
@@ -1026,12 +1075,24 @@ class _ReceiverWorker(threading.Thread):
                 audio_freq_hz = _decode_line_audio_hz(msg)
                 if self._on_activity is not None:
                     try:
-                        self._on_activity(self._rx, self._band, mode, "decode", snr_db, audio_freq_hz)
+                        self._on_activity(
+                            self._host,
+                            self._port,
+                            self._rx,
+                            self._band,
+                            mode,
+                            "decode",
+                            snr_db,
+                            audio_freq_hz,
+                        )
                     except Exception:
                         pass
                 if self._decode_callback is not None:
                     try:
                         self._decode_callback({
+                            "host": self._host,
+                            "port": self._port,
+                            "kiwi_key": f"{self._host}:{self._port}",
                             "rx": self._rx,
                             "band": self._band,
                             "freq_hz": self._freq_hz,
@@ -1090,14 +1151,22 @@ class _ReceiverWorker(threading.Thread):
                                 if self._on_activity is not None:
                                     try:
                                         self._on_activity(
-                                            self._rx, self._band,
-                                            mode, "decode", snr_db,
+                                            self._host,
+                                            self._port,
+                                            self._rx,
+                                            self._band,
+                                            mode,
+                                            "decode",
+                                            snr_db,
                                         )
                                     except Exception:
                                         pass
                                 if self._decode_callback is not None:
                                     try:
                                         self._decode_callback({
+                                            "host": self._host,
+                                            "port": self._port,
+                                            "kiwi_key": f"{self._host}:{self._port}",
                                             "rx": self._rx,
                                             "band": self._band,
                                             "freq_hz": self._freq_hz,
@@ -1169,9 +1238,9 @@ class _ReceiverWorker(threading.Thread):
                 self._last_spawn_error_reason = "af2udp_missing"
                 return None
             if self._is_triple_mode():
-                udp_port_ft8  = 3100 + self._rx
-                udp_port_ft4  = 3200 + self._rx
-                udp_port_wspr = 3300 + self._rx
+                udp_port_ft8 = self._decoder_udp_port(3100)
+                udp_port_ft4 = self._decoder_udp_port(3200)
+                udp_port_wspr = self._decoder_udp_port(3300)
                 self._start_decoder(udp_port_ft8,  "FT8")
                 self._start_decoder(udp_port_ft4,  "FT4")
                 self._start_decoder(udp_port_wspr, "WSPR")
@@ -1224,8 +1293,8 @@ class _ReceiverWorker(threading.Thread):
                             f"{udp_sender_cmd}"
                         )
             elif self._is_dual_mode():
-                udp_port_ft8 = 3100 + self._rx
-                udp_port_ft4 = 3200 + self._rx
+                udp_port_ft8 = self._decoder_udp_port(3100)
+                udp_port_ft4 = self._decoder_udp_port(3200)
                 self._start_decoder(udp_port_ft8, "FT8")
                 self._start_decoder(udp_port_ft4, "FT4")
                 iq_params = _dual_mode_iq_params(self._band)
@@ -1260,8 +1329,8 @@ class _ReceiverWorker(threading.Thread):
                         f"{self._python_cmd} -u {fanout_path} 127.0.0.1 {udp_port_ft8} {udp_port_ft4}"
                     )
             elif self._is_ft4_wspr_mode():
-                udp_port_ft4  = 3200 + self._rx
-                udp_port_wspr = 3300 + self._rx
+                udp_port_ft4 = self._decoder_udp_port(3200)
+                udp_port_wspr = self._decoder_udp_port(3300)
                 self._start_decoder(udp_port_ft4,  "FT4")
                 self._start_decoder(udp_port_wspr, "WSPR")
                 iq_params = _ft4_wspr_iq_params(self._band)
@@ -1300,7 +1369,7 @@ class _ReceiverWorker(threading.Thread):
                         f"{udp_sender_cmd}"
                     )
             else:
-                udp_port = 3100 + self._rx
+                udp_port = self._decoder_udp_port(3100)
                 self._start_decoder(udp_port, self._decoder_mode())
                 udp_sender_cmd = self._udp_audio_sender_cmd(udp_port=udp_port, af2udp_path=af2udp_path)
                 pipeline_cmd = (
@@ -1310,7 +1379,7 @@ class _ReceiverWorker(threading.Thread):
                     f"{udp_sender_cmd}"
                 )
             try:
-                log_path = Path("/tmp") / f"kiwi_rx{self._rx}_pipeline.log"
+                log_path = Path("/tmp") / f"kiwi_{self._target_token}_rx{self._rx}_pipeline.log"
                 log_fp = open(log_path, "a", encoding="utf-8")
                 log_fp.write(f"START {time.strftime('%Y-%m-%d %H:%M:%S')} CMD: {pipeline_cmd}\n")
                 log_fp.flush()
@@ -1412,7 +1481,15 @@ class _ReceiverWorker(threading.Thread):
                 backoff_s = self._watchdog_retry_backoff_s(consecutive_failures)
                 if self._on_restart is not None:
                     try:
-                        self._on_restart(self._rx, self._band, str(self._last_spawn_error_reason or "spawn_failed"), backoff_s, consecutive_failures)
+                        self._on_restart(
+                            self._host,
+                            self._port,
+                            self._rx,
+                            self._band,
+                            str(self._last_spawn_error_reason or "spawn_failed"),
+                            backoff_s,
+                            consecutive_failures,
+                        )
                     except Exception:
                         pass
                 self._stop_event.wait(timeout=backoff_s)  # interruptible sleep
@@ -1491,6 +1568,9 @@ class ReceiverManager:
                 logger.warning("sox not found in PATH; digital decode disabled")
         self._decode_callback = decode_callback
         self._lock = threading.Lock()
+        self._runtime_target_states: Dict[str, _RuntimeTargetState] = {}
+        self._runtime_target_resource_slots: Dict[str, int] = {}
+        self._next_runtime_target_resource_slot = 0
         self._workers: Dict[int, _ReceiverWorker] = {}
         self._assignments: Dict[int, ReceiverAssignment] = {}
         self._restart_total = 0
@@ -1550,6 +1630,139 @@ class ReceiverManager:
             if value:
                 return value
         return None
+
+    @staticmethod
+    def _runtime_target_key(host: str, port: int) -> str:
+        normalized_host = str(host or "").strip().lower()
+        normalized_port = int(port or 0)
+        return f"{normalized_host}:{normalized_port}"
+
+    def _runtime_target_resource_slot(self, host: str, port: int, *, allocate: bool) -> int | None:
+        target_key = self._runtime_target_key(host, port)
+        if not target_key:
+            return None
+        slot = self._runtime_target_resource_slots.get(target_key)
+        if slot is None and allocate:
+            slot = int(self._next_runtime_target_resource_slot)
+            self._runtime_target_resource_slots[target_key] = slot
+            self._next_runtime_target_resource_slot += 1
+        return int(slot) if slot is not None else None
+
+    def _active_target_ft8modem_ports(self) -> list[int]:
+        active_host = str(getattr(self, "_active_host", "") or "").strip()
+        active_port = int(getattr(self, "_active_port", 0) or 0)
+        if not active_host or active_port <= 0:
+            return []
+        slot = self._runtime_target_resource_slots.get(self._runtime_target_key(active_host, active_port))
+        if slot is None:
+            return []
+        ports: list[int] = []
+        for base_port in (3100, 3200, 3300):
+            slot_base = int(base_port) + (int(slot) * 1000)
+            ports.extend(slot_base + rx for rx in range(8))
+        return ports
+
+    def _ensure_runtime_target_state(self, host: str, port: int) -> _RuntimeTargetState:
+        normalized_host = str(host or "").strip()
+        normalized_port = int(port or 0)
+        target_key = self._runtime_target_key(normalized_host, normalized_port)
+        state = self._runtime_target_states.get(target_key)
+        resource_slot = self._runtime_target_resource_slot(normalized_host, normalized_port, allocate=True) or 0
+        if state is None:
+            state = _RuntimeTargetState(host=normalized_host, port=normalized_port, resource_slot=resource_slot)
+            self._runtime_target_states[target_key] = state
+        else:
+            state.host = normalized_host
+            state.port = normalized_port
+            state.resource_slot = int(resource_slot)
+        return state
+
+    def _store_active_runtime_state_locked(self) -> None:
+        active_host = str(getattr(self, "_active_host", "") or "").strip()
+        active_port = int(getattr(self, "_active_port", 0) or 0)
+        if not active_host or active_port <= 0:
+            return
+        state = self._ensure_runtime_target_state(active_host, active_port)
+        state.workers = self._workers
+        state.assignments = self._assignments
+        state.restart_total = int(self._restart_total)
+        state.restart_by_rx = self._restart_by_rx
+        state.restart_last_unix = float(self._restart_last_unix) if self._restart_last_unix is not None else None
+        state.watchdog_state_by_rx = self._watchdog_state_by_rx
+        state.activity_by_rx = self._activity_by_rx
+        state.stale_watch_state_by_rx = self._stale_watch_state_by_rx
+        state.mismatch_global_streak = int(self._mismatch_global_streak)
+        state.auto_kick_total = int(self._auto_kick_total)
+        state.auto_kick_last_unix = float(self._auto_kick_last_unix) if self._auto_kick_last_unix is not None else None
+        state.auto_kick_last_reason = str(self._auto_kick_last_reason or "")
+        state.auto_kick_last_result = str(self._auto_kick_last_result or "")
+
+    def _deactivate_other_runtime_targets_locked(self, active_target_key: str) -> list["_ReceiverWorker"]:
+        return []
+
+    def _activate_runtime_target_locked(self, host: str, port: int) -> list["_ReceiverWorker"]:
+        normalized_host = str(host or "").strip()
+        normalized_port = int(port or 0)
+        target_key = self._runtime_target_key(normalized_host, normalized_port)
+        active_key = self._runtime_target_key(
+            str(getattr(self, "_active_host", "") or ""),
+            int(getattr(self, "_active_port", 0) or 0),
+        )
+        workers_to_stop: list[_ReceiverWorker] = []
+        if active_key != target_key:
+            self._store_active_runtime_state_locked()
+            workers_to_stop = self._deactivate_other_runtime_targets_locked(target_key)
+        state = self._runtime_target_states.get(target_key)
+        if state is None:
+            active_host = str(getattr(self, "_active_host", "") or "").strip()
+            active_port = int(getattr(self, "_active_port", 0) or 0)
+            resource_slot = self._runtime_target_resource_slot(normalized_host, normalized_port, allocate=True) or 0
+            hydrate_from_current = bool(
+                (active_key == target_key and normalized_host and normalized_port > 0)
+                or ((not active_host or active_port <= 0) and (self._workers or self._assignments))
+            )
+            if hydrate_from_current:
+                state = _RuntimeTargetState(
+                    host=normalized_host,
+                    port=normalized_port,
+                    resource_slot=resource_slot,
+                    workers=self._workers,
+                    assignments=self._assignments,
+                    restart_total=int(self._restart_total),
+                    restart_by_rx=self._restart_by_rx,
+                    restart_last_unix=float(self._restart_last_unix) if self._restart_last_unix is not None else None,
+                    watchdog_state_by_rx=self._watchdog_state_by_rx,
+                    activity_by_rx=self._activity_by_rx,
+                    stale_watch_state_by_rx=self._stale_watch_state_by_rx,
+                    mismatch_global_streak=int(self._mismatch_global_streak),
+                    auto_kick_total=int(self._auto_kick_total),
+                    auto_kick_last_unix=float(self._auto_kick_last_unix) if self._auto_kick_last_unix is not None else None,
+                    auto_kick_last_reason=str(self._auto_kick_last_reason or ""),
+                    auto_kick_last_result=str(self._auto_kick_last_result or ""),
+                )
+            else:
+                state = _RuntimeTargetState(host=normalized_host, port=normalized_port, resource_slot=resource_slot)
+            self._runtime_target_states[target_key] = state
+        else:
+            state.host = normalized_host
+            state.port = normalized_port
+            state.resource_slot = int(self._runtime_target_resource_slot(normalized_host, normalized_port, allocate=True) or 0)
+        self._workers = state.workers
+        self._assignments = state.assignments
+        self._restart_total = int(state.restart_total)
+        self._restart_by_rx = state.restart_by_rx
+        self._restart_last_unix = float(state.restart_last_unix) if state.restart_last_unix is not None else None
+        self._watchdog_state_by_rx = state.watchdog_state_by_rx
+        self._activity_by_rx = state.activity_by_rx
+        self._stale_watch_state_by_rx = state.stale_watch_state_by_rx
+        self._mismatch_global_streak = int(state.mismatch_global_streak)
+        self._auto_kick_total = int(state.auto_kick_total)
+        self._auto_kick_last_unix = float(state.auto_kick_last_unix) if state.auto_kick_last_unix is not None else None
+        self._auto_kick_last_reason = str(state.auto_kick_last_reason or "")
+        self._auto_kick_last_result = str(state.auto_kick_last_result or "")
+        self._active_host = normalized_host
+        self._active_port = normalized_port
+        return workers_to_stop
 
     @staticmethod
     def _kiwi_admin_password() -> Optional[str]:
@@ -1930,21 +2143,46 @@ class ReceiverManager:
 
         return errs
 
-    def _on_worker_restart(self, rx: int, band: str, reason: str, backoff_s: float, consecutive_failures: int) -> None:
+    def _on_worker_restart(
+        self,
+        host: str,
+        port: int,
+        rx: int,
+        band: str,
+        reason: str,
+        backoff_s: float,
+        consecutive_failures: int,
+    ) -> None:
+        target_key = self._runtime_target_key(host, port)
+        active_key = self._runtime_target_key(
+            str(getattr(self, "_active_host", "") or ""),
+            int(getattr(self, "_active_port", 0) or 0),
+        )
         with self._lock:
-            self._restart_total += 1
-            self._restart_by_rx[int(rx)] = int(self._restart_by_rx.get(int(rx), 0)) + 1
-            self._restart_last_unix = time.time()
-            self._watchdog_state_by_rx[int(rx)] = {
+            updated_unix = time.time()
+            if target_key == active_key:
+                self._restart_total += 1
+                self._restart_by_rx[int(rx)] = int(self._restart_by_rx.get(int(rx), 0)) + 1
+                self._restart_last_unix = updated_unix
+                watchdog_state_by_rx = self._watchdog_state_by_rx
+            else:
+                state = self._ensure_runtime_target_state(host, port)
+                state.restart_total += 1
+                state.restart_by_rx[int(rx)] = int(state.restart_by_rx.get(int(rx), 0)) + 1
+                state.restart_last_unix = updated_unix
+                watchdog_state_by_rx = state.watchdog_state_by_rx
+            watchdog_state_by_rx[int(rx)] = {
                 "band": str(band),
                 "reason": str(reason),
                 "backoff_s": float(backoff_s),
                 "consecutive_failures": int(consecutive_failures),
-                "updated_unix": float(self._restart_last_unix),
+                "updated_unix": float(updated_unix),
             }
 
     def _on_worker_activity(
         self,
+        host: str,
+        port: int,
         rx: int,
         band: str,
         mode_label: str,
@@ -1953,8 +2191,18 @@ class ReceiverManager:
         audio_freq_hz: Optional[float] = None,
     ) -> None:
         now = time.time()
+        target_key = self._runtime_target_key(host, port)
+        active_key = self._runtime_target_key(
+            str(getattr(self, "_active_host", "") or ""),
+            int(getattr(self, "_active_port", 0) or 0),
+        )
         with self._lock:
-            current = dict(self._activity_by_rx.get(int(rx), {}))
+            if target_key == active_key:
+                activity_by_rx = self._activity_by_rx
+            else:
+                state = self._ensure_runtime_target_state(host, port)
+                activity_by_rx = state.activity_by_rx
+            current = dict(activity_by_rx.get(int(rx), {}))
             current["band"] = str(band)
             current["mode"] = str(mode_label)
             current["last_event_type"] = str(event_type)
@@ -2012,12 +2260,13 @@ class ReceiverManager:
                 alpha = 0.2
                 current["snr_avg_db"] = float((alpha * snr_value) + ((1.0 - alpha) * prior_avg_f))
                 current["snr_samples"] = int(current.get("snr_samples", 0) or 0) + 1
-            self._activity_by_rx[int(rx)] = current
+            activity_by_rx[int(rx)] = current
 
     def _make_worker(self, *, host: str, port: int, assignment: ReceiverAssignment, rx_chan_adjust: int = 0, ignore_slot_check: Optional[bool] = None) -> _ReceiverWorker:
         _isc = bool(getattr(assignment, "ignore_slot_check", False))
         if ignore_slot_check is not None:
             _isc = bool(ignore_slot_check)
+        resource_slot = self._runtime_target_resource_slots.get(self._runtime_target_key(host, port))
         return _ReceiverWorker(
             kiwirecorder_path=self._kiwirecorder_path,
             ft8modem_path=self._ft8modem_path,
@@ -2034,6 +2283,7 @@ class ReceiverManager:
             decode_callback=self._decode_callback,
             on_restart=self._on_worker_restart,
             on_activity=self._on_worker_activity,
+            runtime_resource_slot=int(resource_slot or 0),
             initial_rx_chan_adjust=rx_chan_adjust,
             ignore_slot_check=_isc,
             user_label_override=assignment.user_label_override,
@@ -2496,7 +2746,7 @@ class ReceiverManager:
             self._metrics_snapshot_cache = {}
         return self.metrics_snapshot()
 
-    def active_label_to_rx(self) -> Dict[str, int]:
+    def active_label_to_rx_for_target(self, host: str, port: int) -> Dict[str, int]:
         """Return a mapping of active worker user labels → internal rx slot numbers.
 
         Used by the system-info API to display the KiwiScan internal receiver number
@@ -2508,14 +2758,41 @@ class ReceiverManager:
         if not acquired:
             return {}
         try:
+            snapshot = self._runtime_state_snapshot(host, port)
+            workers = snapshot.get("workers") if isinstance(snapshot, dict) else {}
             result: Dict[str, int] = {}
-            for rx, worker in self._workers.items():
+            for rx, worker in (workers.items() if isinstance(workers, dict) else []):
                 if worker is None:
                     continue
                 label = str(getattr(worker, "_active_user_label", "") or "").strip()
                 if label:
                     result[label] = int(rx)
             return result
+        finally:
+            self._lock.release()
+
+    def active_label_to_rx(self) -> Dict[str, int]:
+        return self.active_label_to_rx_for_target(
+            str(getattr(self, "_active_host", "") or ""),
+            int(getattr(self, "_active_port", 0) or 0),
+        )
+
+    def runtime_targets(self) -> Dict[str, Dict[str, object]]:
+        acquired = self._lock.acquire(timeout=1.0)
+        if not acquired:
+            return {}
+        try:
+            self._store_active_runtime_state_locked()
+            return {
+                target_key: {
+                    "host": str(state.host),
+                    "port": int(state.port),
+                    "assigned_receivers": len(state.assignments),
+                    "active_workers": len(state.workers),
+                    "rxs": sorted(int(rx) for rx in state.assignments.keys()),
+                }
+                for target_key, state in self._runtime_target_states.items()
+            }
         finally:
             self._lock.release()
 
@@ -2550,13 +2827,91 @@ class ReceiverManager:
             "mismatch_streak": 0,
         }
 
-    def _auto_kick_summary(self) -> Dict[str, object]:
+    @staticmethod
+    def _auto_kick_summary_from_values(
+        *,
+        total: int,
+        last_unix: float | None,
+        last_reason: str,
+        last_result: str,
+        mismatch_streak: int,
+    ) -> Dict[str, object]:
         return {
-            "total": int(self._auto_kick_total),
-            "last_unix": float(self._auto_kick_last_unix) if self._auto_kick_last_unix is not None else None,
-            "last_reason": str(self._auto_kick_last_reason or ""),
-            "last_result": str(self._auto_kick_last_result or ""),
-            "mismatch_streak": int(self._mismatch_global_streak),
+            "total": int(total),
+            "last_unix": float(last_unix) if last_unix is not None else None,
+            "last_reason": str(last_reason or ""),
+            "last_result": str(last_result or ""),
+            "mismatch_streak": int(mismatch_streak),
+        }
+
+    def _auto_kick_summary(self) -> Dict[str, object]:
+        return self._auto_kick_summary_from_values(
+            total=int(self._auto_kick_total),
+            last_unix=float(self._auto_kick_last_unix) if self._auto_kick_last_unix is not None else None,
+            last_reason=str(self._auto_kick_last_reason or ""),
+            last_result=str(self._auto_kick_last_result or ""),
+            mismatch_streak=int(self._mismatch_global_streak),
+        )
+
+    def _runtime_state_snapshot(self, target_host: str | None = None, target_port: int | None = None) -> Dict[str, object]:
+        active_host = str(getattr(self, "_active_host", "") or "").strip()
+        active_port = int(getattr(self, "_active_port", 0) or 0)
+        requested_host = str(target_host or "").strip()
+        requested_port = int(target_port or 0)
+
+        active_key = self._runtime_target_key(active_host, active_port)
+        requested_key = self._runtime_target_key(requested_host, requested_port) if requested_host and requested_port > 0 else active_key
+        use_current = not requested_key or requested_key == active_key
+
+        if use_current:
+            return {
+                "host": active_host,
+                "port": active_port,
+                "assignments": {int(k): v for k, v in self._assignments.items()},
+                "watchdog_by_rx": {int(k): dict(v) for k, v in self._watchdog_state_by_rx.items()},
+                "restart_by_rx": {int(k): int(v) for k, v in self._restart_by_rx.items()},
+                "activity_by_rx": {int(k): dict(v) for k, v in self._activity_by_rx.items()},
+                "restart_total": int(self._restart_total),
+                "workers": {int(k): v for k, v in self._workers.items()},
+                "auto_kick_total": int(self._auto_kick_total),
+                "auto_kick_last_unix": float(self._auto_kick_last_unix) if self._auto_kick_last_unix is not None else None,
+                "auto_kick_last_reason": str(self._auto_kick_last_reason or ""),
+                "auto_kick_last_result": str(self._auto_kick_last_result or ""),
+                "mismatch_global_streak": int(self._mismatch_global_streak),
+            }
+
+        state = self._runtime_target_states.get(requested_key)
+        if state is None:
+            return {
+                "host": requested_host,
+                "port": requested_port,
+                "assignments": {},
+                "watchdog_by_rx": {},
+                "restart_by_rx": {},
+                "activity_by_rx": {},
+                "restart_total": 0,
+                "workers": {},
+                "auto_kick_total": 0,
+                "auto_kick_last_unix": None,
+                "auto_kick_last_reason": "",
+                "auto_kick_last_result": "",
+                "mismatch_global_streak": 0,
+            }
+
+        return {
+            "host": str(state.host),
+            "port": int(state.port),
+            "assignments": {int(k): v for k, v in state.assignments.items()},
+            "watchdog_by_rx": {int(k): dict(v) for k, v in state.watchdog_state_by_rx.items()},
+            "restart_by_rx": {int(k): int(v) for k, v in state.restart_by_rx.items()},
+            "activity_by_rx": {int(k): dict(v) for k, v in state.activity_by_rx.items()},
+            "restart_total": int(state.restart_total),
+            "workers": {int(k): v for k, v in state.workers.items()},
+            "auto_kick_total": int(state.auto_kick_total),
+            "auto_kick_last_unix": float(state.auto_kick_last_unix) if state.auto_kick_last_unix is not None else None,
+            "auto_kick_last_reason": str(state.auto_kick_last_reason or ""),
+            "auto_kick_last_result": str(state.auto_kick_last_result or ""),
+            "mismatch_global_streak": int(state.mismatch_global_streak),
         }
 
     @staticmethod
@@ -2715,27 +3070,35 @@ class ReceiverManager:
             "auto_kick": self._auto_kick_summary(),
         })
 
-    def _fallback_health_summary_locked(self) -> Dict[str, object]:
+    def _fallback_health_summary_locked(self, target_host: str | None = None, target_port: int | None = None) -> Dict[str, object]:
         cached = self._health_cache_with_meta()
-        if cached:
+        requested_host = str(target_host or "").strip()
+        requested_port = int(target_port or 0)
+        if cached and (
+            not requested_host
+            or requested_port <= 0
+            or (
+                str(cached.get("host") or "").strip() == requested_host
+                and int(cached.get("port") or 0) == requested_port
+            )
+        ):
             return cached
 
-        active_host = str(getattr(self, "_active_host", "") or "")
-        active_port = int(getattr(self, "_active_port", 0) or 0)
-        try:
-            assignments = {int(k): v for k, v in self._assignments.items()}
-            watchdog_by_rx = {int(k): dict(v) for k, v in self._watchdog_state_by_rx.items()}
-            restart_by_rx = {int(k): int(v) for k, v in self._restart_by_rx.items()}
-            activity_by_rx = {int(k): dict(v) for k, v in self._activity_by_rx.items()}
-            restart_total = int(self._restart_total)
-            workers = {int(k): v for k, v in self._workers.items()}
-        except Exception:
-            assignments = {}
-            watchdog_by_rx = {}
-            restart_by_rx = {}
-            activity_by_rx = {}
-            restart_total = 0
-            workers = {}
+        snapshot = self._runtime_state_snapshot(target_host, target_port)
+        active_host = str(snapshot.get("host") or "")
+        active_port = int(snapshot.get("port") or 0)
+        assignments = snapshot.get("assignments") if isinstance(snapshot, dict) else {}
+        watchdog_by_rx = snapshot.get("watchdog_by_rx") if isinstance(snapshot, dict) else {}
+        restart_by_rx = snapshot.get("restart_by_rx") if isinstance(snapshot, dict) else {}
+        activity_by_rx = snapshot.get("activity_by_rx") if isinstance(snapshot, dict) else {}
+        restart_total = int(snapshot.get("restart_total") or 0) if isinstance(snapshot, dict) else 0
+        workers = snapshot.get("workers") if isinstance(snapshot, dict) else {}
+
+        assignments = assignments if isinstance(assignments, dict) else {}
+        watchdog_by_rx = watchdog_by_rx if isinstance(watchdog_by_rx, dict) else {}
+        restart_by_rx = restart_by_rx if isinstance(restart_by_rx, dict) else {}
+        activity_by_rx = activity_by_rx if isinstance(activity_by_rx, dict) else {}
+        workers = workers if isinstance(workers, dict) else {}
 
         if (not active_host or active_port <= 0) and workers:
             for worker in workers.values():
@@ -2859,6 +3222,8 @@ class ReceiverManager:
             }
 
         result = {
+            "host": active_host,
+            "port": int(active_port),
             "overall": "starting" if channels else "idle",
             "active_receivers": sum(1 for ch in channels.values() if bool(ch.get("active"))),
             "unstable_receivers": 0,
@@ -2870,7 +3235,13 @@ class ReceiverManager:
             "reason_counts": {},
             "channels": channels,
             "propagation": self._empty_propagation_summary(),
-            "auto_kick": self._auto_kick_summary(),
+            "auto_kick": self._auto_kick_summary_from_values(
+                total=int(snapshot.get("auto_kick_total") or 0) if isinstance(snapshot, dict) else 0,
+                last_unix=(float(snapshot.get("auto_kick_last_unix")) if isinstance(snapshot, dict) and snapshot.get("auto_kick_last_unix") is not None else None),
+                last_reason=str(snapshot.get("auto_kick_last_reason") or "") if isinstance(snapshot, dict) else "",
+                last_result=str(snapshot.get("auto_kick_last_result") or "") if isinstance(snapshot, dict) else "",
+                mismatch_streak=int(snapshot.get("mismatch_global_streak") or 0) if isinstance(snapshot, dict) else 0,
+            ),
             "_from_cache": True,
         }
         self._store_health_summary_cache(result)
@@ -3104,7 +3475,7 @@ class ReceiverManager:
         self._store_truth_snapshot_cache(result)
         return result
 
-    def health_summary(self) -> Dict[str, object]:
+    def _health_summary_for_target(self, target_host: str | None = None, target_port: int | None = None) -> Dict[str, object]:
         # Use a short timeout on the lock so this method never blocks indefinitely.
         # apply_assignments() holds self._lock for the entire startup/eviction cycle
         # (which can last minutes).  Without a timeout, FastAPI threadpool threads
@@ -3113,18 +3484,25 @@ class ReceiverManager:
         # "busy" placeholder on the very first call before any result is cached).
         lock_acquired = self._lock.acquire(timeout=0.5)
         if not lock_acquired:
-            return self._fallback_health_summary_locked()
+            return self._fallback_health_summary_locked(target_host, target_port)
         try:
-            assignments = dict(self._assignments)
-            watchdog_by_rx = {int(k): dict(v) for k, v in self._watchdog_state_by_rx.items()}
-            restart_by_rx = {int(k): int(v) for k, v in self._restart_by_rx.items()}
-            activity_by_rx = {int(k): dict(v) for k, v in self._activity_by_rx.items()}
-            restart_total = int(self._restart_total)
-            active_host = str(getattr(self, "_active_host", "") or "")
-            active_port = int(getattr(self, "_active_port", 0) or 0)
-            workers = {int(k): v for k, v in self._workers.items()}
+            snapshot = self._runtime_state_snapshot(target_host, target_port)
+            assignments = snapshot.get("assignments") if isinstance(snapshot, dict) else {}
+            watchdog_by_rx = snapshot.get("watchdog_by_rx") if isinstance(snapshot, dict) else {}
+            restart_by_rx = snapshot.get("restart_by_rx") if isinstance(snapshot, dict) else {}
+            activity_by_rx = snapshot.get("activity_by_rx") if isinstance(snapshot, dict) else {}
+            restart_total = int(snapshot.get("restart_total") or 0) if isinstance(snapshot, dict) else 0
+            active_host = str(snapshot.get("host") or "") if isinstance(snapshot, dict) else ""
+            active_port = int(snapshot.get("port") or 0) if isinstance(snapshot, dict) else 0
+            workers = snapshot.get("workers") if isinstance(snapshot, dict) else {}
         finally:
             self._lock.release()
+
+        assignments = assignments if isinstance(assignments, dict) else {}
+        watchdog_by_rx = watchdog_by_rx if isinstance(watchdog_by_rx, dict) else {}
+        restart_by_rx = restart_by_rx if isinstance(restart_by_rx, dict) else {}
+        activity_by_rx = activity_by_rx if isinstance(activity_by_rx, dict) else {}
+        workers = workers if isinstance(workers, dict) else {}
 
         users_by_rx: Dict[int, str] = {}
         user_age_by_rx: Dict[int, int] = {}
@@ -3619,6 +3997,8 @@ class ReceiverManager:
                 propagation_overall = "poor"
 
         result = {
+            "host": active_host,
+            "port": int(active_port),
             "overall": overall,
             "active_receivers": active,
             "unstable_receivers": unstable,
@@ -3635,13 +4015,48 @@ class ReceiverManager:
                 "score_avg": propagation_score_avg,
                 "sampled_channels": int(propagation_score_count),
             },
-            "auto_kick": self._auto_kick_summary(),
+            "auto_kick": self._auto_kick_summary_from_values(
+                total=int(snapshot.get("auto_kick_total") or 0) if isinstance(snapshot, dict) else 0,
+                last_unix=(float(snapshot.get("auto_kick_last_unix")) if isinstance(snapshot, dict) and snapshot.get("auto_kick_last_unix") is not None else None),
+                last_reason=str(snapshot.get("auto_kick_last_reason") or "") if isinstance(snapshot, dict) else "",
+                last_result=str(snapshot.get("auto_kick_last_result") or "") if isinstance(snapshot, dict) else "",
+                mismatch_streak=int(snapshot.get("mismatch_global_streak") or 0) if isinstance(snapshot, dict) else 0,
+            ),
         }
         # Store as fallback for callers that time out waiting for the lock.
         self._store_health_summary_cache(result)
         return result
 
+    def health_summary_for_target(self, host: str, port: int) -> Dict[str, object]:
+        return self._health_summary_for_target(host, port)
+
+    def health_summary(self) -> Dict[str, object]:
+        return self._health_summary_for_target()
+
     def _cleanup_orphan_processes(self) -> None:
+        active_host = str(getattr(self, "_active_host", "") or "").strip()
+        active_port = int(getattr(self, "_active_port", 0) or 0)
+        if active_host and active_port > 0:
+            try:
+                subprocess.run(
+                    ["pkill", "-9", "-f", _ReceiverWorker._kiwirecorder_process_pattern(active_host, active_port)],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception:
+                pass
+            for udp_port in self._active_target_ft8modem_ports():
+                try:
+                    subprocess.run(
+                        ["pkill", "-f", f"ft8modem.*udp:{udp_port}"],
+                        check=False,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except Exception:
+                    pass
+            return
         try:
             subprocess.run(
                 ["pkill", "-9", "-f", "kiwirecorder.py.*(AUTO_|FIXED_|ROAM)"],
@@ -3653,10 +4068,17 @@ class ReceiverManager:
             pass
 
     def _cleanup_orphan_processes_for_labels(self, labels: set[str]) -> None:
+        active_host = str(getattr(self, "_active_host", "") or "").strip()
+        active_port = int(getattr(self, "_active_port", 0) or 0)
         for label in {str(v or "").strip() for v in labels if str(v or "").strip()}:
             try:
+                pattern = (
+                    _ReceiverWorker._kiwirecorder_process_pattern(active_host, active_port, label)
+                    if active_host and active_port > 0
+                    else f"kiwirecorder.py.*{re.escape(label)}"
+                )
                 subprocess.run(
-                    ["pkill", "-9", "-f", f"kiwirecorder.py.*{re.escape(label)}"],
+                    ["pkill", "-9", "-f", pattern],
                     check=False,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
@@ -3665,30 +4087,67 @@ class ReceiverManager:
                 pass
 
     def _wait_for_orphan_cleanup(self, timeout_s: float = 6.0) -> None:
+        active_host = str(getattr(self, "_active_host", "") or "").strip()
+        active_port = int(getattr(self, "_active_port", 0) or 0)
+        active_ports = self._active_target_ft8modem_ports()
         deadline = time.time() + max(0.5, float(timeout_s))
         while time.time() < deadline:
             try:
-                r1 = subprocess.run(
-                    ["pgrep", "-f", "kiwirecorder.py.*(AUTO_|FIXED_|ROAM)"],
-                    check=False,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                    text=True,
-                )
-                r2 = subprocess.run(
-                    ["pgrep", "-f", "ft8modem.*udp:"],
-                    check=False,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                    text=True,
-                )
-                active_auto = bool(str(r1.stdout or "").strip())
-                active_ft8modem = bool(str(r2.stdout or "").strip())
+                if active_host and active_port > 0:
+                    r1 = subprocess.run(
+                        ["pgrep", "-f", _ReceiverWorker._kiwirecorder_process_pattern(active_host, active_port)],
+                        check=False,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL,
+                        text=True,
+                    )
+                    active_auto = bool(str(r1.stdout or "").strip())
+                    active_ft8modem = False
+                    for udp_port in active_ports:
+                        r2 = subprocess.run(
+                            ["pgrep", "-f", f"ft8modem.*udp:{udp_port}"],
+                            check=False,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL,
+                            text=True,
+                        )
+                        if str(r2.stdout or "").strip():
+                            active_ft8modem = True
+                            break
+                else:
+                    r1 = subprocess.run(
+                        ["pgrep", "-f", "kiwirecorder.py.*(AUTO_|FIXED_|ROAM)"],
+                        check=False,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL,
+                        text=True,
+                    )
+                    r2 = subprocess.run(
+                        ["pgrep", "-f", "ft8modem.*udp:"],
+                        check=False,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL,
+                        text=True,
+                    )
+                    active_auto = bool(str(r1.stdout or "").strip())
+                    active_ft8modem = bool(str(r2.stdout or "").strip())
                 if not active_auto and not active_ft8modem:
                     return
             except Exception:
                 return
             time.sleep(0.2)
+        if active_ports:
+            for udp_port in active_ports:
+                try:
+                    subprocess.run(
+                        ["pkill", "-f", f"ft8modem.*udp:{udp_port}"],
+                        check=False,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except Exception:
+                    pass
+            return
         try:
             subprocess.run(
                 ["pkill", "-f", "ft8modem.*udp:"],
@@ -4244,9 +4703,13 @@ class ReceiverManager:
         allow_starting_from_empty_full_reset: bool = True,
     ) -> None:
         with self._lock:
+            inactive_workers_to_stop = self._activate_runtime_target_locked(host, port)
             prior_host = str(getattr(self, "_active_host", "") or "")
             prior_port = int(getattr(self, "_active_port", 0) or 0)
             assignments = self._normalize_ssb_receivers(assignments)
+
+            for inactive_worker in inactive_workers_to_stop:
+                self._stop_worker(inactive_worker, join_timeout_s=3.0, graceful=False)
 
             self._seed_health_summary_cache(assignments)
             self._seed_truth_snapshot_cache(host=str(host), port=int(port), assignments=assignments)
@@ -4256,6 +4719,7 @@ class ReceiverManager:
             if equivalent_assignments:
                 reconcile_rxs = self._assignment_slots_needing_reconcile(host=host, port=port, assignments=assignments)
                 if not reconcile_rxs:
+                    self._store_active_runtime_state_locked()
                     return
                 logger.warning(
                     "Receiver assignment drift detected; restarting workers for RXs %s",
@@ -4277,6 +4741,7 @@ class ReceiverManager:
                         "consecutive_failures": 1,
                         "updated_unix": float(now),
                     }
+                self._store_active_runtime_state_locked()
                 return
 
             host_changed = (
@@ -4402,6 +4867,7 @@ class ReceiverManager:
                     )
                 self._cleanup_orphan_processes()
                 self._wait_for_orphan_cleanup(timeout_s=6.0)
+                self._store_active_runtime_state_locked()
                 return
 
             if stopped_labels:
@@ -4486,17 +4952,18 @@ class ReceiverManager:
                     # the wrong slot from a prior P-pointer misalignment).  This clears
                     # exactly the slots the roaming workers need without disconnecting the
                     # healthy fixed receivers.
-                    _startup_preclear_roaming_slots = sorted(
-                        int(rx)
-                        for rx in desired_rxs
-                        if int(rx) < 2
-                        and (
-                            int(rx) not in current_rxs
-                            or int(rx) in to_stop
-                            or int(rx) in reconcile_rxs
+                    if not bootstrap_fixed_first:
+                        _startup_preclear_roaming_slots = sorted(
+                            int(rx)
+                            for rx in desired_rxs
+                            if int(rx) < 2
+                            and (
+                                int(rx) not in current_rxs
+                                or int(rx) in to_stop
+                                or int(rx) in reconcile_rxs
+                            )
                         )
-                    )
-            elif desired_rxs:
+            elif desired_rxs and not bootstrap_fixed_first:
                 _startup_preclear_roaming_slots = sorted(
                     int(rx)
                     for rx in desired_rxs
@@ -4701,6 +5168,7 @@ class ReceiverManager:
                     "Deferring roaming startup on empty-state bootstrap; starting fixed RXs first: %s",
                     _startup_order,
                 )
+                time.sleep(_startup_short_pause_s)
             elif starting_from_empty and desired_fixed_rxs:
                 _startup_order = desired_fixed_rxs + [int(rx) for rx in sorted(desired_rxs) if int(rx) not in desired_fixed_rxs]
             if fixed_only_bootstrap and desired_fixed_rxs:
@@ -5281,6 +5749,7 @@ class ReceiverManager:
 
             self._startup_eviction_active.clear()
             self._mismatch_global_streak = 0  # reset streak; slots are now correct
+            self._store_active_runtime_state_locked()
 
     def stop_all(self) -> None:
         self._manager_stop.set()

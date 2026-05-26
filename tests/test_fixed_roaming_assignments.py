@@ -86,7 +86,7 @@ class _LoopResponse:
 
 def test_fixed_roaming_payload_pins_rx2_to_rx7(monkeypatch) -> None:
     loop = AutoSetLoop()
-    monkeypatch.setattr(loop, "_fixed_health_state", lambda: ("healthy", []))
+    monkeypatch.setattr(loop, "_fixed_health_state", lambda kiwi_key=None: ("healthy", []))
 
     payload = loop._build_fixed_roaming_payload({}, "day")
 
@@ -108,7 +108,7 @@ def test_fixed_roaming_payload_pins_rx2_to_rx7(monkeypatch) -> None:
 
 def test_fixed_roaming_payload_night_uses_only_night_roaming_pool(monkeypatch) -> None:
     loop = AutoSetLoop()
-    monkeypatch.setattr(loop, "_fixed_health_state", lambda: ("healthy", []))
+    monkeypatch.setattr(loop, "_fixed_health_state", lambda kiwi_key=None: ("healthy", []))
 
     payload = loop._build_fixed_roaming_payload({}, "night")
 
@@ -136,7 +136,7 @@ def test_fixed_roaming_payload_semi_mode_keeps_fixed_receivers_only() -> None:
 
 def test_fixed_roaming_payload_passes_current_roaming_to_smart_scheduler(monkeypatch) -> None:
     loop = AutoSetLoop()
-    monkeypatch.setattr(loop, "_fixed_health_state", lambda: ("healthy", []))
+    monkeypatch.setattr(loop, "_fixed_health_state", lambda kiwi_key=None: ("healthy", []))
 
     class _SmartSchedulerStub:
         def __init__(self) -> None:
@@ -148,7 +148,7 @@ def test_fixed_roaming_payload_passes_current_roaming_to_smart_scheduler(monkeyp
 
     scheduler = _SmartSchedulerStub()
     loop.set_smart_scheduler(scheduler)
-    monkeypatch.setattr(loop, "_current_roaming_bands", lambda: ["10m", "12m"])
+    monkeypatch.setattr(loop, "_current_roaming_bands", lambda kiwi_key=None: ["10m", "12m"])
 
     payload = loop._build_fixed_roaming_payload({}, "day")
 
@@ -158,7 +158,7 @@ def test_fixed_roaming_payload_passes_current_roaming_to_smart_scheduler(monkeyp
 
 def test_fixed_roaming_payload_filters_non_roaming_current_bands(monkeypatch) -> None:
     loop = AutoSetLoop()
-    monkeypatch.setattr(loop, "_fixed_health_state", lambda: ("healthy", []))
+    monkeypatch.setattr(loop, "_fixed_health_state", lambda kiwi_key=None: ("healthy", []))
 
     class _SmartSchedulerStub:
         def __init__(self) -> None:
@@ -170,7 +170,7 @@ def test_fixed_roaming_payload_filters_non_roaming_current_bands(monkeypatch) ->
 
     scheduler = _SmartSchedulerStub()
     loop.set_smart_scheduler(scheduler)
-    monkeypatch.setattr(loop, "_current_roaming_bands", lambda: ["20m", "12m"])
+    monkeypatch.setattr(loop, "_current_roaming_bands", lambda kiwi_key=None: ["20m", "12m"])
 
     payload = loop._build_fixed_roaming_payload({}, "day")
 
@@ -180,7 +180,7 @@ def test_fixed_roaming_payload_filters_non_roaming_current_bands(monkeypatch) ->
 
 def test_fixed_roaming_payload_excludes_closed_bands(monkeypatch) -> None:
     loop = AutoSetLoop()
-    monkeypatch.setattr(loop, "_fixed_health_state", lambda: ("healthy", []))
+    monkeypatch.setattr(loop, "_fixed_health_state", lambda kiwi_key=None: ("healthy", []))
 
     class _SmartSchedulerStub:
         def __init__(self) -> None:
@@ -195,7 +195,7 @@ def test_fixed_roaming_payload_excludes_closed_bands(monkeypatch) -> None:
 
     scheduler = _SmartSchedulerStub()
     loop.set_smart_scheduler(scheduler)
-    monkeypatch.setattr(loop, "_current_roaming_bands", lambda: ["10m", "12m"])
+    monkeypatch.setattr(loop, "_current_roaming_bands", lambda kiwi_key=None: ["10m", "12m"])
 
     payload = loop._build_fixed_roaming_payload({}, "day")
 
@@ -207,7 +207,7 @@ def test_fixed_roaming_payload_excludes_closed_bands(monkeypatch) -> None:
 
 def test_fixed_roaming_payload_falls_back_when_closed_bands_leave_one_roaming_slot(monkeypatch) -> None:
     loop = AutoSetLoop()
-    monkeypatch.setattr(loop, "_fixed_health_state", lambda: ("healthy", []))
+    monkeypatch.setattr(loop, "_fixed_health_state", lambda kiwi_key=None: ("healthy", []))
 
     class _SmartSchedulerStub:
         def __init__(self) -> None:
@@ -222,7 +222,7 @@ def test_fixed_roaming_payload_falls_back_when_closed_bands_leave_one_roaming_sl
 
     scheduler = _SmartSchedulerStub()
     loop.set_smart_scheduler(scheduler)
-    monkeypatch.setattr(loop, "_current_roaming_bands", lambda: ["12m", "15m"])
+    monkeypatch.setattr(loop, "_current_roaming_bands", lambda kiwi_key=None: ["12m", "15m"])
 
     payload = loop._build_fixed_roaming_payload({}, "day")
 
@@ -377,6 +377,82 @@ def test_fixed_mode_preserves_explicit_fallback_band_even_when_marked_closed(mon
     )
 
     assert response.status_code == 200
+    assert sorted(receiver_mgr.last_assignments.keys()) == list(range(8))
+    assert receiver_mgr.last_assignments[0].band == "10m"
+    assert receiver_mgr.last_assignments[0].mode_label == "FT8"
+    assert receiver_mgr.last_assignments[1].band == "15m"
+    assert receiver_mgr.last_assignments[1].mode_label == "FT8"
+
+
+def test_nonfixed_mode_preserves_explicit_fallback_band_even_when_marked_closed(monkeypatch) -> None:
+    monkeypatch.delenv("KIWISCAN_AUTOSET_MAX_RX", raising=False)
+    monkeypatch.setattr(
+        auto_set_api,
+        "_load_automation_settings",
+        lambda: {
+            "fixedModeEnabled": False,
+            "headlessEnabled": True,
+        },
+    )
+
+    mgr = _MgrStub()
+    receiver_mgr = _ReceiverMgrStub()
+    app = FastAPI()
+    app.include_router(
+        make_router(
+            mgr=mgr,
+            receiver_mgr=receiver_mgr,
+            band_order=["10m", "12m", "15m", "17m", "20m", "30m", "40m", "60m", "80m", "160m"],
+            band_freqs_hz={
+                "10m": 28_074_000.0,
+                "12m": 24_915_000.0,
+                "15m": 21_074_000.0,
+                "17m": 18_104_000.0,
+                "20m": 14_074_000.0,
+                "30m": 10_136_000.0,
+                "40m": 7_074_000.0,
+                "60m": 5_357_000.0,
+                "80m": 3_573_000.0,
+                "160m": 1_840_000.0,
+            },
+            band_ft4_freqs_hz={
+                "20m": 14_080_000.0,
+                "30m": 10_140_000.0,
+                "40m": 7_047_500.0,
+                "80m": 3_575_000.0,
+            },
+            band_wspr_freqs_hz={
+                "17m": 18_104_600.0,
+                "20m": 14_095_600.0,
+                "30m": 10_138_700.0,
+                "40m": 7_038_600.0,
+                "160m": 1_836_600.0,
+            },
+        )
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/auto_set_receivers",
+        json={
+            "enabled": True,
+            "force": True,
+            "mode": "ft8",
+            "block": "day",
+            "selected_bands": ["15m", "10m"],
+            "closed_bands": ["10m", "12m"],
+            "band_modes": {
+                "15m": "FT8",
+                "10m": "FT8",
+            },
+            "fixed_assignments": list(auto_set_api._FIXED_ASSIGNMENTS),
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["requested_other_tasks"] == 2
+    assert payload["assigned_other_tasks"] == 2
     assert sorted(receiver_mgr.last_assignments.keys()) == list(range(8))
     assert receiver_mgr.last_assignments[0].band == "10m"
     assert receiver_mgr.last_assignments[0].mode_label == "FT8"
@@ -572,6 +648,63 @@ def test_auto_set_suppressed_while_receivers_mode_scan_is_saved(monkeypatch) -> 
     assert payload["hold_reason"] == "receiver_scan"
     assert receiver_mgr.apply_calls == 0
     assert receiver_mgr.last_assignments == {}
+
+
+def test_auto_set_targeted_kiwi_auto_not_suppressed_by_global_scan_mode(monkeypatch) -> None:
+    monkeypatch.delenv("KIWISCAN_AUTOSET_MAX_RX", raising=False)
+    monkeypatch.setattr(
+        auto_set_api,
+        "_load_automation_settings",
+        lambda: {
+            "fixedModeEnabled": True,
+            "headlessEnabled": True,
+            "receiversMode": "scan",
+            "kiwiModes": {
+                "10.13.73.235:8073": "auto",
+                "10.13.73.236:8073": "scan",
+            },
+        },
+    )
+
+    mgr = _MgrStub()
+    receiver_mgr = _ReceiverMgrStub()
+    app = FastAPI()
+    app.include_router(
+        make_router(
+            mgr=mgr,
+            receiver_mgr=receiver_mgr,
+            auto_set_loop=_AutoSetLoopStatusStub(None),
+            band_order=["10m", "12m", "15m", "17m", "20m", "30m", "40m", "60m", "80m", "160m"],
+            band_freqs_hz={
+                "10m": 28_074_000.0,
+                "15m": 21_074_000.0,
+            },
+            band_ft4_freqs_hz={},
+            band_wspr_freqs_hz={},
+        )
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/auto_set_receivers",
+        json={
+            "enabled": True,
+            "force": True,
+            "mode": "ft8",
+            "block": "day",
+            "kiwi_key": "10.13.73.235:8073",
+            "selected_bands": ["15m", "10m"],
+            "band_modes": {
+                "15m": "FT8",
+                "10m": "FT8",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json().get("held") is not True
+    assert receiver_mgr.apply_calls == 1
+    assert sorted(receiver_mgr.last_assignments.keys()) == list(range(8))
 
 
 def test_fixed_mode_roaming_drops_bands_reserved_by_fixed_assignments(monkeypatch) -> None:
@@ -891,7 +1024,7 @@ def test_restart_sick_receivers_targets_lowest_fixed_rx_first(monkeypatch) -> No
 def test_fixed_roaming_payload_keeps_roaming_empty_when_health_is_unknown(monkeypatch) -> None:
     loop = AutoSetLoop()
 
-    monkeypatch.setattr(loop, "_fixed_health_state", lambda: ("unknown", []))
+    monkeypatch.setattr(loop, "_fixed_health_state", lambda kiwi_key=None: ("unknown", []))
 
     payload = loop._build_fixed_roaming_payload({}, "night")
 
@@ -905,7 +1038,7 @@ def test_fixed_roaming_payload_keeps_roaming_empty_when_health_is_sick(monkeypat
     monkeypatch.setattr(
         loop,
         "_fixed_health_state",
-        lambda: ("sick", [{"rx": 2, "band": "20m", "mode": "FT4 / FT8", "freq_hz": 14_077_000.0}]),
+        lambda kiwi_key=None: ("sick", [{"rx": 2, "band": "20m", "mode": "FT4 / FT8", "freq_hz": 14_077_000.0}]),
     )
 
     payload = loop._build_fixed_roaming_payload({}, "day")
@@ -1058,8 +1191,8 @@ def test_force_reassign_posts_payload_when_not_held(monkeypatch) -> None:
     loop._last_applied_band_config = "bands"
 
     monkeypatch.setattr(loop, "_load_settings", lambda: {"fixedModeEnabled": True})
-    monkeypatch.setattr(loop, "_current_schedule_key", lambda _settings: ("ft8", "00-04"))
-    monkeypatch.setattr(loop, "_build_payload", lambda _settings, schedule_key=None: {"enabled": True, "schedule_key": schedule_key})
+    monkeypatch.setattr(loop, "_current_schedule_key", lambda _settings, kiwi_key=None: ("ft8", "00-04"))
+    monkeypatch.setattr(loop, "_build_payload", lambda _settings, schedule_key=None, kiwi_key=None: {"enabled": True, "schedule_key": schedule_key})
 
     posted: list[dict] = []
     monkeypatch.setattr(loop, "_post_auto_set", lambda payload: posted.append(dict(payload)))
@@ -1094,12 +1227,12 @@ def test_apply_current_settings_posts_payload_and_syncs_loop_state(monkeypatch) 
     loop = AutoSetLoop()
 
     monkeypatch.setattr(loop, "_load_settings", lambda: {"fixedModeEnabled": True, "receiversMode": "auto"})
-    monkeypatch.setattr(loop, "_current_schedule_key", lambda _settings: ("fixed", "day"))
-    monkeypatch.setattr(loop, "_apply_signature", lambda _settings, _schedule_key: "sig")
+    monkeypatch.setattr(loop, "_current_schedule_key", lambda _settings, kiwi_key=None: ("fixed", "day"))
+    monkeypatch.setattr(loop, "_apply_signature", lambda _settings, _schedule_key, kiwi_key=None: "sig")
     monkeypatch.setattr(
         loop,
         "_build_payload",
-        lambda _settings, schedule_key=None: {
+        lambda _settings, schedule_key=None, kiwi_key=None: {
             "enabled": True,
             "mode": "ft8",
             "block": "day",
@@ -1128,6 +1261,91 @@ def test_apply_current_settings_posts_payload_and_syncs_loop_state(monkeypatch) 
     assert loop._last_schedule_key == ("fixed", "day")
     assert loop._last_apply_signature == "sig"
     assert loop._last_applied_band_config == loop._band_config_signature(posted[0])
+
+
+def test_apply_current_settings_posts_payload_with_active_kiwi_key(monkeypatch) -> None:
+    loop = AutoSetLoop()
+
+    monkeypatch.setattr(
+        loop,
+        "_load_settings",
+        lambda: {
+            "fixedModeEnabled": True,
+            "receiversMode": "auto",
+            "activeKiwiKey": "kiwi-b.local:8074",
+        },
+    )
+    monkeypatch.setattr(loop, "_current_schedule_key", lambda _settings, kiwi_key=None: ("fixed", "day"))
+    monkeypatch.setattr(loop, "_apply_signature", lambda _settings, _schedule_key, kiwi_key=None: "sig")
+    monkeypatch.setattr(
+        loop,
+        "_build_payload",
+        lambda _settings, schedule_key=None, kiwi_key=None: {"enabled": True, "mode": "ft8", "block": "day"},
+    )
+
+    posted: list[dict] = []
+    monkeypatch.setattr(loop, "_post_auto_set", lambda payload: posted.append(dict(payload)))
+
+    applied = loop.apply_current_settings(force=True, sync_state=True)
+
+    assert applied is True
+    assert posted == [{
+        "enabled": True,
+        "mode": "ft8",
+        "block": "day",
+        "kiwi_key": "kiwi-b.local:8074",
+        "force": True,
+    }]
+
+
+def test_apply_current_settings_posts_payload_for_each_auto_kiwi(monkeypatch) -> None:
+    loop = AutoSetLoop()
+
+    monkeypatch.setattr(
+        loop,
+        "_load_settings",
+        lambda: {
+            "fixedModeEnabled": True,
+            "receiversMode": "manual",
+            "activeKiwiKey": "kiwi-b.local:8074",
+            "kiwiModes": {
+                "kiwi-a.local:8073": "auto",
+                "kiwi-b.local:8074": "semi",
+            },
+        },
+    )
+    monkeypatch.setattr(loop, "_current_schedule_key", lambda _settings, kiwi_key=None: ("fixed", "day"))
+    monkeypatch.setattr(loop, "_apply_signature", lambda _settings, _schedule_key, kiwi_key=None: f"sig:{kiwi_key or ''}")
+    monkeypatch.setattr(
+        loop,
+        "_build_payload",
+        lambda _settings, schedule_key=None, kiwi_key=None: {"enabled": True, "mode": "ft8", "block": "day", "target": kiwi_key},
+    )
+
+    posted: list[dict] = []
+    monkeypatch.setattr(loop, "_post_auto_set", lambda payload: posted.append(dict(payload)))
+
+    applied = loop.apply_current_settings(force=True, sync_state=True)
+
+    assert applied is True
+    assert posted == [
+        {
+            "enabled": True,
+            "mode": "ft8",
+            "block": "day",
+            "target": "kiwi-a.local:8073",
+            "kiwi_key": "kiwi-a.local:8073",
+            "force": True,
+        },
+        {
+            "enabled": True,
+            "mode": "ft8",
+            "block": "day",
+            "target": "kiwi-b.local:8074",
+            "kiwi_key": "kiwi-b.local:8074",
+            "force": True,
+        },
+    ]
 
 
 def test_recovery_backoff_uses_shorter_recheck_for_empty_roaming_payload(monkeypatch) -> None:
@@ -1189,11 +1407,11 @@ def test_run_reapplies_when_scored_band_config_changes_without_schedule_change(m
     }
 
     monkeypatch.setattr(loop, "_load_settings", lambda: settings)
-    monkeypatch.setattr(loop, "_current_schedule_key", lambda _settings: ("fixed", "day"))
-    monkeypatch.setattr(loop, "_apply_signature", lambda _settings, _schedule_key: "sig")
-    monkeypatch.setattr(loop, "_fixed_health_state", lambda: ("healthy", []))
-    monkeypatch.setattr(loop, "_roaming_health_state", lambda: ("healthy", []))
-    monkeypatch.setattr(loop, "_build_payload", lambda _settings, schedule_key=None: dict(payload))
+    monkeypatch.setattr(loop, "_current_schedule_key", lambda _settings, kiwi_key=None: ("fixed", "day"))
+    monkeypatch.setattr(loop, "_apply_signature", lambda _settings, _schedule_key, kiwi_key=None: "sig")
+    monkeypatch.setattr(loop, "_fixed_health_state", lambda kiwi_key=None: ("healthy", []))
+    monkeypatch.setattr(loop, "_roaming_health_state", lambda kiwi_key=None: ("healthy", []))
+    monkeypatch.setattr(loop, "_build_payload", lambda _settings, schedule_key=None, kiwi_key=None: dict(payload))
 
     posted: list[dict] = []
     monkeypatch.setattr(loop, "_post_auto_set", lambda posted_payload: posted.append(dict(posted_payload)))
@@ -1224,10 +1442,10 @@ def test_run_uses_shorter_backoff_after_empty_roaming_startup_apply(monkeypatch)
 
     monkeypatch.setattr(asl, "time", type("_FakeTime", (), {"time": staticmethod(lambda: 1000.0)}))
     monkeypatch.setattr(loop, "_load_settings", lambda: settings)
-    monkeypatch.setattr(loop, "_current_schedule_key", lambda _settings: ("fixed", "night"))
-    monkeypatch.setattr(loop, "_apply_signature", lambda _settings, _schedule_key: "sig")
+    monkeypatch.setattr(loop, "_current_schedule_key", lambda _settings, kiwi_key=None: ("fixed", "night"))
+    monkeypatch.setattr(loop, "_apply_signature", lambda _settings, _schedule_key, kiwi_key=None: "sig")
     monkeypatch.setattr(loop, "_loop_interval_s", lambda: 30.0)
-    monkeypatch.setattr(loop, "_build_payload", lambda _settings, schedule_key=None: dict(payload))
+    monkeypatch.setattr(loop, "_build_payload", lambda _settings, schedule_key=None, kiwi_key=None: dict(payload))
     monkeypatch.setattr(loop, "_wait_for_notification", lambda timeout_s=None: loop._stop.set())
 
     posted: list[dict] = []

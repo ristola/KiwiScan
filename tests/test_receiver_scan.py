@@ -370,10 +370,10 @@ def test_receiver_scan_smart_start_uses_single_receiver_and_collects_smart_resul
     assert {call[2] for call in receiver_mgr.wait_clear_calls} == {(0,)}
     _, _, assignments, allow_starting_from_empty_full_reset = receiver_mgr.calls[0]
     assert allow_starting_from_empty_full_reset is False
-    assert sorted(assignments.keys()) == [2, 3, 4, 5, 6, 7]
-    assert all(getattr(assignment, "ignore_slot_check", False) for assignment in assignments.values())
+    assert assignments == {}
 
     status = service.status()
+    assert status["fixed_receivers"] == []
     assert status["reserved_receivers"] == [0, 1]
     assert status["plan"]["active_lanes"] == ["smart"]
     assert status["plan"]["scan_order"] == ["smart"]
@@ -439,7 +439,7 @@ def test_receiver_scan_phone_mode_supports_20m_band(monkeypatch, tmp_path: Path)
     assert status["results"]["phone"][-1]["freq_mhz"] == 14.35
 
 
-def test_receiver_scan_prepare_keeps_fixed_receivers_assigned(tmp_path: Path) -> None:
+def test_receiver_scan_prepare_clears_all_receivers(tmp_path: Path) -> None:
     receiver_mgr = _ReceiverMgrStub()
     auto_set_loop = _AutoSetLoopStub()
     service = ReceiverScanService(
@@ -458,10 +458,10 @@ def test_receiver_scan_prepare_keeps_fixed_receivers_assigned(tmp_path: Path) ->
     assert len(receiver_mgr.calls) == 1
     _, _, assignments, allow_starting_from_empty_full_reset = receiver_mgr.calls[0]
     assert allow_starting_from_empty_full_reset is False
-    assert sorted(assignments.keys()) == [2, 3, 4, 5, 6, 7]
+    assert assignments == {}
     assert receiver_mgr.kick_calls == [("kiwi.local", 8073, (0, 1), False)]
     assert receiver_mgr.wait_clear_calls == []
-    assert result["fixed_receivers"] == [2, 3, 4, 5, 6, 7]
+    assert result["fixed_receivers"] == []
     assert result["reserved_receivers"] == [0, 1]
     assert result["plan"]["active_lanes"] == ["smart"]
 
@@ -922,7 +922,7 @@ def test_receiver_scan_start_fails_cleanly_when_receiver_manager_lock_stays_busy
     assert auto_set_loop.resume_calls == [service.HOLD_REASON]
 
 
-def test_receiver_scan_prepare_restores_fixed_receivers_after_lock_timeout(tmp_path: Path) -> None:
+def test_receiver_scan_prepare_restores_cleared_assignments_after_lock_timeout(tmp_path: Path) -> None:
     receiver_mgr = _ReceiverMgrStub()
     receiver_mgr._lock = threading.Lock()
     assert receiver_mgr._lock.acquire(blocking=False) is True
@@ -953,7 +953,7 @@ def test_receiver_scan_prepare_restores_fixed_receivers_after_lock_timeout(tmp_p
     assert len(receiver_mgr.calls) == 1
     _, _, assignments, allow_starting_from_empty_full_reset = receiver_mgr.calls[0]
     assert allow_starting_from_empty_full_reset is False
-    assert sorted(assignments.keys()) == [2, 3, 4, 5, 6, 7]
+    assert assignments == {}
     assert auto_set_loop.pause_calls == [service.HOLD_REASON]
     assert auto_set_loop.resume_calls == [service.HOLD_REASON]
 

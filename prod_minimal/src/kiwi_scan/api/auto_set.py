@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from ..receiver_manager import ReceiverAssignment
 from ..scheduler import block_for_hour, get_table, season_for_date
-from ..auto_set_loop import _FIXED_ASSIGNMENTS
+from ..auto_set_loop import AutoSetLoop, _FIXED_ASSIGNMENTS
 from .decodes import prune_decode_buffer
 
 
@@ -28,13 +28,38 @@ _STATUS_WEIGHT = {
 }
 
 
-def _normalized_receivers_mode(settings: Dict[str, Any] | None) -> str:
+def _resolve_assignment_target(mgr: object, payload: Dict[str, object] | None = None) -> tuple[str, int]:
+    target_payload = payload if isinstance(payload, dict) else {}
+    kiwi_key = str(target_payload.get("kiwi_key") or "").strip()
+    kiwi_index = target_payload.get("kiwi_index")
+    has_explicit_target = bool(kiwi_key) or (kiwi_index is not None and str(kiwi_index).strip() != "")
+    target_label = kiwi_key if kiwi_key else str(kiwi_index)
+    if hasattr(mgr, "resolve_runtime_target"):
+        try:
+            if kiwi_key:
+                resolved = mgr.resolve_runtime_target(kiwi_key=kiwi_key)  # type: ignore[attr-defined]
+            elif kiwi_index is not None and str(kiwi_index).strip() != "":
+                resolved = mgr.resolve_runtime_target(kiwi_index=kiwi_index)  # type: ignore[attr-defined]
+            else:
+                resolved = mgr.resolve_runtime_target()  # type: ignore[attr-defined]
+            if isinstance(resolved, dict):
+                host = str(resolved.get("host") or "").strip()
+                port = int(resolved.get("port") or 0)
+                if host and port > 0:
+                    return host, port
+            if has_explicit_target:
+                raise HTTPException(status_code=400, detail=f"Unknown Kiwi target: {target_label}")
+        except Exception:
+            if has_explicit_target:
+                raise HTTPException(status_code=400, detail=f"Unknown Kiwi target: {target_label}")
+            logger.debug("Falling back to mgr.host/mgr.port for auto-set assignment target", exc_info=True)
+    with mgr.lock:  # type: ignore[attr-defined]
+        return str(mgr.host), int(mgr.port)
+
+
+def _normalized_receivers_mode(settings: Dict[str, Any] | None, *, kiwi_key: str | None = None) -> str:
     if isinstance(settings, dict):
-        raw = str(settings.get("receiversMode") or "").strip().lower()
-        if raw in {"auto", "semi", "manual", "scan"}:
-            return raw
-        if settings.get("fixedModeEnabled") is False:
-            return "manual"
+        return AutoSetLoop._receivers_mode(settings, kiwi_key=kiwi_key)
     return "auto"
 
 
@@ -403,7 +428,8 @@ def make_router(
             block = block_for_hour(local_dt.hour, mode="ft8")
 
         settings = _load_automation_settings()
-        if enabled and not external_hold_reason and _normalized_receivers_mode(settings) == "scan":
+        target_kiwi_key = str(payload.get("kiwi_key") or "").strip() or None
+        if enabled and not external_hold_reason and _normalized_receivers_mode(settings, kiwi_key=target_kiwi_key) == "scan":
             external_hold_reason = "receiver_scan"
 
         if enabled and external_hold_reason:
@@ -509,10 +535,7 @@ def make_router(
                 fixed_assignments_list.append({"rx": rx_f, "band": band_f, "mode": mode_f, "freq_hz": freq_f})
 
         if selected_set is not None:
-            if isinstance(settings, dict) and bool(settings.get("fixedModeEnabled", False)):
-                desired_bands = [b for b in band_order if b in selected_set]
-            else:
-                desired_bands = [b for b in band_order if b in selected_set and b not in empirical_closed]
+            desired_bands = [b for b in band_order if b in selected_set]
         else:
             desired_bands = [b for b in open_bands if b not in empirical_closed]
         if fixed_band_set:
@@ -541,9 +564,7 @@ def make_router(
             cached["deduped"] = True
             return cached
 
-        with mgr.lock:  # type: ignore[attr-defined]
-            host = str(mgr.host)
-            port = int(mgr.port)
+        host, port = _resolve_assignment_target(mgr, payload)
 
         if not enabled:
             # Stop RX0-RX7 processes.  Run in a thread so the event loop is

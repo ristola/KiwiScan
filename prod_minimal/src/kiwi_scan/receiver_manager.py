@@ -15,7 +15,7 @@ import json
 import urllib.parse
 import urllib.request
 import importlib.util
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, Optional
 
@@ -203,6 +203,26 @@ class ReceiverAssignment:
     mode_label: str
     sideband: Optional[str] = None
     ignore_slot_check: bool = False
+    user_label_override: Optional[str] = None
+
+
+@dataclass
+class _RuntimeTargetState:
+    host: str
+    port: int
+    workers: Dict[int, "_ReceiverWorker"] = field(default_factory=dict)
+    assignments: Dict[int, ReceiverAssignment] = field(default_factory=dict)
+    restart_total: int = 0
+    restart_by_rx: Dict[int, int] = field(default_factory=dict)
+    restart_last_unix: Optional[float] = None
+    watchdog_state_by_rx: Dict[int, Dict[str, object]] = field(default_factory=dict)
+    activity_by_rx: Dict[int, Dict[str, object]] = field(default_factory=dict)
+    stale_watch_state_by_rx: Dict[int, Dict[str, object]] = field(default_factory=dict)
+    mismatch_global_streak: int = 0
+    auto_kick_total: int = 0
+    auto_kick_last_unix: Optional[float] = None
+    auto_kick_last_reason: str = ""
+    auto_kick_last_result: str = ""
 
 
 class _ReceiverWorker(threading.Thread):
@@ -230,6 +250,7 @@ class _ReceiverWorker(threading.Thread):
         on_activity: Optional[Callable[[int, str, str, str, Optional[float], Optional[float]], None]] = None,
         initial_rx_chan_adjust: int = 0,
         ignore_slot_check: bool = False,
+        user_label_override: Optional[str] = None,
     ) -> None:
         super().__init__(daemon=True)
         self._ignore_slot_check = bool(ignore_slot_check)
@@ -1482,6 +1503,7 @@ class ReceiverManager:
                 logger.warning("sox not found in PATH; digital decode disabled")
         self._decode_callback = decode_callback
         self._lock = threading.Lock()
+        self._runtime_target_states: Dict[str, _RuntimeTargetState] = {}
         self._workers: Dict[int, _ReceiverWorker] = {}
         self._assignments: Dict[int, ReceiverAssignment] = {}
         self._restart_total = 0
@@ -1541,6 +1563,120 @@ class ReceiverManager:
             if value:
                 return value
         return None
+
+    @staticmethod
+    def _runtime_target_key(host: str, port: int) -> str:
+        normalized_host = str(host or "").strip().lower()
+        normalized_port = int(port or 0)
+        return f"{normalized_host}:{normalized_port}"
+
+    def _store_active_runtime_state_locked(self) -> None:
+        active_host = str(getattr(self, "_active_host", "") or "").strip()
+        active_port = int(getattr(self, "_active_port", 0) or 0)
+        if not active_host or active_port <= 0:
+            return
+        target_key = self._runtime_target_key(active_host, active_port)
+        state = self._runtime_target_states.get(target_key)
+        if state is None:
+            state = _RuntimeTargetState(host=active_host, port=active_port)
+            self._runtime_target_states[target_key] = state
+        state.host = active_host
+        state.port = active_port
+        state.workers = self._workers
+        state.assignments = self._assignments
+        state.restart_total = int(self._restart_total)
+        state.restart_by_rx = self._restart_by_rx
+        state.restart_last_unix = float(self._restart_last_unix) if self._restart_last_unix is not None else None
+        state.watchdog_state_by_rx = self._watchdog_state_by_rx
+        state.activity_by_rx = self._activity_by_rx
+        state.stale_watch_state_by_rx = self._stale_watch_state_by_rx
+        state.mismatch_global_streak = int(self._mismatch_global_streak)
+        state.auto_kick_total = int(self._auto_kick_total)
+        state.auto_kick_last_unix = float(self._auto_kick_last_unix) if self._auto_kick_last_unix is not None else None
+        state.auto_kick_last_reason = str(self._auto_kick_last_reason or "")
+        state.auto_kick_last_result = str(self._auto_kick_last_result or "")
+
+    def _deactivate_other_runtime_targets_locked(self, active_target_key: str) -> list["_ReceiverWorker"]:
+        workers_to_stop: list[_ReceiverWorker] = []
+        for target_key, state in self._runtime_target_states.items():
+            if target_key == active_target_key:
+                continue
+            workers_to_stop.extend(worker for worker in state.workers.values() if worker is not None)
+            state.workers = {}
+            state.assignments = {}
+            state.restart_total = 0
+            state.restart_by_rx = {}
+            state.restart_last_unix = None
+            state.watchdog_state_by_rx = {}
+            state.activity_by_rx = {}
+            state.stale_watch_state_by_rx = {}
+            state.mismatch_global_streak = 0
+            state.auto_kick_total = 0
+            state.auto_kick_last_unix = None
+            state.auto_kick_last_reason = ""
+            state.auto_kick_last_result = ""
+        return workers_to_stop
+
+    def _activate_runtime_target_locked(self, host: str, port: int) -> list["_ReceiverWorker"]:
+        normalized_host = str(host or "").strip()
+        normalized_port = int(port or 0)
+        target_key = self._runtime_target_key(normalized_host, normalized_port)
+        active_key = self._runtime_target_key(
+            str(getattr(self, "_active_host", "") or ""),
+            int(getattr(self, "_active_port", 0) or 0),
+        )
+        workers_to_stop: list[_ReceiverWorker] = []
+        if active_key != target_key:
+            self._store_active_runtime_state_locked()
+            workers_to_stop = self._deactivate_other_runtime_targets_locked(target_key)
+        state = self._runtime_target_states.get(target_key)
+        if state is None:
+            active_host = str(getattr(self, "_active_host", "") or "").strip()
+            active_port = int(getattr(self, "_active_port", 0) or 0)
+            hydrate_from_current = bool(
+                (active_key == target_key and normalized_host and normalized_port > 0)
+                or ((not active_host or active_port <= 0) and (self._workers or self._assignments))
+            )
+            if hydrate_from_current:
+                state = _RuntimeTargetState(
+                    host=normalized_host,
+                    port=normalized_port,
+                    workers=self._workers,
+                    assignments=self._assignments,
+                    restart_total=int(self._restart_total),
+                    restart_by_rx=self._restart_by_rx,
+                    restart_last_unix=float(self._restart_last_unix) if self._restart_last_unix is not None else None,
+                    watchdog_state_by_rx=self._watchdog_state_by_rx,
+                    activity_by_rx=self._activity_by_rx,
+                    stale_watch_state_by_rx=self._stale_watch_state_by_rx,
+                    mismatch_global_streak=int(self._mismatch_global_streak),
+                    auto_kick_total=int(self._auto_kick_total),
+                    auto_kick_last_unix=float(self._auto_kick_last_unix) if self._auto_kick_last_unix is not None else None,
+                    auto_kick_last_reason=str(self._auto_kick_last_reason or ""),
+                    auto_kick_last_result=str(self._auto_kick_last_result or ""),
+                )
+            else:
+                state = _RuntimeTargetState(host=normalized_host, port=normalized_port)
+            self._runtime_target_states[target_key] = state
+        else:
+            state.host = normalized_host
+            state.port = normalized_port
+        self._workers = state.workers
+        self._assignments = state.assignments
+        self._restart_total = int(state.restart_total)
+        self._restart_by_rx = state.restart_by_rx
+        self._restart_last_unix = float(state.restart_last_unix) if state.restart_last_unix is not None else None
+        self._watchdog_state_by_rx = state.watchdog_state_by_rx
+        self._activity_by_rx = state.activity_by_rx
+        self._stale_watch_state_by_rx = state.stale_watch_state_by_rx
+        self._mismatch_global_streak = int(state.mismatch_global_streak)
+        self._auto_kick_total = int(state.auto_kick_total)
+        self._auto_kick_last_unix = float(state.auto_kick_last_unix) if state.auto_kick_last_unix is not None else None
+        self._auto_kick_last_reason = str(state.auto_kick_last_reason or "")
+        self._auto_kick_last_result = str(state.auto_kick_last_result or "")
+        self._active_host = normalized_host
+        self._active_port = normalized_port
+        return workers_to_stop
 
     @staticmethod
     def _kiwi_admin_password() -> Optional[str]:
@@ -2453,6 +2589,25 @@ class ReceiverManager:
                 if label:
                     result[label] = int(rx)
             return result
+        finally:
+            self._lock.release()
+
+    def runtime_targets(self) -> Dict[str, Dict[str, object]]:
+        acquired = self._lock.acquire(timeout=1.0)
+        if not acquired:
+            return {}
+        try:
+            self._store_active_runtime_state_locked()
+            return {
+                target_key: {
+                    "host": str(state.host),
+                    "port": int(state.port),
+                    "assigned_receivers": len(state.assignments),
+                    "active_workers": len(state.workers),
+                    "rxs": sorted(int(rx) for rx in state.assignments.keys()),
+                }
+                for target_key, state in self._runtime_target_states.items()
+            }
         finally:
             self._lock.release()
 
@@ -4140,9 +4295,13 @@ class ReceiverManager:
         allow_starting_from_empty_full_reset: bool = True,
     ) -> None:
         with self._lock:
+            inactive_workers_to_stop = self._activate_runtime_target_locked(host, port)
             prior_host = str(getattr(self, "_active_host", "") or "")
             prior_port = int(getattr(self, "_active_port", 0) or 0)
             assignments = self._normalize_ssb_receivers(assignments)
+
+            for inactive_worker in inactive_workers_to_stop:
+                self._stop_worker(inactive_worker, join_timeout_s=3.0, graceful=False)
 
             self._seed_health_summary_cache(assignments)
             self._seed_truth_snapshot_cache(host=str(host), port=int(port), assignments=assignments)
@@ -4152,6 +4311,7 @@ class ReceiverManager:
             if equivalent_assignments:
                 reconcile_rxs = self._assignment_slots_needing_reconcile(host=host, port=port, assignments=assignments)
                 if not reconcile_rxs:
+                    self._store_active_runtime_state_locked()
                     return
                 logger.warning(
                     "Receiver assignment drift detected; restarting workers for RXs %s",
@@ -4173,6 +4333,7 @@ class ReceiverManager:
                         "consecutive_failures": 1,
                         "updated_unix": float(now),
                     }
+                self._store_active_runtime_state_locked()
                 return
 
             host_changed = (
@@ -4298,6 +4459,7 @@ class ReceiverManager:
                     )
                 self._cleanup_orphan_processes()
                 self._wait_for_orphan_cleanup(timeout_s=6.0)
+                self._store_active_runtime_state_locked()
                 return
 
             if stopped_labels:
@@ -4382,17 +4544,18 @@ class ReceiverManager:
                     # the wrong slot from a prior P-pointer misalignment).  This clears
                     # exactly the slots the roaming workers need without disconnecting the
                     # healthy fixed receivers.
-                    _startup_preclear_roaming_slots = sorted(
-                        int(rx)
-                        for rx in desired_rxs
-                        if int(rx) < 2
-                        and (
-                            int(rx) not in current_rxs
-                            or int(rx) in to_stop
-                            or int(rx) in reconcile_rxs
+                    if not bootstrap_fixed_first:
+                        _startup_preclear_roaming_slots = sorted(
+                            int(rx)
+                            for rx in desired_rxs
+                            if int(rx) < 2
+                            and (
+                                int(rx) not in current_rxs
+                                or int(rx) in to_stop
+                                or int(rx) in reconcile_rxs
+                            )
                         )
-                    )
-            elif desired_rxs:
+            elif desired_rxs and not bootstrap_fixed_first:
                 _startup_preclear_roaming_slots = sorted(
                     int(rx)
                     for rx in desired_rxs
@@ -4596,6 +4759,7 @@ class ReceiverManager:
                     "Deferring roaming startup on empty-state bootstrap; starting fixed RXs first: %s",
                     _startup_order,
                 )
+                time.sleep(_startup_short_pause_s)
             elif starting_from_empty and desired_fixed_rxs:
                 _startup_order = desired_fixed_rxs + [int(rx) for rx in sorted(desired_rxs) if int(rx) not in desired_fixed_rxs]
             if fixed_only_bootstrap and desired_fixed_rxs:
@@ -5223,6 +5387,7 @@ class ReceiverManager:
 
             self._startup_eviction_active.clear()
             self._mismatch_global_streak = 0  # reset streak; slots are now correct
+            self._store_active_runtime_state_locked()
 
     def stop_all(self) -> None:
         self._manager_stop.set()

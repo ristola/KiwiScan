@@ -75,6 +75,7 @@ def test_decodes_reset_endpoint_clears_buffer_and_published_stats() -> None:
     assert response.status_code == 200
     assert response.json() == {"total_decodes": 0, "buffer_size": 0}
     assert decodes_api.get_published_decode_stats_by_rx() == {}
+    assert decodes_api.get_published_decode_stats_by_kiwi() == {}
 
     decodes_response = client.get("/decodes")
     assert decodes_response.status_code == 200
@@ -289,6 +290,77 @@ def test_published_decode_stats_track_mixed_modes_on_same_rx_and_band(monkeypatc
     }
 
 
+def test_decode_callback_tracks_stats_by_kiwi_key() -> None:
+    decodes_api.decode_callback(
+        {
+            "band": "20m",
+            "rx": 2,
+            "freq_hz": 14_077_000.0,
+            "mode_label": "FT8",
+            "kiwi_key": "kiwi-a:8073",
+            "message": "D: FT8 1776659295 -14  0.2 2175 ~  CQ NO9D EM54",
+        }
+    )
+    decodes_api.decode_callback(
+        {
+            "band": "20m",
+            "rx": 2,
+            "freq_hz": 14_077_000.0,
+            "mode_label": "FT8",
+            "kiwi_key": "kiwi-b:8073",
+            "message": "D: FT8 1776659300 -09  0.1 1800 ~  CQ CO8LY FL20",
+        }
+    )
+
+    by_rx = decodes_api.get_published_decode_stats_by_rx()
+    by_kiwi = decodes_api.get_published_decode_stats_by_kiwi()
+
+    assert by_rx["2"]["bands"]["20m"]["decode_total"] == 2
+    assert by_kiwi["kiwi-a:8073"]["bands"]["20m"]["decode_total"] == 1
+    assert by_kiwi["kiwi-b:8073"]["bands"]["20m"]["decode_total"] == 1
+
+
+def test_decodes_endpoint_filters_recent_items_by_kiwi_key() -> None:
+    app = FastAPI()
+    app.include_router(decodes_api.router)
+    client = TestClient(app)
+
+    decodes_api.publish_decode(
+        {
+            "timestamp": "16:16:22",
+            "frequency_mhz": 14.074,
+            "mode": "FT8",
+            "callsign": "K1ABC",
+            "grid": "FN31",
+            "message": "CQ K1ABC FN31",
+            "band": "20m",
+            "rx": 2,
+            "kiwi_key": "kiwi-a:8073",
+        }
+    )
+    decodes_api.publish_decode(
+        {
+            "timestamp": "16:16:23",
+            "frequency_mhz": 7.074,
+            "mode": "FT8",
+            "callsign": "K2XYZ",
+            "grid": "EM12",
+            "message": "CQ K2XYZ EM12",
+            "band": "40m",
+            "rx": 4,
+            "kiwi_key": "kiwi-b:8073",
+        }
+    )
+
+    response = client.get("/decodes", params={"kiwi_key": "kiwi-a:8073"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["latest"] == 2
+    assert [item["callsign"] for item in body["items"]] == ["K1ABC"]
+    assert all(item["kiwi_key"] == "kiwi-a:8073" for item in body["items"])
+
+
 def test_decodes_chart_omits_in_progress_bucket(monkeypatch) -> None:
     app = FastAPI()
     app.include_router(decodes_api.router)
@@ -343,6 +415,73 @@ def test_decodes_chart_omits_in_progress_bucket(monkeypatch) -> None:
             },
         }
     ]
+
+
+def test_decodes_chart_filters_completed_buckets_by_kiwi_key(monkeypatch) -> None:
+    app = FastAPI()
+    app.include_router(decodes_api.router)
+    client = TestClient(app)
+
+    monkeypatch.setattr(decodes_api.time, "time", lambda: 100.0)
+    decodes_api.publish_decode(
+        {
+            "timestamp": "16:16:22",
+            "frequency_mhz": 7.074,
+            "mode": "FT8",
+            "callsign": "K1ABC",
+            "grid": "FN31",
+            "message": "CQ K1ABC FN31",
+            "band": "40m",
+            "rx": 4,
+            "kiwi_key": "kiwi-a:8073",
+        }
+    )
+    decodes_api.publish_decode(
+        {
+            "timestamp": "16:16:24",
+            "frequency_mhz": 7.074,
+            "mode": "FT8",
+            "callsign": "K2XYZ",
+            "grid": "EM12",
+            "message": "CQ K2XYZ EM12",
+            "band": "40m",
+            "rx": 4,
+            "kiwi_key": "kiwi-b:8073",
+        }
+    )
+
+    monkeypatch.setattr(decodes_api.time, "time", lambda: 116.0)
+    decodes_api.publish_decode(
+        {
+            "timestamp": "16:16:38",
+            "frequency_mhz": 14.074,
+            "mode": "FT8",
+            "callsign": "K3AAA",
+            "grid": "EL29",
+            "message": "CQ K3AAA EL29",
+            "band": "20m",
+            "rx": 2,
+            "kiwi_key": "kiwi-a:8073",
+        }
+    )
+
+    response = client.get("/decodes/chart", params={"kiwi_key": "kiwi-a:8073"})
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "bucket_s": 15.0,
+        "buckets": [
+            {
+                "ts": 90.0,
+                "bands": {
+                    "40m": {
+                        "total": 1,
+                        "breakdown": {"RX4|FT8": 1},
+                    }
+                },
+            }
+        ],
+    }
 
 
 def test_reset_decode_metrics_clears_chart_history(monkeypatch) -> None:

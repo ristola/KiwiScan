@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 router = APIRouter()
@@ -13,6 +13,15 @@ _HTML_NO_CACHE_HEADERS = {
     "Pragma": "no-cache",
     "Expires": "0",
 }
+
+
+class _NoCacheHtmlStaticFiles(StaticFiles):
+    def file_response(self, *args, **kwargs) -> Response:
+        response = super().file_response(*args, **kwargs)
+        media_type = str(getattr(response, "media_type", "") or "").lower()
+        if media_type.startswith("text/html"):
+            response.headers.update(_HTML_NO_CACHE_HEADERS)
+        return response
 
 
 def _static_dir() -> Path:
@@ -25,7 +34,7 @@ def mount_static(app: FastAPI) -> None:
 
     d = _static_dir()
     if d.is_dir():
-        app.mount("/static", StaticFiles(directory=str(d), html=True), name="static")
+        app.mount("/static", _NoCacheHtmlStaticFiles(directory=str(d), html=True), name="static")
 
 
 @router.get("/", response_class=HTMLResponse)
