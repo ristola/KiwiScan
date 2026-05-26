@@ -16,6 +16,12 @@ Install to a custom location:
 curl -fsSL https://raw.githubusercontent.com/ristola/KiwiScan/main/tools/install_latest.sh | bash -s -- "$HOME/KiwiScan"
 ```
 
+Install a specific release tag:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ristola/KiwiScan/main/tools/install_latest.sh | TAG=v0.1.29 bash
+```
+
 ## Docker install
 
 Use this when you want to run KiwiScan directly from the published Docker image.
@@ -142,6 +148,7 @@ Output:
 
 Then upload that `.pkg` to a GitHub Release and share the release asset URL.
 Users can download and open the package installer from Finder.
+The generated package pins installs to the package version's git tag by default.
 
 ## Notes
 

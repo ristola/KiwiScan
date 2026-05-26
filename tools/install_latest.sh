@@ -2,10 +2,18 @@
 set -euo pipefail
 
 REPO="${REPO:-ristola/KiwiScan}"
+TAG="${TAG:-}"
 BRANCH="${BRANCH:-main}"
 DEST_DIR="${1:-/opt/kiwi_scan_prod}"
-ARCHIVE_URL="https://github.com/${REPO}/archive/refs/heads/${BRANCH}.zip"
-COMMIT_API_URL="https://api.github.com/repos/${REPO}/commits/${BRANCH}"
+if [[ -n "$TAG" ]]; then
+  ARCHIVE_URL="https://github.com/${REPO}/archive/refs/tags/${TAG}.zip"
+  COMMIT_API_URL="https://api.github.com/repos/${REPO}/commits/${TAG}"
+  INSTALL_SOURCE_DESC="release tag ${TAG}"
+else
+  ARCHIVE_URL="https://github.com/${REPO}/archive/refs/heads/${BRANCH}.zip"
+  COMMIT_API_URL="https://api.github.com/repos/${REPO}/commits/${BRANCH}"
+  INSTALL_SOURCE_DESC="branch ${BRANCH}"
+fi
 
 need_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -24,7 +32,7 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 ZIP_PATH="$TMP_DIR/kiwiscan.zip"
 
-echo "Downloading ${ARCHIVE_URL} ..."
+echo "Downloading ${INSTALL_SOURCE_DESC} from ${ARCHIVE_URL} ..."
 curl -fL "$ARCHIVE_URL" -o "$ZIP_PATH"
 
 echo "Extracting archive ..."
@@ -42,9 +50,17 @@ if ! mkdir -p "$DEST_DIR" 2>/dev/null; then
   if [ "${EUID:-$(id -u)}" -ne 0 ]; then
     echo "Hint: /opt typically requires admin rights." >&2
     echo "Run either:" >&2
-    echo "  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/tools/install_latest.sh | sudo bash -s -- $DEST_DIR" >&2
+    if [[ -n "$TAG" ]]; then
+      echo "  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/tools/install_latest.sh | sudo env TAG=\"$TAG\" bash -s -- $DEST_DIR" >&2
+    else
+      echo "  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/tools/install_latest.sh | sudo bash -s -- $DEST_DIR" >&2
+    fi
     echo "or install without sudo to your home directory:" >&2
-    echo "  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/tools/install_latest.sh | bash -s -- \"$HOME/KiwiScan\"" >&2
+    if [[ -n "$TAG" ]]; then
+      echo "  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/tools/install_latest.sh | TAG=\"$TAG\" bash -s -- \"$HOME/KiwiScan\"" >&2
+    else
+      echo "  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/tools/install_latest.sh | bash -s -- \"$HOME/KiwiScan\"" >&2
+    fi
   fi
   exit 1
 fi

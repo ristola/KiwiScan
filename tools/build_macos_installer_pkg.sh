@@ -28,11 +28,12 @@ mkdir -p "$PKG_ROOT/usr/local/share/kiwiscan-installer"
 cp "$ROOT_DIR/tools/install_latest.sh" "$PKG_ROOT/usr/local/share/kiwiscan-installer/install_latest.sh"
 chmod +x "$PKG_ROOT/usr/local/share/kiwiscan-installer/install_latest.sh"
 
-cat > "$PKG_ROOT/usr/local/bin/kiwiscan-install" <<'EOF'
+cat > "$PKG_ROOT/usr/local/bin/kiwiscan-install" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-DEST_DIR="${1:-/opt/kiwi_scan_prod}"
-exec /usr/local/share/kiwiscan-installer/install_latest.sh "$DEST_DIR"
+DEST_DIR="\${1:-/opt/kiwi_scan_prod}"
+export TAG="\${KIWISCAN_TAG:-v${VERSION}}"
+exec /usr/local/share/kiwiscan-installer/install_latest.sh "\$DEST_DIR"
 EOF
 chmod +x "$PKG_ROOT/usr/local/bin/kiwiscan-install"
 
