@@ -13080,22 +13080,81 @@ ${passwordMarkup.actionsHtml}
             return Object.values(latestPublishedDecodeStatsByRx || {}).some((stats) => publishedStatsHasDigitalDecodes(stats));
         }
 
+        function isDigitalDecodeOverviewMode(modeValue) {
+            const normalized = String(safeText(modeValue, ""))
+                .trim()
+                .toUpperCase()
+                .replace(/[^A-Z0-9]/g, "");
+            if (!normalized) return false;
+            return normalized.includes("FT4") || normalized.includes("FT8") || normalized.includes("WSPR");
+        }
+
+        function hasDigitalDecodeOverviewAssignments() {
+            if (getCurrentReceiversMode() === "manual") {
+                const profile = resolveKiwiUiProfile(latestAutomationSettings);
+                const manualAssignments = profile && profile.manualAssignments && typeof profile.manualAssignments === "object"
+                    ? profile.manualAssignments
+                    : {};
+                for (const entry of Object.values(manualAssignments)) {
+                    if (!entry || typeof entry !== "object") continue;
+                    if (!entry.enabled) continue;
+                    if (isDigitalDecodeOverviewMode(entry.mode || entry.mode_label)) return true;
+                }
+                return false;
+            }
+
+            const profile = resolveKiwiUiProfile(latestAutomationSettings);
+            const manualAssignments = profile && profile.manualAssignments && typeof profile.manualAssignments === "object"
+                ? profile.manualAssignments
+                : {};
+            for (const entry of Object.values(manualAssignments)) {
+                if (!entry || typeof entry !== "object") continue;
+                if (!entry.enabled) continue;
+                if (isDigitalDecodeOverviewMode(entry.mode || entry.mode_label)) return true;
+            }
+
+            const assignments = latestAssignments && typeof latestAssignments === "object" ? latestAssignments : {};
+            for (const entry of Object.values(assignments)) {
+                if (!entry || typeof entry !== "object") continue;
+                if (isDigitalDecodeOverviewMode(entry.mode || entry.mode_label)) return true;
+            }
+
+            const channels = latestChannelsMap && typeof latestChannelsMap === "object" ? latestChannelsMap : {};
+            for (const channel of Object.values(channels)) {
+                if (!channel || typeof channel !== "object") continue;
+                if (!channel.active && !channel.visible_on_kiwi) continue;
+                if (isDigitalDecodeOverviewMode(channel.mode || channel.mode_label)) return true;
+            }
+
+            return false;
+        }
+
         function buildDigitalDecodeOverviewOrder(order) {
             const normalizedOrder = normalizeOverviewTopicOrder(order, overviewTopicPrefs.order);
             const filtered = normalizedOrder.filter((key) => !DIGITAL_DECODE_OVERVIEW_SEQUENCE.includes(key));
             const insertAfterAssignmentsIndex = filtered.indexOf("assignments");
             const insertIndex = insertAfterAssignmentsIndex >= 0 ? insertAfterAssignmentsIndex : filtered.length;
             filtered.splice(insertIndex, 0, ...DIGITAL_DECODE_OVERVIEW_SEQUENCE);
-            return normalizeOverviewTopicOrder(filtered, normalizedOrder);
+            const withoutFaults = filtered.filter((key) => key !== "faults");
+            withoutFaults.push("faults");
+            return normalizeOverviewTopicOrder(withoutFaults, normalizedOrder);
         }
 
         function autoUnhideDecodeOverviewTopics() {
-            if (!hasDigitalDecodeOverviewActivity()) return;
+            const shouldShowDigitalTopics = hasDigitalDecodeOverviewAssignments();
             const nextPrefs = normalizeOverviewTopicPrefs(overviewTopicPrefs, overviewTopicPrefs);
             let changed = false;
             for (const key of DIGITAL_DECODE_OVERVIEW_SEQUENCE) {
-                if (!nextPrefs[key]) {
-                    nextPrefs[key] = true;
+                const desiredVisible = !!shouldShowDigitalTopics;
+                if (!!nextPrefs[key] !== desiredVisible) {
+                    nextPrefs[key] = desiredVisible;
+                    changed = true;
+                }
+            }
+            if (shouldShowDigitalTopics) {
+                const nextOrder = buildDigitalDecodeOverviewOrder(nextPrefs.order);
+                if (JSON.stringify(nextOrder) !== JSON.stringify(nextPrefs.order)) {
+                    nextPrefs.order = nextOrder;
                     changed = true;
                 }
             }
@@ -15350,8 +15409,7 @@ ${passwordMarkup.actionsHtml}
         }
 
         function receiversModeShowsDecodeOverview(mode = getCurrentReceiversMode()) {
-            const normalizedMode = normalizeReceiversMode(mode, "auto");
-            return normalizedMode === "auto" || normalizedMode === "semi";
+            return hasDigitalDecodeOverviewAssignments();
         }
 
         function isOverviewTopicModeVisible(key, mode = getCurrentReceiversMode()) {
@@ -16140,6 +16198,10 @@ ${passwordMarkup.actionsHtml}
                 applyAutoModeVisibility(savedReceiversMode);
                 applyAndPersistUiPreferences(nextThemeMode, nextDensity, nextNightHour, nextHourOffset);
                 applyOverviewTopicPrefs(nextOverviewTopics);
+                if (savedReceiversMode === "manual") {
+                    await resetManualAssignmentsToDefaults({ saveProfile: true });
+                    await applyAutoModeEnabled("manual");
+                }
                 // Render the band schedule grid; fetch the current block best-effort
                 let bsCurrentBlock = "";
                 try {
@@ -18724,7 +18786,7 @@ ${passwordMarkup.actionsHtml}
                     .map((user) => [Number(user && user.rx), user])
                     .filter(([rxNum, user]) => Number.isFinite(rxNum) && !!user)
             );
-            if (!managedModeActive) {
+            if (!managedModeActive && currentMode !== "manual") {
                 currentBandAssignments = {};
                 _bandChartLiveBands = [];
                 _bandChartLiveColorMap = {};
@@ -18744,6 +18806,7 @@ ${passwordMarkup.actionsHtml}
                     .filter(([rx]) => !reservedManagedReceivers.has(Number(rx))));
             const list = sourceRows
                 .filter(([, item]) => item && typeof item === "object")
+                .filter(([, item]) => isDigitalDecodeOverviewMode(item.mode || item.mode_label))
                 .map(([rx, item]) => ({
                     rxNum: Number(rx),
                     rxLabel: `RX${rx}`,
@@ -18841,14 +18904,12 @@ ${passwordMarkup.actionsHtml}
                 return `<span style="font-size:0.72rem;font-weight:600">${_ms.map((m) => `<span style="color:${modeColor(m)}">${safeText(m)}</span>`).join(`<span style="color:${mu}"> / </span>`)}</span>`;
             };
             cardEl.innerHTML = "";
-            for (const band of MAP_BAND_OPTIONS) {
+            const bandsToRender = MAP_BAND_OPTIONS.filter((band) => list.some((row) => row.band === band));
+            for (const band of bandsToRender) {
                 const bandRows = list.filter((r) => r.band === band);
                 const card = document.createElement("div");
                 card.className = "rx-card";
-                if (!bandRows.length) {
-                    card.dataset.level = "healthy";
-                    card.innerHTML = `<div class="rx-top"><div class="rx-top-layout"><div class="rx-top-main"><div class="rx-top-head">${bandHeaderHtml(band)}</div><div class="rx-card-stack">${iconLine("heart", "State/Health", "rx-state-line", "--", "var(--muted)")}<div class="kv">${iconLine("gauge", "SNR(avg)", "rx-snr-line", "--")}${scoreLineHtml(band)}</div></div></div><div class="rx-top-pills"><span style="color:var(--muted);font-size:0.82rem">&mdash;</span></div></div></div>`;
-                } else {
+                if (bandRows.length) {
                     const row = bandRows[0];
                     const ch = latestChannelsMap[String(row.rxNum)] || {};
                     const level = String(ch.status_level || "healthy").toLowerCase();
@@ -18961,7 +19022,7 @@ ${passwordMarkup.actionsHtml}
                 }
                 cardEl.append(card);
             }
-            if (reservedManagedRows.length) {
+            if (reservedManagedRows.length && list.length) {
                 const reserveCard = document.createElement("div");
                 reserveCard.className = "rx-card";
                 reserveCard.dataset.level = "healthy";
