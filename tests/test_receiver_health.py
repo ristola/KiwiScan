@@ -494,6 +494,22 @@ def test_receiver_worker_digital_resample_cmd_includes_gain(monkeypatch) -> None
     )
 
 
+def test_receiver_worker_non_digital_mode_mapping_supports_manual_modes() -> None:
+    worker = _make_worker()
+
+    expectations = {
+        "AM": "am",
+        "FM": "nbfm",
+        "CW": "cw",
+        "USB": "usb",
+        "LSB": "lsb",
+    }
+
+    for mode_label, expected in expectations.items():
+        worker._mode_label = mode_label
+        assert worker._non_digital_kiwirecorder_mode() == expected
+
+
 def test_receiver_worker_decoder_temp_roots_are_isolated_by_mode_and_port(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("KIWISCAN_FT8MODEM_TMP", str(tmp_path / "ft8modem"))
 
@@ -1075,6 +1091,9 @@ def test_apply_assignments_fixed_only_bootstrap_uses_temporary_hold_placeholders
             started_labels.append(self._active_user_label)
             live_users[int(self.assignment.rx)] = self._active_user_label
 
+        def stop(self, **kwargs) -> None:
+            live_users.pop(int(self.assignment.rx), None)
+
     monkeypatch.setattr(receiver_manager.time, "time", lambda: fake_now["value"])
     monkeypatch.setattr(
         receiver_manager.time,
@@ -1118,6 +1137,351 @@ def test_apply_assignments_fixed_only_bootstrap_uses_temporary_hold_placeholders
     }
     assert manager._health_summary_cache.get("active_receivers") == 2
     assert manager._health_summary_cache.get("overall") == "healthy"
+
+
+def test_apply_assignments_manual_sparse_rx_uses_bootstrap_placeholders(monkeypatch) -> None:
+    manager = _make_manager()
+    # Request sparse RX2, RX4, RX6 to test gap-filling behavior
+    assignments = {
+        2: ReceiverAssignment(
+            rx=2,
+            band="20m",
+            freq_hz=14_074_000.0,
+            mode_label="FT8",
+            ignore_slot_check=True,
+            user_label_override="MAN_RX2_20m_FT8",
+        ),
+        4: ReceiverAssignment(
+            rx=4,
+            band="15m",
+            freq_hz=21_074_000.0,
+            mode_label="FT8",
+            ignore_slot_check=True,
+            user_label_override="MAN_RX4_15m_FT8",
+        ),
+        6: ReceiverAssignment(
+            rx=6,
+            band="17m",
+            freq_hz=18_100_000.0,
+            mode_label="FT8",
+            ignore_slot_check=True,
+            user_label_override="MAN_RX6_17m_FT8",
+        ),
+    }
+
+    started_labels: list[str] = []
+    live_users: dict[int, str] = {}
+    stopped_labels: list[str] = []
+    fake_now = {"value": 0.0}
+
+    class _FakeWorker:
+        def __init__(self, assignment: ReceiverAssignment) -> None:
+            self.assignment = assignment
+            self._rx_chan_adjust = 0
+            self._active_user_label = ReceiverManager._expected_user_label(assignment)
+            self._is_alive = True
+
+        def start(self) -> None:
+            self._is_alive = True
+            started_labels.append(self._active_user_label)
+            live_users[int(self.assignment.rx)] = self._active_user_label
+
+        def stop(self, **kwargs) -> None:
+            self._is_alive = False
+            stopped_labels.append(self._active_user_label)
+            live_users.pop(int(self.assignment.rx), None)
+
+        def is_alive(self) -> bool:
+            return self._is_alive
+
+    monkeypatch.setattr(receiver_manager.time, "time", lambda: fake_now["value"])
+    monkeypatch.setattr(
+        receiver_manager.time,
+        "sleep",
+        lambda seconds: fake_now.__setitem__("value", fake_now["value"] + seconds),
+    )
+    monkeypatch.setattr(manager, "_required_dependency_errors", lambda assignments: [])
+    monkeypatch.setattr(manager, "_cleanup_orphan_processes", lambda: None)
+    monkeypatch.setattr(manager, "_wait_for_orphan_cleanup", lambda timeout_s=6.0: None)
+    monkeypatch.setattr(manager, "_run_admin_kick_all", lambda **kwargs: True)
+    monkeypatch.setattr(manager, "_wait_for_kiwi_auto_users_clear", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_wait_for_kiwi_auto_users_missing", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_wait_for_kiwi_slots_stable_clear", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_wait_for_kiwi_slots_clear", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_refresh_starting_health_summary_cache", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_fetch_live_auto_users", lambda host, port: {})
+    monkeypatch.setattr(manager, "_fetch_live_users", lambda host, port: dict(live_users))
+    monkeypatch.setattr(
+        manager,
+        "_make_worker",
+        lambda host, port, assignment, rx_chan_adjust=0: _FakeWorker(assignment),
+    )
+
+    manager.apply_assignments("kiwi.local", 8073, assignments)
+
+    # Expected sequence: RX2 (real), RX3 (skip), RX4 (real), RX5 (skip), RX6 (real)
+    assert started_labels == [
+        "MAN_RX2_20m_FT8",
+        "SKIP_RX3",
+        "MAN_RX4_15m_FT8",
+        "SKIP_RX5",
+        "MAN_RX6_17m_FT8",
+    ]
+    # Gap-fillers are removed after startup
+    assert sorted(stopped_labels) == ["SKIP_RX3", "SKIP_RX5"]
+    assert live_users == {
+        2: "MAN_RX2_20m_FT8",
+        4: "MAN_RX4_15m_FT8",
+        6: "MAN_RX6_17m_FT8",
+    }
+
+
+def test_apply_assignments_manual_sparse_incremental_add_with_gap_filling(monkeypatch) -> None:
+    """Test adding a new receiver to sparse set: RX2,RX4,RX6 → RX2,RX4,RX5,RX6"""
+    manager = _make_manager()
+    
+    # Phase 1: Initial sparse set RX2, RX4, RX6
+    initial_assignments = {
+        2: ReceiverAssignment(
+            rx=2,
+            band="20m",
+            freq_hz=14_074_000.0,
+            mode_label="FT8",
+            ignore_slot_check=True,
+            user_label_override="MAN_RX2_20m_FT8",
+        ),
+        4: ReceiverAssignment(
+            rx=4,
+            band="15m",
+            freq_hz=21_074_000.0,
+            mode_label="FT8",
+            ignore_slot_check=True,
+            user_label_override="MAN_RX4_15m_FT8",
+        ),
+        6: ReceiverAssignment(
+            rx=6,
+            band="17m",
+            freq_hz=18_100_000.0,
+            mode_label="FT8",
+            ignore_slot_check=True,
+            user_label_override="MAN_RX6_17m_FT8",
+        ),
+    }
+
+    started_labels: list[str] = []
+    live_users: dict[int, str] = {}
+    stopped_labels: list[str] = []
+    fake_now = {"value": 0.0}
+
+    class _FakeWorker:
+        def __init__(self, assignment: ReceiverAssignment) -> None:
+            self.assignment = assignment
+            self._rx_chan_adjust = 0
+            self._active_user_label = ReceiverManager._expected_user_label(assignment)
+            self._is_alive = True
+
+        def start(self) -> None:
+            self._is_alive = True
+            started_labels.append(self._active_user_label)
+            live_users[int(self.assignment.rx)] = self._active_user_label
+
+        def stop(self, **kwargs) -> None:
+            self._is_alive = False
+            stopped_labels.append(self._active_user_label)
+            live_users.pop(int(self.assignment.rx), None)
+
+        def is_alive(self) -> bool:
+            return self._is_alive
+
+    monkeypatch.setattr(receiver_manager.time, "time", lambda: fake_now["value"])
+    monkeypatch.setattr(
+        receiver_manager.time,
+        "sleep",
+        lambda seconds: fake_now.__setitem__("value", fake_now["value"] + seconds),
+    )
+    monkeypatch.setattr(manager, "_required_dependency_errors", lambda assignments: [])
+    monkeypatch.setattr(manager, "_cleanup_orphan_processes", lambda: None)
+    monkeypatch.setattr(manager, "_wait_for_orphan_cleanup", lambda timeout_s=6.0: None)
+    monkeypatch.setattr(manager, "_run_admin_kick_all", lambda **kwargs: True)
+    monkeypatch.setattr(manager, "_wait_for_kiwi_auto_users_clear", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_wait_for_kiwi_auto_users_missing", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_wait_for_kiwi_slots_stable_clear", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_wait_for_kiwi_slots_clear", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_refresh_starting_health_summary_cache", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_fetch_live_auto_users", lambda host, port: {})
+    monkeypatch.setattr(manager, "_fetch_live_users", lambda host, port: dict(live_users))
+    monkeypatch.setattr(
+        manager,
+        "_make_worker",
+        lambda host, port, assignment, rx_chan_adjust=0: _FakeWorker(assignment),
+    )
+
+    # Apply initial sparse set
+    manager.apply_assignments("kiwi.local", 8073, initial_assignments)
+    
+    # Verify initial state: RX2, RX4, RX6 running (gap-fillers removed)
+    initial_live_users = dict(live_users)
+    assert initial_live_users == {
+        2: "MAN_RX2_20m_FT8",
+        4: "MAN_RX4_15m_FT8",
+        6: "MAN_RX6_17m_FT8",
+    }
+    
+    # Phase 2: Add RX5 to the set
+    started_labels.clear()
+    stopped_labels.clear()
+    
+    updated_assignments = {
+        2: ReceiverAssignment(
+            rx=2,
+            band="20m",
+            freq_hz=14_074_000.0,
+            mode_label="FT8",
+            ignore_slot_check=True,
+            user_label_override="MAN_RX2_20m_FT8",
+        ),
+        4: ReceiverAssignment(
+            rx=4,
+            band="15m",
+            freq_hz=21_074_000.0,
+            mode_label="FT8",
+            ignore_slot_check=True,
+            user_label_override="MAN_RX4_15m_FT8",
+        ),
+        5: ReceiverAssignment(
+            rx=5,
+            band="10m",
+            freq_hz=28_074_000.0,
+            mode_label="FT8",
+            ignore_slot_check=True,
+            user_label_override="MAN_RX5_10m_FT8",
+        ),
+        6: ReceiverAssignment(
+            rx=6,
+            band="17m",
+            freq_hz=18_100_000.0,
+            mode_label="FT8",
+            ignore_slot_check=True,
+            user_label_override="MAN_RX6_17m_FT8",
+        ),
+    }
+    
+    manager.apply_assignments("kiwi.local", 8073, updated_assignments)
+    
+    # Verify incremental add path includes RX5 and gap-filler RX3 in startup sequence
+    assert "MAN_RX5_10m_FT8" in started_labels
+    assert "SKIP_RX3" in started_labels
+    
+    # Final state: all 4 real receivers (gap-fillers removed)
+    assert live_users == {
+        2: "MAN_RX2_20m_FT8",
+        4: "MAN_RX4_15m_FT8",
+        5: "MAN_RX5_10m_FT8",
+        6: "MAN_RX6_17m_FT8",
+    }
+
+
+def test_apply_assignments_manual_with_rx0_fills_through_rx7(monkeypatch) -> None:
+    manager = _make_manager()
+    assignments = {
+        0: ReceiverAssignment(
+            rx=0,
+            band="30m",
+            freq_hz=10_136_000.0,
+            mode_label="FT8",
+            ignore_slot_check=True,
+            user_label_override="MAN_RX0_30m_FT8",
+        ),
+        2: ReceiverAssignment(
+            rx=2,
+            band="20m",
+            freq_hz=14_074_000.0,
+            mode_label="FT8",
+            ignore_slot_check=True,
+            user_label_override="MAN_RX2_20m_FT8",
+        ),
+        4: ReceiverAssignment(
+            rx=4,
+            band="15m",
+            freq_hz=21_074_000.0,
+            mode_label="FT8",
+            ignore_slot_check=True,
+            user_label_override="MAN_RX4_15m_FT8",
+        ),
+        6: ReceiverAssignment(
+            rx=6,
+            band="17m",
+            freq_hz=18_100_000.0,
+            mode_label="FT8",
+            ignore_slot_check=True,
+            user_label_override="MAN_RX6_17m_FT8",
+        ),
+    }
+
+    started_labels: list[str] = []
+    live_users: dict[int, str] = {}
+    fake_now = {"value": 0.0}
+
+    class _FakeWorker:
+        def __init__(self, assignment: ReceiverAssignment) -> None:
+            self.assignment = assignment
+            self._rx_chan_adjust = 0
+            self._active_user_label = ReceiverManager._expected_user_label(assignment)
+            self._is_alive = True
+
+        def start(self) -> None:
+            self._is_alive = True
+            started_labels.append(self._active_user_label)
+            live_users[int(self.assignment.rx)] = self._active_user_label
+
+        def stop(self, **kwargs) -> None:
+            self._is_alive = False
+            live_users.pop(int(self.assignment.rx), None)
+
+        def is_alive(self) -> bool:
+            return self._is_alive
+
+    monkeypatch.setattr(receiver_manager.time, "time", lambda: fake_now["value"])
+    monkeypatch.setattr(
+        receiver_manager.time,
+        "sleep",
+        lambda seconds: fake_now.__setitem__("value", fake_now["value"] + seconds),
+    )
+    monkeypatch.setattr(manager, "_required_dependency_errors", lambda assignments: [])
+    monkeypatch.setattr(manager, "_cleanup_orphan_processes", lambda: None)
+    monkeypatch.setattr(manager, "_wait_for_orphan_cleanup", lambda timeout_s=6.0: None)
+    monkeypatch.setattr(manager, "_run_admin_kick_all", lambda **kwargs: True)
+    monkeypatch.setattr(manager, "_wait_for_kiwi_auto_users_clear", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_wait_for_kiwi_auto_users_missing", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_wait_for_kiwi_slots_stable_clear", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_wait_for_kiwi_slots_clear", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_refresh_starting_health_summary_cache", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_fetch_live_auto_users", lambda host, port: {})
+    monkeypatch.setattr(manager, "_fetch_live_users", lambda host, port: dict(live_users))
+    monkeypatch.setattr(
+        manager,
+        "_make_worker",
+        lambda host, port, assignment, rx_chan_adjust=0: _FakeWorker(assignment),
+    )
+
+    manager.apply_assignments("kiwi.local", 8073, assignments)
+
+    # Kiwi claim order prefix up to RX0 must be occupied: 2,3,4,5,6,7,0
+    assert started_labels == [
+        "MAN_RX2_20m_FT8",
+        "SKIP_RX3",
+        "MAN_RX4_15m_FT8",
+        "SKIP_RX5",
+        "MAN_RX6_17m_FT8",
+        "SKIP_RX7",
+        "MAN_RX0_30m_FT8",
+    ]
+    assert live_users == {
+        0: "MAN_RX0_30m_FT8",
+        2: "MAN_RX2_20m_FT8",
+        4: "MAN_RX4_15m_FT8",
+        6: "MAN_RX6_17m_FT8",
+    }
 
 
 def test_apply_assignments_targeted_correction_keeps_healthy_workers_running(monkeypatch) -> None:

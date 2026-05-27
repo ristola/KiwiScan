@@ -130,3 +130,65 @@ def test_restore_roaming_receivers_endpoint_applies_current_auto_settings() -> N
     assert response.status_code == 200
     assert response.json() == {"ok": True, "status": "restored", "reserved_receivers": [0, 1]}
     assert apply_calls == [(True, True)]
+
+
+def test_manual_assignments_endpoint_targets_requested_kiwi_and_applies_enabled_receivers() -> None:
+    apply_calls: list[tuple[str, int, dict[int, object], bool]] = []
+    resolve_calls: list[tuple[object, object]] = []
+
+    receiver_mgr = SimpleNamespace(
+        apply_assignments=lambda host, port, assignments, allow_starting_from_empty_full_reset=True: apply_calls.append(
+            (str(host), int(port), dict(assignments), bool(allow_starting_from_empty_full_reset))
+        ),
+    )
+    mgr = SimpleNamespace(
+        lock=threading.Lock(),
+        resolve_runtime_target=lambda kiwi_key=None, kiwi_index=None: resolve_calls.append((kiwi_key, kiwi_index)) or {
+            "host": "kiwi-2.local",
+            "port": 8074,
+            "kiwi_key": str(kiwi_key or "kiwi-2.local:8074"),
+        },
+    )
+
+    app = FastAPI()
+    app.include_router(make_router(receiver_mgr=receiver_mgr, mgr=mgr))
+    client = TestClient(app)
+
+    response = client.post(
+        "/admin/manual-assignments",
+        json={
+            "kiwi_key": "kiwi-2.local:8074",
+            "assignments": [
+                {"rx": 0, "enabled": True, "band": "20m", "freq_khz": 14074.0, "mode": "FT8"},
+                {"rx": 3, "enabled": True, "band": "40m", "freq_khz": 7290.0, "mode": "AM"},
+                {"rx": 5, "enabled": False, "band": "10m", "freq_khz": 28074.0, "mode": "FT8"},
+                {"rx": 6, "enabled": True, "band": "20m", "freq_khz": 14200.0, "mode": "USB"},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": True,
+        "host": "kiwi-2.local",
+        "port": 8074,
+        "kiwi_key": "kiwi-2.local:8074",
+        "active_receivers": [0, 3, 6],
+        "status": "applied",
+    }
+    assert resolve_calls == [("kiwi-2.local:8074", None)]
+    assert len(apply_calls) == 1
+    host, port, assignments, allow_full_reset = apply_calls[0]
+    assert (host, port, allow_full_reset) == ("kiwi-2.local", 8074, False)
+    assert sorted(assignments.keys()) == [0, 3, 6]
+    assert getattr(assignments[0], "band") == "20m"
+    assert getattr(assignments[0], "mode_label") == "FT8"
+    assert getattr(assignments[0], "freq_hz") == 14_074_000.0
+    assert getattr(assignments[0], "user_label_override") == "MANUAL_RX0_20m_FT8"
+    assert getattr(assignments[3], "band") == "40m"
+    assert getattr(assignments[3], "mode_label") == "AM"
+    assert getattr(assignments[3], "freq_hz") == 7_290_000.0
+    assert getattr(assignments[3], "user_label_override") == "MANUAL_RX3_40m_AM"
+    assert getattr(assignments[6], "mode_label") == "USB"
+    assert getattr(assignments[6], "freq_hz") == 14_200_000.0
+    assert getattr(assignments[6], "user_label_override") == "MANUAL_RX6_20m_USB"

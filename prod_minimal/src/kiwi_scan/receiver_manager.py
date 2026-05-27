@@ -248,7 +248,7 @@ class _ReceiverWorker(threading.Thread):
         decode_callback: Optional[Callable[[dict], None]] = None,
         on_restart: Optional[Callable[[int, str, str, float, int], None]] = None,
         on_activity: Optional[Callable[[int, str, str, str, Optional[float], Optional[float]], None]] = None,
-        initial_rx_chan_adjust: int = 0,
+        initial_rx_chan_adjust: Optional[int] = None,
         ignore_slot_check: bool = False,
         user_label_override: Optional[str] = None,
     ) -> None:
@@ -281,7 +281,7 @@ class _ReceiverWorker(threading.Thread):
         self._reconfigure = threading.Event()
         self._slot_ready = threading.Event()
         env_adjust = self._env_int("KIWISCAN_RX_CHAN_OFFSET", 0, min_v=-64, max_v=64)
-        self._rx_chan_adjust = int(initial_rx_chan_adjust) if initial_rx_chan_adjust else env_adjust
+        self._rx_chan_adjust = int(initial_rx_chan_adjust) if initial_rx_chan_adjust is not None else env_adjust
 
     @staticmethod
     def _env_bool(name: str, default: bool) -> bool:
@@ -323,6 +323,10 @@ class _ReceiverWorker(threading.Thread):
         return self._env_bool("KIWISCAN_STRICT_DIGITAL_SLOT_ENFORCEMENT", True)
 
     def _requires_strict_slot_check(self) -> bool:
+        if self._ignore_slot_check:
+            return False
+        if self._user_label_override.strip().upper().startswith(("MANUAL_", "MAN_")):
+            return True
         mode_norm = self._mode_label.strip().upper()
         if ("SSB" in mode_norm) or ("PHONE" in mode_norm):
             return True
@@ -668,7 +672,7 @@ class _ReceiverWorker(threading.Thread):
             actual = int(actual_rx)
         except Exception:
             return
-        delta = int((expected - actual) % 8)
+        delta = int((actual - expected) % 8)
         if delta == 0:
             return
         old_adjust = int(self._rx_chan_adjust)
@@ -726,12 +730,25 @@ class _ReceiverWorker(threading.Thread):
                 if bool(strict):
                     valid = (found_rx == expected)
                 else:
-                    if expected < 2:
+                    _is_flexible = self._ignore_slot_check or wanted.upper().startswith(("MANUAL_", "MAN_"))
+                    if _is_flexible:
+                        valid = found_rx >= 0
+                    elif expected < 2:
                         valid = found_rx in {0, 1}
                     else:
                         valid = found_rx >= 0
                 if valid:
                     if not bool(strict) and found_rx != expected:
+                        _is_flexible = self._ignore_slot_check or wanted.upper().startswith(("MANUAL_", "MAN_"))
+                        if _is_flexible:
+                            self._adapt_rx_chan_adjust(expected_rx=expected, actual_rx=found_rx, user_label=wanted)
+                            logger.info(
+                                "Manual/flexible worker in offset Kiwi slot user=%s expected_rx=%s actual_rx=%s; keeping worker",
+                                wanted,
+                                expected,
+                                found_rx,
+                            )
+                            return True
                         if expected < 2:
                             logger.info(
                                 "Kiwi swapped roaming worker user=%s expected_rx=%s actual_rx=%s within RX0/RX1 pool; keeping worker",
@@ -759,6 +776,16 @@ class _ReceiverWorker(threading.Thread):
                             found_rx,
                             found_age_s,
                         )
+                    return True
+                is_manual_label = wanted.upper().startswith(("MANUAL_", "MAN_"))
+                if bool(strict) and is_manual_label and expected < 2 and found_rx >= 0:
+                    self._adapt_rx_chan_adjust(expected_rx=expected, actual_rx=found_rx, user_label=wanted)
+                    logger.warning(
+                        "Kiwi remapped manual worker user=%s expected_rx=%s actual_rx=%s; keeping worker with adapted offset",
+                        wanted,
+                        expected,
+                        found_rx,
+                    )
                     return True
                 if expected >= 2 and found_rx >= 0:
                     self._adapt_rx_chan_adjust(expected_rx=expected, actual_rx=found_rx, user_label=wanted)
@@ -899,6 +926,22 @@ class _ReceiverWorker(threading.Thread):
         if ranges:
             max_hz = max(max(start_hz, end_hz) for start_hz, end_hz in ranges)
             return "lsb" if max_hz < 10_000_000 else "usb"
+        return "usb"
+
+    def _non_digital_kiwirecorder_mode(self) -> str:
+        norm = self._mode_label.strip().upper()
+        if norm in {"AM", "AMN", "SAM"}:
+            return "am"
+        if norm in {"FM", "NBFM"}:
+            return "nbfm"
+        if norm in {"CW", "CWN"}:
+            return "cw"
+        if norm == "LSB":
+            return "lsb"
+        if norm == "USB":
+            return "usb"
+        if ("SSB" in norm) or ("PHONE" in norm):
+            return self._ssb_assignment_sideband()
         return "usb"
 
     def update_assignment(
@@ -1356,8 +1399,9 @@ class _ReceiverWorker(threading.Thread):
                 logger.warning("auto-set spawn failed: %s", e)
                 self._last_spawn_error_reason = "spawn_exception"
                 return None
-        mode = "usb"
-        if ("SSB" in self._mode_label.strip().upper()) or ("PHONE" in self._mode_label.strip().upper()):
+        norm = self._mode_label.strip().upper()
+        mode = self._non_digital_kiwirecorder_mode()
+        if ("SSB" in norm) or ("PHONE" in norm):
             if int(self._rx) not in {0, 1}:
                 logger.error(
                     "Refusing to spawn SSB/PHONE outside RX0/RX1: rx=%s band=%s mode=%s",
@@ -1367,7 +1411,6 @@ class _ReceiverWorker(threading.Thread):
                 )
                 self._last_spawn_error_reason = "ssb_rx_policy_violation"
                 return None
-            mode = self._ssb_assignment_sideband()
         cmd = [
             self._python_cmd,
             str(self._kiwirecorder_path),
@@ -1761,6 +1804,9 @@ class ReceiverManager:
 
     def _startup_slot_stable_s(self) -> float:
         return self._env_float("KIWISCAN_STARTUP_SLOT_STABLE_S", 1.0, min_v=0.25, max_v=10.0)
+
+    def _startup_manual_slot_stable_s(self) -> float:
+        return self._env_float("KIWISCAN_STARTUP_MANUAL_SLOT_STABLE_S", 0.35, min_v=0.1, max_v=10.0)
 
     def _startup_poll_interval_s(self) -> float:
         return self._env_float("KIWISCAN_STARTUP_POLL_INTERVAL_S", 0.25, min_v=0.05, max_v=1.0)
@@ -3449,7 +3495,11 @@ class ReceiverManager:
                 mismatch_detected = bool(wrong_slot_stale or displaced_by_stale_auto)
                 if visible_on_kiwi and not mismatch_detected and str(last_reason or "").strip().lower() in {"nonssb_rx_mismatch", "ssb_rx_mismatch"}:
                     last_reason = None
-                strict_roaming_slot = bool(int(rx) < 2 and not bool(getattr(assignment, "ignore_slot_check", False)))
+                strict_roaming_slot = bool(
+                    int(rx) < 2
+                    and not bool(getattr(assignment, "ignore_slot_check", False))
+                    and not str(getattr(assignment, "user_label_override", "") or "").strip().upper().startswith(("MANUAL_", "MAN_"))
+                )
                 # When the worker is completely absent from Kiwi AND the expected slot is
                 # occupied by a stale alien AUTO_ process, the worker clearly failed to
                 # connect — treat as actionable even if the decoder has recent output
@@ -4348,6 +4398,22 @@ class ReceiverManager:
                 for rx in desired_rxs
                 if bool(getattr(assignments[int(rx)], "ignore_slot_check", False))
             )
+            manual_mode_assignments = bool(desired_rxs) and all(
+                str(getattr(assignments[int(rx)], "user_label_override", "") or "").strip().upper().startswith(("MANUAL_", "MAN_"))
+                for rx in desired_rxs
+            )
+            manual_aggressive_slot_claim = bool(
+                manual_mode_assignments
+                and self._env_bool("KIWISCAN_MANUAL_AGGRESSIVE_SLOT_CLAIM", False)
+                and str(host).strip() == "10.13.73.236"
+                and int(port) == 8073
+            )
+            if manual_aggressive_slot_claim:
+                logger.info(
+                    "Manual-mode apply: aggressive slot-claim enabled for %s:%s",
+                    str(host),
+                    int(port),
+                )
             force_full_reset = (
                 self._force_full_reset_on_band_change_enabled()
                 and self._band_plan_changed(self._assignments, assignments)
@@ -4355,6 +4421,7 @@ class ReceiverManager:
             starting_from_empty = bool(desired_rxs and not current_rxs)
             bootstrap_fixed_first = bool(
                 starting_from_empty
+                and not manual_mode_assignments
                 and desired_fixed_rxs
                 and any(int(rx) < 2 for rx in desired_rxs)
             )
@@ -4369,7 +4436,30 @@ class ReceiverManager:
                     )
                 else:
                     logger.info("Starting receiver set from empty state; forcing full Kiwi receiver reset before re-apply")
-            did_full_reset = bool(host_changed or force_full_reset or force_reconcile_full_reset)
+            did_full_reset = bool(host_changed or force_full_reset or force_reconcile_full_reset or manual_mode_assignments)
+            # For manual mode: if only adding new receivers (no existing assignments changed),
+            # don't force a full reset. This allows incremental manual assignment without
+            # restarting already-running receivers.
+            if manual_mode_assignments and not (host_changed or force_full_reset or force_reconcile_full_reset):
+                _existing_manual_rxs = {int(rx) for rx in current_rxs}
+                _new_manual_rxs = {int(rx) for rx in desired_rxs}
+                # Check if this is an incremental add: all current RXs are in the new set,
+                # and none of their assignments changed
+                if _existing_manual_rxs and _new_manual_rxs.issuperset(_existing_manual_rxs):
+                    _all_existing_unchanged = all(
+                        int(rx) in current_rxs
+                        and self._assignment_equivalent(self._assignments[int(rx)], assignments[int(rx)])
+                        for rx in _existing_manual_rxs
+                    )
+                    if _all_existing_unchanged:
+                        did_full_reset = False
+                        logger.info(
+                            "Manual-mode apply: incremental add detected (existing RXs unchanged, new RXs: %s); "
+                            "skipping full Kiwi reset",
+                            sorted(_new_manual_rxs - _existing_manual_rxs),
+                        )
+                if did_full_reset:
+                    logger.info("Manual-mode apply: forcing full Kiwi receiver reset (no roaming-slot carryover)")
             if starting_from_empty and not bootstrap_fixed_first and allow_starting_from_empty_full_reset:
                 did_full_reset = True
             if force_full_reset:
@@ -4480,8 +4570,18 @@ class ReceiverManager:
             _startup_preclear_roaming_slots: list[int] = []
 
             if did_full_reset:
-                self._cleanup_orphan_processes()
-                self._wait_for_orphan_cleanup(timeout_s=6.0)
+                # Only run global orphan cleanup when NO workers are being preserved.
+                # Calling pkill on the full host/port pattern would kill preserved workers
+                # too, causing them to respawn out-of-order and scramble slot assignments.
+                _preserved_rxs = frozenset(
+                    int(rx) for rx in current_rxs
+                    if int(rx) not in to_stop and self._workers.get(int(rx)) is not None
+                )
+                if not _preserved_rxs:
+                    self._cleanup_orphan_processes()
+                    self._wait_for_orphan_cleanup(timeout_s=6.0)
+                elif stopped_labels:
+                    self._cleanup_orphan_processes_for_labels(stopped_labels)
                 # Only kick ALL Kiwi channels when the host changed, starting from empty,
                 # or every fixed receiver is also being stopped. When fixed receivers are
                 # preserved (band-plan only changes for roaming slots) a kick-all would
@@ -4503,7 +4603,7 @@ class ReceiverManager:
                     # slots before the competing device can reconnect.  For other full
                     # resets (band-plan change, host change) keep the conservative
                     # wait-for-clear + second-kick behaviour.
-                    _force_all = bool(host_changed) or starting_from_empty
+                    _force_all = bool(host_changed) or starting_from_empty or manual_mode_assignments
                     _ = self._run_admin_kick_all(host=str(host), port=int(port), force_all=_force_all)
                     # For both starting_from_empty and band-plan changes: wait for all
                     # kicked sessions to fully disconnect before starting workers.  The
@@ -4610,13 +4710,20 @@ class ReceiverManager:
             # kicks create VPN TCP churn that causes the Kiwi to say "Too busy" for
             # all subsequent connections.  Any wrong-slot placements are handled by
             # the eviction loop below once all workers are up.
+            manual_rx_chan_adjust: Optional[int] = None
+            _manual_claim_retry_max = 6 if manual_aggressive_slot_claim else 0
+
             def _start_worker_sequential(rx: int) -> None:
+                nonlocal manual_rx_chan_adjust
                 if rx in to_reconfigure and rx in self._workers:
                     return
                 if rx in self._workers and rx in self._assignments and self._assignment_equivalent(self._assignments[rx], assignments[rx]) and not host_changed:
                     return
                 desired = assignments[rx]
-                worker = self._make_worker(host=host, port=port, assignment=desired, rx_chan_adjust=0)
+                _start_adjust = 0
+                if manual_mode_assignments and manual_rx_chan_adjust is not None and not manual_aggressive_slot_claim:
+                    _start_adjust = int(manual_rx_chan_adjust)
+                worker = self._make_worker(host=host, port=port, assignment=desired, rx_chan_adjust=_start_adjust)
                 self._workers[rx] = worker
                 worker.start()
                 # Poll /users from the main thread until the expected label is present
@@ -4633,6 +4740,9 @@ class ReceiverManager:
                 _stable_slot: Optional[int] = None
                 _stable_since: float = 0.0
                 _last_live_p: Dict[int, str] = {}
+                _stable_required_s = self._startup_slot_stable_s()
+                if manual_mode_assignments:
+                    _stable_required_s = max(0.1, min(_stable_required_s, self._startup_manual_slot_stable_s()))
                 while time.time() < _poll_deadline:
                     _live_p = self._fetch_live_users(str(host), int(port))
                     _last_live_p = dict(_live_p)
@@ -4641,19 +4751,104 @@ class ReceiverManager:
                         None,
                     )
                     if _cur_slot is not None and _cur_slot == _stable_slot:
-                        if time.time() - _stable_since >= _startup_slot_stable_s:
+                        if time.time() - _stable_since >= _stable_required_s:
                             break
                     else:
                         _stable_slot = _cur_slot
                         _stable_since = time.time()
                     time.sleep(_startup_poll_interval_s)
+                # NOTE: KiwiSDR 2 firmware ignores rx_chan URL param and always assigns the
+                # next-available slot.  The calibration-and-restart approach causes zombie
+                # occupancy that scrambles sequential slot order for multi-RX manual applies.
+                # Accept whatever slot the firmware assigns; labels remain correct.
+                if (
+                    manual_mode_assignments
+                    and not manual_aggressive_slot_claim
+                    and manual_rx_chan_adjust is None
+                    and _stable_slot is not None
+                    and _stable_slot != int(rx)
+                ):
+                    manual_rx_chan_adjust = int((int(rx) - int(_stable_slot)) % 8)
+                    logger.info(
+                        "Manual-mode startup: firmware slot offset detected rx=%d observed_slot=%d (accepted — no restart)",
+                        int(rx),
+                        int(_stable_slot),
+                    )
+                if manual_aggressive_slot_claim and _stable_slot != int(rx):
+                    for _manual_attempt in range(1, _manual_claim_retry_max + 1):
+                        _retry_worker = self._workers.pop(int(rx), None)
+                        if _retry_worker is not None:
+                            self._stop_worker(_retry_worker, join_timeout_s=0.5)
+                        self._activity_by_rx.pop(int(rx), None)
+                        _kick_slots = {int(rx)}
+                        if _stable_slot is not None:
+                            _kick_slots.add(int(_stable_slot))
+                        logger.warning(
+                            "Manual slot-claim retry %d/%d for rx=%d (observed_slot=%s, target_slot=%d, kick_slots=%s)",
+                            _manual_attempt,
+                            _manual_claim_retry_max,
+                            int(rx),
+                            "none" if _stable_slot is None else str(int(_stable_slot)),
+                            int(rx),
+                            sorted(_kick_slots),
+                        )
+                        try:
+                            self._run_admin_kick_all(
+                                host=str(host),
+                                port=int(port),
+                                kick_only_slots=sorted(_kick_slots),
+                            )
+                        except Exception:
+                            pass
+                        self._wait_for_kiwi_slots_clear(
+                            host=str(host),
+                            port=int(port),
+                            slots=set(int(s) for s in _kick_slots),
+                            stable_secs=max(0.5, _startup_slot_clear_stable_s),
+                            timeout_s=6.0,
+                        )
+                        time.sleep(_startup_short_pause_s)
+                        worker = self._make_worker(host=host, port=port, assignment=desired, rx_chan_adjust=0)
+                        self._workers[rx] = worker
+                        worker.start()
+                        _poll_deadline = time.time() + max(4.0, min(_poll_timeout_s, 8.0))
+                        _stable_slot = None
+                        _stable_since = time.time()
+                        _last_live_p = {}
+                        while time.time() < _poll_deadline:
+                            _live_p = self._fetch_live_users(str(host), int(port))
+                            _last_live_p = dict(_live_p)
+                            _cur_slot = next(
+                                (int(_s) for _s, _l in _live_p.items() if self._label_matches_any(_exp_lbls, _l)),
+                                None,
+                            )
+                            if _cur_slot is not None and _cur_slot == _stable_slot:
+                                if time.time() - _stable_since >= _stable_required_s:
+                                    break
+                            else:
+                                _stable_slot = _cur_slot
+                                _stable_since = time.time()
+                            time.sleep(_startup_poll_interval_s)
+                        if _stable_slot == int(rx):
+                            logger.info(
+                                "Manual slot-claim succeeded on retry %d for rx=%d",
+                                _manual_attempt,
+                                int(rx),
+                            )
+                            break
                 if _stable_slot == int(rx):
                     logger.info("Sequential start rx=%d: correct slot=%d", rx, rx)
                 elif _stable_slot is not None:
-                    logger.info(
-                        "Sequential start rx=%d: in slot=%d (expected %d); eviction loop will correct",
-                        rx, _stable_slot, rx,
-                    )
+                    if manual_mode_assignments:
+                        logger.info(
+                            "Sequential start rx=%d: in firmware slot=%d (expected %d; accepted — KiwiSDR 2 firmware slot offset)",
+                            rx, _stable_slot, rx,
+                        )
+                    else:
+                        logger.info(
+                            "Sequential start rx=%d: in slot=%d (expected %d); eviction loop will correct",
+                            rx, _stable_slot, rx,
+                        )
                 else:
                     logger.warning(
                         "Sequential start rx=%d: not connected within %.1fs timeout",
@@ -4696,8 +4891,14 @@ class ReceiverManager:
                         )
                 self._refresh_starting_health_summary_cache(host=str(host), port=int(port), assignments=assignments)
 
-            fixed_only_bootstrap = bool(starting_from_empty and desired_fixed_rxs and not any(int(rx) < 2 for rx in desired_rxs))
+            fixed_only_bootstrap = bool(
+                starting_from_empty
+                and desired_fixed_rxs
+                and not any(int(rx) < 2 for rx in desired_rxs)
+                and not manual_mode_assignments
+            )
             bootstrap_placeholder_workers: list[tuple[int, _ReceiverWorker, set[str]]] = []
+            bootstrap_placeholder_rxs: set[int] = set()
 
             def _start_fixed_bootstrap_placeholder(rx: int, template_assignment: ReceiverAssignment) -> None:
                 placeholder = ReceiverAssignment(
@@ -4747,8 +4948,39 @@ class ReceiverManager:
                     )
                 bootstrap_placeholder_workers.append((int(rx), worker, labels))
 
-            _startup_order = sorted(desired_rxs)
+            def _start_manual_bootstrap_placeholder(rx: int, template_assignment: ReceiverAssignment) -> None:
+                # REMOVED: This function is no longer used; gaps are pre-planned in assignments dict
+                pass
+
+            _startup_fixed_order = sorted(int(rx) for rx in desired_rxs if int(rx) >= 2)
+            _startup_roaming_tail = [int(rx) for rx in (0, 1) if int(rx) in desired_rxs]
+            _startup_order = _startup_fixed_order + _startup_roaming_tail
             _defer_roaming_start = bool(bootstrap_fixed_first)
+            if manual_mode_assignments:
+                desired_rxs_set = set(int(rx) for rx in desired_rxs)
+                # Kiwi claims the first free slot in this fixed order regardless of requested RX:
+                # RX2, RX3, RX4, RX5, RX6, RX7, RX0, RX1.
+                # To land a desired receiver at RX0/RX1, we must pre-occupy all prior slots.
+                _claim_sequence = [2, 3, 4, 5, 6, 7, 0, 1]
+                _desired_in_sequence = [rx for rx in _claim_sequence if rx in desired_rxs_set]
+                if _desired_in_sequence:
+                    _last_needed_index = max(_claim_sequence.index(rx) for rx in _desired_in_sequence)
+                    _startup_order = _claim_sequence[: _last_needed_index + 1]
+                    for gap_rx in _startup_order:
+                        if gap_rx not in desired_rxs_set:
+                            dummy_assignment = ReceiverAssignment(
+                                rx=int(gap_rx),
+                                band="40m",
+                                freq_hz=0.0,
+                                mode_label="SKIP",
+                                ignore_slot_check=True,
+                                user_label_override=f"SKIP_RX{int(gap_rx)}",
+                            )
+                            assignments[int(gap_rx)] = dummy_assignment
+                            bootstrap_placeholder_rxs.add(int(gap_rx))
+                else:
+                    _startup_order = []
+                _defer_roaming_start = False
             if _defer_roaming_start:
                 # On empty-state bootstrap, bring up fixed receivers first and
                 # let the eviction loop settle before introducing roaming slots.
@@ -4760,7 +4992,7 @@ class ReceiverManager:
                     _startup_order,
                 )
                 time.sleep(_startup_short_pause_s)
-            elif starting_from_empty and desired_fixed_rxs:
+            elif starting_from_empty and desired_fixed_rxs and not manual_mode_assignments:
                 _startup_order = desired_fixed_rxs + [int(rx) for rx in sorted(desired_rxs) if int(rx) not in desired_fixed_rxs]
             if fixed_only_bootstrap and desired_fixed_rxs:
                 logger.info(
@@ -4787,6 +5019,27 @@ class ReceiverManager:
                         timeout_s=6.0,
                     )
 
+            if manual_mode_assignments and bootstrap_placeholder_rxs:
+                logger.info("Manual mode: removing gap-filler dummy assignments %s", sorted(bootstrap_placeholder_rxs))
+                _dummy_labels: set[str] = set()
+                for _dummy_rx in sorted(bootstrap_placeholder_rxs):
+                    _dummy_worker = self._workers.pop(int(_dummy_rx), None)
+                    if _dummy_worker is not None:
+                        _dummy_assignment = assignments.get(int(_dummy_rx))
+                        if _dummy_assignment is not None:
+                            _dummy_labels.update(self._expected_user_label_aliases(_dummy_assignment))
+                        self._stop_worker(_dummy_worker, join_timeout_s=0.5)
+                        self._activity_by_rx.pop(int(_dummy_rx), None)
+                    # Remove from assignments so they don't persist
+                    assignments.pop(int(_dummy_rx), None)
+                if _dummy_labels:
+                    self._wait_for_kiwi_auto_users_missing(
+                        host=str(host),
+                        port=int(port),
+                        labels=_dummy_labels,
+                        timeout_s=6.0,
+                    )
+
             _deferred_roaming_rxs = sorted(
                 int(rx)
                 for rx in desired_rxs
@@ -4804,10 +5057,13 @@ class ReceiverManager:
             roaming_rxs_to_verify = sorted(
                 int(rx)
                 for rx in desired_rxs
-                if int(rx) < 2 and (int(rx) not in current_rxs or int(rx) in to_stop or int(rx) in reconcile_rxs)
+                if int(rx) < 2
+                and (int(rx) not in current_rxs or int(rx) in to_stop or int(rx) in reconcile_rxs)
             )
             if _defer_roaming_start and _deferred_roaming_rxs:
                 roaming_rxs_to_verify = sorted(set(roaming_rxs_to_verify) | set(_deferred_roaming_rxs))
+            if manual_mode_assignments:
+                roaming_rxs_to_verify = []
             if roaming_rxs_to_verify and (not starting_from_empty or _defer_roaming_start):
                 MAX_ROAMING_CORRECTION_RETRIES = 3
                 for _roam_attempt in range(MAX_ROAMING_CORRECTION_RETRIES):
@@ -4911,14 +5167,13 @@ class ReceiverManager:
             self._assignments = {int(rx): assignments[int(rx)] for rx in sorted(desired_rxs)}
             self._active_host = str(host)
             self._active_port = int(port)
-
             # Post-startup slot correction loop: handles two cases:
             #   (a) ABSENT workers — ghost blocked their slot entirely (rx not in live_now)
             #   (b) WRONGLY-PLACED workers — ghost displaced them to a different slot
             #       (connected, correct label, but Kiwi slot ≠ rx number)
             # For each attempt: stop affected workers, kick ghost/target slots, restart
             # all affected workers simultaneously, then re-check.
-            if starting_from_empty and not _defer_roaming_start:
+            if starting_from_empty and not _defer_roaming_start and not manual_mode_assignments:
                 MAX_EVICT_RETRIES = 16
                 for _evict_attempt in range(MAX_EVICT_RETRIES):
                     # Brief wait on retries so we see the ghost after it reconnects

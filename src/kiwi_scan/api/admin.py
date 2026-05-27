@@ -18,6 +18,58 @@ from ..receiver_manager import ReceiverAssignment
 from ..ws4010_server import restart_ws4010
 
 
+_MANUAL_ASSIGNMENT_BANDS = {
+    "10m",
+    "12m",
+    "15m",
+    "17m",
+    "20m",
+    "30m",
+    "40m",
+    "60m",
+    "80m",
+    "160m",
+}
+
+_MANUAL_ASSIGNMENT_MODE_ALIASES = {
+    "FT8": "FT8",
+    "FT4": "FT4",
+    "WSPR": "WSPR",
+    "USB": "USB",
+    "LSB": "LSB",
+    "AM": "AM",
+    "AMN": "AM",
+    "SAM": "AM",
+    "FM": "FM",
+    "NBFM": "FM",
+    "CW": "CW",
+    "CWN": "CW",
+    "SSB": "SSB",
+    "PHONE": "PHONE",
+}
+
+
+def _normalize_manual_assignment_band(value: object) -> str:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return ""
+    match = re.fullmatch(r"(\d+)\s*[m]?$", raw)
+    if not match:
+        return ""
+    normalized = f"{match.group(1)}m"
+    return normalized if normalized in _MANUAL_ASSIGNMENT_BANDS else ""
+
+
+def _normalize_manual_assignment_mode(value: object) -> str:
+    raw = str(value or "").strip().upper().replace("-", "")
+    if not raw:
+        return ""
+    return _MANUAL_ASSIGNMENT_MODE_ALIASES.get(raw, "")
+
+
+_MANUAL_EXTERNAL_HOLD_REASON = "manual_assignments"
+
+
 def _runtime_mode() -> str:
     requested = str(os.environ.get("KIWISCAN_UPDATE_MODE", "") or "").strip().lower()
     if requested in {"host", "container"}:
@@ -557,11 +609,143 @@ def make_router(
         threading.Thread(target=_bg, daemon=True, name="force-reassign-bg").start()
         return {"ok": True, "status": "reassigning"}
 
+    @router.post("/admin/manual-assignments")
+    async def manual_assignments_endpoint(request: Request) -> dict:
+        if receiver_mgr is None or mgr is None:
+            raise HTTPException(status_code=503, detail="receiver management unavailable")
+        try:
+            payload = await request.json()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}")
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Payload must be an object")
+
+        assignments_raw = payload.get("assignments", [])
+        if not isinstance(assignments_raw, list):
+            raise HTTPException(status_code=400, detail="assignments must be an array")
+
+        kiwi_key = str(payload.get("kiwi_key") or "").strip() or None
+        kiwi_index = payload.get("kiwi_index")
+        resolved_kiwi_key = ""
+
+        resolve_runtime_target = getattr(mgr, "resolve_runtime_target", None)
+        if callable(resolve_runtime_target):
+            try:
+                resolved = resolve_runtime_target(
+                    kiwi_key=kiwi_key,
+                    kiwi_index=kiwi_index if kiwi_index not in (None, "") else None,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=f"Failed resolving Kiwi target: {exc}")
+            host = str((resolved or {}).get("host") or "").strip()
+            port = int((resolved or {}).get("port") or 0)
+            resolved_kiwi_key = str((resolved or {}).get("kiwi_key") or "").strip()
+        else:
+            manager_lock = getattr(mgr, "lock", None)
+            if manager_lock is not None:
+                with manager_lock:  # type: ignore[union-attr]
+                    host = str(getattr(mgr, "host", "") or "").strip()
+                    port = int(getattr(mgr, "port", 0) or 0)
+            else:
+                host = str(getattr(mgr, "host", "") or "").strip()
+                port = int(getattr(mgr, "port", 0) or 0)
+
+        if not host or port <= 0:
+            raise HTTPException(status_code=503, detail="KiwiSDR host is not configured")
+
+        desired_assignments: dict[int, ReceiverAssignment] = {}
+        seen_receivers: set[int] = set()
+        for index, raw_entry in enumerate(assignments_raw):
+            if not isinstance(raw_entry, dict):
+                raise HTTPException(status_code=400, detail=f"Assignment {index} must be an object")
+
+            try:
+                rx = int(raw_entry.get("rx"))
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"Assignment {index} is missing a valid rx") from exc
+            if rx < 0 or rx > 7:
+                raise HTTPException(status_code=400, detail=f"Assignment {index} has out-of-range rx {rx}")
+            if rx in seen_receivers:
+                raise HTTPException(status_code=400, detail=f"Duplicate receiver entry for RX{rx}")
+            seen_receivers.add(rx)
+
+            enabled = bool(raw_entry.get("enabled", raw_entry.get("active", True)))
+            if not enabled:
+                continue
+
+            band = _normalize_manual_assignment_band(raw_entry.get("band"))
+            if not band:
+                raise HTTPException(status_code=400, detail=f"Assignment {index} has an unsupported band")
+
+            mode_label = _normalize_manual_assignment_mode(raw_entry.get("mode", raw_entry.get("mode_label")))
+            if not mode_label:
+                raise HTTPException(status_code=400, detail=f"Assignment {index} has an unsupported mode")
+
+            try:
+                freq_khz = float(raw_entry.get("freq_khz") or 0.0)
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail=f"Assignment {index} is missing a valid freq_khz") from exc
+            if not (0.0 < freq_khz < 1_000_000.0):
+                raise HTTPException(status_code=400, detail=f"Assignment {index} has an invalid freq_khz")
+
+            sideband = str(raw_entry.get("sideband") or "").strip().upper() or None
+            if sideband not in {None, "USB", "LSB"}:
+                raise HTTPException(status_code=400, detail=f"Assignment {index} has an invalid sideband")
+
+            desired_assignments[rx] = ReceiverAssignment(
+                rx=rx,
+                band=band,
+                freq_hz=freq_khz * 1000.0,
+                mode_label=mode_label,
+                sideband=sideband,
+                user_label_override=f"MAN_RX{rx}_{band}_{mode_label}",
+                ignore_slot_check=True,
+            )
+
+        try:
+            if auto_set_loop is not None:
+                pause_for_external = getattr(auto_set_loop, "pause_for_external", None)
+                if callable(pause_for_external):
+                    # Use a global hold: receiver_mgr is a shared runtime target, so
+                    # per-kiwi holds can still let another kiwi re-apply and preempt
+                    # manual assignment startup mid-flight.
+                    pause_for_external(_MANUAL_EXTERNAL_HOLD_REASON)
+            dependency_errors_getter = getattr(receiver_mgr, "_required_dependency_errors", None)
+            if callable(dependency_errors_getter):
+                dependency_errors = dependency_errors_getter(desired_assignments)  # type: ignore[misc]
+                if dependency_errors:
+                    raise HTTPException(
+                        status_code=503,
+                        detail=f"Missing runtime dependencies: {'; '.join(str(err) for err in dependency_errors)}",
+                    )
+            receiver_mgr.apply_assignments(  # type: ignore[attr-defined]
+                host,
+                port,
+                desired_assignments,
+                allow_starting_from_empty_full_reset=False,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Failed applying manual assignments: {exc}")
+
+        return {
+            "ok": True,
+            "host": host,
+            "port": port,
+            "kiwi_key": resolved_kiwi_key or (kiwi_key or ""),
+            "active_receivers": sorted(desired_assignments.keys()),
+            "status": "applied",
+        }
+
     @router.post("/admin/restore-roaming-receivers")
     def restore_roaming_receivers_endpoint() -> dict:
         if auto_set_loop is None:
             raise HTTPException(status_code=503, detail="auto_set_loop unavailable")
         try:
+            resume_from_external = getattr(auto_set_loop, "resume_from_external", None)
+            if callable(resume_from_external):
+                resume_from_external(_MANUAL_EXTERNAL_HOLD_REASON)
             applied = bool(auto_set_loop.apply_current_settings(force=True, sync_state=True))  # type: ignore[attr-defined]
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Failed restoring roaming receivers: {exc}")

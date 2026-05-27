@@ -70,8 +70,10 @@ class AutoSetLoop:
         # take up to ~2 min for 8 receivers over VPN).
         self._recovery_backoff_until_ts: float = 0.0
         self._RECOVERY_BACKOFF_S: float = 60.0
+        self._ROAMING_RECOVERY_BACKOFF_S: float = 30.0
         self._FIXED_INVISIBLE_GRACE_S: float = 30.0
         self._external_hold_reason: str | None = None
+        self._external_hold_by_kiwi: Dict[str, str] = {}
 
     def set_smart_scheduler(self, smart_scheduler: Any) -> None:
         """Bind a SmartScheduler instance so closed bands are filtered each cycle."""
@@ -117,9 +119,14 @@ class AutoSetLoop:
     def notify_settings_changed(self) -> None:
         self._wake.set()
 
-    def pause_for_external(self, reason: str = "external") -> None:
+    def pause_for_external(self, reason: str = "external", kiwi_key: str | None = None) -> None:
         with self._state_lock:
-            self._external_hold_reason = str(reason or "external")
+            hold_reason = str(reason or "external")
+            key = str(kiwi_key or "").strip()
+            if key:
+                self._external_hold_by_kiwi[key] = hold_reason
+            else:
+                self._external_hold_reason = hold_reason
             self._manual_mode_cleared = True
             self._did_startup_apply = False
             self._last_schedule_key = None
@@ -127,20 +134,44 @@ class AutoSetLoop:
             self._last_applied_band_config = None
         self.notify_settings_changed()
 
-    def resume_from_external(self, reason: str | None = None) -> None:
+    def resume_from_external(self, reason: str | None = None, kiwi_key: str | None = None) -> None:
         with self._state_lock:
-            current_reason = self._external_hold_reason
-            if current_reason is None:
+            changed = False
+            key = str(kiwi_key or "").strip()
+            if key:
+                current_reason = self._external_hold_by_kiwi.get(key)
+                if current_reason is not None and (reason is None or str(reason) == str(current_reason)):
+                    self._external_hold_by_kiwi.pop(key, None)
+                    changed = True
+            else:
+                current_reason = self._external_hold_reason
+                if current_reason is not None and (reason is None or str(reason) == str(current_reason)):
+                    self._external_hold_reason = None
+                    changed = True
+                if reason is None:
+                    if self._external_hold_by_kiwi:
+                        self._external_hold_by_kiwi.clear()
+                        changed = True
+                else:
+                    to_clear = [k for k, r in self._external_hold_by_kiwi.items() if str(r) == str(reason)]
+                    if to_clear:
+                        for k in to_clear:
+                            self._external_hold_by_kiwi.pop(k, None)
+                        changed = True
+            if not changed:
                 return
-            if reason is not None and str(reason) != str(current_reason):
-                return
-            self._external_hold_reason = None
             self._manual_mode_cleared = False
             self._did_startup_apply = False
             self._last_schedule_key = None
             self._last_apply_signature = None
             self._last_applied_band_config = None
         self.notify_settings_changed()
+
+    def _external_hold_reason_for_kiwi_locked(self, kiwi_key: str) -> str | None:
+        key = str(kiwi_key or "").strip()
+        if key and key in self._external_hold_by_kiwi:
+            return self._external_hold_by_kiwi[key]
+        return None
 
     def _wait_for_notification(self, timeout_s: float | None = None) -> None:
         self._wake.wait(timeout=timeout_s)
@@ -502,6 +533,21 @@ class AutoSetLoop:
             else:
                 logger.debug("POST /auto_set_receivers error (processing in background): %s", e)
 
+    def clear_receivers_for_manual_mode(self, settings: Dict[str, Any], *, kiwi_key: str | None = None) -> None:
+        """One-shot clear when user explicitly switches to Manual Mode."""
+        payload = self._target_auto_set_payload(settings, {"enabled": False, "force": True})
+        target_key = str(kiwi_key if kiwi_key is not None else settings.get("activeKiwiKey") or "").strip()
+        if target_key:
+            payload["kiwi_key"] = target_key
+        logger.info(
+            "Manual mode button pressed for %s: clearing current non-manual receiver set once",
+            target_key or "<default>",
+        )
+        try:
+            self._post_auto_set(payload)
+        except Exception:
+            logger.debug("Manual-mode one-shot clear failed", exc_info=True)
+
     def _fixed_health_state(self) -> tuple[str, list[dict]]:
         """Return fixed receiver health as (healthy|sick|unknown, sick_entries)."""
         port_raw = str(os.environ.get("PORT", "4020") or "4020").strip()
@@ -751,6 +797,24 @@ class AutoSetLoop:
                 self._wait_for_notification()
                 continue
 
+            current_kiwi_hold_reason: str | None = None
+            if current_kiwi_key:
+                with self._state_lock:
+                    current_kiwi_hold_reason = self._external_hold_reason_for_kiwi_locked(current_kiwi_key)
+            if current_kiwi_hold_reason:
+                logger.info(
+                    "Auto-set loop: external hold active for %s (%s) — parking loop",
+                    current_kiwi_key,
+                    current_kiwi_hold_reason,
+                )
+                self._manual_mode_cleared = True
+                self._did_startup_apply = False
+                self._last_schedule_key = None
+                self._last_apply_signature = None
+                self._last_applied_band_config = None
+                self._wait_for_notification()
+                continue
+
             if receivers_mode == "scan":
                 self._manual_mode_cleared = False
                 self._did_startup_apply = False
@@ -761,15 +825,11 @@ class AutoSetLoop:
                 continue
 
             # Use the per-Kiwi mode (already resolved in receivers_mode) to decide
-            # whether to park the loop.  "semi" mode stays assigned (fixed receivers
-            # keep running); only "manual" clears and parks.
+            # whether to park the loop.  "manual" mode means user is in control - don't interfere.
             if receivers_mode == "manual":
                 if not self._manual_mode_cleared:
-                    logger.info("Auto-set loop: Manual Mode detected — clearing receivers and parking loop")
-                    try:
-                        self._post_auto_set(self._target_auto_set_payload(settings, {"enabled": False, "force": True}))
-                    except Exception:
-                        pass
+                    logger.info("Auto-set loop: Manual Mode detected — parking loop (not interfering with manual assignments)")
+                    # Do NOT call _post_auto_set here - manual mode means user is in control, don't interfere
                     self._manual_mode_cleared = True
                 self._did_startup_apply = False
                 self._last_schedule_key = None
@@ -836,12 +896,13 @@ class AutoSetLoop:
                 if not should_apply and self._roaming_enabled(settings):
                     roaming_state, sick_roaming = self._roaming_health_state()
                     if roaming_state == "sick" and sick_roaming:
-                        self._recovery_backoff_until_ts = time.time() + self._RECOVERY_BACKOFF_S
+                        roaming_backoff_s = float(max(self._loop_interval_s(), self._ROAMING_RECOVERY_BACKOFF_S))
+                        self._recovery_backoff_until_ts = time.time() + roaming_backoff_s
                         logger.info(
                             "Auto-set loop: roaming receiver(s) RX%s unhealthy — forcing re-apply "
                             "(next health check suppressed for %.0fs)",
                             "/".join(str(r) for r in sick_roaming),
-                            self._RECOVERY_BACKOFF_S,
+                            roaming_backoff_s,
                         )
                         force_health_recovery = True
                         should_apply = True
@@ -943,6 +1004,7 @@ class AutoSetLoop:
             last_success_ts = self._last_success_ts
             last_error = self._last_error
             external_hold_reason = self._external_hold_reason
+            external_holds_by_kiwi = dict(self._external_hold_by_kiwi)
         return {
             "enabled_by_env": bool(self._enabled_by_env()),
             "thread_running": bool(self._thread is not None and self._thread.is_alive()),
@@ -959,6 +1021,7 @@ class AutoSetLoop:
             "last_success_ts": last_success_ts,
             "last_error": last_error,
             "external_hold_reason": external_hold_reason,
+            "external_holds_by_kiwi": external_holds_by_kiwi,
             "fixed_rx_count": len(_FIXED_ASSIGNMENTS),
             "fixed_rxs": [{"rx": e["rx"], "band": e["band"], "mode": e["mode"]} for e in _FIXED_ASSIGNMENTS],
         }
@@ -981,6 +1044,17 @@ class AutoSetLoop:
             logger.debug(
                 "force_reassign skipped — external hold active (%s)",
                 external_hold_reason,
+            )
+            return
+
+        current_kiwi_key = str(settings.get("activeKiwiKey") or "").strip()
+        with self._state_lock:
+            kiwi_hold_reason = self._external_hold_reason_for_kiwi_locked(current_kiwi_key)
+        if kiwi_hold_reason:
+            logger.debug(
+                "force_reassign skipped for %s — external hold active (%s)",
+                current_kiwi_key or "<default>",
+                kiwi_hold_reason,
             )
             return
 
@@ -1016,6 +1090,17 @@ class AutoSetLoop:
             logger.debug(
                 "apply_current_settings skipped — external hold active (%s)",
                 external_hold_reason,
+            )
+            return False
+
+        current_kiwi_key = str(settings.get("activeKiwiKey") or "").strip()
+        with self._state_lock:
+            kiwi_hold_reason = self._external_hold_reason_for_kiwi_locked(current_kiwi_key)
+        if kiwi_hold_reason:
+            logger.debug(
+                "apply_current_settings skipped for %s — external hold active (%s)",
+                current_kiwi_key or "<default>",
+                kiwi_hold_reason,
             )
             return False
 

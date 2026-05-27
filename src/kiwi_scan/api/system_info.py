@@ -594,6 +594,7 @@ def _build_kiwi_payload(mgr: object, receiver_mgr: object | None = None, *, kiwi
         active_users.append(
             {
                 "rx": rx_display,
+                "kiwi_rx": kiwi_rx,
                 "name": resolved_label,
                 "location": urllib.parse.unquote(str(row.get("g") or "")).strip(),
                 "freq_khz": round(float(row.get("f")) / 1000.0, 3) if _safe_float(row.get("f")) is not None else None,

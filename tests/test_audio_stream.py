@@ -130,6 +130,10 @@ def test_normalize_camp_audio_samples_leaves_noncompressed_or_little_endian_audi
     assert unchanged_not_compressed.tolist() == samples.tolist()
 
 
+def test_normalize_modulation_accepts_plain_fm() -> None:
+    assert audio_stream._normalize_modulation("FM", 29_600_000.0) == "nbfm"
+
+
 def test_stream_kiwi_audio_wav_retries_busy_camp_connection(monkeypatch) -> None:
     attempts = {"open": 0}
 

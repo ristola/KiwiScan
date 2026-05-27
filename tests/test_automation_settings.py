@@ -128,6 +128,20 @@ def test_automation_settings_store_kiwi_profiles(monkeypatch) -> None:
             "kiwiProfiles": {
                 "10.13.73.235:8073": {
                     "receiversMode": "semi",
+                    "manualAssignments": {
+                        "0": {
+                            "enabled": True,
+                            "band": "20 M",
+                            "mode": "ft8",
+                            "freq_khz": "14074.0",
+                        },
+                        "7": {
+                            "enabled": False,
+                            "band": "40m",
+                            "mode": "usb",
+                            "freq_khz": 7188,
+                        },
+                    },
                     "overviewTopics": {
                         "status": True,
                         "assignments": False,
@@ -148,6 +162,20 @@ def test_automation_settings_store_kiwi_profiles(monkeypatch) -> None:
     assert saved[-1]["kiwiProfiles"] == {
         "10.13.73.235:8073": {
             "receiversMode": "semi",
+            "manualAssignments": {
+                "0": {
+                    "enabled": True,
+                    "band": "20m",
+                    "mode": "FT8",
+                    "freq_khz": 14074.0,
+                },
+                "7": {
+                    "enabled": False,
+                    "band": "40m",
+                    "mode": "USB",
+                    "freq_khz": 7188.0,
+                },
+            },
             "overviewTopics": {
                 "status": True,
                 "assignments": False,
@@ -189,6 +217,45 @@ def test_automation_settings_drop_invalid_kiwi_profiles(monkeypatch) -> None:
     assert response.status_code == 200
     assert saved
     assert saved[-1]["kiwiProfiles"] == {}
+
+
+def test_automation_settings_drop_invalid_manual_assignments(monkeypatch) -> None:
+    saved: list[dict] = []
+
+    monkeypatch.setattr(automation_api, "_load_settings", lambda: {"headlessEnabled": True})
+    monkeypatch.setattr(automation_api, "_save_settings", lambda payload: saved.append(dict(payload)))
+
+    app = FastAPI()
+    app.include_router(automation_api.make_router())
+    client = TestClient(app)
+
+    response = client.post(
+        "/automation/settings",
+        json={
+            "kiwiProfiles": {
+                "10.13.73.236:8073": {
+                    "manualAssignments": {
+                        "": {"enabled": True, "band": "20m", "mode": "FT8", "freq_khz": 14074},
+                        "8": {"enabled": True, "band": "20m", "mode": "FT8", "freq_khz": 14074},
+                        "0": {"enabled": False},
+                        "1": {"band": "bad", "mode": "bad", "freq_khz": "nope"},
+                    }
+                }
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    assert saved
+    assert saved[-1]["kiwiProfiles"] == {
+        "10.13.73.236:8073": {
+            "manualAssignments": {
+                "0": {
+                    "enabled": False,
+                }
+            }
+        }
+    }
 
 
 def test_automation_settings_store_active_kiwi_key_and_kiwi_modes(monkeypatch) -> None:

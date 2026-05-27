@@ -483,6 +483,9 @@
             align-items: center;
             gap: 14px;
             margin-bottom: 14px;
+            position: sticky;
+            top: 0;
+            z-index: 40;
             border: 1px solid var(--line);
             background: var(--panel);
             border-radius: 16px;
@@ -3267,6 +3270,7 @@
             flex-direction: column;
             gap: 10px;
             border-radius: 16px;
+            pointer-events: none;
         }
 
         .rx-busy-overlay[hidden] {
@@ -4262,6 +4266,292 @@
 
         .assign-table tbody tr:hover td {
             background: color-mix(in srgb, var(--accent-2), white 95%);
+        }
+
+        .manual-rx-toolbar {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+
+        .manual-rx-toolbar-copy {
+            display: grid;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .manual-rx-toolbar-title {
+            font-size: 0.96rem;
+            font-weight: 800;
+            letter-spacing: 0.01em;
+            color: var(--ink);
+        }
+
+        .manual-rx-toolbar-note {
+            color: var(--muted);
+            font-size: 0.78rem;
+            line-height: 1.45;
+            max-width: 62ch;
+        }
+
+        .manual-rx-toolbar-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .manual-rx-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 12px;
+        }
+
+        .manual-rx-card {
+            display: grid;
+            gap: 10px;
+            padding: 12px;
+            border-radius: 14px;
+            border: 1px solid var(--line);
+            background: linear-gradient(180deg, color-mix(in srgb, var(--panel), white 12%), #fff);
+            box-shadow: 0 14px 28px rgba(15, 23, 42, 0.08);
+        }
+
+        .manual-rx-card.is-live {
+            border-color: color-mix(in srgb, #16a34a, var(--line) 42%);
+        }
+
+        .manual-rx-card.is-staged {
+            border-color: color-mix(in srgb, var(--accent), var(--line) 32%);
+        }
+
+        .manual-rx-card.is-dirty {
+            border-color: color-mix(in srgb, var(--accent-2), var(--line) 20%);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-2), transparent 58%), 0 14px 28px rgba(15, 23, 42, 0.09);
+        }
+
+        .manual-rx-card.is-warning {
+            border-color: color-mix(in srgb, var(--warn), white 35%);
+            background: linear-gradient(180deg, color-mix(in srgb, var(--warn), white 94%), #fff);
+        }
+
+        .manual-rx-card.is-fault,
+        .manual-rx-card.is-invalid {
+            border-color: color-mix(in srgb, var(--fault), white 34%);
+            background: linear-gradient(180deg, color-mix(in srgb, var(--fault), white 95%), #fff);
+        }
+
+        .manual-rx-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .manual-rx-head-main {
+            display: grid;
+            gap: 5px;
+            min-width: 0;
+        }
+
+        .manual-rx-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .manual-rx-status {
+            display: inline-flex;
+            align-items: center;
+            min-height: 1.65rem;
+            padding: 0.18rem 0.62rem;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: color-mix(in srgb, var(--panel), white 22%);
+            color: var(--muted);
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .manual-rx-status.is-live {
+            color: #15803d;
+            border-color: color-mix(in srgb, #22c55e, var(--line) 34%);
+            background: color-mix(in srgb, #22c55e, white 90%);
+        }
+
+        .manual-rx-status.is-staged,
+        .manual-rx-status.is-dirty {
+            color: color-mix(in srgb, var(--accent), black 8%);
+            border-color: color-mix(in srgb, var(--accent), var(--line) 24%);
+            background: color-mix(in srgb, var(--accent), white 90%);
+        }
+
+        .manual-rx-status.is-warning {
+            color: #b45309;
+            border-color: color-mix(in srgb, #f59e0b, var(--line) 34%);
+            background: color-mix(in srgb, #f59e0b, white 90%);
+        }
+
+        .manual-rx-status.is-fault,
+        .manual-rx-status.is-invalid {
+            color: #b91c1c;
+            border-color: color-mix(in srgb, #ef4444, var(--line) 34%);
+            background: color-mix(in srgb, #ef4444, white 91%);
+        }
+
+        .manual-rx-meta {
+            color: var(--muted);
+            font-size: 0.73rem;
+            line-height: 1.4;
+        }
+
+        .manual-rx-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 0.18rem 0.54rem;
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--panel), white 20%);
+            border: 1px solid var(--line);
+            color: var(--fg);
+            font-size: 0.74rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .manual-rx-toggle input[type="checkbox"] {
+            width: 14px;
+            height: 14px;
+            margin: 0;
+            accent-color: var(--accent);
+            cursor: pointer;
+        }
+
+        .manual-rx-fields {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+        }
+
+        .manual-rx-field {
+            display: grid;
+            gap: 5px;
+            min-width: 0;
+        }
+
+        .manual-rx-field.is-hidden {
+            display: none;
+        }
+
+        .manual-rx-field.manual-rx-field-full {
+            grid-column: 1 / -1;
+        }
+
+        .manual-rx-field-label {
+            font-size: 0.68rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .manual-rx-select,
+        .manual-rx-input {
+            width: 100%;
+            min-height: 2.35rem;
+            border-radius: 10px;
+            border: 1px solid var(--line);
+            background: color-mix(in srgb, var(--panel), white 16%);
+            color: var(--ink);
+            padding: 0.5rem 0.72rem;
+            font: inherit;
+            font-size: 0.84rem;
+            font-weight: 600;
+        }
+
+        .manual-rx-select:focus-visible,
+        .manual-rx-input:focus-visible {
+            outline: none;
+            border-color: color-mix(in srgb, var(--accent), var(--line) 10%);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent), transparent 76%);
+        }
+
+        .manual-rx-select:disabled,
+        .manual-rx-input:disabled,
+        .manual-rx-toggle input[type="checkbox"]:disabled {
+            cursor: default;
+            opacity: 0.68;
+        }
+
+        .manual-rx-footer {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .manual-rx-summary {
+            min-height: 2.2em;
+            color: var(--muted);
+            font-size: 0.74rem;
+            line-height: 1.45;
+        }
+
+        .manual-rx-audio {
+            display: flex;
+            justify-content: flex-end;
+            flex-shrink: 0;
+        }
+
+        .manual-rx-validation {
+            color: #b91c1c;
+            font-size: 0.72rem;
+            font-weight: 700;
+            line-height: 1.35;
+        }
+
+        body.theme-dark .manual-rx-card {
+            background: linear-gradient(180deg, color-mix(in srgb, var(--panel), black 6%), color-mix(in srgb, var(--panel), white 2%));
+            box-shadow: 0 16px 34px rgba(2, 6, 23, 0.24);
+        }
+
+        body.theme-dark .manual-rx-select,
+        body.theme-dark .manual-rx-input,
+        body.theme-dark .manual-rx-toggle,
+        body.theme-dark .manual-rx-status {
+            background: color-mix(in srgb, var(--panel), white 6%);
+        }
+
+        @media (max-width: 720px) {
+            .manual-rx-toolbar-actions {
+                width: 100%;
+            }
+
+            .manual-rx-toolbar-actions .action-btn-sm {
+                flex: 1 1 0;
+                justify-content: center;
+            }
+
+            .manual-rx-fields {
+                grid-template-columns: 1fr;
+            }
+
+            .manual-rx-footer {
+                flex-direction: column;
+            }
+
+            .manual-rx-audio {
+                justify-content: flex-start;
+            }
         }
 
         .prop-cond-wrap {
@@ -5669,7 +5959,7 @@
                         Messages</a></li>
                 <li data-overview-nav="map"><a href="#map" data-nav="map" data-icon="globe">Map</a></li>
                 <li data-overview-nav="active-receivers"><a href="#active-receivers" data-nav="active-receivers"
-                        data-icon="users">Active Receivers</a></li>
+                        data-icon="users">Receiver Assignments</a></li>
                 <li><a href="#receiver-scan" data-nav="receiver-scan" data-icon="crosshair">Receiver Scan</a></li>
                 <li><a href="#settings" data-nav="settings" data-icon="settings">Settings</a></li>
                 <li><a href="#system" data-nav="system" data-icon="server">System Info</a></li>
@@ -6501,9 +6791,9 @@
                             <span class="rx-busy-label" id="rx-busy-label">Setting up Receiver Assignments !</span>
                         </div>
                         <div class="panel-hdr">
-                            <h2 data-icon="users">Active Receivers</h2>
+                            <h2 data-icon="users">Receiver Assignments</h2>
                             <button class="panel-toggle" type="button" aria-expanded="true"
-                                aria-label="Collapse Active Receivers">
+                                aria-label="Collapse Receiver Assignments">
                                 <svg viewBox="0 0 24 24" aria-hidden="true">
                                     <path d="m6 9 6 6 6-6"></path>
                                 </svg>
@@ -6681,9 +6971,9 @@
                                         <div class="overview-topic-item" data-overview-key="active-receivers"
                                             draggable="true">
                                             <span class="overview-topic-handle" aria-hidden="true">::</span>
-                                            <span class="overview-topic-label">Active Receivers</span>
+                                            <span class="overview-topic-label">Receiver Assignments</span>
                                             <input id="cfg-overview-active-receivers" type="checkbox" checked
-                                                aria-label="Show Active Receivers in overview">
+                                                aria-label="Show Receiver Assignments in overview">
                                         </div>
                                         <div class="overview-topic-item" data-overview-key="receiver-scan"
                                             draggable="true">
@@ -6887,8 +7177,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <script src="https://unpkg.com/three@0.179.1/build/three.min.js"></script>
-    <script src="https://unpkg.com/globe.gl@2.41.4/dist/globe.gl.min.js"></script>
     <script>
         let decodeCursor = 0;
         let decodeCursorPrimed = false;
@@ -6940,6 +7228,17 @@
         let latestAssignmentsSource = "";
         let latestAssignmentsHost = "";
         let latestAssignmentsPort = 0;
+        let manualAssignmentDrafts = {};
+        let manualAssignmentErrorsByRx = {};
+        let manualAssignmentsSaveInFlight = false;
+        let manualAssignmentStatusText = "";
+        let manualAssignmentRefreshTimer = null;
+        let manualAssignmentDraftProfileKey = "";
+        let manualAssignmentInteractionUntil = 0;
+        let dashboardSelectInteractionUntil = 0;
+        let dashboardSelectInteractionBound = false;
+        let manualAssignmentCommitTimer = null;
+        let manualAssignmentCommitApplyRuntime = false;
         const FAULT_LOG_NEW_WINDOW_S = 90;
         let lastRateTickMs = Date.now();
         let refreshTimer = null;
@@ -7009,6 +7308,8 @@
         const OVERVIEW_TOPICS_STORAGE_KEY = "kiwiscan.pro.overviewTopics";
         const DECODE_EXTRA_FILTERS_STORAGE_KEY = "kiwiscan.pro.decodeExtraFilters.v1";
         const OVERVIEW_TOPIC_KEYS = ["status", "assignments", "faults", "messages", "map", "active-receivers", "receiver-scan"];
+        const DIGITAL_DECODE_OVERVIEW_MODES = new Set(["FT4", "FT8", "WSPR"]);
+        const DIGITAL_DECODE_OVERVIEW_SEQUENCE = ["assignments", "messages", "map"];
         const OVERVIEW_TOPIC_METADATA = Object.freeze({
             status: { sectionId: "status-strip", fullWidth: true },
             assignments: { sectionId: "assignments", fullWidth: true },
@@ -7044,7 +7345,101 @@
         };
         const MAP_MODE_FILTERS = ["FT8", "FT4", "WSPR", "SSB"];
         const MAP_BAND_OPTIONS = ["10m", "12m", "15m", "17m", "20m", "30m", "40m", "60m", "80m", "160m"];
+        const BAND_FT8_FREQS_KHZ = Object.freeze({
+            "10m": 28074.0,
+            "12m": 24915.0,
+            "15m": 21074.0,
+            "17m": 18100.0,
+            "20m": 14074.0,
+            "30m": 10136.0,
+            "40m": 7074.0,
+            "60m": 5357.0,
+            "80m": 3573.0,
+            "160m": 1840.0,
+        });
+        const BAND_FT4_FREQS_KHZ = Object.freeze({
+            "10m": 28180.0,
+            "12m": 24919.0,
+            "15m": 21140.0,
+            "17m": 18104.0,
+            "20m": 14080.0,
+            "30m": 10140.0,
+            "40m": 7047.5,
+            "60m": 5357.0,
+            "80m": 3575.0,
+            "160m": 1840.0,
+        });
+        const BAND_WSPR_FREQS_KHZ = Object.freeze({
+            "10m": 28124.6,
+            "12m": 24924.6,
+            "15m": 21094.6,
+            "17m": 18104.6,
+            "20m": 14095.6,
+            "30m": 10138.7,
+            "40m": 7038.6,
+            "60m": 5288.7,
+            "80m": 3568.6,
+            "160m": 1836.6,
+        });
+        const MANUAL_RECEIVER_RXS = Object.freeze([0, 1, 2, 3, 4, 5, 6, 7]);
+        const MANUAL_RECEIVER_DEFAULT_BAND = "20m";
+        const MANUAL_RECEIVER_DEFAULT_MODE = "USB";
+        const MANUAL_RECEIVER_DEFAULT_FREQ_KHZ = 14200.0;
+        const MANUAL_RECEIVER_MODE_OPTIONS = Object.freeze(["FT8", "FT4", "WSPR", "USB", "LSB", "AM", "FM", "CW"]);
+        const MANUAL_ASSIGNMENT_INTERACTION_GRACE_MS = 4600;
+        const DASHBOARD_SELECT_INTERACTION_GRACE_MS = 12000;
+        const MANUAL_ASSIGNMENT_COMMIT_DELAY_MS = 220;
+        const BAND_PHONE_FREQS_KHZ = Object.freeze({
+            "10m": 28350.0,
+            "12m": 24933.0,
+            "15m": 21300.0,
+            "17m": 18130.0,
+            "20m": 14200.0,
+            "30m": 10130.0,
+            "40m": 7200.0,
+            "60m": 5357.0,
+            "80m": 3900.0,
+            "160m": 1900.0,
+        });
+        const BAND_CW_FREQS_KHZ = Object.freeze({
+            "10m": 28040.0,
+            "12m": 24900.0,
+            "15m": 21040.0,
+            "17m": 18090.0,
+            "20m": 14040.0,
+            "30m": 10120.0,
+            "40m": 7025.0,
+            "60m": 5353.0,
+            "80m": 3550.0,
+            "160m": 1830.0,
+        });
+        const BAND_AM_FREQS_KHZ = Object.freeze({
+            "10m": 29000.0,
+            "12m": 24933.0,
+            "15m": 21300.0,
+            "17m": 18130.0,
+            "20m": 14200.0,
+            "30m": 10130.0,
+            "40m": 7290.0,
+            "60m": 5357.0,
+            "80m": 3885.0,
+            "160m": 1885.0,
+        });
+        const BAND_FM_FREQS_KHZ = Object.freeze({
+            "10m": 29600.0,
+            "12m": 24933.0,
+            "15m": 21300.0,
+            "17m": 18130.0,
+            "20m": 14200.0,
+            "30m": 10130.0,
+            "40m": 7200.0,
+            "60m": 5357.0,
+            "80m": 3900.0,
+            "160m": 1900.0,
+        });
         const MAP_VIEW_STORAGE_KEY = "kiwiscan-pro-map-view";
+        const MAP_THREE_SCRIPT_URL = "https://unpkg.com/three@0.179.1/build/three.min.js";
+        const MAP_GLOBE_SCRIPT_URL = "https://unpkg.com/globe.gl@2.41.4/dist/globe.gl.min.js";
         const MAP_GLOBE_IMAGE_URL = "https://unpkg.com/three-globe/example/img/earth-day.jpg";
         const MAP_GLOBE_BUMP_URL = "https://unpkg.com/three-globe/example/img/earth-topology.png";
         const MAP_GLOBE_DAY_IMAGE_URL = "https://unpkg.com/three-globe/example/img/earth-day.jpg";
@@ -7071,6 +7466,8 @@
         let mapInstance = null;
         let mapMarkerLayer = null;
         let globeInstance = null;
+        let globeDependencyPromise = null;
+        let globeDependencyFailed = false;
         let globeDayTileMaterial = null;
         let globeTwilightTileMaterial = null;
         let globeDayNightPromise = null;
@@ -7489,6 +7886,7 @@
         }
 
         function updateRefreshStatus() {
+            if (manualAssignmentDashboardInteractionActive()) return;
             const el = byId("refresh-status");
             if (!el) return;
 
@@ -7852,6 +8250,863 @@
             if (!user || !user.fixed) return "";
             return fixedLockSvgHtml("active-rx-lock");
         }
+
+        function invalidateActiveReceiversTable() {
+            lastActiveReceiversTableSignature = "";
+        }
+
+        function currentManualAssignmentProfileKey() {
+            return String(getActiveRuntimeKiwiKey() || "").trim();
+        }
+
+        function ensureManualAssignmentDraftProfileBound() {
+            const profileKey = currentManualAssignmentProfileKey();
+            if (manualAssignmentDraftProfileKey === profileKey) return profileKey;
+            manualAssignmentDraftProfileKey = profileKey;
+            manualAssignmentDrafts = {};
+            manualAssignmentErrorsByRx = {};
+            manualAssignmentStatusText = "";
+            if (manualAssignmentCommitTimer) {
+                window.clearTimeout(manualAssignmentCommitTimer);
+                manualAssignmentCommitTimer = null;
+            }
+            manualAssignmentCommitApplyRuntime = false;
+            if (manualAssignmentRefreshTimer) {
+                window.clearTimeout(manualAssignmentRefreshTimer);
+                manualAssignmentRefreshTimer = null;
+            }
+            return profileKey;
+        }
+
+        function markManualAssignmentInteraction(durationMs = MANUAL_ASSIGNMENT_INTERACTION_GRACE_MS) {
+            manualAssignmentInteractionUntil = Math.max(
+                Number(manualAssignmentInteractionUntil) || 0,
+                Date.now() + Math.max(0, Number(durationMs) || 0),
+            );
+        }
+
+        function manualAssignmentInteractionLocked() {
+            return Number(manualAssignmentInteractionUntil) > Date.now();
+        }
+
+        function markDashboardSelectInteraction(durationMs = DASHBOARD_SELECT_INTERACTION_GRACE_MS) {
+            dashboardSelectInteractionUntil = Math.max(
+                Number(dashboardSelectInteractionUntil) || 0,
+                Date.now() + Math.max(0, Number(durationMs) || 0),
+            );
+        }
+
+        function dashboardSelectInteractionLocked() {
+            return Number(dashboardSelectInteractionUntil) > Date.now();
+        }
+
+        function initDashboardSelectInteractionLock() {
+            if (dashboardSelectInteractionBound) return;
+            dashboardSelectInteractionBound = true;
+
+            const markIfSelectTarget = (target, durationMs = DASHBOARD_SELECT_INTERACTION_GRACE_MS) => {
+                if (!(target instanceof Element)) return false;
+                const selectEl = target instanceof HTMLSelectElement ? target : target.closest("select");
+                if (!selectEl) return false;
+                markDashboardSelectInteraction(durationMs);
+                if (manualAssignmentRefreshTimer) {
+                    window.clearTimeout(manualAssignmentRefreshTimer);
+                    manualAssignmentRefreshTimer = null;
+                }
+                return true;
+            };
+
+            document.addEventListener("pointerdown", (event) => {
+                markIfSelectTarget(event.target);
+            }, true);
+
+            document.addEventListener("focusin", (event) => {
+                markIfSelectTarget(event.target);
+            }, true);
+
+            document.addEventListener("keydown", (event) => {
+                const target = event.target;
+                if (!(target instanceof HTMLSelectElement)) return;
+                const key = String(event.key || "");
+                if (["ArrowDown", "ArrowUp", "Enter", " ", "Spacebar", "PageDown", "PageUp", "Home", "End"].includes(key)) {
+                    markIfSelectTarget(target);
+                }
+            }, true);
+
+            document.addEventListener("change", (event) => {
+                markIfSelectTarget(event.target, 1800);
+            }, true);
+        }
+
+        function manualAssignmentDashboardInteractionActive(container = byId("active-receivers-table")) {
+            if (dashboardSelectInteractionLocked()) return true;
+            if (getCurrentReceiversMode() !== "manual") return false;
+            return manualAssignmentInteractionLocked() || manualAssignmentFieldHasFocus(container || undefined);
+        }
+
+        function manualAssignmentFieldHasFocus(container = byId("active-receivers-table")) {
+            if (!container) return false;
+            const activeEl = document.activeElement;
+            return activeEl instanceof Element
+                && container.contains(activeEl)
+                && !!activeEl.closest("[data-manual-field]");
+        }
+
+        function scheduleManualAssignmentPanelRefresh(delayMs = 0) {
+            if (manualAssignmentRefreshTimer) {
+                window.clearTimeout(manualAssignmentRefreshTimer);
+                manualAssignmentRefreshTimer = null;
+            }
+            manualAssignmentRefreshTimer = window.setTimeout(() => {
+                manualAssignmentRefreshTimer = null;
+                const usersEl = byId("active-receivers-table");
+                if (!usersEl) return;
+                if (manualAssignmentFieldHasFocus(usersEl) || manualAssignmentInteractionLocked() || dashboardSelectInteractionLocked()) {
+                    scheduleManualAssignmentPanelRefresh(160);
+                    return;
+                }
+                invalidateActiveReceiversTable();
+                renderSystemPanel(latestSystemInfo || {});
+            }, Math.max(0, Number(delayMs) || 0));
+        }
+
+        function manualReceiverDraftKey(rxNum) {
+            return String(Number(rxNum));
+        }
+
+        function normalizeManualAssignmentBand(value, fallback = MANUAL_RECEIVER_DEFAULT_BAND) {
+            const candidate = normalizeActiveReceiverBand(value);
+            if (candidate && MAP_BAND_OPTIONS.includes(candidate)) return candidate;
+            return fallback;
+        }
+
+        function resolveManualAssignmentMode(modeValue, freqKHz, fallback = MANUAL_RECEIVER_DEFAULT_MODE) {
+            const raw = String(safeText(modeValue, "")).trim().toUpperCase();
+            if (!raw) return fallback;
+            if (MANUAL_RECEIVER_MODE_OPTIONS.includes(raw)) return raw;
+            if (raw === "NBFM") return "FM";
+            if (raw === "AMN" || raw === "SAM") return "AM";
+            if (raw === "CWN") return "CW";
+            if (raw === "SSB" || raw === "PHONE") return Number(freqKHz) < 10000 ? "LSB" : "USB";
+            return fallback;
+        }
+
+        function isManualAssignmentBandSelectableMode(modeValue) {
+            const mode = resolveManualAssignmentMode(modeValue, 0, "");
+            return mode === "FT8" || mode === "FT4" || mode === "WSPR";
+        }
+
+        function formatManualAssignmentFrequencyKHz(value) {
+            const num = Number(value);
+            if (!Number.isFinite(num) || num <= 0) return "";
+            return num.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+        }
+
+        function normalizeManualAssignmentProfileEntry(raw = {}) {
+            const entry = raw && typeof raw === "object" ? raw : {};
+            const normalized = {};
+            const band = normalizeManualAssignmentBand(entry.band, "");
+            if (band) normalized.band = band;
+            const freqText = formatManualAssignmentFrequencyKHz(entry.freq_khz);
+            if (freqText) normalized.freq_khz = freqText;
+            const mode = resolveManualAssignmentMode(
+                safeText(entry.mode, safeText(entry.mode_label, "")),
+                Number(freqText || entry.freq_khz),
+                "",
+            );
+            if (mode) normalized.mode = mode;
+            const hasEnabled = Object.prototype.hasOwnProperty.call(entry, "enabled");
+            if (hasEnabled) {
+                normalized.enabled = !!entry.enabled;
+            }
+            return (Object.prototype.hasOwnProperty.call(normalized, "enabled") || normalized.band || normalized.mode || normalized.freq_khz) ? normalized : {};
+        }
+
+        function normalizeManualAssignmentProfileMap(raw = {}) {
+            if (!raw || typeof raw !== "object") return {};
+            const next = {};
+            Object.entries(raw).forEach(([rawRx, rawEntry]) => {
+                const rxNum = Number(rawRx);
+                if (!Number.isFinite(rxNum) || rxNum < 0 || rxNum > 7) return;
+                const entry = normalizeManualAssignmentProfileEntry(rawEntry);
+                if (Object.keys(entry).length) next[manualReceiverDraftKey(rxNum)] = entry;
+            });
+            return next;
+        }
+
+        function currentPersistedManualAssignmentProfile() {
+            ensureManualAssignmentDraftProfileBound();
+            const profile = resolveKiwiUiProfile(latestAutomationSettings);
+            return normalizeManualAssignmentProfileMap(profile && profile.manualAssignments);
+        }
+
+        function getPersistedManualAssignmentForRx(rxNum) {
+            const entry = currentPersistedManualAssignmentProfile()[manualReceiverDraftKey(rxNum)];
+            return entry && typeof entry === "object" ? entry : {};
+        }
+
+        function resolveManualAssignmentSuggestedFrequencyKHz(bandValue, modeValue) {
+            const band = normalizeManualAssignmentBand(bandValue, MANUAL_RECEIVER_DEFAULT_BAND);
+            const mode = resolveManualAssignmentMode(modeValue, 0, MANUAL_RECEIVER_DEFAULT_MODE);
+            if (mode === "FT8") return Number(BAND_FT8_FREQS_KHZ[band] || BAND_FT8_FREQS_KHZ[MANUAL_RECEIVER_DEFAULT_BAND]);
+            if (mode === "FT4") return Number(BAND_FT4_FREQS_KHZ[band] || BAND_FT4_FREQS_KHZ[MANUAL_RECEIVER_DEFAULT_BAND]);
+            if (mode === "WSPR") return Number(BAND_WSPR_FREQS_KHZ[band] || BAND_WSPR_FREQS_KHZ[MANUAL_RECEIVER_DEFAULT_BAND]);
+            if (mode === "CW") return Number(BAND_CW_FREQS_KHZ[band] || BAND_CW_FREQS_KHZ[MANUAL_RECEIVER_DEFAULT_BAND]);
+            if (mode === "FM") return Number(BAND_FM_FREQS_KHZ[band] || BAND_FM_FREQS_KHZ[MANUAL_RECEIVER_DEFAULT_BAND]);
+            if (mode === "AM") return Number(BAND_AM_FREQS_KHZ[band] || BAND_AM_FREQS_KHZ[MANUAL_RECEIVER_DEFAULT_BAND]);
+            return Number(BAND_PHONE_FREQS_KHZ[band] || MANUAL_RECEIVER_DEFAULT_FREQ_KHZ);
+        }
+
+        function buildManualAssignmentDefaultsMap() {
+            const defaults = {};
+            for (const rxNum of MANUAL_RECEIVER_RXS) {
+                defaults[manualReceiverDraftKey(rxNum)] = normalizeManualAssignmentProfileEntry({
+                    enabled: false,
+                    band: MANUAL_RECEIVER_DEFAULT_BAND,
+                    mode: MANUAL_RECEIVER_DEFAULT_MODE,
+                    freq_khz: MANUAL_RECEIVER_DEFAULT_FREQ_KHZ,
+                });
+            }
+            return defaults;
+        }
+
+        async function resetManualAssignmentsToDefaults({ saveProfile = true } = {}) {
+            ensureManualAssignmentDraftProfileBound();
+            if (manualAssignmentCommitTimer) {
+                window.clearTimeout(manualAssignmentCommitTimer);
+                manualAssignmentCommitTimer = null;
+            }
+            manualAssignmentCommitApplyRuntime = false;
+
+            const defaults = buildManualAssignmentDefaultsMap();
+            for (const rxNum of MANUAL_RECEIVER_RXS) {
+                const key = manualReceiverDraftKey(rxNum);
+                manualAssignmentDrafts[key] = {
+                    enabled: false,
+                    band: MANUAL_RECEIVER_DEFAULT_BAND,
+                    mode: MANUAL_RECEIVER_DEFAULT_MODE,
+                    freq_khz: formatManualAssignmentFrequencyKHz(MANUAL_RECEIVER_DEFAULT_FREQ_KHZ),
+                    freq_auto: false,
+                    band_exposed: false,
+                    dirty: !!saveProfile,
+                };
+            }
+            manualAssignmentErrorsByRx = {};
+            manualAssignmentStatusText = "Manual defaults restored.";
+
+            if (saveProfile) {
+                await saveAutomationSection({
+                    autosave: true,
+                    notifyBackend: false,
+                    manualAssignments: defaults,
+                });
+                Object.keys(manualAssignmentDrafts).forEach((key) => {
+                    manualAssignmentDrafts[key] = {
+                        ...manualAssignmentDrafts[key],
+                        dirty: false,
+                    };
+                });
+            }
+
+            markManualAssignmentInteraction(1200);
+            scheduleManualAssignmentPanelRefresh(0);
+            return defaults;
+        }
+
+        function currentManualAssignmentRequestStatus(kiwi) {
+            if (manualAssignmentStatusText) return manualAssignmentStatusText;
+            const host = safeText(kiwi && kiwi.host, latestAssignmentsHost);
+            const port = Number.isFinite(Number(kiwi && kiwi.port)) ? Number(kiwi.port) : Number(latestAssignmentsPort || 0);
+            const endpoint = host && port > 0 ? `${host}:${port}` : "the active Kiwi";
+            return `Manual Mode saves receiver settings per Kiwi on ${endpoint}. Turn Active on to start a receiver, and edits on active rows apply automatically.`;
+        }
+
+        function mapManualUsersByRx(users) {
+            const next = new Map();
+            (Array.isArray(users) ? users : []).forEach((user) => {
+                if (!user || typeof user !== "object") return;
+                const logicalRx = Number(user && user.rx);
+                const kiwiRx = Number(user && user.kiwi_rx);
+                const name = safeText(user && user.name, "").trim().toUpperCase();
+                const isManualUser = name.startsWith("MAN_") || name.startsWith("MANUAL_");
+                const manualRxMatch = name.match(/^MAN(?:UAL)?_RX(\d)\b/i);
+                const manualRxFromLabel = manualRxMatch ? Number(manualRxMatch[1]) : null;
+                const targetRx = Number.isFinite(Number(manualRxFromLabel))
+                    ? Number(manualRxFromLabel)
+                    : (Number.isFinite(logicalRx) && logicalRx >= 0
+                        ? logicalRx
+                        : (Number.isFinite(kiwiRx) && kiwiRx >= 0 ? kiwiRx : NaN));
+                if (!Number.isFinite(targetRx) || targetRx < 0) return;
+                next.set(Number(targetRx), user);
+            });
+            return next;
+        }
+
+        function currentManualReceiverUsersByRx() {
+            const kiwi = latestSystemInfo && latestSystemInfo.kiwi && typeof latestSystemInfo.kiwi === "object"
+                ? latestSystemInfo.kiwi
+                : {};
+            return mapManualUsersByRx(buildActiveReceiverRows(kiwi.active_users, kiwi.raw_users));
+        }
+
+        function getManualAssignmentForRx(rxNum) {
+            if (latestAssignmentsSource === "kiwi_users" || !latestAssignments || typeof latestAssignments !== "object") return {};
+            const entry = latestAssignments[String(rxNum)];
+            return entry && typeof entry === "object" ? entry : {};
+        }
+
+        function buildManualAssignmentSeed(rxNum, usersByRx = currentManualReceiverUsersByRx()) {
+            ensureManualAssignmentDraftProfileBound();
+            const assignment = getManualAssignmentForRx(rxNum);
+            const persisted = getPersistedManualAssignmentForRx(rxNum);
+            const channel = latestChannelsMap && typeof latestChannelsMap === "object"
+                ? (latestChannelsMap[String(rxNum)] || {})
+                : {};
+            const user = usersByRx.get(Number(rxNum)) || {};
+            const live = Boolean((channel && (channel.active || channel.visible_on_kiwi)) || (user && user.active));
+            const channelFreqKHz = Number.isFinite(Number(channel && channel.freq_hz)) ? Number(channel.freq_hz) / 1000.0 : null;
+            const assignmentFreqKHz = Number.isFinite(Number(assignment && assignment.freq_hz)) ? Number(assignment.freq_hz) / 1000.0 : null;
+            const persistedFreqKHz = Number.isFinite(Number(persisted && persisted.freq_khz)) ? Number(persisted.freq_khz) : null;
+            const userFreqKHz = Number.isFinite(Number(user && user.freq_khz)) ? Number(user.freq_khz) : null;
+            const resolvedFreqKHz = channelFreqKHz || assignmentFreqKHz || userFreqKHz || persistedFreqKHz;
+            const band = normalizeManualAssignmentBand(
+                channel && channel.band,
+                normalizeManualAssignmentBand(
+                    assignment && assignment.band,
+                    normalizeManualAssignmentBand(
+                        user && user.band,
+                        normalizeManualAssignmentBand(persisted && persisted.band, MANUAL_RECEIVER_DEFAULT_BAND),
+                    ),
+                ),
+            );
+            const mode = resolveManualAssignmentMode(
+                safeText(
+                    channel && channel.mode,
+                    safeText(
+                        assignment && (assignment.mode || assignment.mode_label),
+                        safeText(user && user.mode, safeText(persisted && persisted.mode, "")),
+                    ),
+                ),
+                resolvedFreqKHz,
+                MANUAL_RECEIVER_DEFAULT_MODE,
+            );
+            const persistedEnabled = Boolean(
+                Object.prototype.hasOwnProperty.call(persisted || {}, "enabled") && persisted.enabled
+            );
+            const enabled = Boolean(
+                (channel && (channel.active || channel.visible_on_kiwi))
+                || (user && user.active)
+                || persistedEnabled
+            );
+            const kiwiRx = Number.isFinite(Number(user && user.kiwi_rx))
+                ? Number(user.kiwi_rx)
+                : (Number.isFinite(Number(channel && channel.kiwi_actual_rx))
+                    ? Number(channel.kiwi_actual_rx)
+                    : (Number.isFinite(Number(channel && channel.kiwi_rx)) ? Number(channel.kiwi_rx) : null));
+            const level = String(safeText(channel && channel.status_level, live ? "healthy" : (enabled ? "warning" : "idle"))).toLowerCase();
+            const healthText = safeText(channel && channel.health_state, live ? "Live" : (enabled ? "Assigned" : "Idle"));
+            const connectionBits = [];
+            if (Number.isFinite(Number(kiwiRx))) connectionBits.push(`Kiwi RX${Number(kiwiRx)}`);
+            if (Number.isFinite(Number(user && user.connected_seconds)) && Number(user.connected_seconds) > 0) {
+                connectionBits.push(`Connected ${fmtDurationCompact(user.connected_seconds)}`);
+            }
+            const summary = live
+                ? (connectionBits.join(" • ") || "Receiver is live on the Kiwi.")
+                : (enabled
+                    ? `Ready: ${formatManualAssignmentFrequencyKHz(resolvedFreqKHz || resolveManualAssignmentSuggestedFrequencyKHz(band, mode))} kHz ${mode} on ${band}.`
+                    : "Receiver idle until enabled.");
+            return {
+                rx: Number(rxNum),
+                enabled,
+                band,
+                mode,
+                freq_khz: formatManualAssignmentFrequencyKHz(resolvedFreqKHz || resolveManualAssignmentSuggestedFrequencyKHz(band, mode)),
+                freq_auto: !enabled,
+                live,
+                kiwi_rx: Number.isFinite(Number(kiwiRx)) ? Number(kiwiRx) : null,
+                health_level: level,
+                health_text: healthText,
+                summary,
+            };
+        }
+
+        function getManualAssignmentDraft(rxNum, seed = buildManualAssignmentSeed(rxNum)) {
+            ensureManualAssignmentDraftProfileBound();
+            const key = manualReceiverDraftKey(rxNum);
+            const existing = manualAssignmentDrafts[key];
+            if (!existing) {
+                const next = {
+                    enabled: !!seed.enabled,
+                    band: seed.band,
+                    mode: seed.mode,
+                    freq_khz: safeText(seed.freq_khz, ""),
+                    freq_auto: !!seed.freq_auto,
+                    band_exposed: !!(existing && existing.band_exposed && isManualAssignmentBandSelectableMode(seed.mode)),
+                    dirty: false,
+                };
+                manualAssignmentDrafts[key] = next;
+                return next;
+            }
+            return existing;
+        }
+
+        function snapshotManualAssignmentProfileDrafts(usersByRx = currentManualReceiverUsersByRx()) {
+            ensureManualAssignmentDraftProfileBound();
+            const next = {};
+            for (const rxNum of MANUAL_RECEIVER_RXS) {
+                const seed = buildManualAssignmentSeed(rxNum, usersByRx);
+                const draft = getManualAssignmentDraft(rxNum, seed);
+                const entry = normalizeManualAssignmentProfileEntry({
+                    enabled: !!draft.enabled,
+                    band: draft.band,
+                    mode: draft.mode,
+                    freq_khz: draft.freq_khz,
+                });
+                if (Object.keys(entry).length) next[manualReceiverDraftKey(rxNum)] = entry;
+            }
+            return next;
+        }
+
+        function buildManualAssignmentAudioStreamUrl(rxNum) {
+            const kiwi = latestSystemInfo && latestSystemInfo.kiwi && typeof latestSystemInfo.kiwi === "object"
+                ? latestSystemInfo.kiwi
+                : {};
+            const usersByRx = currentManualReceiverUsersByRx();
+            const seed = buildManualAssignmentSeed(rxNum, usersByRx);
+            const draft = getManualAssignmentDraft(rxNum, seed);
+            const band = normalizeManualAssignmentBand(draft.band, seed.band || MANUAL_RECEIVER_DEFAULT_BAND);
+            const freqKHz = Number(draft.freq_khz || seed.freq_khz || resolveManualAssignmentSuggestedFrequencyKHz(band, draft.mode || seed.mode));
+            const mode = resolveManualAssignmentMode(draft.mode, freqKHz, seed.mode || MANUAL_RECEIVER_DEFAULT_MODE);
+            const host = safeText(kiwi && kiwi.host, latestAssignmentsHost);
+            const port = Number.isFinite(Number(kiwi && kiwi.port)) && Number(kiwi.port) > 0
+                ? Number(kiwi.port)
+                : (Number.isFinite(Number(latestAssignmentsPort)) ? Number(latestAssignmentsPort) : null);
+            if (!host || !Number.isFinite(freqKHz) || freqKHz <= 0 || !Number.isFinite(Number(port)) || Number(port) <= 0) {
+                return "";
+            }
+            const params = new URLSearchParams();
+            params.set("host", host);
+            params.set("port", String(Number(port)));
+            params.set("freq_khz", formatManualAssignmentFrequencyKHz(freqKHz));
+            params.set("mode", mode);
+            return `/system/audio_stream?${params.toString()}`;
+        }
+
+        function buildManualAssignmentRequest(usersByRx = currentManualReceiverUsersByRx()) {
+            const assignments = [];
+            const errors = {};
+            for (const rxNum of MANUAL_RECEIVER_RXS) {
+                const seed = buildManualAssignmentSeed(rxNum, usersByRx);
+                const draft = getManualAssignmentDraft(rxNum, seed);
+                const enabled = !!draft.enabled;
+                const freqText = safeText(draft.freq_khz, "");
+                const freqKHz = Number(freqText);
+                const band = normalizeManualAssignmentBand(draft.band, "");
+                const mode = resolveManualAssignmentMode(draft.mode, freqKHz, "");
+                if (enabled) {
+                    if (!band || !mode || !Number.isFinite(freqKHz) || freqKHz <= 0) {
+                        errors[manualReceiverDraftKey(rxNum)] = "Band, frequency, and mode are required.";
+                    } else {
+                        assignments.push({
+                            rx: rxNum,
+                            enabled: true,
+                            band,
+                            freq_khz: Number(freqKHz.toFixed(3)),
+                            mode,
+                        });
+                        continue;
+                    }
+                }
+                assignments.push({ rx: rxNum, enabled: false });
+            }
+            return { assignments, errors };
+        }
+
+        function scheduleManualAssignmentCommit({ applyRuntime = false, delayMs = MANUAL_ASSIGNMENT_COMMIT_DELAY_MS } = {}) {
+            manualAssignmentCommitApplyRuntime = manualAssignmentCommitApplyRuntime || !!applyRuntime;
+            if (manualAssignmentCommitTimer) {
+                window.clearTimeout(manualAssignmentCommitTimer);
+                manualAssignmentCommitTimer = null;
+            }
+            manualAssignmentCommitTimer = window.setTimeout(() => {
+                manualAssignmentCommitTimer = null;
+                const shouldApplyRuntime = manualAssignmentCommitApplyRuntime;
+                manualAssignmentCommitApplyRuntime = false;
+                void commitManualAssignmentChanges({ applyRuntime: shouldApplyRuntime });
+            }, Math.max(0, Number(delayMs) || 0));
+        }
+
+        function formatManualAssignmentCommitError(applyRuntime, err) {
+            const message = String((err && err.message) || err || "Unknown error");
+            if (applyRuntime && (message === "Not Found" || message === "HTTP 404")) {
+                return "Manual receiver apply endpoint is unavailable on the running server. Restart KiwiScan to load the updated backend.";
+            }
+            return applyRuntime
+                ? `Manual receiver save/apply failed: ${message}`
+                : `Manual receiver save failed: ${message}`;
+        }
+
+        async function commitManualAssignmentChanges({ applyRuntime = false } = {}) {
+            if (manualAssignmentsSaveInFlight) {
+                scheduleManualAssignmentCommit({ applyRuntime, delayMs: MANUAL_ASSIGNMENT_COMMIT_DELAY_MS });
+                return;
+            }
+
+            ensureManualAssignmentDraftProfileBound();
+            const usersByRx = currentManualReceiverUsersByRx();
+            const manualAssignments = snapshotManualAssignmentProfileDrafts(usersByRx);
+            const { assignments, errors } = buildManualAssignmentRequest(usersByRx);
+            manualAssignmentErrorsByRx = errors;
+            manualAssignmentsSaveInFlight = true;
+            let runtimeApplied = false;
+            manualAssignmentStatusText = applyRuntime
+                ? (assignments.some((entry) => entry && entry.enabled)
+                    ? "Saving and applying manual receiver settings..."
+                    : "Saving cleared manual receiver settings...")
+                : "Saving manual receiver settings...";
+
+            try {
+                if (applyRuntime) {
+                    if (Object.keys(errors).length) {
+                        manualAssignmentStatusText = "Complete the highlighted receiver cards before activating them.";
+                        return;
+                    }
+                    await postJson("/admin/manual-assignments", activeKiwiTargetPayload({ assignments }));
+                    runtimeApplied = true;
+                    Object.keys(manualAssignmentDrafts).forEach((key) => {
+                        manualAssignmentDrafts[key] = {
+                            ...manualAssignmentDrafts[key],
+                            dirty: false,
+                        };
+                    });
+                    manualAssignmentStatusText = assignments.some((entry) => entry && entry.enabled)
+                        ? "Manual receiver settings applied. Saving profile..."
+                        : "Manual receiver assignments cleared. Saving profile...";
+                }
+
+                await saveAutomationSection({
+                    autosave: true,
+                    notifyBackend: false,
+                    manualAssignments,
+                });
+                if (applyRuntime) {
+                    manualAssignmentStatusText = assignments.some((entry) => entry && entry.enabled)
+                        ? "Manual receiver settings saved and applied."
+                        : "All manual receiver assignments cleared.";
+                    await refresh();
+                } else {
+                    Object.keys(manualAssignmentDrafts).forEach((key) => {
+                        manualAssignmentDrafts[key] = {
+                            ...manualAssignmentDrafts[key],
+                            dirty: false,
+                        };
+                    });
+                    manualAssignmentStatusText = "Manual receiver settings saved.";
+                }
+            } catch (err) {
+                const message = String((err && err.message) || err || "Unknown error");
+                if (applyRuntime && !runtimeApplied) {
+                    try {
+                        await saveAutomationSection({
+                            autosave: true,
+                            notifyBackend: false,
+                            manualAssignments,
+                        });
+                        Object.keys(manualAssignmentDrafts).forEach((key) => {
+                            manualAssignmentDrafts[key] = {
+                                ...manualAssignmentDrafts[key],
+                                dirty: false,
+                            };
+                        });
+                        manualAssignmentStatusText = `Manual receiver apply failed, but settings were saved: ${message}`;
+                    } catch (saveErr) {
+                        const saveMessage = String((saveErr && saveErr.message) || saveErr || "Unknown error");
+                        manualAssignmentStatusText = `Manual receiver save/apply failed: ${message} (save retry failed: ${saveMessage})`;
+                    }
+                } else if (runtimeApplied) {
+                    manualAssignmentStatusText = `Manual receiver settings applied, but profile save failed: ${message}`;
+                } else {
+                    manualAssignmentStatusText = formatManualAssignmentCommitError(applyRuntime, err);
+                }
+            } finally {
+                manualAssignmentsSaveInFlight = false;
+                scheduleManualAssignmentPanelRefresh(0);
+            }
+        }
+
+        async function stopAllManualReceiverAssignments() {
+            ensureManualAssignmentDraftProfileBound();
+            if (manualAssignmentCommitTimer) {
+                window.clearTimeout(manualAssignmentCommitTimer);
+                manualAssignmentCommitTimer = null;
+            }
+            manualAssignmentCommitApplyRuntime = false;
+            for (const rxNum of MANUAL_RECEIVER_RXS) {
+                const seed = buildManualAssignmentSeed(rxNum);
+                const draft = getManualAssignmentDraft(rxNum, seed);
+                manualAssignmentDrafts[manualReceiverDraftKey(rxNum)] = {
+                    ...draft,
+                    enabled: false,
+                    dirty: true,
+                };
+            }
+            manualAssignmentErrorsByRx = {};
+            markManualAssignmentInteraction(1200);
+            await commitManualAssignmentChanges({ applyRuntime: true });
+        }
+
+        function initManualReceiverEditor(container) {
+            if (!container || container.dataset.manualEditorBound === "1") return;
+            container.dataset.manualEditorBound = "1";
+
+            const beginInteraction = (event) => {
+                const target = event.target;
+                if (!(target instanceof Element)) return;
+                if (!target.closest("[data-manual-field]")) return;
+                markManualAssignmentInteraction();
+                if (manualAssignmentRefreshTimer) {
+                    window.clearTimeout(manualAssignmentRefreshTimer);
+                    manualAssignmentRefreshTimer = null;
+                }
+            };
+
+            container.addEventListener("pointerdown", beginInteraction);
+            container.addEventListener("keydown", beginInteraction);
+
+            container.addEventListener("focusin", (event) => {
+                const target = event.target;
+                if (!(target instanceof Element)) return;
+                if (!target.closest("[data-manual-field]")) return;
+                markManualAssignmentInteraction();
+                if (manualAssignmentRefreshTimer) {
+                    window.clearTimeout(manualAssignmentRefreshTimer);
+                    manualAssignmentRefreshTimer = null;
+                }
+            });
+
+            container.addEventListener("focusout", (event) => {
+                const target = event.target;
+                if (!(target instanceof Element)) return;
+                if (!target.closest("[data-manual-field]")) return;
+                window.setTimeout(() => {
+                    if (!manualAssignmentFieldHasFocus(container)) {
+                        scheduleManualAssignmentPanelRefresh(180);
+                    }
+                }, 0);
+            });
+
+            container.addEventListener("change", (event) => {
+                const target = event.target;
+                if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) return;
+                const field = String(target.dataset.manualField || "").trim();
+                if (!field) return;
+                const rxNum = Number(target.dataset.rx);
+                if (!Number.isFinite(rxNum)) return;
+
+                const usersByRx = currentManualReceiverUsersByRx();
+                const seed = buildManualAssignmentSeed(rxNum, usersByRx);
+                const draft = getManualAssignmentDraft(rxNum, seed);
+
+                if (field === "enabled") {
+                    draft.enabled = !!(target instanceof HTMLInputElement && target.checked);
+                    if (!safeText(draft.band, "")) draft.band = seed.band || MANUAL_RECEIVER_DEFAULT_BAND;
+                    if (!safeText(draft.mode, "")) draft.mode = seed.mode || MANUAL_RECEIVER_DEFAULT_MODE;
+                    if (draft.freq_auto || !safeText(draft.freq_khz, "")) {
+                        draft.freq_khz = formatManualAssignmentFrequencyKHz(resolveManualAssignmentSuggestedFrequencyKHz(draft.band, draft.mode));
+                        draft.freq_auto = true;
+                    }
+                } else if (field === "band") {
+                    draft.band = normalizeManualAssignmentBand(target.value, seed.band || MANUAL_RECEIVER_DEFAULT_BAND);
+                    draft.band_exposed = true;
+                    if (isManualAssignmentBandSelectableMode(draft.mode)) {
+                        draft.freq_khz = formatManualAssignmentFrequencyKHz(resolveManualAssignmentSuggestedFrequencyKHz(draft.band, draft.mode));
+                        draft.freq_auto = true;
+                    } else if (draft.freq_auto || !safeText(draft.freq_khz, "")) {
+                        draft.freq_khz = formatManualAssignmentFrequencyKHz(resolveManualAssignmentSuggestedFrequencyKHz(draft.band, draft.mode));
+                    }
+                } else if (field === "mode") {
+                    draft.mode = resolveManualAssignmentMode(target.value, Number(draft.freq_khz || seed.freq_khz), seed.mode || MANUAL_RECEIVER_DEFAULT_MODE);
+                    draft.band_exposed = isManualAssignmentBandSelectableMode(draft.mode);
+                    if (isManualAssignmentBandSelectableMode(draft.mode)) {
+                        draft.freq_khz = formatManualAssignmentFrequencyKHz(resolveManualAssignmentSuggestedFrequencyKHz(draft.band, draft.mode));
+                        draft.freq_auto = true;
+                    } else if (draft.freq_auto || !safeText(draft.freq_khz, "")) {
+                        draft.freq_khz = formatManualAssignmentFrequencyKHz(resolveManualAssignmentSuggestedFrequencyKHz(draft.band, draft.mode));
+                    }
+                } else if (field === "freq") {
+                    draft.freq_khz = String(target.value || "").trim();
+                    draft.freq_auto = !safeText(draft.freq_khz, "");
+                }
+
+                const card = target.closest("[data-manual-rx-card]");
+                if (card instanceof HTMLElement) {
+                    const showBandField = isManualAssignmentBandSelectableMode(draft.mode);
+                    const bandSelect = card.querySelector(`select[data-manual-field="band"][data-rx="${rxNum}"]`);
+                    const bandField = bandSelect instanceof HTMLElement ? bandSelect.closest(".manual-rx-field") : null;
+                    if (bandField instanceof HTMLElement) {
+                        bandField.classList.toggle("is-hidden", !showBandField);
+                        if (showBandField) bandField.removeAttribute("aria-hidden");
+                        else bandField.setAttribute("aria-hidden", "true");
+                    }
+                    const freqInput = card.querySelector(`input[data-manual-field="freq"][data-rx="${rxNum}"]`);
+                    if (freqInput instanceof HTMLInputElement && (field === "mode" || field === "band")) {
+                        freqInput.value = safeText(draft.freq_khz, "");
+                    }
+                }
+
+                draft.dirty = true;
+                delete manualAssignmentErrorsByRx[manualReceiverDraftKey(rxNum)];
+                markManualAssignmentInteraction();
+                scheduleManualAssignmentPanelRefresh(180);
+                scheduleManualAssignmentCommit({
+                    applyRuntime: field === "enabled" ? true : !!draft.enabled,
+                    delayMs: MANUAL_ASSIGNMENT_COMMIT_DELAY_MS,
+                });
+            });
+
+            container.addEventListener("click", async (event) => {
+                const target = event.target instanceof Element ? event.target.closest("[data-manual-action]") : null;
+                if (!target) return;
+                const action = String(target.getAttribute("data-manual-action") || "").trim();
+                if (action === "stop") {
+                    event.preventDefault();
+                    await stopAllManualReceiverAssignments();
+                    return;
+                }
+                if (action === "listen") {
+                    event.preventDefault();
+                    const rxNum = Number(target.getAttribute("data-rx"));
+                    if (!Number.isFinite(rxNum)) return;
+                    const url = buildManualAssignmentAudioStreamUrl(rxNum);
+                    if (!url) {
+                        manualAssignmentStatusText = `Audio stream is not ready for RX${rxNum}.`;
+                        invalidateActiveReceiversTable();
+                        renderSystemPanel(latestSystemInfo || {});
+                        return;
+                    }
+                    const streamWindow = window.open(url, "_blank", "noopener,noreferrer");
+                    if (!streamWindow) {
+                        manualAssignmentStatusText = "Browser blocked the audio stream window.";
+                        invalidateActiveReceiversTable();
+                        renderSystemPanel(latestSystemInfo || {});
+                    }
+                }
+            });
+        }
+
+        function renderManualReceiverAssignments(usersEl, users, kiwi) {
+            const usersByRx = mapManualUsersByRx(users);
+            const toolbarStatus = currentManualAssignmentRequestStatus(kiwi);
+            const cardsHtml = MANUAL_RECEIVER_RXS.map((rxNum) => {
+                const seed = buildManualAssignmentSeed(rxNum, usersByRx);
+                const draft = getManualAssignmentDraft(rxNum, seed);
+                const enabled = !!draft.enabled;
+                const band = normalizeManualAssignmentBand(draft.band, seed.band || MANUAL_RECEIVER_DEFAULT_BAND);
+                const freqText = safeText(draft.freq_khz, seed.freq_khz);
+                const mode = resolveManualAssignmentMode(draft.mode, Number(freqText), seed.mode || MANUAL_RECEIVER_DEFAULT_MODE);
+                const errorKey = manualReceiverDraftKey(rxNum);
+                const errorText = safeText(manualAssignmentErrorsByRx[errorKey], "");
+                const toneClass = errorText
+                    ? "is-invalid"
+                    : draft.dirty
+                        ? "is-dirty"
+                        : seed.health_level === "fault"
+                            ? "is-fault"
+                            : seed.health_level === "warning"
+                                ? "is-warning"
+                                : seed.live
+                                    ? "is-live"
+                                    : (enabled ? "is-staged" : "is-idle");
+                const statusClass = errorText
+                    ? "is-invalid"
+                    : draft.dirty
+                        ? "is-dirty"
+                        : seed.health_level === "fault"
+                            ? "is-fault"
+                            : seed.health_level === "warning"
+                                ? "is-warning"
+                                : seed.live
+                                    ? "is-live"
+                                    : (enabled ? "is-staged" : "is-idle");
+                const statusText = errorText
+                    ? "Needs Input"
+                    : draft.dirty
+                        ? "Unsaved"
+                        : seed.live
+                            ? safeText(seed.health_text, "Live")
+                            : (enabled ? "Staged" : "Idle");
+                const previewFreq = formatManualAssignmentFrequencyKHz(freqText || resolveManualAssignmentSuggestedFrequencyKHz(band, mode));
+                const summaryText = errorText
+                    ? errorText
+                    : draft.dirty
+                        ? (enabled
+                            ? `Will tune to ${previewFreq} kHz ${mode} on ${band}.`
+                            : "Settings save automatically. Turn Active on to start this receiver.")
+                        : safeText(seed.summary, "Receiver idle until enabled.");
+                const metaText = seed.live ? "Receiver is currently live." : (enabled ? "Ready to apply." : "No live allocation.");
+                const modeOptions = MANUAL_RECEIVER_MODE_OPTIONS.map((option) => (
+                    `<option value="${escapeHtml(option)}"${option === mode ? " selected" : ""}>${escapeHtml(option)}</option>`
+                )).join("");
+                const bandOptions = MAP_BAND_OPTIONS.map((option) => (
+                    `<option value="${escapeHtml(option)}"${option === band ? " selected" : ""}>${escapeHtml(option.toUpperCase())}</option>`
+                )).join("");
+                const showBandField = isManualAssignmentBandSelectableMode(mode);
+                const canListen = !!buildManualAssignmentAudioStreamUrl(rxNum);
+                return `
+                    <article class="manual-rx-card ${toneClass}" data-manual-rx-card="${rxNum}">
+                        <div class="manual-rx-head">
+                            <div class="manual-rx-head-main">
+                                <div class="manual-rx-title">
+                                    <span class="rx-id-pill" style="color:${rxColor(rxNum)}">RX${rxNum}</span>
+                                    <span class="manual-rx-status ${statusClass}">${escapeHtml(statusText)}</span>
+                                </div>
+                                <div class="manual-rx-meta">${escapeHtml(metaText)}</div>
+                            </div>
+                            <label class="manual-rx-toggle">
+                                <input type="checkbox" data-manual-field="enabled" data-rx="${rxNum}"${enabled ? " checked" : ""}>
+                                Active
+                            </label>
+                        </div>
+                        <div class="manual-rx-fields">
+                            <label class="manual-rx-field">
+                                <span class="manual-rx-field-label">Mode</span>
+                                <select class="manual-rx-select" data-manual-field="mode" data-rx="${rxNum}">${modeOptions}</select>
+                            </label>
+                            <label class="manual-rx-field${showBandField ? "" : " is-hidden"}"${showBandField ? "" : " aria-hidden=\"true\""}>
+                                <span class="manual-rx-field-label">Band</span>
+                                <select class="manual-rx-select" data-manual-field="band" data-rx="${rxNum}">${bandOptions}</select>
+                            </label>
+                            <label class="manual-rx-field manual-rx-field-full">
+                                <span class="manual-rx-field-label">Frequency kHz</span>
+                                <input class="manual-rx-input" type="number" min="0.001" step="0.001" inputmode="decimal" value="${escapeHtml(previewFreq)}" data-manual-field="freq" data-rx="${rxNum}">
+                            </label>
+                        </div>
+                        <div class="manual-rx-footer">
+                            <div class="manual-rx-summary">${escapeHtml(summaryText)}</div>
+                            <div class="manual-rx-audio">
+                                <button type="button" class="action-btn-sm" data-manual-action="listen" data-rx="${rxNum}"${canListen ? "" : " disabled"}>Speaker</button>
+                            </div>
+                        </div>
+                        ${errorText ? `<div class="manual-rx-validation">${escapeHtml(errorText)}</div>` : ""}
+                    </article>
+                `;
+            }).join("");
+
+            usersEl.innerHTML = `
+                <div class="manual-rx-toolbar">
+                    <div class="manual-rx-toolbar-copy">
+                        <div class="manual-rx-toolbar-title">Manual Receiver Control</div>
+                        <div class="manual-rx-toolbar-note">${escapeHtml(toolbarStatus)}</div>
+                    </div>
+                    <div class="manual-rx-toolbar-actions">
+                        <button type="button" class="action-btn-sm" data-manual-action="stop"${manualAssignmentsSaveInFlight ? " disabled" : ""}>Stop All</button>
+                    </div>
+                </div>
+                <div class="manual-rx-grid">${cardsHtml}</div>
+            `;
+            initManualReceiverEditor(usersEl);
+        }
+
         function compactAutoModeLabel(mode) {
             const mn = String(mode || "").trim().toUpperCase().replace(/\s+/g, "");
             if (mn === "FT4/FT8/WSPR") return "FT4/8/WSPR";
@@ -8051,13 +9306,15 @@
                     const assignment = latestAssignmentsSource !== "kiwi_users" && latestAssignments && latestAssignments[String(rxNum)]
                         ? latestAssignments[String(rxNum)]
                         : {};
+                    const systemUser = usersByRx.get(rxNum) || {};
                     const channel = latestChannelsMap && latestChannelsMap[String(rxNum)]
                         ? latestChannelsMap[String(rxNum)]
                         : {};
-                    const liveKiwiRx = Number.isFinite(Number(channel.kiwi_actual_rx))
-                        ? Number(channel.kiwi_actual_rx)
-                        : (Number.isFinite(Number(channel.kiwi_rx)) ? Number(channel.kiwi_rx) : NaN);
-                    const systemUser = usersByRx.get(rxNum) || {};
+                    const liveKiwiRx = Number.isFinite(Number(systemUser.kiwi_rx))
+                        ? Number(systemUser.kiwi_rx)
+                        : (Number.isFinite(Number(channel.kiwi_actual_rx))
+                            ? Number(channel.kiwi_actual_rx)
+                            : (Number.isFinite(Number(channel.kiwi_rx)) ? Number(channel.kiwi_rx) : NaN));
                     const rawUserBySlot = rawUsersByRx.get(rxNum) || {};
                     const rawUser = Number.isFinite(liveKiwiRx)
                         ? (rawUsersByRx.get(liveKiwiRx) || rawUserBySlot)
@@ -8103,6 +9360,9 @@
                         : (fallbackDisplayName || synthesizedName || "Unassigned");
                     return {
                         rx: rxNum,
+                        kiwi_rx: Number.isFinite(liveKiwiRx)
+                            ? liveKiwiRx
+                            : (Number.isFinite(Number(systemUser.kiwi_rx)) ? Number(systemUser.kiwi_rx) : null),
                         name: channelDisplayName || managedName || (managedModeActive ? rawName : "") || (populated ? synthesizedName : "Unassigned"),
                         display_name: preferredDisplayName,
                         freq_khz: Number.isFinite(Number(channel.freq_hz))
@@ -8129,6 +9389,10 @@
 
         function renderSystemPanel(data) {
             latestSystemInfo = data && typeof data === "object" ? data : {};
+            if (manualAssignmentDashboardInteractionActive()) {
+                scheduleManualAssignmentPanelRefresh(160);
+                return;
+            }
             const container = latestSystemInfo.container && typeof latestSystemInfo.container === "object"
                 ? latestSystemInfo.container
                 : {};
@@ -8215,22 +9479,37 @@
 
             const usersEl = byId("active-receivers-table");
             if (!usersEl) return;
-            const usersSignature = users.length
-                ? JSON.stringify(users.map((user) => ({
-                    rx: Number(user && user.rx),
-                    name: safeText(user && user.display_name, safeText(user && user.name, "")),
-                    freq_khz: Number.isFinite(Number(user && user.freq_khz)) ? Number(user.freq_khz) : null,
-                    mode: safeText(user && user.mode, ""),
-                    connected_seconds: Number.isFinite(Number(user && user.connected_seconds)) ? Number(user.connected_seconds) : null,
-                    fixed: !!(user && user.fixed),
-                    active: !!(user && user.active),
-                })))
-                : "__empty__";
+            const currentMode = getCurrentReceiversMode();
+            if (currentMode === "manual") {
+                ensureManualAssignmentDraftProfileBound();
+                if (usersEl.querySelector("[data-manual-field]") && (manualAssignmentFieldHasFocus(usersEl) || manualAssignmentInteractionLocked())) {
+                    _updateRxBusyOverlay();
+                    return;
+                }
+            }
+            const usersSignature = currentMode === "manual"
+                ? buildManualAssignmentRenderSignature(users)
+                : (users.length
+                    ? JSON.stringify(users.map((user) => ({
+                        rx: Number(user && user.rx),
+                        name: safeText(user && user.display_name, safeText(user && user.name, "")),
+                        freq_khz: Number.isFinite(Number(user && user.freq_khz)) ? Number(user.freq_khz) : null,
+                        mode: safeText(user && user.mode, ""),
+                        connected_seconds: Number.isFinite(Number(user && user.connected_seconds)) ? Number(user.connected_seconds) : null,
+                        fixed: !!(user && user.fixed),
+                        active: !!(user && user.active),
+                    })))
+                    : "__empty__");
             if (usersSignature === lastActiveReceiversTableSignature) {
                 _updateRxBusyOverlay();
                 return;
             }
             lastActiveReceiversTableSignature = usersSignature;
+            if (currentMode === "manual") {
+                renderManualReceiverAssignments(usersEl, users, kiwi);
+                _updateRxBusyOverlay();
+                return;
+            }
             if (!users.length) {
                 usersEl.innerHTML = `<div class="control-status">No active receivers reported.</div>`;
                 _updateRxBusyOverlay();
@@ -10057,50 +11336,100 @@ ${passwordMarkup.actionsHtml}
             };
         }
 
+        function loadExternalScript(src, key) {
+            const existing = document.querySelector(`script[data-kiwiscan-script="${key}"]`)
+                || Array.from(document.scripts).find((script) => script.src === src);
+            if (existing) {
+                if (existing.dataset.loaded === "true") return Promise.resolve(true);
+                return new Promise((resolve, reject) => {
+                    existing.addEventListener("load", () => {
+                        existing.dataset.loaded = "true";
+                        resolve(true);
+                    }, { once: true });
+                    existing.addEventListener("error", () => reject(new Error(`Failed to load ${src}`)), { once: true });
+                });
+            }
+            return new Promise((resolve, reject) => {
+                const script = document.createElement("script");
+                script.src = src;
+                script.async = true;
+                script.dataset.kiwiscanScript = key;
+                script.addEventListener("load", () => {
+                    script.dataset.loaded = "true";
+                    resolve(true);
+                }, { once: true });
+                script.addEventListener("error", () => reject(new Error(`Failed to load ${src}`)), { once: true });
+                document.head.appendChild(script);
+            });
+        }
+
+        function ensureGlobeDependencies() {
+            if (window.THREE && window.Globe) return Promise.resolve(true);
+            if (globeDependencyFailed) return Promise.resolve(false);
+            if (!globeDependencyPromise) {
+                globeDependencyPromise = loadExternalScript(MAP_THREE_SCRIPT_URL, "three")
+                    .then(() => loadExternalScript(MAP_GLOBE_SCRIPT_URL, "globe-gl"))
+                    .then(() => !!(window.THREE && window.Globe))
+                    .catch(() => false)
+                    .then((ready) => {
+                        globeDependencyFailed = !ready;
+                        return ready;
+                    })
+                    .finally(() => {
+                        if (!(window.THREE && window.Globe)) globeDependencyPromise = null;
+                    });
+            }
+            return globeDependencyPromise;
+        }
+
         function initGlobeMap() {
-            if (globeInstance || !window.Globe) return;
+            if (globeInstance) return Promise.resolve(globeInstance);
             const globeEl = byId("propagation-globe");
-            if (!globeEl) return;
-            globeInstance = Globe()(globeEl)
-                .globeImageUrl(MAP_GLOBE_IMAGE_URL)
-                .bumpImageUrl(MAP_GLOBE_BUMP_URL)
-                .backgroundColor("rgba(0,0,0,0)")
-                .showGraticules(true)
-                .showAtmosphere(true)
-                .atmosphereAltitude(0.16)
-                .atmosphereColor(getGlobeAtmosphereColor())
-                .tilesTransitionDuration(0)
-                .tileLat("lat")
-                .tileLng("lng")
-                .tileAltitude("altitude")
-                .tileWidth("width")
-                .tileHeight("height")
-                .tileUseGlobeProjection(true)
-                .tileMaterial((tile) => tile.material)
-                .pointLat("lat")
-                .pointLng("lon")
-                .pointColor("color")
-                .pointAltitude("altitude")
-                .pointRadius("radius")
-                .pointLabel("label");
-            const controls = typeof globeInstance.controls === "function" ? globeInstance.controls() : null;
-            if (controls) {
-                controls.autoRotate = false;
-                controls.autoRotateSpeed = 0;
-                controls.enablePan = false;
-                controls.minDistance = 140;
-                controls.maxDistance = 420;
-            }
-            globeInstance.pointOfView({ lat: 20, lng: 0, altitude: MAP_GLOBE_DEFAULT_ALTITUDE }, 0);
-            ensureGlobeDayNightMaterial();
-            updateGlobeDayNightOverlay();
-            startGlobeDayNightClock();
-            styleGlobeGraticules();
-            if (!globeResizeBound) {
-                window.addEventListener("resize", () => resizeGlobeMap());
-                globeResizeBound = true;
-            }
-            resizeGlobeMap();
+            if (!globeEl) return Promise.resolve(null);
+            return ensureGlobeDependencies().then((ready) => {
+                if (!ready || globeInstance || !window.Globe) return globeInstance;
+                globeInstance = Globe()(globeEl)
+                    .globeImageUrl(MAP_GLOBE_IMAGE_URL)
+                    .bumpImageUrl(MAP_GLOBE_BUMP_URL)
+                    .backgroundColor("rgba(0,0,0,0)")
+                    .showGraticules(true)
+                    .showAtmosphere(true)
+                    .atmosphereAltitude(0.16)
+                    .atmosphereColor(getGlobeAtmosphereColor())
+                    .tilesTransitionDuration(0)
+                    .tileLat("lat")
+                    .tileLng("lng")
+                    .tileAltitude("altitude")
+                    .tileWidth("width")
+                    .tileHeight("height")
+                    .tileUseGlobeProjection(true)
+                    .tileMaterial((tile) => tile.material)
+                    .pointLat("lat")
+                    .pointLng("lon")
+                    .pointColor("color")
+                    .pointAltitude("altitude")
+                    .pointRadius("radius")
+                    .pointLabel("label");
+                const controls = typeof globeInstance.controls === "function" ? globeInstance.controls() : null;
+                if (controls) {
+                    controls.autoRotate = false;
+                    controls.autoRotateSpeed = 0;
+                    controls.enablePan = false;
+                    controls.minDistance = 140;
+                    controls.maxDistance = 420;
+                }
+                globeInstance.pointOfView({ lat: 20, lng: 0, altitude: MAP_GLOBE_DEFAULT_ALTITUDE }, 0);
+                ensureGlobeDayNightMaterial();
+                updateGlobeDayNightOverlay();
+                startGlobeDayNightClock();
+                styleGlobeGraticules();
+                if (!globeResizeBound) {
+                    window.addEventListener("resize", () => resizeGlobeMap());
+                    globeResizeBound = true;
+                }
+                resizeGlobeMap();
+                return globeInstance;
+            }).catch(() => null);
         }
 
         function updateMapViewToggleUi() {
@@ -10125,8 +11454,10 @@ ${passwordMarkup.actionsHtml}
             }
             decorateUiIcons();
             if (isGlobe) {
-                initGlobeMap();
-                requestAnimationFrame(() => resizeGlobeMap());
+                initGlobeMap().then((instance) => {
+                    if (!instance || mapViewMode !== "globe") return;
+                    requestAnimationFrame(() => resizeGlobeMap());
+                });
             } else if (mapInstance) {
                 requestAnimationFrame(() => mapInstance.invalidateSize());
             }
@@ -10279,8 +11610,12 @@ ${passwordMarkup.actionsHtml}
             const entries = getVisibleMapEntries();
             if (!entries.length) return;
             if (mapViewMode === "globe") {
-                initGlobeMap();
-                if (!globeInstance) return;
+                if (!globeInstance) {
+                    initGlobeMap().then((instance) => {
+                        if (instance && mapViewMode === "globe") fitMapToVisibleEntries();
+                    });
+                    return;
+                }
                 updateGlobeDayNightOverlay();
                 const center = averageMapCoordinates(entries);
                 const altitude = entries.length <= 2 ? 1.55 : entries.length <= 10 ? 1.95 : 2.3;
@@ -10541,10 +11876,12 @@ ${passwordMarkup.actionsHtml}
             updateMapFilterSummary();
             const entries = getVisibleMapEntries();
             if (mapViewMode === "globe") {
-                initGlobeMap();
                 if (!globeInstance) {
-                    updateMapSummaryCounts(entries, "3D globe unavailable");
+                    updateMapSummaryCounts(entries, globeDependencyFailed ? "3D globe unavailable" : "Loading 3D globe...");
                     if (updatedEl) updatedEl.textContent = "Updated: --";
+                    initGlobeMap().then((instance) => {
+                        if (instance && mapViewMode === "globe") renderPropagationMap();
+                    });
                     return;
                 }
                 updateGlobeDayNightOverlay();
@@ -10745,6 +12082,62 @@ ${passwordMarkup.actionsHtml}
             return next;
         }
 
+        function hasDigitalDecodesInModeStats(modeStats) {
+            if (!modeStats || typeof modeStats !== "object") return false;
+            const perMin = Math.max(0, Number(modeStats.decode_rate_per_min) || 0);
+            if (perMin > 0) return true;
+            const perHour = Math.max(0, Number(modeStats.decode_rate_per_hour) || 0);
+            if (perHour > 0) return true;
+            const total = Math.max(0, Number(modeStats.decode_total) || 0);
+            return total > 0;
+        }
+
+        function publishedStatsHasDigitalDecodes(statsSource) {
+            const bands = statsSource && typeof statsSource === "object" && statsSource.bands && typeof statsSource.bands === "object"
+                ? statsSource.bands
+                : {};
+            for (const bandStats of Object.values(bands)) {
+                const byMode = bandStats && typeof bandStats === "object" && bandStats.decode_rates_by_mode && typeof bandStats.decode_rates_by_mode === "object"
+                    ? bandStats.decode_rates_by_mode
+                    : {};
+                for (const [modeName, modeStats] of Object.entries(byMode)) {
+                    if (!DIGITAL_DECODE_OVERVIEW_MODES.has(String(modeName || "").toUpperCase())) continue;
+                    if (hasDigitalDecodesInModeStats(modeStats)) return true;
+                }
+            }
+            return false;
+        }
+
+        function hasDigitalDecodeOverviewActivity() {
+            const activeKiwiKey = getActiveRuntimeKiwiKey();
+            if (activeKiwiKey) {
+                return publishedStatsHasDigitalDecodes(latestPublishedDecodeStatsByKiwi[activeKiwiKey] || {});
+            }
+            return Object.values(latestPublishedDecodeStatsByRx || {}).some((stats) => publishedStatsHasDigitalDecodes(stats));
+        }
+
+        function buildDigitalDecodeOverviewOrder(order) {
+            const normalizedOrder = normalizeOverviewTopicOrder(order, overviewTopicPrefs.order);
+            const assignmentIndex = normalizedOrder.indexOf("assignments");
+            const filtered = normalizedOrder.filter((key) => !DIGITAL_DECODE_OVERVIEW_SEQUENCE.includes(key));
+            const insertIndex = assignmentIndex >= 0 ? Math.min(assignmentIndex, filtered.length) : filtered.length;
+            filtered.splice(insertIndex, 0, ...DIGITAL_DECODE_OVERVIEW_SEQUENCE);
+            return normalizeOverviewTopicOrder(filtered, normalizedOrder);
+        }
+
+        function autoUnhideDecodeOverviewTopics() {
+            if (!hasDigitalDecodeOverviewActivity()) return;
+            const nextPrefs = normalizeOverviewTopicPrefs(overviewTopicPrefs, overviewTopicPrefs);
+            let changed = false;
+            for (const key of DIGITAL_DECODE_OVERVIEW_SEQUENCE) {
+                if (!nextPrefs[key]) {
+                    nextPrefs[key] = true;
+                    changed = true;
+                }
+            }
+            if (changed) applyOverviewTopicPrefs(nextPrefs);
+        }
+
         function readStoredOverviewTopicPrefs() {
             try {
                 const raw = localStorage.getItem(OVERVIEW_TOPICS_STORAGE_KEY);
@@ -10810,6 +12203,7 @@ ${passwordMarkup.actionsHtml}
             return {
                 receiversMode,
                 overviewTopics: normalizeOverviewTopicPrefs(snapshot.overviewTopics, defaultOverviewTopicPrefs()),
+                manualAssignments: {},
             };
         }
 
@@ -10821,6 +12215,7 @@ ${passwordMarkup.actionsHtml}
             return {
                 receiversMode: normalizeReceiversMode(profile.receiversMode, fallback.receiversMode),
                 overviewTopics: normalizeOverviewTopicPrefs(profile.overviewTopics, fallback.overviewTopics),
+                manualAssignments: normalizeManualAssignmentProfileMap(profile.manualAssignments),
             };
         }
 
@@ -10853,9 +12248,14 @@ ${passwordMarkup.actionsHtml}
             const profileKey = getConfiguredKiwiProfileKey(entries, kiwiIndex);
             const profiles = normalizeKiwiUiProfiles(settingsSnapshot.kiwiProfiles, settingsSnapshot);
             if (!profileKey) return profiles;
+            const currentProfile = profiles[profileKey] && typeof profiles[profileKey] === "object"
+                ? profiles[profileKey]
+                : defaultKiwiUiProfile(settingsSnapshot);
             profiles[profileKey] = normalizeKiwiUiProfile({
-                receiversMode: options.receiversMode ?? getCurrentReceiversMode(),
-                overviewTopics: options.overviewTopics ?? collectOverviewTopicPrefsFromConfig(),
+                ...currentProfile,
+                receiversMode: options.receiversMode ?? currentProfile.receiversMode ?? getCurrentReceiversMode(),
+                overviewTopics: options.overviewTopics ?? currentProfile.overviewTopics ?? collectOverviewTopicPrefsFromConfig(),
+                manualAssignments: options.manualAssignments ?? currentProfile.manualAssignments ?? {},
             }, defaultKiwiUiProfile(settingsSnapshot));
             return profiles;
         }
@@ -13816,11 +15216,12 @@ ${passwordMarkup.actionsHtml}
             const currentMode = getCurrentReceiversMode();
             const currentOverviewTopics = collectOverviewTopicPrefsFromConfig();
             const kiwiEntries = collectConfiguredKiwiInputs({ includeBlank: true });
-            const kiwiProfiles = captureKiwiUiProfiles(snapshot, {
+            const kiwiProfiles = options.kiwiProfiles ?? captureKiwiUiProfiles(snapshot, {
                 entries: kiwiEntries,
                 index: activeConfiguredKiwiIndex,
                 receiversMode: currentMode,
                 overviewTopics: currentOverviewTopics,
+                manualAssignments: options.manualAssignments,
             });
             const payload = {
                 ...snapshot,
@@ -14780,6 +16181,7 @@ ${passwordMarkup.actionsHtml}
                 manualModeBtn.addEventListener("click", async () => {
                     setReceiversMode("manual");
                     applyAutoModeVisibility("manual");
+                    await resetManualAssignmentsToDefaults({ saveProfile: true });
                     await applyAutoModeEnabled("manual");
                 });
             }
@@ -15536,6 +16938,7 @@ ${passwordMarkup.actionsHtml}
         }
 
         function renderTrend() {
+            if (manualAssignmentDashboardInteractionActive()) return;
             const canvas = byId("decode-trend");
             const ctx = canvas && canvas.getContext("2d");
             if (!ctx) return;
@@ -16163,30 +17566,11 @@ ${passwordMarkup.actionsHtml}
             const sourceEntries = Array.isArray(rawEntries) && rawEntries.length
                 ? rawEntries
                 : [buildDefaultConfiguredKiwiEntry()];
-            const snapshot = latestAutomationSettings && typeof latestAutomationSettings === "object"
-                ? latestAutomationSettings
-                : {};
-            const defaultProfile = defaultKiwiUiProfile(snapshot);
-            const profiles = normalizeKiwiUiProfiles(snapshot.kiwiProfiles, snapshot);
-            const activeProfileKey = getConfiguredKiwiProfileKey(sourceEntries, activeConfiguredKiwiIndex);
-            if (activeProfileKey) {
-                profiles[activeProfileKey] = normalizeKiwiUiProfile({
-                    ...(profiles[activeProfileKey] && typeof profiles[activeProfileKey] === "object" ? profiles[activeProfileKey] : {}),
-                    receiversMode: getCurrentReceiversMode(),
-                }, defaultProfile);
-            }
-
             let configuredCount = 0;
             for (const [index, rawEntry] of sourceEntries.entries()) {
                 const entry = normalizeConfiguredKiwiEntry(rawEntry, { preserveBlankHost: true }) || buildDefaultConfiguredKiwiEntry();
                 if (!isConfiguredKiwiHost(entry.host)) continue;
                 configuredCount += 1;
-                const profileKey = configuredKiwiEntryIdentity(entry, index);
-                const profile = profileKey && profiles[profileKey]
-                    ? normalizeKiwiUiProfile(profiles[profileKey], defaultProfile)
-                    : defaultProfile;
-                const mode = normalizeReceiversMode(profile.receiversMode, defaultProfile.receiversMode);
-                if (mode !== "auto" && mode !== "semi") return false;
             }
             return configuredCount > 0;
         }
@@ -16261,6 +17645,7 @@ ${passwordMarkup.actionsHtml}
         }
 
         function updateDecodeStreamChip() {
+            if (manualAssignmentDashboardInteractionActive()) return;
             const chip = byId("chip-stream");
             if (!chip) return;
 
@@ -17403,6 +18788,10 @@ ${passwordMarkup.actionsHtml}
 
         function applyHealth(health) {
             const h = health && typeof health === "object" ? health : {};
+            latestChannelsMap = h.channels || {};
+            updateLastKnownSnrCache(latestChannelsMap);
+            if (manualAssignmentDashboardInteractionActive()) return;
+
             const active = Number(h.active_receivers || 0);
             const unstable = Number(h.unstable_receivers || 0);
             const silent = Number(h.silent_receivers || 0);
@@ -17410,8 +18799,6 @@ ${passwordMarkup.actionsHtml}
             byId("chip-rx-health").innerHTML = `Active: ${active}<br>Warn: ${silent + warn}<br>Faulty: ${unstable}`;
             updateNotificationIcon(unstable, silent + warn);
 
-            latestChannelsMap = h.channels || {};
-            updateLastKnownSnrCache(latestChannelsMap);
             renderAssignments(latestAssignments);
             renderReasons(h);
             renderFixedPlanVerification(latestChannelsMap);
@@ -17615,7 +19002,6 @@ ${passwordMarkup.actionsHtml}
             const s = status && typeof status === "object" ? status : {};
             latestAssignmentsHost = safeText(s.assignments_host, "");
             latestAssignmentsPort = Number(s.assignments_port || 0);
-            updateServerChipFromState();
             latestAssignmentsSource = safeText(s.assignments_source, "");
             latestAssignments = s.assignments || {};
             latestPublishedDecodeStatsByRx = (s.published_decode_stats_by_rx && typeof s.published_decode_stats_by_rx === "object")
@@ -17624,6 +19010,10 @@ ${passwordMarkup.actionsHtml}
             latestPublishedDecodeStatsByKiwi = (s.published_decode_stats_by_kiwi && typeof s.published_decode_stats_by_kiwi === "object")
                 ? s.published_decode_stats_by_kiwi
                 : {};
+            autoUnhideDecodeOverviewTopics();
+            if (manualAssignmentDashboardInteractionActive()) return;
+
+            updateServerChipFromState();
             renderAssignments(latestAssignments);
             renderAssignmentBalance(latestAssignments);
             if (latestSystemInfo) renderSystemPanel(latestSystemInfo);
@@ -17635,7 +19025,7 @@ ${passwordMarkup.actionsHtml}
                 _rxBusyMismatch = hasMismatch;
                 const labelEl = byId("rx-busy-label");
                 if (labelEl && !_rxBusyManual && !_rxBusyAutoKick) {
-                    labelEl.textContent = hasMismatch ? "Slots settling\u2026" : "Setting up Receiver Assignments !";
+                    labelEl.textContent = hasMismatch ? "Assigning Receivers." : "Setting up Receiver Assignments !";
                 }
                 _updateRxBusyOverlay();
             }
@@ -17643,6 +19033,7 @@ ${passwordMarkup.actionsHtml}
 
         function applyExecutiveSummary(status, health, ratePerMin) {
             currentDecodeRatePerMin = Math.max(0, Number(ratePerMin) || 0);
+            if (manualAssignmentDashboardInteractionActive()) return;
             const activeKiwiKey = getActiveRuntimeKiwiKey();
             const counts = {};
             let recentDecodeTotal = 0;
@@ -18107,6 +19498,7 @@ ${passwordMarkup.actionsHtml}
         // ── End Smart Scheduler ─────────────────────────────────────────────
 
         async function refresh() {
+            if (dashboardSelectInteractionLocked()) return;
             if (refreshInFlight) return;
             refreshInFlight = true;
             const isFirstLoad = lastSuccessfulRefreshMs === null;
@@ -18225,6 +19617,7 @@ ${passwordMarkup.actionsHtml}
         applyUiPreferences(readStoredUiThemeMode(), readStoredUiDensityMode(), readStoredUiThemeNightHour(), readStoredUiThemeHourOffset());
         applyOverviewTopicPrefs(readStoredOverviewTopicPrefs());
         runStartupStep("initRefreshControls", () => initRefreshControls());
+        runStartupStep("initDashboardSelectInteractionLock", () => initDashboardSelectInteractionLock());
         runStartupStep("initAssignmentsBandChartControls", () => initAssignmentsBandChartControls());
         runStartupStep("initConfigAutomationControls", () => initConfigAutomationControls());
         runStartupStep("initBandConditionsPanel", () => initBandConditionsPanel());

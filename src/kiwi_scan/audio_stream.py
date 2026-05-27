@@ -134,6 +134,8 @@ def _normalize_modulation(mode: str, freq_hz: float) -> str:
         return "am"
     if normalized in {"lsb", "usb", "nbfm"}:
         return normalized
+    if normalized == "fm":
+        return "nbfm"
     if normalized in {"ssb", "phone"}:
         return "lsb" if freq_hz and freq_hz < 10_000_000 else "usb"
     return "usb"
