@@ -4672,6 +4672,26 @@ class ReceiverManager:
             and cls._is_ssb_assignment(desired)
         )
 
+    @classmethod
+    def _can_hot_reconfigure_frequency(cls, current: ReceiverAssignment, desired: ReceiverAssignment) -> bool:
+        """Check if assignment can be hot-reconfigured for frequency/sideband changes (digital modes).
+        
+        Digital mode receivers (FT8, FT4, WSPR, etc.) can safely update frequency and sideband
+        without stopping and restarting the worker. This preserves the assignment slot during
+        manual receiver frequency adjustments via UI arrows or direct input.
+        """
+        if int(current.rx) != int(desired.rx):
+            return False
+        # RX slot must be the same
+        if str(current.band) != str(desired.band):
+            return False
+        # Band must be the same
+        if str(current.mode_label or "").strip().upper() != str(desired.mode_label or "").strip().upper():
+            return False
+        # Mode must be the same (only frequency/sideband can change)
+        # If we get here, only frequency and/or sideband differ, which is safe to update hot
+        return True
+
     def _normalize_ssb_receivers(self, assignments: Dict[int, ReceiverAssignment]) -> Dict[int, ReceiverAssignment]:
         if not assignments:
             return {}
@@ -4900,7 +4920,13 @@ class ReceiverManager:
                         to_stop.add(rx)
                         continue
                     if not self._assignment_equivalent(self._assignments[rx], assignments[rx]):
+                        # For SSB mode, use the existing hot-reconfiguration logic
                         if self._can_hot_reconfigure_ssb(self._assignments[rx], assignments[rx]):
+                            to_reconfigure.add(rx)
+                        # For any other mode (digital), allow hot reconfiguration if band/mode are
+                        # unchanged (only freq/sideband differ). This prevents losing receiver
+                        # assignments during manual UI frequency adjustments.
+                        elif self._can_hot_reconfigure_frequency(self._assignments[rx], assignments[rx]):
                             to_reconfigure.add(rx)
                         else:
                             to_stop.add(rx)
