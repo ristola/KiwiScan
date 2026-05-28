@@ -10841,7 +10841,9 @@ ${passwordMarkup.actionsHtml}
             }
             container.dataset.bound = "1";
             container.querySelectorAll(".decode-mode-btn[data-mode]").forEach((btn) => {
-                btn.addEventListener("click", () => {
+                btn.addEventListener("click", (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
                     toggleDecodeModeSelection(btn.dataset.mode || "");
                 });
             });
@@ -11005,7 +11007,9 @@ ${passwordMarkup.actionsHtml}
             }
             container.dataset.bound = "1";
             container.querySelectorAll(".decode-feed-sort[data-sort-key]").forEach((btn) => {
-                btn.addEventListener("click", () => {
+                btn.addEventListener("click", (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
                     const key = String(btn.dataset.sortKey || "");
                     if (!key) return;
                     if (decodeSortState.key === key) {
@@ -11365,14 +11369,19 @@ ${passwordMarkup.actionsHtml}
 
         function ensureGlobeDependencies() {
             if (window.THREE && window.Globe) return Promise.resolve(true);
-            if (globeDependencyFailed) return Promise.resolve(false);
+            if (globeDependencyFailed) {
+                globeDependencyFailed = false;
+                globeDependencyPromise = null;
+            }
             if (!globeDependencyPromise) {
                 globeDependencyPromise = loadExternalScript(MAP_THREE_SCRIPT_URL, "three")
                     .then(() => loadExternalScript(MAP_GLOBE_SCRIPT_URL, "globe-gl"))
                     .then(() => !!(window.THREE && window.Globe))
                     .catch(() => false)
                     .then((ready) => {
-                        globeDependencyFailed = !ready;
+                        if (!ready) {
+                            globeDependencyFailed = true;
+                        }
                         return ready;
                     })
                     .finally(() => {
@@ -12023,7 +12032,9 @@ ${passwordMarkup.actionsHtml}
                 bandContainer.innerHTML = values.map((value) => `<button class="map-filter-chip${value === mapSelectedBand ? " active" : ""}" type="button" data-value="${value}" data-icon="${value === "ALL" ? "globe" : "signal"}">${value === "ALL" ? "All bands" : value.toUpperCase()}</button>`).join("");
                 decorateUiIcons();
                 bandContainer.querySelectorAll(".map-filter-chip").forEach((btn) => {
-                    btn.addEventListener("click", () => {
+                    btn.addEventListener("click", (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
                         mapSelectedBand = String(btn.dataset.value || "ALL");
                         updateMapBandFilterButtons();
                         updateMapFilterSummary();
@@ -12034,7 +12045,9 @@ ${passwordMarkup.actionsHtml}
             if (legendContainer && !legendContainer.dataset.bound) {
                 legendContainer.dataset.bound = "1";
                 legendContainer.querySelectorAll(".pro-map-legend-btn[data-mode]").forEach((btn) => {
-                    btn.addEventListener("click", () => {
+                    btn.addEventListener("click", (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
                         toggleMapModeSelection(btn.dataset.mode || "");
                     });
                 });
@@ -12050,7 +12063,9 @@ ${passwordMarkup.actionsHtml}
             }
             if (viewToggle && !viewToggle.dataset.bound) {
                 viewToggle.dataset.bound = "1";
-                viewToggle.addEventListener("click", () => {
+                viewToggle.addEventListener("click", (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
                     setMapViewMode(mapViewMode === "globe" ? "map" : "globe", true);
                 });
             }
@@ -17893,7 +17908,10 @@ ${passwordMarkup.actionsHtml}
                 return `<span style="font-size:0.72rem;font-weight:600">${_ms.map((m) => `<span style="color:${modeColor(m)}">${safeText(m)}</span>`).join(`<span style="color:${mu}"> / </span>`)}</span>`;
             };
             cardEl.innerHTML = "";
-            const bandsToRender = MAP_BAND_OPTIONS.filter((band) => list.some((row) => row.band === band));
+            const showAllBandsInAuto = currentMode === "auto";
+            const bandsToRender = showAllBandsInAuto
+                ? MAP_BAND_OPTIONS
+                : MAP_BAND_OPTIONS.filter((band) => list.some((row) => row.band === band));
             for (const band of bandsToRender) {
                 const bandRows = list.filter((r) => r.band === band);
                 const card = document.createElement("div");
