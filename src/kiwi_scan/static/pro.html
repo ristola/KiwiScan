@@ -9756,7 +9756,7 @@ ${passwordMarkup.actionsHtml}
             if (Number(activeReceiverAudioTarget.rx) !== Number(rxNum)) return;
             const seed = buildManualAssignmentSeed(rxNum);
             const draft = getManualAssignmentDraft(rxNum, seed);
-            if (!draft.enabled || !seed.live) {
+            if (!seed.live) {
                 closeActiveReceiverAudioPopup();
                 return;
             }
@@ -9975,7 +9975,7 @@ ${passwordMarkup.actionsHtml}
                     // Update listen button state when Active is toggled
                     if (card instanceof HTMLElement) {
                         const freqNum = Number(draft.freq_khz);
-                        const canListen = draft.enabled && !!seed.live && Number.isFinite(freqNum) && freqNum > 0;
+                        const canListen = !!seed.live && Number.isFinite(freqNum) && freqNum > 0;
                         const listenBtn = card.querySelector(`button[data-manual-action="listen"][data-rx="${rxNum}"]`);
                         if (listenBtn instanceof HTMLButtonElement) {
                             if (canListen) {
@@ -10008,7 +10008,7 @@ ${passwordMarkup.actionsHtml}
                     draft.freq_auto = !safeText(draft.freq_khz, "");
                     // Update the listen button state based on new frequency and active status
                     const freqNum = Number(draft.freq_khz);
-                    const canListen = draft.enabled && !!seed.live && Number.isFinite(freqNum) && freqNum > 0;
+                    const canListen = !!seed.live && Number.isFinite(freqNum) && freqNum > 0;
                     const listenBtn = card?.querySelector(`button[data-manual-action="listen"][data-rx="${rxNum}"]`);
                     if (listenBtn instanceof HTMLButtonElement) {
                         if (canListen) {
@@ -10033,7 +10033,7 @@ ${passwordMarkup.actionsHtml}
                         freqInput.value = safeText(draft.freq_khz, "");
                         // Update listen button state when frequency changes due to mode/band change
                         const freqNum = Number(draft.freq_khz);
-                        const canListen = draft.enabled && !!seed.live && Number.isFinite(freqNum) && freqNum > 0;
+                        const canListen = !!seed.live && Number.isFinite(freqNum) && freqNum > 0;
                         const listenBtn = card.querySelector(`button[data-manual-action="listen"][data-rx="${rxNum}"]`);
                         if (listenBtn instanceof HTMLButtonElement) {
                             if (canListen) {
@@ -10066,7 +10066,7 @@ ${passwordMarkup.actionsHtml}
                     if (!Number.isFinite(rxNum)) return;
                     const seed = buildManualAssignmentSeed(rxNum);
                     const draft = getManualAssignmentDraft(rxNum, seed);
-                    if (!draft.enabled || !seed.live) return;
+                    if (!seed.live) return;
                     const receiver = buildManualAssignmentAudioReceiver(rxNum);
                     if (!receiver) return;
                     openActiveReceiverAudioPopup(receiver);
@@ -10132,7 +10132,8 @@ ${passwordMarkup.actionsHtml}
                     `<option value="${escapeHtml(option)}"${option === band ? " selected" : ""}>${escapeHtml(option.toUpperCase())}</option>`
                 )).join("");
                 const showBandField = isManualAssignmentBandSelectableMode(mode);
-                const canListen = enabled && seed.live && Number.isFinite(Number(previewFreq)) && Number(previewFreq) > 0;
+                const canListen = !!seed.live && Number.isFinite(Number(previewFreq)) && Number(previewFreq) > 0;
+                const listenTitle = seed.live ? `Listen to RX${rxNum}` : (enabled ? `RX${rxNum} is applying — wait for LIVE status to listen` : `Enable RX${rxNum} to listen`);
                 return `
                     <article class="manual-rx-card ${toneClass}" data-manual-rx-card="${rxNum}">
                         <div class="manual-rx-head">
@@ -10165,7 +10166,7 @@ ${passwordMarkup.actionsHtml}
                         <div class="manual-rx-footer">
                             <div class="manual-rx-summary">${escapeHtml(summaryText)}</div>
                             <div class="manual-rx-audio">
-                                <button type="button" class="active-rx-audio-btn" data-manual-action="listen" data-rx="${rxNum}" aria-label="Listen to RX${rxNum}" title="Listen to RX${rxNum}"${canListen ? "" : " disabled"}>${buildIconMarkup("audio")}</button>
+                                <button type="button" class="active-rx-audio-btn" data-manual-action="listen" data-rx="${rxNum}" aria-label="Listen to RX${rxNum}" title="${escapeHtml(listenTitle)}"${canListen ? "" : " disabled"}>${buildIconMarkup("audio")}</button>
                             </div>
                         </div>
                         ${errorText ? `<div class="manual-rx-validation">${escapeHtml(errorText)}</div>` : ""}

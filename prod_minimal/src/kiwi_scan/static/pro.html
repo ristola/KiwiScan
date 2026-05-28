@@ -9051,7 +9051,8 @@
                     `<option value="${escapeHtml(option)}"${option === band ? " selected" : ""}>${escapeHtml(option.toUpperCase())}</option>`
                 )).join("");
                 const showBandField = isManualAssignmentBandSelectableMode(mode);
-                const canListen = !!buildManualAssignmentAudioStreamUrl(rxNum);
+                const canListen = !!seed.live && !!buildManualAssignmentAudioStreamUrl(rxNum);
+                const listenTitle = seed.live ? `Listen to RX${rxNum}` : (enabled ? `RX${rxNum} is applying — wait for LIVE status to listen` : `Enable RX${rxNum} to listen`);
                 return `
                     <article class="manual-rx-card ${toneClass}" data-manual-rx-card="${rxNum}">
                         <div class="manual-rx-head">
@@ -9084,7 +9085,7 @@
                         <div class="manual-rx-footer">
                             <div class="manual-rx-summary">${escapeHtml(summaryText)}</div>
                             <div class="manual-rx-audio">
-                                <button type="button" class="action-btn-sm" data-manual-action="listen" data-rx="${rxNum}"${canListen ? "" : " disabled"}>Speaker</button>
+                                <button type="button" class="action-btn-sm" data-manual-action="listen" data-rx="${rxNum}" title="${escapeHtml(listenTitle)}"${canListen ? "" : " disabled"}>Speaker</button>
                             </div>
                         </div>
                         ${errorText ? `<div class="manual-rx-validation">${escapeHtml(errorText)}</div>` : ""}
