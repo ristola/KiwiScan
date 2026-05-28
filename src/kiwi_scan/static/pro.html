@@ -2995,9 +2995,11 @@
             border-radius: 16px;
             background: color-mix(in srgb, var(--fault), white 92%);
             box-shadow: 0 18px 44px rgba(15, 23, 42, 0.16);
-            padding: 16px 18px;
+            padding: 16px 42px 16px 18px;
             display: grid;
             gap: 6px;
+            position: relative;
+            pointer-events: auto;
         }
 
         .kiwi-notice-title {
@@ -3011,6 +3013,34 @@
             color: #7f1d1d;
             font-size: 0.85rem;
             line-height: 1.4;
+        }
+
+        .kiwi-notice-dismiss {
+            position: absolute;
+            top: 8px;
+            right: 10px;
+            width: 24px;
+            height: 24px;
+            border: none;
+            border-radius: 999px;
+            background: transparent;
+            color: #8a1c1c;
+            font: inherit;
+            font-size: 1.1rem;
+            font-weight: 700;
+            line-height: 1;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 140ms ease, color 140ms ease;
+        }
+
+        .kiwi-notice-dismiss:hover,
+        .kiwi-notice-dismiss:focus-visible {
+            background: rgba(127, 29, 29, 0.12);
+            color: #7f1d1d;
+            outline: none;
         }
 
         .action-btn {
@@ -5575,6 +5605,16 @@
             color: #fee2e2;
         }
 
+        body.theme-dark .kiwi-notice-dismiss {
+            color: #fecaca;
+        }
+
+        body.theme-dark .kiwi-notice-dismiss:hover,
+        body.theme-dark .kiwi-notice-dismiss:focus-visible {
+            background: rgba(254, 202, 202, 0.16);
+            color: #fee2e2;
+        }
+
         body.theme-dark .refresh-row select option,
         body.theme-dark .rx-toolbar select option,
         body.theme-dark .control-field select option {
@@ -6163,6 +6203,8 @@
 <body>
     <div class="kiwi-notice" id="kiwi-notice" aria-live="polite" aria-atomic="true" aria-hidden="true">
         <div class="kiwi-notice-box" role="status">
+            <button class="kiwi-notice-dismiss" type="button" aria-label="Dismiss notice"
+                onclick="setKiwiNoticeVisible(false)">X</button>
             <div class="kiwi-notice-title">KiwiSdr Not Found</div>
             <div class="kiwi-notice-text" id="kiwi-notice-text">Running auto Discover.</div>
         </div>
@@ -9393,6 +9435,13 @@ ${passwordMarkup.actionsHtml}
                     scheduleManualAssignmentPanelRefresh(160);
                     return;
                 }
+                const pageScrollX = window.scrollX;
+                const pageScrollY = window.scrollY;
+                const restoreScroll = () => {
+                    if (window.scrollX !== pageScrollX || window.scrollY !== pageScrollY) {
+                        window.scrollTo(pageScrollX, pageScrollY);
+                    }
+                };
                 if (getCurrentReceiversMode() === "manual") {
                     const kiwi = latestSystemInfo && latestSystemInfo.kiwi && typeof latestSystemInfo.kiwi === "object"
                         ? latestSystemInfo.kiwi
@@ -9400,10 +9449,12 @@ ${passwordMarkup.actionsHtml}
                     const users = buildActiveReceiverRows(kiwi.active_users, kiwi.raw_users);
                     renderManualReceiverAssignments(usersEl, users, kiwi);
                     _updateRxBusyOverlay();
+                    requestAnimationFrame(restoreScroll);
                     return;
                 }
                 invalidateActiveReceiversTable();
                 renderSystemPanel(latestSystemInfo || {});
+                requestAnimationFrame(restoreScroll);
             }, Math.max(0, Number(delayMs) || 0));
         }
 
@@ -10091,24 +10142,12 @@ ${passwordMarkup.actionsHtml}
                     ? "is-invalid"
                     : draft.dirty
                         ? "is-dirty"
-                        : seed.health_level === "fault"
-                            ? "is-fault"
-                            : seed.health_level === "warning"
-                                ? "is-warning"
-                                : seed.live
-                                    ? "is-live"
-                                    : (enabled ? "is-staged" : "is-idle");
-                const statusClass = errorText
-                    ? "is-invalid"
-                    : draft.dirty
-                        ? "is-dirty"
-                        : seed.health_level === "fault"
-                            ? "is-fault"
-                            : seed.health_level === "warning"
-                                ? "is-warning"
-                                : seed.live
-                                    ? "is-live"
-                                    : (enabled ? "is-staged" : "is-idle");
+                        : seed.live
+                            ? (seed.health_level === "fault" ? "is-fault" : seed.health_level === "warning" ? "is-warning" : "is-live")
+                            : (enabled
+                                ? (seed.health_level === "fault" ? "is-fault" : seed.health_level === "warning" ? "is-warning" : "is-staged")
+                                : "is-idle");
+                const statusClass = toneClass;
                 const statusText = errorText
                     ? "Needs Input"
                     : draft.dirty
@@ -10123,7 +10162,9 @@ ${passwordMarkup.actionsHtml}
                         ? (enabled
                             ? `Will tune to ${previewFreq} kHz ${mode} on ${band}.`
                             : "Settings save automatically. Turn Active on to start this receiver.")
-                        : safeText(seed.summary, "Receiver idle until enabled.");
+                        : (enabled || seed.live)
+                            ? safeText(seed.summary, "Receiver idle until enabled.")
+                            : "Receiver idle until enabled.";
                 const metaText = seed.live ? "Receiver is currently live." : (enabled ? "Ready to apply." : "No live allocation.");
                 const modeOptions = MANUAL_RECEIVER_MODE_OPTIONS.map((option) => (
                     `<option value="${escapeHtml(option)}"${option === mode ? " selected" : ""}>${escapeHtml(option)}</option>`

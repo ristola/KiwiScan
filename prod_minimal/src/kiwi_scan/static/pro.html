@@ -2943,9 +2943,11 @@
             border-radius: 16px;
             background: color-mix(in srgb, var(--fault), white 92%);
             box-shadow: 0 18px 44px rgba(15, 23, 42, 0.16);
-            padding: 16px 18px;
+            padding: 16px 42px 16px 18px;
             display: grid;
             gap: 6px;
+            position: relative;
+            pointer-events: auto;
         }
 
         .kiwi-notice-title {
@@ -2959,6 +2961,34 @@
             color: #7f1d1d;
             font-size: 0.85rem;
             line-height: 1.4;
+        }
+
+        .kiwi-notice-dismiss {
+            position: absolute;
+            top: 8px;
+            right: 10px;
+            width: 24px;
+            height: 24px;
+            border: none;
+            border-radius: 999px;
+            background: transparent;
+            color: #8a1c1c;
+            font: inherit;
+            font-size: 1.1rem;
+            font-weight: 700;
+            line-height: 1;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 140ms ease, color 140ms ease;
+        }
+
+        .kiwi-notice-dismiss:hover,
+        .kiwi-notice-dismiss:focus-visible {
+            background: rgba(127, 29, 29, 0.12);
+            color: #7f1d1d;
+            outline: none;
         }
 
         .action-btn {
@@ -5352,6 +5382,16 @@
             color: #fee2e2;
         }
 
+        body.theme-dark .kiwi-notice-dismiss {
+            color: #fecaca;
+        }
+
+        body.theme-dark .kiwi-notice-dismiss:hover,
+        body.theme-dark .kiwi-notice-dismiss:focus-visible {
+            background: rgba(254, 202, 202, 0.16);
+            color: #fee2e2;
+        }
+
         body.theme-dark .refresh-row select option,
         body.theme-dark .rx-toolbar select option,
         body.theme-dark .control-field select option {
@@ -5940,6 +5980,8 @@
 <body>
     <div class="kiwi-notice" id="kiwi-notice" aria-live="polite" aria-atomic="true" aria-hidden="true">
         <div class="kiwi-notice-box" role="status">
+            <button class="kiwi-notice-dismiss" type="button" aria-label="Dismiss notice"
+                onclick="setKiwiNoticeVisible(false)">X</button>
             <div class="kiwi-notice-title">KiwiSdr Not Found</div>
             <div class="kiwi-notice-text" id="kiwi-notice-text">Running auto Discover.</div>
         </div>
@@ -8365,8 +8407,26 @@
                     scheduleManualAssignmentPanelRefresh(160);
                     return;
                 }
+                const pageScrollX = window.scrollX;
+                const pageScrollY = window.scrollY;
+                const restoreScroll = () => {
+                    if (window.scrollX !== pageScrollX || window.scrollY !== pageScrollY) {
+                        window.scrollTo(pageScrollX, pageScrollY);
+                    }
+                };
+                if (getCurrentReceiversMode() === "manual") {
+                    const kiwi = latestSystemInfo && latestSystemInfo.kiwi && typeof latestSystemInfo.kiwi === "object"
+                        ? latestSystemInfo.kiwi
+                        : {};
+                    const users = buildActiveReceiverRows(kiwi.active_users, kiwi.raw_users);
+                    renderManualReceiverAssignments(usersEl, users, kiwi);
+                    _updateRxBusyOverlay();
+                    requestAnimationFrame(restoreScroll);
+                    return;
+                }
                 invalidateActiveReceiversTable();
                 renderSystemPanel(latestSystemInfo || {});
+                requestAnimationFrame(restoreScroll);
             }, Math.max(0, Number(delayMs) || 0));
         }
 
@@ -8529,8 +8589,9 @@
                 const kiwiRx = Number(user && user.kiwi_rx);
                 const name = safeText(user && user.name, "").trim().toUpperCase();
                 const isManualUser = name.startsWith("MAN_") || name.startsWith("MANUAL_");
-                const manualRxMatch = name.match(/^MAN(?:UAL)?_RX(\d)(?!\d)/i);
+                const manualRxMatch = name.match(/(?:^|[^A-Z0-9])MAN(?:UAL)?[\s_-]*RX(\d)(?!\d)/i);
                 const manualRxFromLabel = manualRxMatch ? Number(manualRxMatch[1]) : null;
+                if (!isManualUser && !Number.isFinite(Number(manualRxFromLabel))) return;
                 const targetRx = Number.isFinite(Number(manualRxFromLabel))
                     ? Number(manualRxFromLabel)
                     : (Number.isFinite(logicalRx) && logicalRx >= 0
@@ -8557,56 +8618,43 @@
 
         function buildManualAssignmentSeed(rxNum, usersByRx = currentManualReceiverUsersByRx()) {
             ensureManualAssignmentDraftProfileBound();
-            const assignment = getManualAssignmentForRx(rxNum);
             const persisted = getPersistedManualAssignmentForRx(rxNum);
+            const hasPersisted = Object.keys(persisted || {}).length > 0;
             const channel = latestChannelsMap && typeof latestChannelsMap === "object"
                 ? (latestChannelsMap[String(rxNum)] || {})
                 : {};
             const user = usersByRx.get(Number(rxNum)) || {};
-            const live = Boolean((channel && (channel.active || channel.visible_on_kiwi)) || (user && user.active));
-            const channelFreqKHz = Number.isFinite(Number(channel && channel.freq_hz)) ? Number(channel.freq_hz) / 1000.0 : null;
-            const assignmentFreqKHz = Number.isFinite(Number(assignment && assignment.freq_hz)) ? Number(assignment.freq_hz) / 1000.0 : null;
             const persistedFreqKHz = Number.isFinite(Number(persisted && persisted.freq_khz)) ? Number(persisted.freq_khz) : null;
-            const userFreqKHz = Number.isFinite(Number(user && user.freq_khz)) ? Number(user.freq_khz) : null;
-            const resolvedFreqKHz = channelFreqKHz || assignmentFreqKHz || userFreqKHz || persistedFreqKHz;
+            const resolvedFreqKHz = persistedFreqKHz || MANUAL_RECEIVER_DEFAULT_FREQ_KHZ;
+            const live = Boolean(user && user.active);
             const band = normalizeManualAssignmentBand(
-                channel && channel.band,
-                normalizeManualAssignmentBand(
-                    assignment && assignment.band,
-                    normalizeManualAssignmentBand(
-                        user && user.band,
-                        normalizeManualAssignmentBand(persisted && persisted.band, MANUAL_RECEIVER_DEFAULT_BAND),
-                    ),
-                ),
+                persisted && persisted.band,
+                MANUAL_RECEIVER_DEFAULT_BAND,
             );
             const mode = resolveManualAssignmentMode(
-                safeText(
-                    channel && channel.mode,
-                    safeText(
-                        assignment && (assignment.mode || assignment.mode_label),
-                        safeText(user && user.mode, safeText(persisted && persisted.mode, "")),
-                    ),
-                ),
+                safeText(persisted && persisted.mode, ""),
                 resolvedFreqKHz,
                 MANUAL_RECEIVER_DEFAULT_MODE,
             );
             const persistedEnabled = Boolean(
                 Object.prototype.hasOwnProperty.call(persisted || {}, "enabled") && persisted.enabled
             );
-            const enabled = Boolean(
-                (channel && (channel.active || channel.visible_on_kiwi))
-                || (user && user.active)
-                || persistedEnabled
-            );
+            const enabled = hasPersisted ? persistedEnabled : false;
             const kiwiRx = Number.isFinite(Number(user && user.kiwi_rx))
                 ? Number(user.kiwi_rx)
                 : (Number.isFinite(Number(channel && channel.kiwi_actual_rx))
                     ? Number(channel.kiwi_actual_rx)
                     : (Number.isFinite(Number(channel && channel.kiwi_rx)) ? Number(channel.kiwi_rx) : null));
-            const level = String(safeText(channel && channel.status_level, live ? "healthy" : (enabled ? "warning" : "idle"))).toLowerCase();
-            const healthText = safeText(channel && channel.health_state, live ? "Live" : (enabled ? "Assigned" : "Idle"));
+            const level = String(safeText(
+                live ? (channel && channel.status_level) : "",
+                live ? "healthy" : (enabled ? "warning" : "idle"),
+            )).toLowerCase();
+            const healthText = safeText(
+                live ? (channel && channel.health_state) : "",
+                live ? "Live" : (enabled ? "Assigned" : "Idle"),
+            );
             const connectionBits = [];
-            if (Number.isFinite(Number(kiwiRx))) connectionBits.push(`Kiwi RX${Number(kiwiRx)}`);
+            connectionBits.push(`Kiwi RX${Number(rxNum)}`);
             if (Number.isFinite(Number(user && user.connected_seconds)) && Number(user.connected_seconds) > 0) {
                 connectionBits.push(`Connected ${fmtDurationCompact(user.connected_seconds)}`);
             }
@@ -8888,11 +8936,7 @@
                 const target = event.target;
                 if (!(target instanceof Element)) return;
                 if (!target.closest("[data-manual-field]")) return;
-                window.setTimeout(() => {
-                    if (!manualAssignmentFieldHasFocus(container)) {
-                        scheduleManualAssignmentPanelRefresh(180);
-                    }
-                }, 0);
+                markManualAssignmentInteraction(300);
             });
 
             container.addEventListener("change", (event) => {
@@ -8957,7 +9001,6 @@
                 draft.dirty = true;
                 delete manualAssignmentErrorsByRx[manualReceiverDraftKey(rxNum)];
                 markManualAssignmentInteraction();
-                scheduleManualAssignmentPanelRefresh(180);
                 scheduleManualAssignmentCommit({
                     applyRuntime: field === "enabled" ? true : !!draft.enabled,
                     delayMs: MANUAL_ASSIGNMENT_COMMIT_DELAY_MS,
@@ -9010,24 +9053,12 @@
                     ? "is-invalid"
                     : draft.dirty
                         ? "is-dirty"
-                        : seed.health_level === "fault"
-                            ? "is-fault"
-                            : seed.health_level === "warning"
-                                ? "is-warning"
-                                : seed.live
-                                    ? "is-live"
-                                    : (enabled ? "is-staged" : "is-idle");
-                const statusClass = errorText
-                    ? "is-invalid"
-                    : draft.dirty
-                        ? "is-dirty"
-                        : seed.health_level === "fault"
-                            ? "is-fault"
-                            : seed.health_level === "warning"
-                                ? "is-warning"
-                                : seed.live
-                                    ? "is-live"
-                                    : (enabled ? "is-staged" : "is-idle");
+                        : seed.live
+                            ? (seed.health_level === "fault" ? "is-fault" : seed.health_level === "warning" ? "is-warning" : "is-live")
+                            : (enabled
+                                ? (seed.health_level === "fault" ? "is-fault" : seed.health_level === "warning" ? "is-warning" : "is-staged")
+                                : "is-idle");
+                const statusClass = toneClass;
                 const statusText = errorText
                     ? "Needs Input"
                     : draft.dirty
@@ -9042,7 +9073,9 @@
                         ? (enabled
                             ? `Will tune to ${previewFreq} kHz ${mode} on ${band}.`
                             : "Settings save automatically. Turn Active on to start this receiver.")
-                        : safeText(seed.summary, "Receiver idle until enabled.");
+                        : (enabled || seed.live)
+                            ? safeText(seed.summary, "Receiver idle until enabled.")
+                            : "Receiver idle until enabled.";
                 const metaText = seed.live ? "Receiver is currently live." : (enabled ? "Ready to apply." : "No live allocation.");
                 const modeOptions = MANUAL_RECEIVER_MODE_OPTIONS.map((option) => (
                     `<option value="${escapeHtml(option)}"${option === mode ? " selected" : ""}>${escapeHtml(option)}</option>`
