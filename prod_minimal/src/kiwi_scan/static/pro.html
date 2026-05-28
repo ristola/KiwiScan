@@ -8529,7 +8529,7 @@
                 const kiwiRx = Number(user && user.kiwi_rx);
                 const name = safeText(user && user.name, "").trim().toUpperCase();
                 const isManualUser = name.startsWith("MAN_") || name.startsWith("MANUAL_");
-                const manualRxMatch = name.match(/^MAN(?:UAL)?_RX(\d)\b/i);
+                const manualRxMatch = name.match(/^MAN(?:UAL)?_RX(\d)(?!\d)/i);
                 const manualRxFromLabel = manualRxMatch ? Number(manualRxMatch[1]) : null;
                 const targetRx = Number.isFinite(Number(manualRxFromLabel))
                     ? Number(manualRxFromLabel)
