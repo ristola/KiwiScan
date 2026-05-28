@@ -9969,36 +9969,47 @@ ${passwordMarkup.actionsHtml}
             if (!container || container.dataset.manualEditorBound === "1") return;
             container.dataset.manualEditorBound = "1";
 
+            const isManualInteractiveTarget = (target) => (
+                target instanceof Element
+                && !!target.closest("[data-manual-field], [data-manual-action]")
+            );
+
+            const lockManualOverviewScroll = () => {
+                if (getCurrentReceiversMode() !== "manual") return;
+                preserveOverviewScrollPosition();
+            };
+
             const beginInteraction = (event) => {
                 const target = event.target;
-                if (!(target instanceof Element)) return;
-                if (!target.closest("[data-manual-field]")) return;
+                if (!isManualInteractiveTarget(target)) return;
                 markManualAssignmentInteraction();
                 if (manualAssignmentRefreshTimer) {
                     window.clearTimeout(manualAssignmentRefreshTimer);
                     manualAssignmentRefreshTimer = null;
                 }
+                lockManualOverviewScroll();
             };
 
             container.addEventListener("pointerdown", beginInteraction);
             container.addEventListener("keydown", beginInteraction);
             container.addEventListener("input", beginInteraction);
+            container.addEventListener("click", lockManualOverviewScroll, true);
+            container.addEventListener("change", lockManualOverviewScroll, true);
 
             container.addEventListener("focusin", (event) => {
                 const target = event.target;
-                if (!(target instanceof Element)) return;
-                if (!target.closest("[data-manual-field]")) return;
+                if (!isManualInteractiveTarget(target)) return;
                 markManualAssignmentInteraction();
                 if (manualAssignmentRefreshTimer) {
                     window.clearTimeout(manualAssignmentRefreshTimer);
                     manualAssignmentRefreshTimer = null;
                 }
+                lockManualOverviewScroll();
             });
 
             container.addEventListener("focusout", (event) => {
                 const target = event.target;
-                if (!(target instanceof Element)) return;
-                if (!target.closest("[data-manual-field]")) return;
+                if (!isManualInteractiveTarget(target)) return;
                 markManualAssignmentInteraction(300);
             });
 
@@ -10109,6 +10120,12 @@ ${passwordMarkup.actionsHtml}
             container.addEventListener("click", async (event) => {
                 const target = event.target instanceof Element ? event.target.closest("[data-manual-action]") : null;
                 if (!target) return;
+                markManualAssignmentInteraction();
+                if (manualAssignmentRefreshTimer) {
+                    window.clearTimeout(manualAssignmentRefreshTimer);
+                    manualAssignmentRefreshTimer = null;
+                }
+                lockManualOverviewScroll();
                 const action = String(target.getAttribute("data-manual-action") || "").trim();
                 if (action === "listen") {
                     event.preventDefault();
