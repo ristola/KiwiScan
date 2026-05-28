@@ -8585,18 +8585,18 @@
             const next = new Map();
             (Array.isArray(users) ? users : []).forEach((user) => {
                 if (!user || typeof user !== "object") return;
-                const logicalRx = Number(user && user.rx);
-                const kiwiRx = Number(user && user.kiwi_rx);
                 const name = safeText(user && user.name, "").trim().toUpperCase();
                 const isManualUser = name.startsWith("MAN_") || name.startsWith("MANUAL_");
+                if (!isManualUser) return;
                 const manualRxMatch = name.match(/(?:^|[^A-Z0-9])MAN(?:UAL)?[\s_-]*RX(\d)(?!\d)/i);
                 const manualRxFromLabel = manualRxMatch ? Number(manualRxMatch[1]) : null;
-                if (!isManualUser && !Number.isFinite(Number(manualRxFromLabel))) return;
-                const targetRx = Number.isFinite(Number(manualRxFromLabel))
-                    ? Number(manualRxFromLabel)
-                    : (Number.isFinite(logicalRx) && logicalRx >= 0
-                        ? logicalRx
-                        : (Number.isFinite(kiwiRx) && kiwiRx >= 0 ? kiwiRx : NaN));
+                // Require an explicit RX digit in the label — never fall back to the
+                // hardware channel (user.rx / user.kiwi_rx).  A partial or truncated
+                // MAN_... label that doesn't include an RX slot number could otherwise
+                // be mapped to whatever hardware channel the kiwi happened to assign,
+                // causing a transient false-LIVE on the wrong slot.
+                if (!Number.isFinite(Number(manualRxFromLabel))) return;
+                const targetRx = Number(manualRxFromLabel);
                 if (!Number.isFinite(targetRx) || targetRx < 0) return;
                 next.set(Number(targetRx), user);
             });
