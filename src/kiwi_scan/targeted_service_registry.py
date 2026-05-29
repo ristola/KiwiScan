@@ -90,6 +90,9 @@ class TargetedServiceRegistry(Generic[T]):
                 merged[merged_key] = dict(channel) if isinstance(channel, dict) else channel
         return merged
 
+    def start(self) -> dict[str, object]:
+        return self._call_all("start")
+
     def stop(self) -> dict[str, object]:
         return self._call_all("stop")
 

@@ -112,6 +112,49 @@ def test_decodes_status_accepts_compact_live_labels(monkeypatch) -> None:
     assert body["published_decode_stats_by_kiwi"]["kiwi.local:8073"]["bands"]["40m"]["decode_total"] == 1
 
 
+def test_decodes_status_honors_requested_kiwi_key_target(monkeypatch) -> None:
+    payloads = {
+        "http://kiwi.local:8073/users?json=1": [
+            {"i": 0, "n": "ROAM212MFT8", "f": 24915000.0, "t": "0:14:52"},
+            {"i": 2, "n": "FIXED20MFT8", "f": 14077000.0, "t": "0:17:38"},
+        ],
+        "http://kiwi2.local:8073/users?json=1": [
+            {"i": 1, "n": "FIXED40MFT8", "f": 7074000.0, "t": "0:03:00"},
+        ],
+    }
+
+    def _fake_urlopen(req, timeout=0.5):
+        url = req.full_url if hasattr(req, "full_url") else str(req)
+        assert timeout == 0.5
+        return _UrlResponse(payloads[url])
+
+    monkeypatch.setattr(decodes_status_api.urllib.request, "urlopen", _fake_urlopen)
+
+    receiver_mgr = _ReceiverMgrStub()
+    receiver_mgr._active_host = "kiwi.local"
+    receiver_mgr._host = "kiwi.local"
+    app = FastAPI()
+    app.include_router(
+        decodes_status_api.make_router(
+            receiver_mgr=receiver_mgr,
+            af2udp_path=Path("/tmp/af2udp"),
+            ft8modem_path=Path("/tmp/ft8modem"),
+        )
+    )
+    client = TestClient(app)
+
+    response = client.get("/decodes/status?kiwi_key=kiwi2.local:8073")
+    assert response.status_code == 200
+    body = response.json()
+
+    assert body["assignments_source"] == "kiwi_users"
+    assert body["assignments_host"] == "kiwi2.local"
+    assert body["assignments_port"] == 8073
+    assert body["assignments"] == {
+        "1": {"band": "40m", "mode": "FT8", "freq_hz": 7074000.0},
+    }
+
+
 def test_decodes_status_returns_cached_payload_when_lock_is_busy(monkeypatch) -> None:
     payload = [
         {"i": 2, "n": "FIXED20MFT8", "f": 14077000.0, "t": "0:00:10"},

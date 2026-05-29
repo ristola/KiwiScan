@@ -19650,7 +19650,7 @@ ${passwordMarkup.actionsHtml}
                 // Fire all requests simultaneously but track whether each core endpoint
                 // has already been applied via its own .then() so we don't re-apply below.
                 const healthP = getJson(activeKiwiHealthUrl(), TIMEOUT).catch(() => null);
-                const statusP = getJson("/decodes/status", TIMEOUT).catch(() => null);
+                const statusP = getJson(appendActiveKiwiKey("/decodes/status"), TIMEOUT).catch(() => null);
                 const versionP = getJson("/version", TIMEOUT).catch(() => null);
                 const deltaP = pollDecodeDelta().catch(() => null);
                 const chartP = getJson(activeKiwiDecodesChartUrl(), TIMEOUT).catch(() => null);

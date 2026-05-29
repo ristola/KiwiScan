@@ -8,7 +8,7 @@ import urllib.request
 from pathlib import Path
 from typing import Dict
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from .decodes import get_published_decode_stats_by_kiwi, get_published_decode_stats_by_rx
 
@@ -20,17 +20,43 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
     """
 
     router = APIRouter()
-    _last_live_assignments: Dict[int, Dict[str, object]] = {}
-    _last_live_ok_unix: float = 0.0
-    _last_live_host: str = ""
-    _last_live_port: int = 0
-    _last_status_payload: Dict[str, object] | None = None
+    _last_live_assignments_by_target: Dict[str, Dict[int, Dict[str, object]]] = {}
+    _last_live_ok_unix_by_target: Dict[str, float] = {}
+    _last_live_host_by_target: Dict[str, str] = {}
+    _last_live_port_by_target: Dict[str, int] = {}
+    _last_status_payload_by_target: Dict[str, Dict[str, object]] = {}
+
+    def _normalize_target_key(kiwi_key: str | None) -> str:
+        key = str(kiwi_key or "").strip().lower()
+        if not key:
+            return "default"
+        return key
+
+    def _parse_kiwi_key_target(kiwi_key: str | None) -> tuple[str, int]:
+        key = str(kiwi_key or "").strip()
+        if not key or ":" not in key:
+            return "", 0
+        host_text, port_text = key.rsplit(":", 1)
+        host = str(host_text or "").strip()
+        try:
+            port = int(str(port_text or "0").strip())
+        except Exception:
+            port = 0
+        if not host or port <= 0:
+            return "", 0
+        return host, port
 
     @router.get("/decodes/status")
-    def get_decode_status():
-        nonlocal _last_live_assignments, _last_live_ok_unix, _last_live_host, _last_live_port, _last_status_payload
+    def get_decode_status(kiwi_key: str | None = Query(default=None)):
         rx_status: Dict[int, Dict[str, object]] = {}
         workers: Dict[int, object] = {}
+        target_key = _normalize_target_key(kiwi_key)
+        _last_live_assignments = dict(_last_live_assignments_by_target.get(target_key, {}))
+        _last_live_ok_unix = float(_last_live_ok_unix_by_target.get(target_key, 0.0) or 0.0)
+        _last_live_host = str(_last_live_host_by_target.get(target_key, "") or "")
+        _last_live_port = int(_last_live_port_by_target.get(target_key, 0) or 0)
+        _last_status_payload = _last_status_payload_by_target.get(target_key)
+        requested_host, requested_port = _parse_kiwi_key_target(kiwi_key)
         # Use a timeout so this endpoint never blocks indefinitely while
         # apply_assignments() holds the lock during startup/eviction (can be minutes).
         _lock = receiver_mgr._lock  # type: ignore[attr-defined]
@@ -228,8 +254,16 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
                 if candidate not in candidates:
                     candidates.append(candidate)
 
+            _add_candidate(requested_host, requested_port)
             _add_candidate(getattr(receiver_mgr, "_active_host", ""), getattr(receiver_mgr, "_active_port", 0))
             _add_candidate(getattr(receiver_mgr, "_host", ""), getattr(receiver_mgr, "_port", 0))
+
+            # If the caller requested a specific Kiwi target, pin to that host:port
+            # instead of selecting a best-scoring candidate across all known Kiwis.
+            if requested_host and requested_port > 0:
+                ok, rows, details = _fetch_live_users_assignments_with_details(requested_host, requested_port)
+                if ok:
+                    return (True, rows, details, requested_host, requested_port)
 
             try:
                 cfg_path = Path(__file__).resolve().parents[3] / "outputs" / "config.json"
@@ -349,6 +383,10 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
             _last_live_ok_unix = float(now)
             _last_live_host = str(live_host)
             _last_live_port = int(live_port)
+            _last_live_assignments_by_target[target_key] = dict(_last_live_assignments)
+            _last_live_ok_unix_by_target[target_key] = _last_live_ok_unix
+            _last_live_host_by_target[target_key] = _last_live_host
+            _last_live_port_by_target[target_key] = _last_live_port
 
         cache_fresh = (_last_live_ok_unix > 0.0) and ((now - _last_live_ok_unix) <= 30.0)
         if users_available and not prefer_receiver_manager:
@@ -418,7 +456,7 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
             "af2udp": str(af2udp_path),
             "ft8modem": str(ft8modem_path),
         }
-        _last_status_payload = dict(payload)
+        _last_status_payload_by_target[target_key] = dict(payload)
         return payload
 
     return router

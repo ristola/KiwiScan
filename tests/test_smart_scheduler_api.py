@@ -10,10 +10,24 @@ class _ReceiverMgrStub:
         return {"overall": "healthy", "channels": {}}
 
 
+class _DiscoveryMgrStub:
+    def __init__(self) -> None:
+        import threading
+
+        self.lock = threading.Lock()
+        self.host = "default.local"
+        self.port = 8073
+
+    def resolve_runtime_target(self, *, kiwi_key=None):
+        if str(kiwi_key or "").strip() == "kiwi-2":
+            return {"host": "kiwi-2.local", "port": 8073, "kiwi_key": "kiwi-2"}
+        return {"host": "default.local", "port": 8073, "kiwi_key": "default"}
+
+
 def test_smart_scheduler_status_returns_ft8_snapshot() -> None:
     scheduler = SmartScheduler(receiver_mgr=_ReceiverMgrStub())
     app = FastAPI()
-    app.include_router(make_router(smart_scheduler=scheduler))
+    app.include_router(make_router(mgr=_DiscoveryMgrStub(), smart_scheduler=scheduler))
     client = TestClient(app)
 
     response = client.get("/smart_scheduler/status")
@@ -189,3 +203,44 @@ def test_smart_scheduler_scores_combo_digital_modes(monkeypatch) -> None:
     assert status["conditions"]["30m"]["score"] is not None
     assert status["conditions"]["17m"]["empirical"] == "MARGINAL"
     assert status["conditions"]["17m"]["score"] is not None
+
+
+def test_smart_scheduler_status_routes_to_targeted_scheduler() -> None:
+    class _SchedulerStub:
+        def __init__(self, label: str) -> None:
+            self._label = label
+
+        def get_status(self):
+            return {"mode": "ft8", "label": self._label, "conditions": {"40m": {}}}
+
+        def get_scan_config(self):
+            return {"allowed_bands": ["40m"]}
+
+        def set_scan_config(self, _allowed_bands):
+            return None
+
+        def set_override(self, _band, _condition):
+            return None
+
+        def clear_override(self, _band):
+            return None
+
+        def force_check(self):
+            return None
+
+    class _SchedulerRegistryStub:
+        def resolve_for_target(self, *, target=None):
+            target_key = str((target or {}).get("kiwi_key") or "default")
+            return _SchedulerStub(target_key)
+
+    app = FastAPI()
+    app.include_router(make_router(mgr=_DiscoveryMgrStub(), smart_scheduler=_SchedulerRegistryStub()))
+    client = TestClient(app)
+
+    default_response = client.get("/smart_scheduler/status")
+    targeted_response = client.get("/smart_scheduler/status?kiwi_key=kiwi-2")
+
+    assert default_response.status_code == 200
+    assert default_response.json()["label"] == "default"
+    assert targeted_response.status_code == 200
+    assert targeted_response.json()["label"] == "kiwi-2"

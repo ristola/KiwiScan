@@ -1223,6 +1223,33 @@ def test_force_reassign_skips_when_receivers_mode_scan(monkeypatch) -> None:
     assert posted == []
 
 
+def test_force_reassign_can_target_single_kiwi(monkeypatch) -> None:
+    loop = AutoSetLoop()
+
+    monkeypatch.setattr(
+        loop,
+        "_load_settings",
+        lambda: {
+            "fixedModeEnabled": True,
+            "activeKiwiKey": "kiwi-1",
+            "kiwiModes": {"kiwi-1": "auto", "kiwi-2": "auto"},
+        },
+    )
+    monkeypatch.setattr(loop, "_current_schedule_key", lambda _settings, kiwi_key=None: ("ft8", f"for-{kiwi_key or 'default'}"))
+    monkeypatch.setattr(
+        loop,
+        "_build_payload",
+        lambda _settings, schedule_key=None, kiwi_key=None: {"enabled": True, "schedule_key": schedule_key, "kiwi_key": kiwi_key},
+    )
+
+    posted: list[dict] = []
+    monkeypatch.setattr(loop, "_post_auto_set", lambda payload: posted.append(dict(payload)))
+
+    loop.force_reassign(kiwi_key="kiwi-2")
+
+    assert posted == [{"enabled": True, "schedule_key": ("ft8", "for-kiwi-2"), "kiwi_key": "kiwi-2", "force": True}]
+
+
 def test_apply_current_settings_posts_payload_and_syncs_loop_state(monkeypatch) -> None:
     loop = AutoSetLoop()
 

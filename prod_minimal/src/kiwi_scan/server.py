@@ -618,6 +618,22 @@ receiver_mgr = ReceiverManager(
     decode_callback=decodes_callback,
 )
 
+
+class _TargetedReceiverManagerView:
+    def __init__(self, receiver_mgr: ReceiverManager, target: dict[str, object]) -> None:
+        self._receiver_mgr = receiver_mgr
+        self._target = dict(target)
+
+    def health_summary(self) -> dict[str, object]:
+        host = str(self._target.get("host") or "").strip()
+        try:
+            port = int(self._target.get("port") or 0)
+        except Exception:
+            port = 0
+        if host and port > 0 and hasattr(self._receiver_mgr, "health_summary_for_target"):
+            return self._receiver_mgr.health_summary_for_target(host, port)
+        return self._receiver_mgr.health_summary()
+
 app.include_router(
     make_decodes_status_router(
         receiver_mgr=receiver_mgr,
@@ -658,10 +674,18 @@ caption_monitor = TargetedServiceRegistry(
 # into a band-condition map.  Fires force_reassign() when conditions change so
 # receivers are reallocated away from dead bands without waiting for the next
 # 30-second AutoSetLoop tick.
-smart_scheduler = SmartScheduler(
-    receiver_mgr=receiver_mgr,
-    on_condition_change=auto_set_loop.force_reassign,
-)
+def _make_targeted_smart_scheduler(target: dict[str, object]) -> SmartScheduler:
+    target_payload = dict(target)
+    target_key = str(target_payload.get("kiwi_key") or "").strip() or None
+    scheduler = SmartScheduler(
+        receiver_mgr=_TargetedReceiverManagerView(receiver_mgr, target_payload),
+        on_condition_change=lambda key=target_key: auto_set_loop.force_reassign(kiwi_key=key),
+    )
+    scheduler.start()
+    return scheduler
+
+
+smart_scheduler = TargetedServiceRegistry(factory=_make_targeted_smart_scheduler)
 auto_set_loop.set_smart_scheduler(smart_scheduler)
 
 # Asyncio event loop for scheduling broadcasts from the discovery thread
@@ -733,7 +757,7 @@ app.include_router(
 )
 app.include_router(make_health_router(receiver_mgr=receiver_mgr, receiver_scan=receiver_scan, mgr=mgr))
 app.include_router(make_system_info_router(mgr=mgr, receiver_mgr=receiver_mgr))
-app.include_router(make_smart_scheduler_router(smart_scheduler=smart_scheduler))
+app.include_router(make_smart_scheduler_router(mgr=mgr, smart_scheduler=smart_scheduler))
 app.include_router(
     make_ws_status_router(
         mgr=mgr,

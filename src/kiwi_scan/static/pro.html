@@ -9190,21 +9190,21 @@ ${passwordMarkup.actionsHtml}
             const activePort = Number(kiwi && kiwi.port);
             const activeIndex = discovered.findIndex((entry) => entry.host === activeHost && entry.port === activePort);
 
+            // Assign fixed system card numbers based on sorted order (always 1, 2, 3, ... regardless of active Kiwi)
+            const numberedEntries = discovered.map((entry, idx) => ({
+                ...entry,
+                systemCardIndex: idx + 1
+            }));
+
             if (titleEl) {
                 titleEl.textContent = activeIndex >= 0 && discovered.length > 1
                     ? `KiwiSDR ${activeIndex + 1}`
                     : "KiwiSDR";
             }
 
-            // Build all secondary entries with correct indices, preserving sort order from discovered list
-            const secondaryEntries = discovered
-                .map((entry, idx) => {
-                    // Skip the active Kiwi
-                    if (entry.host === activeHost && entry.port === activePort) return null;
-                    return { ...entry, systemCardIndex: idx + 1 };
-                })
-                .filter((entry) => entry !== null && entry.systemCardIndex > 0)
-                .sort((a, b) => a.systemCardIndex - b.systemCardIndex);
+            // Build secondary entries: all except the active Kiwi, with fixed numbering
+            const secondaryEntries = numberedEntries
+                .filter((entry) => !(entry.host === activeHost && entry.port === activePort));
 
             if (!secondaryEntries.length) {
                 container.innerHTML = "";
@@ -20998,7 +20998,7 @@ ${passwordMarkup.actionsHtml}
                 // Fire all requests simultaneously but track whether each core endpoint
                 // has already been applied via its own .then() so we don't re-apply below.
                 const healthP = getJson(activeKiwiHealthUrl(), TIMEOUT).catch(() => null);
-                const statusP = getJson("/decodes/status", TIMEOUT).catch(() => null);
+                const statusP = getJson(appendActiveKiwiKey("/decodes/status"), TIMEOUT).catch(() => null);
                 const versionP = getJson("/version", TIMEOUT).catch(() => null);
                 const deltaP = pollDecodeDelta().catch(() => null);
                 const chartP = getJson(activeKiwiDecodesChartUrl(), TIMEOUT).catch(() => null);

@@ -7,12 +7,14 @@ import os
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict
 
 from typing import Any
 from .scheduler import block_for_hour
+from .targeted_service_registry import resolve_targeted_service
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +80,16 @@ class AutoSetLoop:
     def set_smart_scheduler(self, smart_scheduler: Any) -> None:
         """Bind a SmartScheduler instance so closed bands are filtered each cycle."""
         self._smart_scheduler = smart_scheduler
+
+    def _smart_scheduler_for_kiwi(self, kiwi_key: str | None = None) -> Any | None:
+        if self._smart_scheduler is None:
+            return None
+        target_key = str(kiwi_key or "").strip()
+        target = {"kiwi_key": target_key} if target_key else None
+        try:
+            return resolve_targeted_service(self._smart_scheduler, target=target)
+        except Exception:
+            return self._smart_scheduler
 
     @staticmethod
     def _settings_path() -> Path:
@@ -263,12 +275,13 @@ class AutoSetLoop:
 
         return selected, band_modes
 
-    def _build_payload(self, settings: Dict[str, Any], schedule_key: tuple[str, str] | None = None) -> Dict[str, Any]:
+    def _build_payload(self, settings: Dict[str, Any], schedule_key: tuple[str, str] | None = None, *, kiwi_key: str | None = None) -> Dict[str, Any]:
+        smart_scheduler = self._smart_scheduler_for_kiwi(kiwi_key)
         if schedule_key is None:
-            schedule_key = self._current_schedule_key(settings)
+            schedule_key = self._current_schedule_key(settings, kiwi_key=kiwi_key)
 
         if schedule_key[0] == "fixed":
-            return self._build_fixed_roaming_payload(settings, schedule_key[1])
+            return self._build_fixed_roaming_payload(settings, schedule_key[1], kiwi_key=kiwi_key)
 
         mode = "ft8"
 
@@ -289,9 +302,9 @@ class AutoSetLoop:
         }
         if isinstance(selected_bands, list):
             # Filter against the user's band allowlist ("On" checkboxes in Band Schedule).
-            if self._smart_scheduler is not None:
+            if smart_scheduler is not None:
                 try:
-                    allowed = self._smart_scheduler._allowed_bands()
+                    allowed = smart_scheduler._allowed_bands()
                     selected_bands = [b for b in selected_bands if b in allowed]
                 except Exception:
                     pass
@@ -301,9 +314,9 @@ class AutoSetLoop:
 
         # Ask SmartScheduler which bands are empirically/seasonally closed and
         # pass them to /auto_set_receivers so receivers aren't wasted on dead bands.
-        if self._smart_scheduler is not None:
+        if smart_scheduler is not None:
             try:
-                closed = list(self._smart_scheduler.get_closed_bands(mode))
+                closed = list(smart_scheduler.get_closed_bands(mode))
                 if closed:
                     payload["closed_bands"] = closed
             except Exception:
@@ -311,14 +324,14 @@ class AutoSetLoop:
 
         return payload
 
-    def _build_fixed_roaming_payload(self, settings: Dict[str, Any], day_night: str) -> Dict[str, Any]:
+    def _build_fixed_roaming_payload(self, settings: Dict[str, Any], day_night: str, *, kiwi_key: str | None = None) -> Dict[str, Any]:
         """Build a payload with fixed RX2-RX7 plus scored RX0/RX1 roaming.
 
         RX0/RX1 stay empty until all 6 mandatory fixed receivers are healthy. Once
         healthy, SmartScheduler ranks only the configured day/night roaming pool and
         fills the 2 spare receivers with the top-scored bands.
         """
-        if not self._roaming_enabled(settings):
+        if not self._roaming_enabled(settings, kiwi_key=kiwi_key):
             return {
                 "enabled": True,
                 "mode": "ft8",
@@ -328,6 +341,7 @@ class AutoSetLoop:
             }
 
         roaming = _ROAMING_DAY if day_night == "day" else _ROAMING_NIGHT
+        smart_scheduler = self._smart_scheduler_for_kiwi(kiwi_key)
         _fixed_bands = {str(a["band"]).strip().lower() for a in _FIXED_ASSIGNMENTS}
         base_roaming_pool = [str(r["band"]) for r in roaming if str(r["band"]).strip().lower() not in _fixed_bands]
         base_band_modes: Dict[str, str] = {
@@ -338,11 +352,11 @@ class AutoSetLoop:
         roaming_pool = list(base_roaming_pool)
         band_modes: Dict[str, str] = dict(base_band_modes)
         closed_bands: list[str] = []
-        if self._smart_scheduler is not None:
+        if smart_scheduler is not None:
             try:
                 closed_lookup = {
                     str(band).strip()
-                    for band in self._smart_scheduler.get_closed_bands("ft8")
+                    for band in smart_scheduler.get_closed_bands("ft8")
                     if str(band).strip()
                 }
                 roaming_pool = [band for band in roaming_pool if band not in closed_lookup]
@@ -352,12 +366,12 @@ class AutoSetLoop:
                 closed_bands = []
         selected_bands: list[str] = []
         num_roaming_slots = 2
-        current_roaming = self._current_roaming_bands()
+        current_roaming = self._current_roaming_bands(kiwi_key=kiwi_key)
 
-        fixed_health_state, _sick_fixed = self._fixed_health_state()
-        if self._smart_scheduler is not None:
+        fixed_health_state, _sick_fixed = self._fixed_health_state(kiwi_key=kiwi_key)
+        if smart_scheduler is not None:
             try:
-                ranked_bands = self._smart_scheduler.rank_roaming_bands(
+                ranked_bands = smart_scheduler.rank_roaming_bands(
                     available_bands=list(roaming_pool),
                     current_roaming=list(current_roaming),
                 )
@@ -405,7 +419,7 @@ class AutoSetLoop:
             payload["closed_bands"] = closed_bands
         return payload
 
-    def _current_roaming_bands(self) -> list[str]:
+    def _current_roaming_bands(self, kiwi_key: str | None = None) -> list[str]:
         """Return the currently active RX0/RX1 roaming bands from /health/rx."""
         port_raw = str(os.environ.get("PORT", "4020") or "4020").strip()
         try:
@@ -414,6 +428,9 @@ class AutoSetLoop:
             port = 4020
         try:
             url = f"http://127.0.0.1:{port}/health/rx"
+            target_key = str(kiwi_key or "").strip()
+            if target_key:
+                url = f"{url}?kiwi_key={urllib.parse.quote(target_key, safe='')}"
             with urllib.request.urlopen(url, timeout=2.0) as resp:
                 data = json.loads(resp.read(1024 * 1024).decode("utf-8", errors="ignore"))
         except Exception:
@@ -437,8 +454,8 @@ class AutoSetLoop:
         return current
 
     @staticmethod
-    def _receivers_mode(settings: Dict[str, Any]) -> str:
-        kiwi_key = str(settings.get("activeKiwiKey") or "").strip()
+    def _receivers_mode(settings: Dict[str, Any], kiwi_key: str | None = None) -> str:
+        kiwi_key = str(kiwi_key if kiwi_key is not None else settings.get("activeKiwiKey") or "").strip()
         kiwi_modes = settings.get("kiwiModes")
         if kiwi_key and isinstance(kiwi_modes, dict) and kiwi_key in kiwi_modes:
             per_kiwi = str(kiwi_modes[kiwi_key] or "").strip().lower()
@@ -452,12 +469,12 @@ class AutoSetLoop:
         return "auto"
 
     @staticmethod
-    def _roaming_enabled(settings: Dict[str, Any]) -> bool:
-        return AutoSetLoop._receivers_mode(settings) == "auto"
+    def _roaming_enabled(settings: Dict[str, Any], kiwi_key: str | None = None) -> bool:
+        return AutoSetLoop._receivers_mode(settings, kiwi_key=kiwi_key) == "auto"
 
     @staticmethod
-    def _current_schedule_key(settings: Dict[str, Any]) -> tuple[str, str]:
-        receivers_mode = AutoSetLoop._receivers_mode(settings)
+    def _current_schedule_key(settings: Dict[str, Any], kiwi_key: str | None = None) -> tuple[str, str]:
+        receivers_mode = AutoSetLoop._receivers_mode(settings, kiwi_key=kiwi_key)
         if receivers_mode == "scan":
             return ("scan", "parked")
         if receivers_mode in {"auto", "semi"}:
@@ -502,11 +519,11 @@ class AutoSetLoop:
         return json.dumps({"bands": bands, "modes": modes, "closed": closed}, separators=(",", ":"))
 
     @staticmethod
-    def _target_auto_set_payload(settings: Dict[str, Any], payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _target_auto_set_payload(settings: Dict[str, Any], payload: Dict[str, Any], *, kiwi_key: str | None = None) -> Dict[str, Any]:
         targeted = dict(payload)
-        kiwi_key = str(settings.get("activeKiwiKey") or "").strip()
-        if kiwi_key:
-            targeted["kiwi_key"] = kiwi_key
+        target_key = str(kiwi_key if kiwi_key is not None else settings.get("activeKiwiKey") or "").strip()
+        if target_key:
+            targeted["kiwi_key"] = target_key
         return targeted
 
     def _post_auto_set(self, payload: Dict[str, Any]) -> None:
@@ -535,10 +552,8 @@ class AutoSetLoop:
 
     def clear_receivers_for_manual_mode(self, settings: Dict[str, Any], *, kiwi_key: str | None = None) -> None:
         """One-shot clear when user explicitly switches to Manual Mode."""
-        payload = self._target_auto_set_payload(settings, {"enabled": False, "force": True})
+        payload = self._target_auto_set_payload(settings, {"enabled": False, "force": True}, kiwi_key=kiwi_key)
         target_key = str(kiwi_key if kiwi_key is not None else settings.get("activeKiwiKey") or "").strip()
-        if target_key:
-            payload["kiwi_key"] = target_key
         logger.info(
             "Manual mode button pressed for %s: clearing current non-manual receiver set once",
             target_key or "<default>",
@@ -548,7 +563,7 @@ class AutoSetLoop:
         except Exception:
             logger.debug("Manual-mode one-shot clear failed", exc_info=True)
 
-    def _fixed_health_state(self) -> tuple[str, list[dict]]:
+    def _fixed_health_state(self, kiwi_key: str | None = None) -> tuple[str, list[dict]]:
         """Return fixed receiver health as (healthy|sick|unknown, sick_entries)."""
         port_raw = str(os.environ.get("PORT", "4020") or "4020").strip()
         try:
@@ -557,6 +572,9 @@ class AutoSetLoop:
             port = 4020
         try:
             url = f"http://127.0.0.1:{port}/health/rx"
+            target_key = str(kiwi_key or "").strip()
+            if target_key:
+                url = f"{url}?kiwi_key={urllib.parse.quote(target_key, safe='')}"
             with urllib.request.urlopen(url, timeout=2.0) as resp:
                 data = json.loads(resp.read(1024 * 1024).decode("utf-8", errors="ignore"))
         except Exception:
@@ -1026,7 +1044,7 @@ class AutoSetLoop:
             "fixed_rxs": [{"rx": e["rx"], "band": e["band"], "mode": e["mode"]} for e in _FIXED_ASSIGNMENTS],
         }
 
-    def force_reassign(self) -> None:
+    def force_reassign(self, kiwi_key: str | None = None) -> None:
         """Force an immediate re-apply of current automation settings, bypassing all caches.
 
         Reads the saved settings, builds the same payload the auto-set loop would use,
@@ -1047,7 +1065,8 @@ class AutoSetLoop:
             )
             return
 
-        current_kiwi_key = str(settings.get("activeKiwiKey") or "").strip()
+        settings = self._load_settings()
+        current_kiwi_key = str(kiwi_key if kiwi_key is not None else settings.get("activeKiwiKey") or "").strip()
         with self._state_lock:
             kiwi_hold_reason = self._external_hold_reason_for_kiwi_locked(current_kiwi_key)
         if kiwi_hold_reason:
@@ -1058,15 +1077,14 @@ class AutoSetLoop:
             )
             return
 
-        settings = self._load_settings()
-        if self._receivers_mode(settings) == "scan":
+        if self._receivers_mode(settings, kiwi_key=current_kiwi_key) == "scan":
             logger.debug("force_reassign skipped — Scan Mode is active")
             return
-        if self._receivers_mode(settings) == "manual":
+        if self._receivers_mode(settings, kiwi_key=current_kiwi_key) == "manual":
             logger.debug("force_reassign skipped — Auto Mode is OFF")
             return
-        payload = self._build_payload(settings, schedule_key=self._current_schedule_key(settings))
-        payload = self._target_auto_set_payload(settings, payload)
+        payload = self._build_payload(settings, schedule_key=self._current_schedule_key(settings, kiwi_key=current_kiwi_key), kiwi_key=current_kiwi_key)
+        payload = self._target_auto_set_payload(settings, payload, kiwi_key=current_kiwi_key)
         payload["force"] = True
         self._post_auto_set(payload)
         # Reset so the next loop cycle re-evaluates even if settings haven't changed.

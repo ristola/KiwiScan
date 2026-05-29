@@ -7,20 +7,60 @@ from typing import Any, Dict
 from fastapi import APIRouter, HTTPException, Request
 
 from ..smart_scheduler import SmartScheduler
+from ..targeted_service_registry import resolve_targeted_service
 
 
-def make_router(*, smart_scheduler: SmartScheduler) -> APIRouter:
+def make_router(*, mgr: object, smart_scheduler: object) -> APIRouter:
     router = APIRouter()
 
+    def _resolved_runtime_target(*, kiwi_key: str | None = None) -> dict[str, object]:
+        resolved_target = None
+        resolve_runtime_target = getattr(mgr, "resolve_runtime_target", None)
+        if callable(resolve_runtime_target):
+            try:
+                resolved_target = resolve_runtime_target(kiwi_key=kiwi_key)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+        with mgr.lock:  # type: ignore[attr-defined]
+            if resolved_target is None:
+                host = str(mgr.host)  # type: ignore[attr-defined]
+                port = int(mgr.port)  # type: ignore[attr-defined]
+                return {
+                    "host": host,
+                    "port": port,
+                    "kiwi_index": None,
+                    "kiwi_key": f"{host}:{port}" if host else "",
+                }
+            return dict(resolved_target)
+
+    def _request_kiwi_key(request: Request, body: dict[str, object] | None = None) -> str | None:
+        query_key = str(request.query_params.get("kiwi_key") or "").strip()
+        if query_key:
+            return query_key
+        if isinstance(body, dict):
+            payload_key = body.get("kiwi_key")
+            if payload_key is None:
+                payload_key = body.get("kiwiKey")
+            payload_text = str(payload_key).strip() if payload_key is not None else ""
+            if payload_text:
+                return payload_text
+        return None
+
+    def _scheduler_for_request(request: Request, body: dict[str, object] | None = None) -> SmartScheduler:
+        target = _resolved_runtime_target(kiwi_key=_request_kiwi_key(request, body))
+        return resolve_targeted_service(smart_scheduler, target=target)  # type: ignore[return-value]
+
     @router.get("/smart_scheduler/status")
-    async def get_status() -> Dict[str, Any]:
+    async def get_status(request: Request) -> Dict[str, Any]:
         """Return current FT8 band conditions and SmartScheduler health."""
-        return smart_scheduler.get_status()
+        scheduler = _scheduler_for_request(request)
+        return scheduler.get_status()
 
     @router.get("/smart_scheduler/scan_config")
-    async def get_scan_config() -> Dict[str, Any]:
+    async def get_scan_config(request: Request) -> Dict[str, Any]:
         """Return the current band allowlist configuration."""
-        return smart_scheduler.get_scan_config()
+        scheduler = _scheduler_for_request(request)
+        return scheduler.get_scan_config()
 
     @router.put("/smart_scheduler/scan_config")
     async def put_scan_config(request: Request) -> Dict[str, Any]:
@@ -32,8 +72,9 @@ def make_router(*, smart_scheduler: SmartScheduler) -> APIRouter:
         allowed_bands = body.get("allowed_bands")
         if not isinstance(allowed_bands, list):
             raise HTTPException(status_code=400, detail="'allowed_bands' must be a list")
-        smart_scheduler.set_scan_config(allowed_bands)
-        return {"ok": True, "allowed_bands": smart_scheduler.get_scan_config()["allowed_bands"]}
+        scheduler = _scheduler_for_request(request, body)
+        scheduler.set_scan_config(allowed_bands)
+        return {"ok": True, "allowed_bands": scheduler.get_scan_config()["allowed_bands"]}
 
     @router.post("/smart_scheduler/band_override")
     async def set_band_override(request: Request) -> Dict[str, Any]:
@@ -52,22 +93,25 @@ def make_router(*, smart_scheduler: SmartScheduler) -> APIRouter:
                 status_code=400,
                 detail="'condition' must be OPEN, MARGINAL, or CLOSED",
             )
-        smart_scheduler.set_override(band, condition)
+        scheduler = _scheduler_for_request(request, body)
+        scheduler.set_override(band, condition)
         return {"ok": True, "band": band, "condition": condition}
 
     @router.delete("/smart_scheduler/band_override/{band}")
-    async def clear_band_override(band: str) -> Dict[str, Any]:
+    async def clear_band_override(band: str, request: Request) -> Dict[str, Any]:
         """Remove a user-pinned condition so the band reverts to empirical / seasonal."""
         band = str(band or "").strip()
         if not band:
             raise HTTPException(status_code=400, detail="'band' path parameter is required")
-        smart_scheduler.clear_override(band)
+        scheduler = _scheduler_for_request(request)
+        scheduler.clear_override(band)
         return {"ok": True, "band": band}
 
     @router.post("/smart_scheduler/force_check")
-    async def force_check() -> Dict[str, Any]:
+    async def force_check(request: Request) -> Dict[str, Any]:
         """Trigger an immediate condition check outside the normal schedule."""
-        smart_scheduler.force_check()
+        scheduler = _scheduler_for_request(request)
+        scheduler.force_check()
         return {"ok": True}
 
     return router
