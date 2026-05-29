@@ -7355,6 +7355,16 @@
         let activeConfiguredKiwiSwitchTargetIndex = null;
         let latestDiscoveredKiwiEntries = [];
         let latestDiscoverySource = "";
+        let activeReceiverAudioTarget = null;
+        let activeReceiverAudioSelectedMode = "";
+        let activeReceiverAudioVolume = 0.85;
+        let activeReceiverAudioMuted = false;
+        let activeReceiverAudioContext = null;
+        let activeReceiverAudioGainNode = null;
+        let activeReceiverAudioAbortController = null;
+        let activeReceiverAudioStreamId = "";
+        let activeReceiverAudioPlaybackCursor = 0;
+        let activeReceiverAudioStreamToken = 0;
         let pendingConfigAutosave = false;
         let pendingAutomationAutosave = false;
         let lastBandActivitySampleMs = Date.now();
@@ -15207,19 +15217,27 @@ ${passwordMarkup.actionsHtml}
                 ...(latestAutomationSettings && typeof latestAutomationSettings === "object" ? latestAutomationSettings : {}),
                 kiwiProfiles: capturedKiwiProfiles,
             };
-            await applyActiveKiwiUiProfile(nextProfile, { applyRuntime: false });
-            setConfigStatus(`Now showing Kiwi ${nextDisplayIndex + 1} data (${receiversModeStatusLabel(nextProfile.receiversMode)}).`);
-            renderTopbarKiwiSelector(entries);
-            syncTopbarMenuState();
-            resetDecodeDashboardState();
-            await refresh();
-            const queuedIndex = pendingActiveConfiguredKiwiIndex;
-            pendingActiveConfiguredKiwiIndex = null;
-            if (Number.isFinite(queuedIndex) && queuedIndex !== activeConfiguredKiwiIndex) {
-                return await saveActiveConfiguredKiwiSelection(queuedIndex);
+            try {
+                // Selector changes should only switch the dashboard data context.
+                // Runtime receiver mode transitions are triggered by explicit controls.
+                await applyActiveKiwiUiProfile(nextProfile, { applyRuntime: false });
+                setConfigStatus(`Now viewing Kiwi ${nextDisplayIndex + 1} data (${receiversModeStatusLabel(nextProfile.receiversMode)}).`);
+                renderTopbarKiwiSelector(entries);
+                syncTopbarMenuState();
+                resetDecodeDashboardState();
+                await refresh();
+                const queuedIndex = pendingActiveConfiguredKiwiIndex;
+                pendingActiveConfiguredKiwiIndex = null;
+                if (Number.isFinite(queuedIndex) && queuedIndex !== activeConfiguredKiwiIndex) {
+                    return await saveActiveConfiguredKiwiSelection(queuedIndex);
+                }
+                return true;
+            } catch (err) {
+                setConfigStatus(`switch failed: ${String((err && err.message) || err)}`);
+                return false;
+            } finally {
+                activeConfiguredKiwiSwitchTargetIndex = null;
             }
-            activeConfiguredKiwiSwitchTargetIndex = null;
-            return true;
         }
 
         async function saveConfigSection(options = {}) {
