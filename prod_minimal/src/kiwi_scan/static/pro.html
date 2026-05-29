@@ -16126,7 +16126,12 @@ ${passwordMarkup.actionsHtml}
                 : (modeOrEnabled ? "auto" : "manual");
             const transitioningFromScan = !!(latestReceiverScanStatus && latestReceiverScanStatus.mode_active);
             setAutomationStatus(targetMode === "manual" ? "disabling receiver automation..." : `enabling ${receiversModeStatusLabel(targetMode).toLowerCase()}...`);
-            setReceiversBusy(true, targetMode === "semi" ? "Clearing RX0/RX1 assignments..." : undefined);
+            const entries = collectConfiguredKiwiInputs({ includeBlank: true });
+            const activeIndex = normalizeActiveConfiguredKiwiIndex(activeConfiguredKiwiIndex, entries);
+            const busyLabel = targetMode === "semi"
+                ? "Clearing RX0/RX1 assignments..."
+                : `Gathering Data from Kiwi ${activeIndex + 1}...`;
+            setReceiversBusy(true, busyLabel);
             try {
                 // Persist the mode selection first, but suppress the loop wake here.
                 // Each explicit mode transition below performs its own single apply.
