@@ -2255,6 +2255,8 @@ class ReceiverManager:
             current["last_event_unix"] = float(now)
             if event_type in {"decoder_output", "decode"}:
                 current["last_decoder_output_unix"] = float(now)
+                if current.get("first_decoder_output_unix") is None:
+                    current["first_decoder_output_unix"] = float(now)
             if event_type == "decode":
                 current["last_decode_unix"] = float(now)
                 current["decode_total"] = int(current.get("decode_total", 0) or 0) + 1
@@ -3669,8 +3671,10 @@ class ReceiverManager:
                     return None
 
             last_decoder_output_unix = _to_float(activity.get("last_decoder_output_unix"))
+            first_decoder_output_unix = _to_float(activity.get("first_decoder_output_unix"))
             last_decode_unix = _to_float(activity.get("last_decode_unix"))
             decoder_output_age_s = max(0.0, now - last_decoder_output_unix) if last_decoder_output_unix is not None else None
+            decoder_age_s = max(0.0, now - first_decoder_output_unix) if first_decoder_output_unix is not None else None
             decode_age_s = max(0.0, now - last_decode_unix) if last_decode_unix is not None else None
             snr_last_db = _to_float(activity.get("snr_last_db"))
             snr_avg_db = _to_float(activity.get("snr_avg_db"))
@@ -3855,12 +3859,21 @@ class ReceiverManager:
                     health_state = "silent"
                     if not last_reason:
                         last_reason = "silent_no_decodes"
+                elif visible_on_kiwi and decode_total == 0 and decoder_age_s is not None and decoder_age_s > silent_threshold_s:
+                    health_state = "silent"
+                    if not last_reason:
+                        last_reason = "silent_no_decodes"
 
             no_decode_warn = False
             if is_digital and assignment is not None and health_state not in {"stalled", "silent"}:
                 warn_after_s = self._no_decode_warning_seconds()
                 heartbeat_ok = (decoder_output_age_s is not None) and (decoder_output_age_s <= stall_threshold_s)
-                no_decode_warn = bool(visible_on_kiwi and heartbeat_ok and decode_age_s is not None and decode_age_s >= warn_after_s)
+                no_decode_warn = bool(
+                    visible_on_kiwi and heartbeat_ok and (
+                        (decode_age_s is not None and decode_age_s >= warn_after_s)
+                        or (decode_total == 0 and decoder_age_s is not None and decoder_age_s >= warn_after_s)
+                    )
+                )
 
             is_unstable = (assignment is not None) and (
                 consecutive >= 3 or backoff_s >= 8.0 or (is_ssb and not is_active) or health_state == "stalled"
