@@ -6028,7 +6028,8 @@
                             <span class="topbar-kiwi-label">KIWI 2</span>
                             <span class="topbar-kiwi-meta">UNSET</span>
                         </button>
-                        <button class="topbar-kiwi-btn" type="button" data-kiwi-select-index="2" aria-pressed="false">
+                        <button class="topbar-kiwi-btn" type="button" data-kiwi-select-index="2" aria-pressed="false"
+                            disabled aria-disabled="true" title="Kiwi 3 selection is temporarily disabled">
                             <span class="topbar-kiwi-label">KIWI 3</span>
                             <span class="topbar-kiwi-meta">UNSET</span>
                         </button>
@@ -7312,6 +7313,8 @@
         let latestPersistedConfiguredKiwiEntries = [];
         let activeConfiguredKiwiIndex = 0;
         let activeConfiguredKiwiSaveInFlight = false;
+        let pendingActiveConfiguredKiwiIndex = null;
+        let activeConfiguredKiwiSwitchTargetIndex = null;
         let latestDiscoveredKiwiEntries = [];
         let latestDiscoverySource = "";
         let pendingConfigAutosave = false;
@@ -10344,6 +10347,7 @@
         function renderTopbarKiwiSelector(entries = collectConfiguredKiwiInputs({ includeBlank: true })) {
             const selectorEl = byId("topbar-kiwi-selector");
             if (!selectorEl) return;
+            const KIWI3_SELECT_DISABLED_INDEX = 2;
             const safeEntries = Array.isArray(entries) && entries.length ? entries : [buildDefaultConfiguredKiwiEntry()];
             const fallbackDiscovered = normalizeDiscoveredKiwiEntries(
                 Array.isArray(latestSystemInfo && latestSystemInfo.kiwi && latestSystemInfo.kiwi.discovered_kiwis)
@@ -10370,14 +10374,19 @@
                 const displayIndex = Number.isFinite(mappedDisplayIndex) ? mappedDisplayIndex : fallbackDisplayIndex;
                 const labelEl = button.querySelector(".topbar-kiwi-label");
                 const metaEl = button.querySelector(".topbar-kiwi-meta");
+                const kiwiSelectionTemporarilyDisabled = index === KIWI3_SELECT_DISABLED_INDEX;
                 button.hidden = !configured;
                 button.style.order = configured && Number.isFinite(displayIndex) ? String(displayIndex) : "";
                 if (labelEl) labelEl.textContent = `KIWI ${Number.isFinite(displayIndex) ? displayIndex : "?"}`;
                 if (metaEl) metaEl.textContent = configured ? (isActive ? "ACTIVE" : "READY") : "UNSET";
                 button.setAttribute("aria-pressed", isActive ? "true" : "false");
-                button.disabled = activeConfiguredKiwiSaveInFlight || !configured;
+                button.disabled = !configured || kiwiSelectionTemporarilyDisabled;
                 if (configured) {
-                    button.title = `Use KiwiSDR #${Number.isFinite(displayIndex) ? displayIndex : (index + 1)} (${entry.host}:${entry.port || KIWI_SETTINGS_DEFAULTS.port})`;
+                    if (kiwiSelectionTemporarilyDisabled) {
+                        button.title = "Kiwi 3 selection is temporarily disabled";
+                    } else {
+                        button.title = `Use KiwiSDR #${Number.isFinite(displayIndex) ? displayIndex : (index + 1)} (${entry.host}:${entry.port || KIWI_SETTINGS_DEFAULTS.port})`;
+                    }
                 } else {
                     button.title = `Configure KiwiSDR #${index + 1} in Settings`;
                 }
@@ -14444,11 +14453,22 @@ ${passwordMarkup.actionsHtml}
             overlay.hidden = !(_rxBusyManual || backgroundBusy);
         }
 
+        function activeKiwiSwitchBusyLabel(index = activeConfiguredKiwiSwitchTargetIndex) {
+            const resolvedIndex = Number.isFinite(Number(index))
+                ? Number(index)
+                : normalizeActiveConfiguredKiwiIndex(activeConfiguredKiwiIndex, collectConfiguredKiwiInputs({ includeBlank: true }));
+            return `Gathering Data from Kiwi ${resolvedIndex + 1}...`;
+        }
+
         function setReceiversBusy(busy, label) {
             _rxBusyManual = busy;
             const labelEl = byId("rx-busy-label");
             if (labelEl && label) labelEl.textContent = label;
-            else if (labelEl && busy && !label) labelEl.textContent = "Setting up Receiver Assignments !";
+            else if (labelEl && busy && !label) {
+                labelEl.textContent = Number.isFinite(Number(activeConfiguredKiwiSwitchTargetIndex))
+                    ? activeKiwiSwitchBusyLabel()
+                    : "Setting up Receiver Assignments !";
+            }
             _updateRxBusyOverlay();
         }
 
@@ -14986,7 +15006,19 @@ ${passwordMarkup.actionsHtml}
             const entries = collectConfiguredKiwiInputs({ includeBlank: true });
             const nextDisplayIndex = normalizeActiveConfiguredKiwiIndex(index, entries);
             if (nextDisplayIndex === activeConfiguredKiwiIndex && !activeConfiguredKiwiSaveInFlight) return true;
+            if (activeConfiguredKiwiSaveInFlight) {
+                activeConfiguredKiwiSwitchTargetIndex = nextDisplayIndex;
+                pendingActiveConfiguredKiwiIndex = nextDisplayIndex;
+                if (nextDisplayIndex !== activeConfiguredKiwiIndex) {
+                    activeConfiguredKiwiIndex = nextDisplayIndex;
+                    renderTopbarKiwiSelector(entries);
+                    syncTopbarMenuState();
+                }
+                setConfigStatus(activeKiwiSwitchBusyLabel(nextDisplayIndex));
+                return true;
+            }
             const previousIndex = activeConfiguredKiwiIndex;
+            activeConfiguredKiwiSwitchTargetIndex = nextDisplayIndex;
             const capturedKiwiProfiles = captureKiwiUiProfiles(latestAutomationSettings, {
                 entries,
                 index: previousIndex,
@@ -15002,10 +15034,11 @@ ${passwordMarkup.actionsHtml}
             activeConfiguredKiwiSaveInFlight = true;
             renderTopbarKiwiSelector(entries);
             syncTopbarMenuState();
-            setConfigStatus(`switching to KiwiSDR #${nextDisplayIndex + 1}...`);
+            setConfigStatus(activeKiwiSwitchBusyLabel(nextDisplayIndex));
             const ok = await saveConfiguredKiwiConfig({ autosave: true });
             activeConfiguredKiwiSaveInFlight = false;
             if (!ok) {
+                activeConfiguredKiwiSwitchTargetIndex = null;
                 activeConfiguredKiwiIndex = previousIndex;
                 renderTopbarKiwiSelector(entries);
                 syncTopbarMenuState();
@@ -15016,11 +15049,17 @@ ${passwordMarkup.actionsHtml}
                 kiwiProfiles: capturedKiwiProfiles,
             };
             await applyActiveKiwiUiProfile(nextProfile, { applyRuntime: false });
-            setConfigStatus(`switched to KiwiSDR #${nextDisplayIndex + 1} with ${receiversModeStatusLabel(nextProfile.receiversMode)}`);
+            setConfigStatus(`Now showing Kiwi ${nextDisplayIndex + 1} data (${receiversModeStatusLabel(nextProfile.receiversMode)}).`);
             renderTopbarKiwiSelector(entries);
             syncTopbarMenuState();
             resetDecodeDashboardState();
             await refresh();
+            const queuedIndex = pendingActiveConfiguredKiwiIndex;
+            pendingActiveConfiguredKiwiIndex = null;
+            if (Number.isFinite(queuedIndex) && queuedIndex !== activeConfiguredKiwiIndex) {
+                return await saveActiveConfiguredKiwiSelection(queuedIndex);
+            }
+            activeConfiguredKiwiSwitchTargetIndex = null;
             return true;
         }
 
@@ -17489,7 +17528,7 @@ ${passwordMarkup.actionsHtml}
                         : null;
                     if (!target) return;
                     const requestedIndex = Number(target.getAttribute("data-kiwi-select-index"));
-                    if (!Number.isFinite(requestedIndex) || target.disabled) return;
+                    if (!Number.isFinite(requestedIndex) || requestedIndex === 2 || target.disabled) return;
                     await saveActiveConfiguredKiwiSelection(requestedIndex);
                 });
                 kiwiSelectorEl.dataset.bound = "1";
@@ -18949,7 +18988,9 @@ ${passwordMarkup.actionsHtml}
                 _rxBusyAutoKick = wasAutoKickRecent;
                 const labelEl = byId("rx-busy-label");
                 if (labelEl && !_rxBusyManual && !_rxBusyMismatch) {
-                    labelEl.textContent = unstable > 0 ? "Stabilizing\u2026" : (wasAutoKickRecent ? "Reassigning\u2026" : "Setting up Receiver Assignments !");
+                    labelEl.textContent = Number.isFinite(Number(activeConfiguredKiwiSwitchTargetIndex))
+                        ? activeKiwiSwitchBusyLabel()
+                        : (unstable > 0 ? "Stabilizing\u2026" : (wasAutoKickRecent ? "Reassigning\u2026" : "Setting up Receiver Assignments !"));
                 }
                 _updateRxBusyOverlay();
             }
@@ -19160,7 +19201,9 @@ ${passwordMarkup.actionsHtml}
                 _rxBusyMismatch = hasMismatch;
                 const labelEl = byId("rx-busy-label");
                 if (labelEl && !_rxBusyManual && !_rxBusyAutoKick) {
-                    labelEl.textContent = hasMismatch ? "Assigning Receivers." : "Setting up Receiver Assignments !";
+                    labelEl.textContent = Number.isFinite(Number(activeConfiguredKiwiSwitchTargetIndex))
+                        ? activeKiwiSwitchBusyLabel()
+                        : (hasMismatch ? "Assigning Receivers." : "Setting up Receiver Assignments !");
                 }
                 _updateRxBusyOverlay();
             }
@@ -19174,9 +19217,9 @@ ${passwordMarkup.actionsHtml}
             let recentDecodeTotal = 0;
             for (const item of recentDecodeItems) {
                 if (!item || typeof item !== "object") continue;
-                if (activeKiwiKey && String(item.kiwi_key || "").trim() !== activeKiwiKey) continue;
                 const band = String(item.band || "").trim();
                 if (!band || band.toLowerCase() === "control") continue;
+                if (activeKiwiKey && String(item.kiwi_key || "").trim() !== activeKiwiKey) continue;
                 recentDecodeTotal += 1;
                 counts[band] = Number(counts[band] || 0) + 1;
             }

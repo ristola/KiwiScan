@@ -99,6 +99,35 @@ class AutoSetLoop:
         return root / "outputs" / "automation_settings.json"
 
     @staticmethod
+    def _configured_kiwi_keys_from_config() -> set[str] | None:
+        root = Path(__file__).resolve().parents[2]
+        path = root / "outputs" / "config.json"
+        if not path.exists():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        raw_kiwis = data.get("kiwisdrs") if isinstance(data, dict) else None
+        if raw_kiwis is None:
+            return None
+        if not isinstance(raw_kiwis, list):
+            return set()
+        keys: set[str] = set()
+        for entry in raw_kiwis:
+            if not isinstance(entry, dict):
+                continue
+            host = self_host = str(entry.get("host") or "").strip()
+            if not host:
+                continue
+            try:
+                port = int(entry.get("port") or 8073)
+            except Exception:
+                port = 8073
+            keys.add(f"{self_host}:{port}")
+        return keys
+
+    @staticmethod
     def _safe_bool(value: object, default: bool = False) -> bool:
         if isinstance(value, bool):
             return value
@@ -189,16 +218,19 @@ class AutoSetLoop:
     def _target_kiwi_keys(self, settings: Dict[str, Any]) -> list[str]:
         keys: list[str] = []
         seen: set[str] = set()
+        configured_keys = self._configured_kiwi_keys_from_config()
         kiwi_modes = settings.get("kiwiModes")
         if isinstance(kiwi_modes, dict):
             for raw_key in kiwi_modes.keys():
                 key = self._normalize_kiwi_key(raw_key)
                 if not key or key in seen:
                     continue
+                if configured_keys is not None and key not in configured_keys:
+                    continue
                 keys.append(key)
                 seen.add(key)
         active_key = self._normalize_kiwi_key(settings.get("activeKiwiKey"))
-        if active_key and active_key not in seen:
+        if active_key and active_key not in seen and (configured_keys is None or active_key in configured_keys):
             keys.append(active_key)
             seen.add(active_key)
         if not keys:
@@ -461,7 +493,7 @@ class AutoSetLoop:
             try:
                 ranked_bands = smart_scheduler.rank_roaming_bands(
                     available_bands=list(roaming_pool),
-                    current_roaming=list(current_roaming),
+                    current_roaming=None,
                 )
                 selected_bands = [b for b in ranked_bands if b in band_modes][:num_roaming_slots]
             except Exception:
@@ -888,8 +920,8 @@ class AutoSetLoop:
 
         if receivers_mode == "manual":
             if not manual_mode_cleared:
-                logger.info("Auto-set loop: Manual Mode detected for %s — parking loop (not interfering with manual assignments)", target_label)
-                # Do NOT call _post_auto_set here - manual mode means user is in control, don't interfere
+                logger.info("Auto-set loop: Manual Mode detected for %s — clearing current non-manual receivers once, then parking loop", target_label)
+                self.clear_receivers_for_manual_mode(settings, kiwi_key=target_key)
             with self._state_lock:
                 self._reset_kiwi_state_locked(target_key, manual_mode_cleared=True)
                 self._sync_selected_kiwi_state_locked(settings)

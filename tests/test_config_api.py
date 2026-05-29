@@ -60,10 +60,22 @@ class _MgrStub:
                 if not host or not (1 <= port <= 65535):
                     continue
                 entry: dict[str, object] = {"host": host, "port": port}
-                for key in ("name", "grid", "sdr_hw", "sw_version", "loc"):
+                for key in ("name", "grid", "sdr_hw", "sw_version", "loc", "known_source"):
                     value = str(item.get(key) or "").strip()
                     if value:
                         entry[key] = value
+                for key in ("latitude", "longitude"):
+                    try:
+                        value = float(item.get(key))
+                    except Exception:
+                        continue
+                    entry[key] = value
+                try:
+                    gps_good = int(item.get("gps_good"))
+                except Exception:
+                    gps_good = None
+                if gps_good is not None:
+                    entry["gps_good"] = gps_good
                 out.append(entry)
         self.discovered_kiwis = out
         self.discovery_source = str(discovery.get("source") or "").strip()
@@ -265,7 +277,58 @@ def test_post_config_persists_discovered_kiwis(monkeypatch) -> None:
         {"host": "10.13.1.235", "port": 8073, "sdr_hw": "KiwiSDR 1"},
         {"host": "10.13.1.236", "port": 8074, "sdr_hw": "KiwiSDR 2"},
     ]
-    assert payload["discovery_source"] == "lan_scan"
+
+
+def test_get_config_enriches_discovered_only_remote_kiwi_status(monkeypatch) -> None:
+    mgr = _MgrStub()
+    mgr.discovered_kiwis = [
+        {
+            "host": "10.123.73.61",
+            "port": 8073,
+            "known_source": "configured",
+            "name": "Remote Kiwi",
+        }
+    ]
+    mgr.discovery_source = "configured"
+
+    app = FastAPI()
+    app.include_router(config_api.make_router(mgr=mgr, waterholes={"20m": 14074.0}))
+    client = TestClient(app)
+
+    monkeypatch.setattr(
+        config_api,
+        "read_kiwi_status",
+        lambda host, port, timeout_s: {
+            "name": "Remote Kiwi Live",
+            "grid": "FM08",
+            "gps_good": 1,
+            "sdr_hw": "KiwiSDR Remote",
+            "sw_version": "KiwiSDR_v1.999",
+            "loc": "Remote Site",
+        } if host == "10.123.73.61" and port == 8073 else {},
+    )
+    monkeypatch.setattr(config_api, "extract_gps_lat_lon", lambda status: (38.1, -78.7))
+
+    response = client.get("/config")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["discovered_kiwis"] == [
+        {
+            "host": "10.123.73.61",
+            "port": 8073,
+            "known_source": "configured",
+            "name": "Remote Kiwi Live",
+            "grid": "FM08",
+            "gps_good": "1",
+            "sdr_hw": "KiwiSDR Remote",
+            "sw_version": "KiwiSDR_v1.999",
+            "loc": "Remote Site",
+            "latitude": 38.1,
+            "longitude": -78.7,
+        }
+    ]
+    assert payload["discovery_source"] == "configured"
 
 
 def test_post_config_persists_configured_kiwis(monkeypatch) -> None:
@@ -380,6 +443,63 @@ def test_post_config_preserves_existing_primary_order_when_request_reorders_kiwi
     ]
     assert payload["host"] == "10.13.1.235"
     assert payload["port"] == 8073
+
+
+def test_post_config_prioritizes_first_two_my_kiwisdr_entries(monkeypatch) -> None:
+    mgr = _MgrStub()
+    mgr.discovered_kiwis = [
+        {
+            "host": "10.13.1.235",
+            "port": 8073,
+            "known_source": "my.kiwisdr.com",
+            "known_order": 0,
+        },
+        {
+            "host": "10.13.1.236",
+            "port": 8073,
+            "known_source": "my.kiwisdr.com",
+            "known_order": 1,
+        },
+        {
+            "host": "10.123.73.61",
+            "port": 8073,
+            "known_source": "configured",
+        },
+    ]
+    mgr.discovery_source = "configured"
+    mgr.set_configured_kiwis(
+        [
+            {"host": "10.123.73.61", "port": 8073},
+            {"host": "10.13.1.236", "port": 8073},
+            {"host": "10.13.1.235", "port": 8073},
+        ],
+        save=False,
+    )
+
+    app = FastAPI()
+    app.include_router(config_api.make_router(mgr=mgr, waterholes={"20m": 14074.0}))
+    client = TestClient(app)
+
+    monkeypatch.setattr(config_api, "read_kiwi_status", lambda host, port, timeout_s: {})
+
+    response = client.post(
+        "/config",
+        json={
+            "kiwisdrs": [
+                {"host": "10.123.73.61", "port": 8073},
+                {"host": "10.13.1.236", "port": 8073},
+                {"host": "10.13.1.235", "port": 8073},
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = client.get("/config").json()
+    assert payload["kiwisdrs"] == [
+        {"host": "10.13.1.235", "port": 8073},
+        {"host": "10.13.1.236", "port": 8073},
+        {"host": "10.123.73.61", "port": 8073},
+    ]
 
 
 def test_post_config_reapplies_receivers_when_endpoint_changes(monkeypatch) -> None:

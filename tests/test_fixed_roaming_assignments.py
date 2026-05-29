@@ -134,16 +134,16 @@ def test_fixed_roaming_payload_semi_mode_keeps_fixed_receivers_only() -> None:
     assert "band_modes" not in payload
 
 
-def test_fixed_roaming_payload_passes_current_roaming_to_smart_scheduler(monkeypatch) -> None:
+def test_fixed_roaming_payload_uses_shared_ranking_inputs_for_smart_scheduler(monkeypatch) -> None:
     loop = AutoSetLoop()
     monkeypatch.setattr(loop, "_fixed_health_state", lambda kiwi_key=None: ("healthy", []))
 
     class _SmartSchedulerStub:
         def __init__(self) -> None:
-            self.calls: list[tuple[list[str], list[str]]] = []
+            self.calls: list[tuple[list[str], list[str] | None]] = []
 
-        def rank_roaming_bands(self, available_bands: list[str], current_roaming: list[str]) -> list[str]:
-            self.calls.append((list(available_bands), list(current_roaming)))
+        def rank_roaming_bands(self, available_bands: list[str], current_roaming: list[str] | None) -> list[str]:
+            self.calls.append((list(available_bands), None if current_roaming is None else list(current_roaming)))
             return ["15m", "12m", "10m"]
 
     scheduler = _SmartSchedulerStub()
@@ -152,7 +152,7 @@ def test_fixed_roaming_payload_passes_current_roaming_to_smart_scheduler(monkeyp
 
     payload = loop._build_fixed_roaming_payload({}, "day")
 
-    assert scheduler.calls == [(["10m", "12m", "15m"], ["10m", "12m"])]
+    assert scheduler.calls == [(["10m", "12m", "15m"], None)]
     assert payload.get("selected_bands") == ["15m", "12m"]
 
 
@@ -162,10 +162,10 @@ def test_fixed_roaming_payload_filters_non_roaming_current_bands(monkeypatch) ->
 
     class _SmartSchedulerStub:
         def __init__(self) -> None:
-            self.calls: list[tuple[list[str], list[str]]] = []
+            self.calls: list[tuple[list[str], list[str] | None]] = []
 
-        def rank_roaming_bands(self, available_bands: list[str], current_roaming: list[str]) -> list[str]:
-            self.calls.append((list(available_bands), list(current_roaming)))
+        def rank_roaming_bands(self, available_bands: list[str], current_roaming: list[str] | None) -> list[str]:
+            self.calls.append((list(available_bands), None if current_roaming is None else list(current_roaming)))
             return ["12m", "10m", "15m"]
 
     scheduler = _SmartSchedulerStub()
@@ -174,7 +174,7 @@ def test_fixed_roaming_payload_filters_non_roaming_current_bands(monkeypatch) ->
 
     payload = loop._build_fixed_roaming_payload({}, "day")
 
-    assert scheduler.calls == [(["10m", "12m", "15m"], ["12m"])]
+    assert scheduler.calls == [(["10m", "12m", "15m"], None)]
     assert payload.get("selected_bands") == ["12m", "10m"]
 
 
@@ -184,13 +184,13 @@ def test_fixed_roaming_payload_excludes_closed_bands(monkeypatch) -> None:
 
     class _SmartSchedulerStub:
         def __init__(self) -> None:
-            self.calls: list[tuple[list[str], list[str]]] = []
+            self.calls: list[tuple[list[str], list[str] | None]] = []
 
         def get_closed_bands(self, _mode: str = "ft8") -> set[str]:
             return {"10m"}
 
-        def rank_roaming_bands(self, available_bands: list[str], current_roaming: list[str]) -> list[str]:
-            self.calls.append((list(available_bands), list(current_roaming)))
+        def rank_roaming_bands(self, available_bands: list[str], current_roaming: list[str] | None) -> list[str]:
+            self.calls.append((list(available_bands), None if current_roaming is None else list(current_roaming)))
             return ["15m", "12m"]
 
     scheduler = _SmartSchedulerStub()
@@ -199,7 +199,7 @@ def test_fixed_roaming_payload_excludes_closed_bands(monkeypatch) -> None:
 
     payload = loop._build_fixed_roaming_payload({}, "day")
 
-    assert scheduler.calls == [(["12m", "15m"], ["10m", "12m"])]
+    assert scheduler.calls == [(["12m", "15m"], None)]
     assert payload.get("selected_bands") == ["15m", "12m"]
     assert payload.get("band_modes") == {"12m": "FT4 / FT8", "15m": "FT8"}
     assert payload.get("closed_bands") == ["10m"]
@@ -211,13 +211,13 @@ def test_fixed_roaming_payload_falls_back_when_closed_bands_leave_one_roaming_sl
 
     class _SmartSchedulerStub:
         def __init__(self) -> None:
-            self.calls: list[tuple[list[str], list[str]]] = []
+            self.calls: list[tuple[list[str], list[str] | None]] = []
 
         def get_closed_bands(self, _mode: str = "ft8") -> set[str]:
             return {"10m", "12m"}
 
-        def rank_roaming_bands(self, available_bands: list[str], current_roaming: list[str]) -> list[str]:
-            self.calls.append((list(available_bands), list(current_roaming)))
+        def rank_roaming_bands(self, available_bands: list[str], current_roaming: list[str] | None) -> list[str]:
+            self.calls.append((list(available_bands), None if current_roaming is None else list(current_roaming)))
             return ["15m"]
 
     scheduler = _SmartSchedulerStub()
@@ -226,10 +226,40 @@ def test_fixed_roaming_payload_falls_back_when_closed_bands_leave_one_roaming_sl
 
     payload = loop._build_fixed_roaming_payload({}, "day")
 
-    assert scheduler.calls == [(["15m"], ["12m", "15m"])]
+    assert scheduler.calls == [(["15m"], None)]
     assert payload.get("selected_bands") == ["15m", "10m"]
     assert payload.get("band_modes") == {"15m": "FT8", "10m": "FT8"}
     assert payload.get("closed_bands") == ["10m", "12m"]
+
+
+def test_fixed_roaming_payload_matches_across_kiwis_with_different_current_roaming(monkeypatch) -> None:
+    loop = AutoSetLoop()
+    monkeypatch.setattr(loop, "_fixed_health_state", lambda kiwi_key=None: ("healthy", []))
+
+    class _SmartSchedulerStub:
+        def __init__(self) -> None:
+            self.calls: list[tuple[list[str], list[str] | None]] = []
+
+        def rank_roaming_bands(self, available_bands: list[str], current_roaming: list[str] | None) -> list[str]:
+            self.calls.append((list(available_bands), None if current_roaming is None else list(current_roaming)))
+            return ["60m", "80m", "160m"]
+
+    scheduler = _SmartSchedulerStub()
+    loop.set_smart_scheduler(scheduler)
+
+    def _current_roaming(kiwi_key=None):
+        if kiwi_key == "kiwi-1":
+            return ["60m", "80m"]
+        return ["60m", "160m"]
+
+    monkeypatch.setattr(loop, "_current_roaming_bands", _current_roaming)
+
+    payload_1 = loop._build_fixed_roaming_payload({}, "night", kiwi_key="kiwi-1")
+    payload_2 = loop._build_fixed_roaming_payload({}, "night", kiwi_key="kiwi-2")
+
+    assert scheduler.calls == [(["60m", "80m", "160m"], None), (["60m", "80m", "160m"], None)]
+    assert payload_1.get("selected_bands") == ["60m", "80m"]
+    assert payload_2.get("selected_bands") == ["60m", "80m"]
 
 
 def test_fixed_mode_only_uses_rx0_rx1_for_roaming(monkeypatch) -> None:

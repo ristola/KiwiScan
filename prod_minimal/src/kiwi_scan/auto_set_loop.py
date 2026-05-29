@@ -373,7 +373,7 @@ class AutoSetLoop:
             try:
                 ranked_bands = smart_scheduler.rank_roaming_bands(
                     available_bands=list(roaming_pool),
-                    current_roaming=list(current_roaming),
+                    current_roaming=None,
                 )
                 selected_bands = [b for b in ranked_bands if b in band_modes][:num_roaming_slots]
             except Exception:
@@ -846,8 +846,8 @@ class AutoSetLoop:
             # whether to park the loop.  "manual" mode means user is in control - don't interfere.
             if receivers_mode == "manual":
                 if not self._manual_mode_cleared:
-                    logger.info("Auto-set loop: Manual Mode detected — parking loop (not interfering with manual assignments)")
-                    # Do NOT call _post_auto_set here - manual mode means user is in control, don't interfere
+                    logger.info("Auto-set loop: Manual Mode detected — clearing current non-manual receivers once, then parking loop")
+                    self.clear_receivers_for_manual_mode(settings, kiwi_key=current_kiwi_key)
                     self._manual_mode_cleared = True
                 self._did_startup_apply = False
                 self._last_schedule_key = None

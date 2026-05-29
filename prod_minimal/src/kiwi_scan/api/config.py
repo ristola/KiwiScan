@@ -84,7 +84,72 @@ def _normalize_configured_kiwi_entry(entry: object) -> dict[str, object] | None:
     return normalized
 
 
-def _preserve_configured_kiwi_order(requested: object, existing: object) -> list[dict[str, object]] | object:
+def _prioritize_my_kiwisdr_primary_slots(
+    ordered_entries: list[dict[str, object]],
+    discovered: object,
+) -> list[dict[str, object]]:
+    if not ordered_entries or not isinstance(discovered, list):
+        return ordered_entries
+
+    entry_by_key = {
+        (str(entry["host"]), int(entry["port"])): entry
+        for entry in ordered_entries
+    }
+
+    my_candidates: list[tuple[int, tuple[str, int]]] = []
+    seen: set[tuple[str, int]] = set()
+    for item in discovered:
+        if not isinstance(item, dict):
+            continue
+        host = _normalize_kiwi_host(item.get("host"))
+        try:
+            port = int(item.get("port") or 0)
+        except Exception:
+            port = 0
+        if _is_unconfigured_kiwi_host(host) or not (1 <= port <= 65535):
+            continue
+        source = str(item.get("known_source") or "").strip().lower()
+        if "my.kiwisdr.com" not in source:
+            continue
+        try:
+            known_order = int(item.get("known_order"))
+        except Exception:
+            continue
+        key = (host, port)
+        if key in seen:
+            continue
+        seen.add(key)
+        my_candidates.append((known_order, key))
+
+    if not my_candidates:
+        return ordered_entries
+
+    my_candidates.sort(key=lambda item: item[0])
+    primary_keys: list[tuple[str, int]] = []
+    for _, key in my_candidates:
+        if key in entry_by_key and key not in primary_keys:
+            primary_keys.append(key)
+        if len(primary_keys) >= 2:
+            break
+
+    if not primary_keys:
+        return ordered_entries
+
+    prioritized = [dict(entry_by_key[key]) for key in primary_keys]
+    for entry in ordered_entries:
+        key = (str(entry["host"]), int(entry["port"]))
+        if key in primary_keys:
+            continue
+        prioritized.append(dict(entry))
+    return prioritized
+
+
+def _preserve_configured_kiwi_order(
+    requested: object,
+    existing: object,
+    *,
+    discovered: object = None,
+) -> list[dict[str, object]] | object:
     if not isinstance(requested, list):
         return requested
     requested_entries = [
@@ -93,7 +158,7 @@ def _preserve_configured_kiwi_order(requested: object, existing: object) -> list
         if normalized is not None
     ]
     if not isinstance(existing, list) or not existing:
-        return requested_entries
+        return _prioritize_my_kiwisdr_primary_slots(requested_entries, discovered)
     existing_entries = [
         normalized
         for normalized in (_normalize_configured_kiwi_entry(item) for item in existing)
@@ -110,8 +175,9 @@ def _preserve_configured_kiwi_order(requested: object, existing: object) -> list
         for entry in existing_entries
     ]
     if len(requested_by_key) != len(requested_entries) or set(requested_by_key) != set(existing_keys):
-        return requested_entries
-    return [dict(requested_by_key[key]) for key in existing_keys]
+        return _prioritize_my_kiwisdr_primary_slots(requested_entries, discovered)
+    preserved = [dict(requested_by_key[key]) for key in existing_keys]
+    return _prioritize_my_kiwisdr_primary_slots(preserved, discovered)
 
 
 def _filter_discovered_kiwis_to_configured(discovered: object, configured: object) -> list[dict[str, object]]:
@@ -147,6 +213,29 @@ def _augment_discovered_kiwis_with_status(discovered: object, configured: object
             continue
         by_key[(host, port)] = index
 
+    for index, item in enumerate(list(out)):
+        host = _normalize_kiwi_host(item.get("host"))
+        try:
+            port = int(item.get("port") or 0)
+        except Exception:
+            port = 0
+        if _is_unconfigured_kiwi_host(host) or not (1 <= port <= 65535):
+            continue
+        merged = dict(item)
+        status = _read_kiwi_status(host, port, timeout_s=timeout_s)
+        if not status:
+            continue
+        latitude, longitude = _extract_gps_lat_lon(status)
+        if latitude is not None:
+            merged["latitude"] = latitude
+        if longitude is not None:
+            merged["longitude"] = longitude
+        for key in ("grid", "gps_good", "name", "sdr_hw", "sw_version", "loc"):
+            value = str(status.get(key) or "").strip()
+            if value:
+                merged[key] = value
+        out[index] = merged
+
     for item in configured_items:
         host = _normalize_kiwi_host(item.get("host"))
         try:
@@ -157,22 +246,27 @@ def _augment_discovered_kiwis_with_status(discovered: object, configured: object
             continue
         existing_index = by_key.get((host, port))
         merged = dict(out[existing_index]) if existing_index is not None else {}
+        for key, value in item.items():
+            if key in {"host", "port"}:
+                continue
+            merged.setdefault(str(key), value)
         merged["host"] = host
         merged["port"] = port
         known_source = str(merged.get("known_source") or "").strip()
         if existing_index is None and not known_source:
             merged["known_source"] = "configured"
-        status = _read_kiwi_status(host, port, timeout_s=timeout_s)
-        if status:
-            latitude, longitude = _extract_gps_lat_lon(status)
-            if latitude is not None:
-                merged["latitude"] = latitude
-            if longitude is not None:
-                merged["longitude"] = longitude
-            for key in ("grid", "gps_good", "name", "sdr_hw", "sw_version", "loc"):
-                value = str(status.get(key) or "").strip()
-                if value:
-                    merged[key] = value
+        if existing_index is None:
+            status = _read_kiwi_status(host, port, timeout_s=timeout_s)
+            if status:
+                latitude, longitude = _extract_gps_lat_lon(status)
+                if latitude is not None:
+                    merged["latitude"] = latitude
+                if longitude is not None:
+                    merged["longitude"] = longitude
+                for key in ("grid", "gps_good", "name", "sdr_hw", "sw_version", "loc"):
+                    value = str(status.get(key) or "").strip()
+                    if value:
+                        merged[key] = value
         if existing_index is not None:
             out[existing_index] = merged
         elif len(merged) > 2:
@@ -518,6 +612,14 @@ def make_router(
         except Exception:
             pass
 
+        configured_kiwis = _get_configured_kiwis(mgr)
+        enriched_discovery = _augment_discovered_kiwis_with_status(
+            getattr(mgr, "discovered_kiwis", []),
+            configured_kiwis,
+        )
+        discovery_source = str(getattr(mgr, "discovery_source", "") or "").strip()
+        if enriched_discovery and not discovery_source:
+            discovery_source = "status"
         kiwi_password_set = _has_kiwi_password(mgr)
         kiwi_admin_password_set = _has_kiwi_admin_password(mgr)
         with mgr.lock:  # type: ignore[attr-defined]
@@ -538,10 +640,10 @@ def make_router(
                 "rx_chan": mgr.rx_chan,
                 "host": mgr.host,
                 "port": mgr.port,
-                "kiwisdrs": _get_configured_kiwis(mgr),
+                "kiwisdrs": configured_kiwis,
                 "active_kiwi_index": _get_active_kiwi_index(mgr),
-                "discovered_kiwis": getattr(mgr, "discovered_kiwis", []),
-                "discovery_source": str(getattr(mgr, "discovery_source", "") or ""),
+                "discovered_kiwis": enriched_discovery,
+                "discovery_source": discovery_source,
                 "kiwi_password_set": kiwi_password_set,
                 "kiwi_admin_password_set": kiwi_admin_password_set,
                 "kiwi_latitude": kiwi_lat,
@@ -573,7 +675,11 @@ def make_router(
         kiwi_admin_password_changed = False
         if "kiwisdrs" in data and hasattr(mgr, "set_configured_kiwis"):
             existing_configured = _get_configured_kiwis(mgr)
-            configured_kiwis = _preserve_configured_kiwi_order(configured_kiwis, existing_configured)
+            configured_kiwis = _preserve_configured_kiwi_order(
+                configured_kiwis,
+                existing_configured,
+                discovered=(getattr(mgr, "discovered_kiwis", []) or []),
+            )
             try:
                 mgr.set_configured_kiwis(configured_kiwis, save=False)  # type: ignore[attr-defined]
             except Exception as exc:

@@ -367,6 +367,50 @@ def test_automation_settings_get_prunes_stale_keys_after_config_cleanup(monkeypa
     assert saved
 
 
+def test_automation_settings_limits_assignment_managed_keys_to_first_two_configured(monkeypatch) -> None:
+    saved: list[dict] = []
+
+    monkeypatch.setattr(
+        automation_api,
+        "_configured_kiwi_keys_from_config",
+        lambda: {"10.13.73.235:8073", "10.13.73.236:8073"},
+    )
+    monkeypatch.setattr(
+        automation_api,
+        "_load_settings",
+        lambda: {
+            "headlessEnabled": True,
+            "activeKiwiKey": "10.13.73.236:8073",
+            "receiversMode": "auto",
+        },
+    )
+    monkeypatch.setattr(automation_api, "_save_settings", lambda payload: saved.append(dict(payload)))
+
+    app = FastAPI()
+    app.include_router(automation_api.make_router())
+    client = TestClient(app)
+
+    response = client.post(
+        "/automation/settings",
+        json={
+            "activeKiwiKey": "10.123.73.61:8073",
+            "receiversMode": "manual",
+            "kiwiModes": {
+                "10.13.73.235:8073": "auto",
+                "10.13.73.236:8073": "auto",
+                "10.123.73.61:8073": "manual",
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert saved
+    assert saved[-1]["kiwiModes"] == {
+        "10.13.73.235:8073": "auto",
+        "10.13.73.236:8073": "auto",
+    }
+
+
 def test_automation_settings_strip_deprecated_legacy_keys(monkeypatch) -> None:
     saved: list[dict] = []
 
@@ -534,3 +578,25 @@ def test_auto_set_loop_manual_kiwi_does_not_block_other_auto_kiwi(monkeypatch) -
         {"enabled": True, "force": True, "kiwi_key": "kiwi-1"},
         {"enabled": False, "force": True, "kiwi_key": "kiwi-2"},
     ]
+
+
+def test_auto_set_loop_targets_only_configured_kiwis(monkeypatch) -> None:
+    loop = AutoSetLoop()
+    monkeypatch.setattr(
+        loop,
+        "_configured_kiwi_keys_from_config",
+        lambda: {"kiwi-1", "kiwi-2"},
+    )
+
+    keys = loop._target_kiwi_keys(
+        {
+            "activeKiwiKey": "remote-kiwi",
+            "kiwiModes": {
+                "kiwi-1": "auto",
+                "kiwi-2": "manual",
+                "remote-kiwi": "auto",
+            },
+        }
+    )
+
+    assert keys == ["kiwi-1", "kiwi-2"]

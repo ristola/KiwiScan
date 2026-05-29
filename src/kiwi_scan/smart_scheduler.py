@@ -800,7 +800,7 @@ class SmartScheduler:
             
         return max(0.0, smart_score)
 
-    def rank_roaming_bands(self, available_bands: list[str], current_roaming: list[str]) -> list[str]:
+    def rank_roaming_bands(self, available_bands: list[str], current_roaming: list[str] | None) -> list[str]:
         """Rank available bands using the smart score.
         Calculates all variables: live_activity, unique calls, snr, distance, setup, etc.
         """
@@ -834,13 +834,14 @@ class SmartScheduler:
             recent_decodes = []
 
         available_lookup = set(available_bands)
+        current_roaming_supplied = current_roaming is not None
         current_roaming = [
             str(band).strip()
-            for band in current_roaming
+            for band in (current_roaming or [])
             if str(band).strip() in available_lookup
         ]
         roaming_health = self._current_roaming_health_snapshot(available_bands)
-        if not current_roaming:
+        if not current_roaming and current_roaming_supplied:
             current_roaming = list(roaming_health["bands"])
         low_decode_threshold = self._roaming_low_decode_threshold(available_bands)
         low_rate_bands = {

@@ -386,13 +386,14 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
             _last_live_port_by_target[target_key] = _last_live_port
 
         cache_fresh = (_last_live_ok_unix > 0.0) and ((now - _last_live_ok_unix) <= 30.0)
+        explicit_kiwi_requested = bool(requested_host and requested_port > 0)
         if users_available and not prefer_receiver_manager:
             assignments_out = live_status
             source = "kiwi_users"
         elif prefer_receiver_manager:
             assignments_out = reference_status
             source = "receiver_manager_drift"
-        elif cache_fresh:
+        elif cache_fresh and not explicit_kiwi_requested:
             assignments_out = dict(_last_live_assignments)
             source = "kiwi_users_cached"
             live_host = ""

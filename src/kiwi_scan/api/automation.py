@@ -62,6 +62,7 @@ _OVERVIEW_TOPIC_KEYS = (
 )
 
 _RECEIVERS_MODES = {"auto", "semi", "manual", "scan"}
+_MAX_ASSIGNMENT_MANAGED_KIWIS = 2
 _MANUAL_ASSIGNMENT_BANDS = {"10m", "12m", "15m", "17m", "20m", "30m", "40m", "60m", "80m", "160m"}
 _MANUAL_ASSIGNMENT_MODE_ALIASES = {
     "FT8": "FT8",
@@ -114,6 +115,8 @@ def _configured_kiwi_keys_from_config() -> set[str] | None:
         except Exception:
             port = 8073
         keys.add(f"{host}:{port}")
+        if len(keys) >= _MAX_ASSIGNMENT_MANAGED_KIWIS:
+            break
     return keys
 
 
@@ -314,6 +317,9 @@ def _sync_active_kiwi_mode(payload: Dict[str, Any]) -> Dict[str, Any]:
     active_key = str(payload.get("activeKiwiKey") or "").strip()
     receivers_mode = str(payload.get("receiversMode") or "").strip().lower()
     if not active_key or receivers_mode not in _RECEIVERS_MODES:
+        return payload
+    assignment_managed_keys = _configured_kiwi_keys_from_config()
+    if assignment_managed_keys is not None and active_key not in assignment_managed_keys:
         return payload
 
     kiwi_modes = payload.get("kiwiModes")

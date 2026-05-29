@@ -6251,7 +6251,8 @@
                             <span class="topbar-kiwi-label">KIWI 2</span>
                             <span class="topbar-kiwi-meta">UNSET</span>
                         </button>
-                        <button class="topbar-kiwi-btn" type="button" data-kiwi-select-index="2" aria-pressed="false">
+                        <button class="topbar-kiwi-btn" type="button" data-kiwi-select-index="2" aria-pressed="false"
+                            disabled aria-disabled="true" title="Kiwi 3 selection is temporarily disabled">
                             <span class="topbar-kiwi-label">KIWI 3</span>
                             <span class="topbar-kiwi-meta">UNSET</span>
                         </button>
@@ -7543,6 +7544,8 @@
         let latestPersistedConfiguredKiwiEntries = [];
         let activeConfiguredKiwiIndex = 0;
         let activeConfiguredKiwiSaveInFlight = false;
+        let pendingActiveConfiguredKiwiIndex = null;
+        let activeConfiguredKiwiSwitchTargetIndex = null;
         let latestDiscoveredKiwiEntries = [];
         let latestDiscoverySource = "";
         let activeReceiverAudioTarget = null;
@@ -8805,6 +8808,7 @@
         function renderTopbarKiwiSelector(entries = collectConfiguredKiwiInputs({ includeBlank: true })) {
             const selectorEl = byId("topbar-kiwi-selector");
             if (!selectorEl) return;
+            const KIWI3_SELECT_DISABLED_INDEX = 2;
             const safeEntries = Array.isArray(entries) && entries.length ? entries : [buildDefaultConfiguredKiwiEntry()];
             const fallbackDiscovered = normalizeDiscoveredKiwiEntries(
                 Array.isArray(latestSystemInfo && latestSystemInfo.kiwi && latestSystemInfo.kiwi.discovered_kiwis)
@@ -8831,14 +8835,19 @@
                 const displayIndex = Number.isFinite(mappedDisplayIndex) ? mappedDisplayIndex : fallbackDisplayIndex;
                 const labelEl = button.querySelector(".topbar-kiwi-label");
                 const metaEl = button.querySelector(".topbar-kiwi-meta");
+                const kiwiSelectionTemporarilyDisabled = index === KIWI3_SELECT_DISABLED_INDEX;
                 button.hidden = !configured;
                 button.style.order = configured && Number.isFinite(displayIndex) ? String(displayIndex) : "";
                 if (labelEl) labelEl.textContent = `KIWI ${Number.isFinite(displayIndex) ? displayIndex : "?"}`;
                 if (metaEl) metaEl.textContent = configured ? (isActive ? "ACTIVE" : "READY") : "UNSET";
                 button.setAttribute("aria-pressed", isActive ? "true" : "false");
-                button.disabled = activeConfiguredKiwiSaveInFlight || !configured;
+                button.disabled = !configured || kiwiSelectionTemporarilyDisabled;
                 if (configured) {
-                    button.title = `Use KiwiSDR #${Number.isFinite(displayIndex) ? displayIndex : (index + 1)} (${entry.host}:${entry.port || KIWI_SETTINGS_DEFAULTS.port})`;
+                    if (kiwiSelectionTemporarilyDisabled) {
+                        button.title = "Kiwi 3 selection is temporarily disabled";
+                    } else {
+                        button.title = `Use KiwiSDR #${Number.isFinite(displayIndex) ? displayIndex : (index + 1)} (${entry.host}:${entry.port || KIWI_SETTINGS_DEFAULTS.port})`;
+                    }
                 } else {
                     button.title = `Configure KiwiSDR #${index + 1} in Settings`;
                 }
@@ -15543,11 +15552,22 @@ ${passwordMarkup.actionsHtml}
             overlay.hidden = !(_rxBusyManual || backgroundBusy);
         }
 
+        function activeKiwiSwitchBusyLabel(index = activeConfiguredKiwiSwitchTargetIndex) {
+            const resolvedIndex = Number.isFinite(Number(index))
+                ? Number(index)
+                : normalizeActiveConfiguredKiwiIndex(activeConfiguredKiwiIndex, collectConfiguredKiwiInputs({ includeBlank: true }));
+            return `Gathering Data from Kiwi ${resolvedIndex + 1}...`;
+        }
+
         function setReceiversBusy(busy, label) {
             _rxBusyManual = busy;
             const labelEl = byId("rx-busy-label");
             if (labelEl && label) labelEl.textContent = label;
-            else if (labelEl && busy && !label) labelEl.textContent = "Setting up Receiver Assignments !";
+            else if (labelEl && busy && !label) {
+                labelEl.textContent = Number.isFinite(Number(activeConfiguredKiwiSwitchTargetIndex))
+                    ? activeKiwiSwitchBusyLabel()
+                    : "Setting up Receiver Assignments !";
+            }
             _updateRxBusyOverlay();
         }
 
@@ -16093,7 +16113,19 @@ ${passwordMarkup.actionsHtml}
             const entries = collectConfiguredKiwiInputs({ includeBlank: true });
             const nextDisplayIndex = normalizeActiveConfiguredKiwiIndex(index, entries);
             if (nextDisplayIndex === activeConfiguredKiwiIndex && !activeConfiguredKiwiSaveInFlight) return true;
+            if (activeConfiguredKiwiSaveInFlight) {
+                activeConfiguredKiwiSwitchTargetIndex = nextDisplayIndex;
+                pendingActiveConfiguredKiwiIndex = nextDisplayIndex;
+                if (nextDisplayIndex !== activeConfiguredKiwiIndex) {
+                    activeConfiguredKiwiIndex = nextDisplayIndex;
+                    renderTopbarKiwiSelector(entries);
+                    syncTopbarMenuState();
+                }
+                setConfigStatus(activeKiwiSwitchBusyLabel(nextDisplayIndex));
+                return true;
+            }
             const previousIndex = activeConfiguredKiwiIndex;
+            activeConfiguredKiwiSwitchTargetIndex = nextDisplayIndex;
             const capturedKiwiProfiles = captureKiwiUiProfiles(latestAutomationSettings, {
                 entries,
                 index: previousIndex,
@@ -16109,10 +16141,11 @@ ${passwordMarkup.actionsHtml}
             activeConfiguredKiwiSaveInFlight = true;
             renderTopbarKiwiSelector(entries);
             syncTopbarMenuState();
-            setConfigStatus(`switching to KiwiSDR #${nextDisplayIndex + 1}...`);
+            setConfigStatus(activeKiwiSwitchBusyLabel(nextDisplayIndex));
             const ok = await saveConfiguredKiwiConfig({ autosave: true });
             activeConfiguredKiwiSaveInFlight = false;
             if (!ok) {
+                activeConfiguredKiwiSwitchTargetIndex = null;
                 activeConfiguredKiwiIndex = previousIndex;
                 renderTopbarKiwiSelector(entries);
                 syncTopbarMenuState();
@@ -16123,12 +16156,18 @@ ${passwordMarkup.actionsHtml}
                 kiwiProfiles: capturedKiwiProfiles,
             };
             await applyActiveKiwiUiProfile(nextProfile, { applyRuntime: true });
-            setConfigStatus(`switched to KiwiSDR #${nextDisplayIndex + 1} with ${receiversModeStatusLabel(nextProfile.receiversMode)}`);
+            setConfigStatus(`Now showing Kiwi ${nextDisplayIndex + 1} data (${receiversModeStatusLabel(nextProfile.receiversMode)}).`);
             if (typeof window.kiwiProSetView === "function") window.kiwiProSetView("overview", false);
             renderTopbarKiwiSelector(entries);
             syncTopbarMenuState();
             resetDecodeDashboardState();
             await refresh();
+            const queuedIndex = pendingActiveConfiguredKiwiIndex;
+            pendingActiveConfiguredKiwiIndex = null;
+            if (Number.isFinite(queuedIndex) && queuedIndex !== activeConfiguredKiwiIndex) {
+                return await saveActiveConfiguredKiwiSelection(queuedIndex);
+            }
+            activeConfiguredKiwiSwitchTargetIndex = null;
             return true;
         }
 
@@ -16400,94 +16439,44 @@ ${passwordMarkup.actionsHtml}
                     fixedModeEnabled: savedReceiversMode !== "manual",
                     overviewTopics: nextOverviewTopics,
                 };
-                const hardReload = isReloadNavigation() && !hardReloadResetApplied;
                 const normalizedMode = normalizeReceiversMode(savedReceiversMode, "manual");
-                const isAutoModeAndHardReload = hardReload && normalizedMode === "auto";
+                const shouldResetManagedAssignmentsOnLoad = !hardReloadResetApplied
+                    && (normalizedMode === "auto" || normalizedMode === "semi");
                 // Don't force mode on hard refresh; preserve each Kiwi's original mode
                 const effectiveReceiversMode = savedReceiversMode;
                 setReceiversMode(effectiveReceiversMode);
                 applyAutoModeVisibility(effectiveReceiversMode);
                 applyAndPersistUiPreferences(nextThemeMode, nextDensity, nextNightHour, nextHourOffset);
                 applyOverviewTopicPrefs(nextOverviewTopics);
-                if (hardReload) {
+                if (shouldResetManagedAssignmentsOnLoad) {
                     hardReloadResetApplied = true;
-                    // Hard refresh: reset assignments on ALL configured Kiwis while preserving their modes
-                    setAutomationStatus("hard refresh detected — resetting all Kiwi assignments...");
-                    // Launch all resets in background without awaiting
+                    setAutomationStatus("page load detected — resetting Kiwi assignments...");
                     (async () => {
                         try {
-                            await resetManualAssignmentsToDefaults({ saveProfile: true, applyRuntime: true });
-                            const configuredKiwis = Array.isArray(latestConfiguredKiwiEntries) ? latestConfiguredKiwiEntries : [];
-                            const resetProfiles = {};
-                            const currentProfiles = (latestAutomationSettings && latestAutomationSettings.kiwiProfiles) || {};
-
+                            const configuredKiwis = Array.isArray(latestConfiguredKiwiEntries)
+                                ? latestConfiguredKiwiEntries
+                                : collectConfiguredKiwiInputs({ includeBlank: true });
                             for (const kiwiEntry of configuredKiwis) {
                                 const kiwiHost = safeText(kiwiEntry && kiwiEntry.host, "");
                                 const kiwiPort = Number(kiwiEntry && kiwiEntry.port);
                                 if (!kiwiHost || !Number.isFinite(kiwiPort)) continue;
-
-                                const profileKey = configuredKiwiEntryKey(kiwiEntry);
-                                const existingProfile = currentProfiles[profileKey] || {};
-                                // Get this Kiwi's saved mode (default to "auto" if not set)
-                                const kiwiSavedMode = existingProfile.receiversMode || "auto";
-
-                                // Reset this Kiwi's manual assignments with default values
-                                const assignments = MANUAL_RECEIVER_RXS.map((rxNum) => ({
-                                    rx: rxNum,
+                                await postJson("/auto_set_receivers", {
                                     enabled: false,
-                                    band: MANUAL_RECEIVER_DEFAULT_BAND,
-                                    mode: MANUAL_RECEIVER_DEFAULT_MODE,
-                                    freq_khz: Number(MANUAL_RECEIVER_DEFAULT_FREQ_KHZ.toFixed(3)),
-                                }));
-                                try {
-                                    await postJson("/admin/manual-assignments", {
-                                        kiwi_host: kiwiHost,
-                                        kiwi_port: kiwiPort,
-                                        assignments,
-                                    });
-                                } catch (err) {
-                                    console.warn(`Failed to reset manual assignments for ${kiwiHost}:${kiwiPort}:`, err);
-                                }
-
-                                // Preserve this Kiwi's profile with its original mode, but reset assignments
-                                resetProfiles[profileKey] = {
-                                    ...existingProfile,
-                                    manualAssignments: buildManualAssignmentDefaultsMap(),
-                                    receiversMode: kiwiSavedMode,
-                                };
-                            }
-
-                            // If current Kiwi is in AUTO mode, trigger force-reassign
-                            if (isAutoModeAndHardReload) {
-                                try {
-                                    await postJson("/admin/force-reassign", {});
-                                    // Force-reassign is asynchronous on the backend; allow reconnect window
-                                    await new Promise((resolve) => setTimeout(resolve, 3000));
-                                } catch (err) {
-                                    console.warn("Background AUTO reassign failed:", err);
-                                }
-                            }
-
-                            // Update and save all Kiwi profiles
-                            latestAutomationSettings = {
-                                ...latestAutomationSettings,
-                                kiwiProfiles: { ...currentProfiles, ...resetProfiles },
-                            };
-                            try {
-                                await saveAutomationSection({
-                                    autosave: true,
-                                    notifyBackend: false,
+                                    kiwi_key: `${kiwiHost}:${kiwiPort}`,
                                 });
-                            } catch (err) {
-                                console.warn("Failed to save reset profiles:", err);
                             }
+                            // Allow clear requests to settle before reapplying managed assignments.
+                            await new Promise((resolve) => setTimeout(resolve, 400));
+                            await postJson("/admin/force-reassign", {});
+                            // Force-reassign is asynchronous on the backend; allow reconnect window
+                            await new Promise((resolve) => setTimeout(resolve, 3000));
 
-                            // Refresh to show updated receiver state
+                            // Refresh to show current receiver state
                             refresh();
-                            setAutomationStatus("hard refresh complete");
+                            setAutomationStatus("page load complete — auto assignments restarted");
                         } catch (err) {
-                            console.warn("Background hard refresh failed:", err);
-                            setAutomationStatus("hard refresh failed: " + String(err && err.message || err));
+                            console.warn("Background managed reassign on page load failed:", err);
+                            setAutomationStatus("page load reset failed: " + String(err && err.message || err));
                         }
                     })();
                 } else if (savedReceiversMode === "manual") {
@@ -18753,7 +18742,7 @@ ${passwordMarkup.actionsHtml}
                         : null;
                     if (!target) return;
                     const requestedIndex = Number(target.getAttribute("data-kiwi-select-index"));
-                    if (!Number.isFinite(requestedIndex) || target.disabled) return;
+                    if (!Number.isFinite(requestedIndex) || requestedIndex === 2 || target.disabled) return;
                     await saveActiveConfiguredKiwiSelection(requestedIndex);
                 });
                 kiwiSelectorEl.dataset.bound = "1";
@@ -20256,7 +20245,9 @@ ${passwordMarkup.actionsHtml}
                 _rxBusyAutoKick = wasAutoKickRecent;
                 const labelEl = byId("rx-busy-label");
                 if (labelEl && !_rxBusyManual && !_rxBusyMismatch) {
-                    labelEl.textContent = unstable > 0 ? "Stabilizing\u2026" : (wasAutoKickRecent ? "Reassigning\u2026" : "Setting up Receiver Assignments !");
+                    labelEl.textContent = Number.isFinite(Number(activeConfiguredKiwiSwitchTargetIndex))
+                        ? activeKiwiSwitchBusyLabel()
+                        : (unstable > 0 ? "Stabilizing\u2026" : (wasAutoKickRecent ? "Reassigning\u2026" : "Setting up Receiver Assignments !"));
                 }
                 _updateRxBusyOverlay();
             }
@@ -20493,7 +20484,9 @@ ${passwordMarkup.actionsHtml}
                 _rxBusyMismatch = hasMismatch;
                 const labelEl = byId("rx-busy-label");
                 if (labelEl && !_rxBusyManual && !_rxBusyAutoKick) {
-                    labelEl.textContent = hasMismatch ? "Assigning Receivers." : "Setting up Receiver Assignments !";
+                    labelEl.textContent = Number.isFinite(Number(activeConfiguredKiwiSwitchTargetIndex))
+                        ? activeKiwiSwitchBusyLabel()
+                        : (hasMismatch ? "Assigning Receivers." : "Setting up Receiver Assignments !");
                 }
                 _updateRxBusyOverlay();
             }
@@ -20507,9 +20500,9 @@ ${passwordMarkup.actionsHtml}
             let recentDecodeTotal = 0;
             for (const item of recentDecodeItems) {
                 if (!item || typeof item !== "object") continue;
-                if (activeKiwiKey && String(item.kiwi_key || "").trim() !== activeKiwiKey) continue;
                 const band = String(item.band || "").trim();
                 if (!band || band.toLowerCase() === "control") continue;
+                if (activeKiwiKey && String(item.kiwi_key || "").trim() !== activeKiwiKey) continue;
                 recentDecodeTotal += 1;
                 counts[band] = Number(counts[band] || 0) + 1;
             }
@@ -20531,20 +20524,6 @@ ${passwordMarkup.actionsHtml}
 
             let publishedCounts = publishedCountsRaw;
             let publishedDecodeTotal = Object.values(publishedCountsRaw).reduce((acc, value) => acc + Number(value || 0), 0);
-            if (decodeSessionStartedAtMs > 0) {
-                const scopeKey = activeKiwiKey || "__all__";
-                if (!publishedDecodeBaselineByScope[scopeKey]) {
-                    publishedDecodeBaselineByScope[scopeKey] = { ...publishedCountsRaw };
-                }
-                const baseline = publishedDecodeBaselineByScope[scopeKey] || {};
-                const adjustedCounts = {};
-                for (const [band, value] of Object.entries(publishedCountsRaw)) {
-                    const adjusted = Math.max(0, Number(value || 0) - Number(baseline[band] || 0));
-                    if (adjusted > 0) adjustedCounts[band] = adjusted;
-                }
-                publishedCounts = adjustedCounts;
-                publishedDecodeTotal = Object.values(adjustedCounts).reduce((acc, value) => acc + Number(value || 0), 0);
-            }
 
             const h = health && typeof health === "object" ? health : {};
             const healthChannels = Object.values((h.channels && typeof h.channels === "object") ? h.channels : {});
