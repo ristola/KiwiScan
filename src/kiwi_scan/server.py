@@ -64,6 +64,7 @@ from .auto_set_loop import AutoSetLoop
 from .smart_scheduler import SmartScheduler
 from .api.smart_scheduler import make_router as make_smart_scheduler_router
 from .targeted_service_registry import TargetedServiceRegistry
+from .voice_api import router as voice_router
 
 # Configure logging to output to console (stderr) with timestamps
 logging.basicConfig(
@@ -737,6 +738,7 @@ app.include_router(
     )
 )
 app.include_router(make_rx_monitor_router(monitor=rx_monitor))
+app.include_router(voice_router)
 app.include_router(
     make_caption_router(
         mgr=mgr,
