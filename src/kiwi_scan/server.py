@@ -31,6 +31,7 @@ from .band_scanner import BandScanner
 from .caption_monitor import CaptionMonitorService
 from .net_monitor import NetMonitorService
 from .receiver_scan import ReceiverScanService
+from .voice_scan_service import VoiceScanService
 from .discovery_manager import DiscoveryManager
 from .api.backup import router as backup_router
 from .api.ui import mount_static, router as ui_router
@@ -46,6 +47,7 @@ from .api.band_scan import make_router as make_band_scan_router
 from .api.caption import make_router as make_caption_router
 from .api.net_monitor import make_router as make_net_monitor_router
 from .api.receiver_scan import make_router as make_receiver_scan_router
+from .api.voice_scan import make_router as make_voice_scan_router
 from .api.config import make_router as make_config_router
 from .api.status import compute_s_metrics, make_router as make_status_router
 from .api.schedule import make_router as make_schedule_router
@@ -64,7 +66,6 @@ from .auto_set_loop import AutoSetLoop
 from .smart_scheduler import SmartScheduler
 from .api.smart_scheduler import make_router as make_smart_scheduler_router
 from .targeted_service_registry import TargetedServiceRegistry
-from .voice_api import router as voice_router
 
 # Configure logging to output to console (stderr) with timestamps
 logging.basicConfig(
@@ -670,6 +671,9 @@ net_monitor = TargetedServiceRegistry(
 caption_monitor = TargetedServiceRegistry(
     factory=lambda _target: CaptionMonitorService(receiver_mgr=receiver_mgr, auto_set_loop=auto_set_loop)
 )
+voice_scan = TargetedServiceRegistry(
+    factory=lambda _target: VoiceScanService(receiver_mgr=receiver_mgr, auto_set_loop=auto_set_loop)
+)
 
 # SmartScheduler: merges seasonal tables + live propagation evidence + user pins
 # into a band-condition map.  Fires force_reassign() when conditions change so
@@ -738,10 +742,19 @@ app.include_router(
     )
 )
 app.include_router(make_rx_monitor_router(monitor=rx_monitor))
-app.include_router(voice_router)
 app.include_router(
     make_caption_router(
         mgr=mgr,
+        caption_monitor=caption_monitor,
+        receiver_scan=receiver_scan,
+        net_monitor=net_monitor,
+        rx_monitor=rx_monitor,
+    )
+)
+app.include_router(
+    make_voice_scan_router(
+        mgr=mgr,
+        voice_scan=voice_scan,
         caption_monitor=caption_monitor,
         receiver_scan=receiver_scan,
         net_monitor=net_monitor,

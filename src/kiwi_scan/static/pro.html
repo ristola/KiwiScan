@@ -4648,7 +4648,30 @@
         .manual-rx-audio {
             display: flex;
             justify-content: flex-end;
+            align-items: center;
+            gap: 6px;
             flex-shrink: 0;
+        }
+
+        .manual-rx-voice-memory-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 6px;
+        }
+
+        .manual-rx-voice-memory-btn {
+            font-size: 0.68rem;
+            padding: 2px 8px;
+            border-radius: 999px;
+            border: 1px solid var(--line);
+            background: color-mix(in srgb, var(--panel), white 16%);
+            color: var(--fg);
+            cursor: pointer;
+        }
+
+        .manual-rx-voice-memory-btn:hover {
+            background: color-mix(in srgb, var(--panel), white 24%);
         }
 
         .manual-rx-validation {
@@ -10185,9 +10208,120 @@ ${passwordMarkup.actionsHtml}
                     const receiver = buildManualAssignmentAudioReceiver(rxNum);
                     if (!receiver) return;
                     openActiveReceiverAudioPopup(receiver);
+                    return;
+                }
+                if (action === "voice-scan" || action === "voice-scan-stop") {
+                    event.preventDefault();
+                    if (target instanceof HTMLButtonElement && target.disabled) return;
+                    const rxNum = Number(target.getAttribute("data-rx"));
+                    if (!Number.isFinite(rxNum)) return;
+                    const seed = buildManualAssignmentSeed(rxNum);
+                    const draft = getManualAssignmentDraft(rxNum, seed);
+                    const mode = String(safeText(draft.mode, seed.mode || "")).trim().toUpperCase();
+                    if (!(mode === "LSB" || mode === "USB")) return;
+
+                    if (action === "voice-scan-stop") {
+                        voiceScanPendingAction = "stop";
+                        try {
+                            const stopResult = await postJson("/voice_scan/stop", activeKiwiTargetPayload({}));
+                            applyVoiceScanStatus(stopResult);
+                        } catch (err) {
+                            voiceScanPendingAction = "";
+                            console.warn("voice scan stop failed", err);
+                        }
+                        return;
+                    }
+
+                    voiceScanPendingAction = "start";
+                    try {
+                        const startResult = await postJson("/voice_scan/start", activeKiwiTargetPayload({
+                            rx_chan: rxNum,
+                            band: normalizeManualAssignmentBand(draft.band, seed.band || MANUAL_RECEIVER_DEFAULT_BAND),
+                            sideband: mode,
+                            step_hz: VOICE_SCAN_STEP_HZ,
+                            chunk_duration_s: VOICE_SCAN_CHUNK_DURATION_S,
+                            stability_wait_s: VOICE_SCAN_STABILITY_WAIT_S,
+                            max_memories: 5,
+                        }));
+                        applyVoiceScanStatus(startResult);
+                    } catch (err) {
+                        voiceScanPendingAction = "";
+                        console.warn("voice scan start failed", err);
+                    }
+                    return;
+                }
+                if (action === "voice-clear") {
+                    event.preventDefault();
+                    try {
+                        const clearResult = await postJson("/voice_scan/clear", activeKiwiTargetPayload({}));
+                        applyVoiceScanStatus(clearResult);
+                    } catch (err) {
+                        console.warn("voice scan clear failed", err);
+                    }
+                    return;
+                }
+                if (action === "voice-memory") {
+                    event.preventDefault();
+                    const rxNum = Number(target.getAttribute("data-rx"));
+                    const freqKHz = Number(target.getAttribute("data-freq-khz"));
+                    const sideband = String(target.getAttribute("data-sideband") || "LSB").toUpperCase();
+                    if (!Number.isFinite(rxNum) || !Number.isFinite(freqKHz) || freqKHz <= 0) return;
+                    const card = target.closest("[data-manual-rx-card]");
+                    if (!(card instanceof HTMLElement)) return;
+
+                    const modeSelect = card.querySelector(`select[data-manual-field="mode"][data-rx="${rxNum}"]`);
+                    const freqInput = card.querySelector(`input[data-manual-field="freq"][data-rx="${rxNum}"]`);
+                    if (modeSelect instanceof HTMLSelectElement) {
+                        modeSelect.value = sideband;
+                        modeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+                    }
+                    if (freqInput instanceof HTMLInputElement) {
+                        freqInput.value = Number(freqKHz).toFixed(2);
+                        freqInput.dispatchEvent(new Event("change", { bubbles: true }));
+                    }
+
+                    try {
+                        captionMonitorPendingAction = "start";
+                        syncCaptionMonitorControls();
+                        const controls = readCaptionMonitorControls();
+                        const startCaptionResult = await postJson("/caption/start", activeKiwiTargetPayload({
+                            freq_khz: Number(freqKHz),
+                            sideband,
+                            rx_chan: rxNum,
+                            chunk_duration_s: controls.durationS,
+                        }));
+                        applyCaptionMonitorStatus(startCaptionResult);
+                        if (typeof window.kiwiProSetView === "function") window.kiwiProSetView("caption-monitor", true);
+                    } catch (err) {
+                        captionMonitorPendingAction = "";
+                        syncCaptionMonitorControls();
+                        console.warn("caption start from voice memory failed", err);
+                    }
                 }
             }
             );
+        }
+
+        function isManualVoiceScanMode(mode) {
+            const normalized = String(safeText(mode, "")).trim().toUpperCase();
+            return normalized === "LSB" || normalized === "USB";
+        }
+
+        function renderManualVoiceMemoryButtonsHtml(rxNum, mode) {
+            if (!isManualVoiceScanMode(mode)) return "";
+            const status = latestVoiceScanStatus && typeof latestVoiceScanStatus === "object" ? latestVoiceScanStatus : null;
+            const memories = Array.isArray(status && status.memory_channels) ? status.memory_channels : [];
+            if (!memories.length) return "";
+            const buttons = memories.slice(0, 5).map((memory) => {
+                const freqKHz = Number(memory && memory.frequency_khz);
+                const sideband = safeText(memory && memory.sideband, mode);
+                const snr = Number(memory && memory.snr_db);
+                const label = Number.isFinite(freqKHz)
+                    ? `${freqKHz.toFixed(2)} kHz${Number.isFinite(snr) ? ` · ${snr.toFixed(1)} dB` : ""}`
+                    : "Memory";
+                return `<button type="button" class="manual-rx-voice-memory-btn" data-manual-action="voice-memory" data-rx="${rxNum}" data-freq-khz="${escapeHtml(Number.isFinite(freqKHz) ? freqKHz.toFixed(3) : "")}" data-sideband="${escapeHtml(sideband)}" title="Quick tune and open captions">${escapeHtml(label)}</button>`;
+            }).join("");
+            return `<div class="manual-rx-voice-memory-row">${buttons}</div>`;
         }
 
         function renderManualReceiverAssignments(usersEl, users, kiwi) {
@@ -10239,6 +10373,16 @@ ${passwordMarkup.actionsHtml}
                 const showBandField = isManualAssignmentBandSelectableMode(mode);
                 const canListen = !!seed.live && Number.isFinite(Number(previewFreq)) && Number(previewFreq) > 0;
                 const listenTitle = seed.live ? `Listen to RX${rxNum}` : (enabled ? `RX${rxNum} is applying — wait for LIVE status to listen` : `Enable RX${rxNum} to listen`);
+                const canVoiceScan = canListen && isManualVoiceScanMode(mode);
+                const voiceStatus = latestVoiceScanStatus && typeof latestVoiceScanStatus === "object" ? latestVoiceScanStatus : null;
+                const voiceRunning = !!(voiceStatus && (voiceStatus.running || voiceStatus.starting));
+                const voiceRunningThisRx = voiceRunning && Number(voiceStatus && voiceStatus.rx_chan) === rxNum;
+                const voiceScanAction = voiceRunningThisRx ? "voice-scan-stop" : "voice-scan";
+                const voiceScanLabel = voiceRunningThisRx ? "Stop Scan" : "Scan";
+                const voiceScanTitle = voiceRunningThisRx
+                    ? `Stop voice scan on RX${rxNum}`
+                    : (canVoiceScan ? `Scan ${band} ${mode} in 1 kHz steps` : "Voice scan available only for live LSB/USB receivers");
+                const voiceMemoryButtonsHtml = renderManualVoiceMemoryButtonsHtml(rxNum, mode);
                 return `
                     <article class="manual-rx-card ${toneClass}" data-manual-rx-card="${rxNum}">
                         <div class="manual-rx-head">
@@ -10271,9 +10415,12 @@ ${passwordMarkup.actionsHtml}
                         <div class="manual-rx-footer">
                             <div class="manual-rx-summary">${escapeHtml(summaryText)}</div>
                             <div class="manual-rx-audio">
+                                <button type="button" class="action-btn-sm" data-manual-action="${voiceScanAction}" data-rx="${rxNum}" title="${escapeHtml(voiceScanTitle)}"${canVoiceScan ? "" : " disabled"}>${escapeHtml(voiceScanLabel)}</button>
                                 <button type="button" class="active-rx-audio-btn" data-manual-action="listen" data-rx="${rxNum}" aria-label="Listen to RX${rxNum}" title="${escapeHtml(listenTitle)}"${canListen ? "" : " disabled"}>${buildIconMarkup("audio")}</button>
+                                <button type="button" class="action-btn-sm" data-manual-action="voice-clear" title="Clear voice memories">Clear</button>
                             </div>
                         </div>
+                        ${voiceMemoryButtonsHtml}
                         ${errorText ? `<div class="manual-rx-validation">${escapeHtml(errorText)}</div>` : ""}
                     </article>
                 `;
@@ -13971,6 +14118,11 @@ ${passwordMarkup.actionsHtml}
         const CAPTION_MONITOR_DEFAULT_FREQ_KHZ = 7179.0;
         const CAPTION_MONITOR_DEFAULT_CHUNK_S = 15;
         let captionDrawerOpen = false;
+        let latestVoiceScanStatus = null;
+        let voiceScanPendingAction = "";
+        const VOICE_SCAN_STEP_HZ = 1000;
+        const VOICE_SCAN_STABILITY_WAIT_S = 10;
+        const VOICE_SCAN_CHUNK_DURATION_S = 2;
 
         function receiverScanBandsForRole(role) {
             const resolvedRole = normalizeReceiverScanControlRole(role, "smart") || "smart";
@@ -15674,6 +15826,20 @@ ${passwordMarkup.actionsHtml}
             syncCaptionMonitorControls(status);
         }
 
+        function applyVoiceScanStatus(status) {
+            if (!status || typeof status !== "object") return;
+            latestVoiceScanStatus = status;
+            if (voiceScanPendingAction === "start" && (status.running || status.starting)) {
+                voiceScanPendingAction = "";
+            }
+            if (voiceScanPendingAction === "stop" && !status.running && !status.starting) {
+                voiceScanPendingAction = "";
+            }
+            if (getCurrentReceiversMode() === "manual") {
+                scheduleManualAssignmentPanelRefresh(0);
+            }
+        }
+
         async function deactivateReceiverScanMode(options = {}) {
             receiverScanPendingAction = "stop";
             syncReceiverScanControls();
@@ -17358,6 +17524,8 @@ ${passwordMarkup.actionsHtml}
                 : `Gathering Data from Kiwi ${activeIndex + 1}...`;
             setReceiversBusy(true, busyLabel);
             try {
+                await postJson("/voice_scan/deactivate", activeKiwiTargetPayload({})).catch(() => null);
+                await postJson("/voice_scan/clear", activeKiwiTargetPayload({})).catch(() => null);
                 // Persist the mode selection first, but suppress the loop wake here.
                 // Each explicit mode transition below performs its own single apply.
                 await saveAutomationSection({ autosave: true, notifyBackend: false });
@@ -21203,14 +21371,15 @@ ${passwordMarkup.actionsHtml}
                 const bandScanResultsP = getJson("/band_scan/results", TIMEOUT).catch(() => null);
                 const netMonitorP = getJson(appendActiveKiwiKey("/net_monitor/status"), TIMEOUT).catch(() => null);
                 const captionMonitorP = getJson(appendActiveKiwiKey("/caption/status"), TIMEOUT).catch(() => null);
+                const voiceScanP = getJson(appendActiveKiwiKey("/voice_scan/status"), TIMEOUT).catch(() => null);
 
                 // Apply core data the instant each endpoint responds — don't wait for all.
                 let appliedHealth = false, appliedStatus = false;
                 healthP.then(d => { if (d) { appliedHealth = true; applyHealth(d); updateDecodeStreamChip(); } });
                 statusP.then(d => { if (d) { appliedStatus = true; applyStatus(d); } });
 
-                const [health, status, version, deltaInfo, chartData, receiverScan, bandScanResults, netMonitor, captionMonitor] = await Promise.all([
-                    healthP, statusP, versionP, deltaP, chartP, receiverScanP, bandScanResultsP, netMonitorP, captionMonitorP,
+                const [health, status, version, deltaInfo, chartData, receiverScan, bandScanResults, netMonitor, captionMonitor, voiceScan] = await Promise.all([
+                    healthP, statusP, versionP, deltaP, chartP, receiverScanP, bandScanResultsP, netMonitorP, captionMonitorP, voiceScanP,
                 ]);
 
                 if (version && typeof version === "object") {
@@ -21254,6 +21423,7 @@ ${passwordMarkup.actionsHtml}
                 if (bandScanResults) renderBandScanResults(bandScanResults);
                 if (netMonitor) applyNetMonitorStatus(netMonitor);
                 if (captionMonitor) applyCaptionMonitorStatus(captionMonitor);
+                if (voiceScan) applyVoiceScanStatus(voiceScan);
                 updateDecodeStreamChip();
                 // Only fetch /system/info when the System panel is open — it makes
                 // blocking Kiwi HTTP calls and must not run on every 2 s heartbeat.
