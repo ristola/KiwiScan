@@ -986,6 +986,37 @@
 
         .status-chip.status-chip-rx-summary {
             justify-content: center;
+            position: relative;
+            overflow: hidden;
+            cursor: pointer;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+
+        .status-chip.status-chip-rx-summary::after {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 3px;
+            background: color-mix(in srgb, var(--accent-2), white 24%);
+            transform: scaleX(0);
+            transform-origin: left center;
+        }
+
+        .status-chip.status-chip-rx-summary.reset-hold-pending {
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-2), white 42%), var(--shadow);
+        }
+
+        .status-chip.status-chip-rx-summary.reset-hold-pending::after {
+            transform: scaleX(1);
+            transition: transform 1000ms linear;
+        }
+
+        .status-chip.status-chip-rx-summary.reset-hold-fired {
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--ok), white 35%), var(--shadow);
         }
 
         .status-chip-head {
@@ -6123,7 +6154,8 @@
                             <div class="chip-value" id="chip-server">Connecting...</div>
                             <div class="chip-sub mono" id="chip-server-endpoint">--</div>
                         </article>
-                        <article class="status-chip status-chip-rx-summary" data-icon="shield">
+                        <article class="status-chip status-chip-rx-summary" data-icon="shield"
+                            id="status-chip-rx-summary" title="Hold 1 Second to Reset Totals">
                             <div class="status-chip-head">
                                 <div class="chip-label">RX Health</div>
                                 <div class="chip-label chip-label-secondary" data-icon="signal">Busiest Band</div>
@@ -7223,6 +7255,7 @@
     <script>
         let decodeCursor = 0;
         let decodeCursorPrimed = false;
+        let suppressDecodeHistoryUntilLive = false;
         let wsRef = null;
         let wsLastMessageMs = null;
         let wsMessageBurst = 0;
@@ -7263,6 +7296,11 @@
         let lastBandChartWindowState = null;
         let decodeRateWarmupCycles = 2;
         let latestChannelsMap = {};
+        let overviewHealthResetBaseline = null;
+        let overviewDecodeResetActive = false;
+        let overviewDecodeResetBandModeCounts = {};
+        let overviewDecodeResetBandCounts = {};
+        let overviewDecodeResetTotal = 0;
         let latestFaultLogEntryFingerprints = new Map();
         let hasFaultLogRendered = false;
         let latestPublishedDecodeStatsByRx = {};
@@ -7529,6 +7567,7 @@
         let homeMarkerLayer = null;
         let draggedOverviewTopicEl = null;
         let overviewTopicPlaceholders = null;
+        let mapDragInProgress = false;
 
         function byId(id) {
             return document.getElementById(id);
@@ -10931,9 +10970,16 @@ ${passwordMarkup.actionsHtml}
             if (options.resetMap) mapPoints.clear();
         }
 
-        function resetDecodeDashboardState() {
-            decodeCursor = 0;
-            decodeCursorPrimed = false;
+        function resetDecodeDashboardState(options = {}) {
+            const preserveDecodeCursor = !!options.preserveDecodeCursor;
+            if (!preserveDecodeCursor) {
+                decodeCursor = 0;
+                decodeCursorPrimed = false;
+                overviewDecodeResetActive = false;
+                overviewDecodeResetBandModeCounts = {};
+                overviewDecodeResetBandCounts = {};
+                overviewDecodeResetTotal = 0;
+            }
             rateHistory = [];
             currentDecodeRatePerMin = 0;
             currentHfActivityDisplayPercent = 0;
@@ -10953,6 +10999,7 @@ ${passwordMarkup.actionsHtml}
             _bandChartLiveBands = [];
             _bandChartLiveColorMap = {};
             resetRecentDecodeState({ resetSeenModes: true, resetMap: true });
+            if (preserveDecodeCursor) suppressDecodeHistoryUntilLive = true;
             const busiestBandEl = byId("chip-busiest-band");
             const allDecodesEl = byId("chip-all-decodes");
             if (busiestBandEl) busiestBandEl.textContent = "None";
@@ -10961,6 +11008,98 @@ ${passwordMarkup.actionsHtml}
             schedulePropagationMapRender();
             renderTrend();
             updateDecodeStreamActivityChip();
+        }
+
+        function resetRxHealthSummaryChip() {
+            const chip = byId("chip-rx-health");
+            if (chip) chip.innerHTML = "Active: 0<br>Warn: 0<br>Faulty: 0";
+            updateNotificationIcon(0, 0);
+        }
+
+        function captureOverviewHealthResetBaseline(health) {
+            const h = health && typeof health === "object" ? health : {};
+            overviewHealthResetBaseline = {
+                active: Number(h.active_receivers || 0),
+                warn: Number(h.silent_receivers || 0) + Number(h.no_decode_warning_receivers || 0),
+                fault: Number(h.unstable_receivers || 0),
+            };
+        }
+
+        function getOverviewHealthDisplayCounts(health) {
+            const h = health && typeof health === "object" ? health : {};
+            const baseline = overviewHealthResetBaseline || { active: 0, warn: 0, fault: 0 };
+            return {
+                active: Math.max(0, Number(h.active_receivers || 0) - Number(baseline.active || 0)),
+                warn: Math.max(0, (Number(h.silent_receivers || 0) + Number(h.no_decode_warning_receivers || 0)) - Number(baseline.warn || 0)),
+                fault: Math.max(0, Number(h.unstable_receivers || 0) - Number(baseline.fault || 0)),
+            };
+        }
+
+        function resetOverviewStatsCardState() {
+            captureOverviewHealthResetBaseline({
+                active_receivers: Number(Object.values(latestChannelsMap || {}).filter((ch) => ch && ch.active).length || 0),
+                silent_receivers: Number(Object.values(latestChannelsMap || {}).filter((ch) => ch && ch.is_silent).length || 0),
+                no_decode_warning_receivers: Number(Object.values(latestChannelsMap || {}).filter((ch) => ch && ch.is_no_decode_warning).length || 0),
+                unstable_receivers: Number(Object.values(latestChannelsMap || {}).filter((ch) => ch && String(ch.status_level || "").toLowerCase() === "fault").length || 0),
+            });
+            overviewDecodeResetActive = true;
+            overviewDecodeResetBandModeCounts = {};
+            overviewDecodeResetBandCounts = {};
+            overviewDecodeResetTotal = 0;
+            resetDecodeDashboardState({ preserveDecodeCursor: true });
+            latestChannelsMap = {};
+            resetRxHealthSummaryChip();
+            suppressDecodeHistoryUntilLive = true;
+            renderReceivers(latestChannelsMap);
+            renderAssignments(latestAssignments);
+            renderReasons({ channels: {}, reason_counts: {} });
+        }
+
+        function initOverviewStatsResetHold() {
+            const card = byId("status-chip-rx-summary");
+            if (!card || card.dataset.holdResetBound === "1") return;
+
+            const HOLD_MS = 1000;
+            let holdTimer = null;
+            let holdTriggered = false;
+
+            const clearHold = () => {
+                if (holdTimer) {
+                    clearTimeout(holdTimer);
+                    holdTimer = null;
+                }
+                card.classList.remove("reset-hold-pending");
+            };
+
+            const startHold = (event) => {
+                if (event && event.pointerType === "mouse" && event.button !== 0) return;
+                clearHold();
+                holdTriggered = false;
+                card.classList.remove("reset-hold-fired");
+                card.classList.add("reset-hold-pending");
+                holdTimer = setTimeout(() => {
+                    holdTriggered = true;
+                    card.classList.remove("reset-hold-pending");
+                    card.classList.add("reset-hold-fired");
+                    resetOverviewStatsCardState();
+                    setTimeout(() => {
+                        card.classList.remove("reset-hold-fired");
+                    }, 260);
+                }, HOLD_MS);
+            };
+
+            const endHold = () => {
+                clearHold();
+            };
+
+            card.addEventListener("pointerdown", startHold);
+            card.addEventListener("pointerup", endHold);
+            card.addEventListener("pointercancel", endHold);
+            card.addEventListener("pointerleave", () => {
+                if (!holdTriggered) endHold();
+            });
+
+            card.dataset.holdResetBound = "1";
         }
 
         async function reloadRecentDecodeState(latestCursor) {
@@ -10990,6 +11129,8 @@ ${passwordMarkup.actionsHtml}
                 });
                 clearBtn.dataset.bound = "1";
             }
+
+            initOverviewStatsResetHold();
 
             if (cqOnly && cqOnly.dataset.bound !== "1") {
                 cqOnly.addEventListener("change", () => {
@@ -11553,11 +11694,18 @@ ${passwordMarkup.actionsHtml}
                 worldCopyJump: true,
                 zoomControl: true,
                 attributionControl: true,
+                keyboard: false,
             }).setView([20, 0], 2);
             L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
                 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
                 maxZoom: 12,
             }).addTo(mapInstance);
+            mapInstance.on("dragstart", () => {
+                mapDragInProgress = true;
+            });
+            mapInstance.on("dragend", () => {
+                mapDragInProgress = false;
+            });
             mapMarkerLayer = L.layerGroup().addTo(mapInstance);
             homeMarkerLayer = L.layerGroup().addTo(mapInstance);
         }
@@ -12054,6 +12202,7 @@ ${passwordMarkup.actionsHtml}
 
         function ingestDecodeItem(item, options = {}) {
             if (!shouldKeepDecodeItem(item)) return;
+            suppressDecodeHistoryUntilLive = false;
             const decodeId = Number(item && item.id);
             if (Number.isFinite(decodeId) && decodeId > 0) {
                 if (recentDecodeIds.has(decodeId)) return;
@@ -12071,6 +12220,16 @@ ${passwordMarkup.actionsHtml}
                 receivedAt,
             };
             if (MAP_MODE_FILTERS.includes(normalized.mode)) decodeSeenModes.add(normalized.mode);
+            if (overviewDecodeResetActive && normalized.band && normalized.mode && normalized.band.toLowerCase() !== "control") {
+                const band = String(normalized.band);
+                const mode = String(normalized.mode).toUpperCase();
+                if (!overviewDecodeResetBandModeCounts[band] || typeof overviewDecodeResetBandModeCounts[band] !== "object") {
+                    overviewDecodeResetBandModeCounts[band] = {};
+                }
+                overviewDecodeResetBandModeCounts[band][mode] = Number(overviewDecodeResetBandModeCounts[band][mode] || 0) + 1;
+                overviewDecodeResetBandCounts[band] = Number(overviewDecodeResetBandCounts[band] || 0) + 1;
+                overviewDecodeResetTotal += 1;
+            }
             recordDecodeSnr(normalized);
             recentDecodeItems.push(normalized);
             if (recentDecodeItems.length > RECENT_DECODE_LIMIT) {
@@ -18102,6 +18261,22 @@ ${passwordMarkup.actionsHtml}
                             }
                         }
                     }
+                    if (overviewDecodeResetActive || suppressDecodeHistoryUntilLive) {
+                        const resetModeCounts = (overviewDecodeResetBandModeCounts[band] && typeof overviewDecodeResetBandModeCounts[band] === "object")
+                            ? overviewDecodeResetBandModeCounts[band]
+                            : {};
+                        const seenModes = new Set(modeOrder);
+                        Object.keys(resetModeCounts).forEach((modeName) => {
+                            if (!seenModes.has(modeName)) {
+                                modeOrder.push(modeName);
+                                seenModes.add(modeName);
+                            }
+                        });
+                        modeOrder.forEach((modeName) => {
+                            const count = Math.max(0, Number(resetModeCounts[modeName]) || 0);
+                            modeAgg[modeName] = { pm: count, ph: count, tot: count };
+                        });
+                    }
                     const MODE_SORT_ORDER = ["FT4", "FT8", "WSPR", "SSB"];
                     const decodeRateRows = modeOrder
                         .slice()
@@ -18966,12 +19141,9 @@ ${passwordMarkup.actionsHtml}
             updateLastKnownSnrCache(latestChannelsMap);
             if (manualAssignmentDashboardInteractionActive()) return;
 
-            const active = Number(h.active_receivers || 0);
-            const unstable = Number(h.unstable_receivers || 0);
-            const silent = Number(h.silent_receivers || 0);
-            const warn = Number(h.no_decode_warning_receivers || 0);
-            byId("chip-rx-health").innerHTML = `Active: ${active}<br>Warn: ${silent + warn}<br>Faulty: ${unstable}`;
-            updateNotificationIcon(unstable, silent + warn);
+            const displayCounts = getOverviewHealthDisplayCounts(h);
+            byId("chip-rx-health").innerHTML = `Active: ${displayCounts.active}<br>Warn: ${displayCounts.warn}<br>Faulty: ${displayCounts.fault}`;
+            updateNotificationIcon(displayCounts.fault, displayCounts.warn);
 
             renderAssignments(latestAssignments);
             renderReasons(h);
@@ -19239,6 +19411,11 @@ ${passwordMarkup.actionsHtml}
                     publishedCounts[band] = Number(publishedCounts[band] || 0) + decodeTotal;
                     publishedDecodeTotal += decodeTotal;
                 }
+            }
+            if (overviewDecodeResetActive) {
+                Object.keys(publishedCounts).forEach((key) => delete publishedCounts[key]);
+                Object.assign(publishedCounts, overviewDecodeResetBandCounts);
+                publishedDecodeTotal = Math.max(0, Number(overviewDecodeResetTotal) || 0);
             }
 
             const h = health && typeof health === "object" ? health : {};
