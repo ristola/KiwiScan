@@ -9624,6 +9624,7 @@
             const refreshBtn = byId("system-refresh");
             if (refreshBtn) {
                 refreshBtn.addEventListener("click", () => {
+                    preserveOverviewScrollPosition();
                     refreshSystemInfo(true).catch(() => { });
                 });
             }
@@ -9730,6 +9731,7 @@
                 if (!toggleBtn) return;
                 if (toggleBtn.dataset.bound !== "true") {
                     toggleBtn.addEventListener("click", () => {
+                        preserveOverviewScrollPosition();
                         const collapsed = !panel.classList.contains("is-collapsed");
                         applyDashboardPanelCollapsedState(panel, collapsed, true);
                     });
@@ -9764,6 +9766,7 @@
                 if (!toggleBtn) return;
                 if (toggleBtn.dataset.bound !== "true") {
                     toggleBtn.addEventListener("click", () => {
+                        preserveOverviewScrollPosition();
                         const collapsed = !card.classList.contains("is-collapsed");
                         applyReceiverScanResultCardCollapsedState(card, collapsed, true);
                     });
@@ -9798,6 +9801,7 @@
                 if (!toggleBtn) return;
                 if (toggleBtn.dataset.bound !== "true") {
                     toggleBtn.addEventListener("click", () => {
+                        preserveOverviewScrollPosition();
                         const collapsed = !card.classList.contains("is-collapsed");
                         applySystemCardCollapsedState(card, collapsed, true);
                     });

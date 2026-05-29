@@ -10780,6 +10780,7 @@ ${passwordMarkup.actionsHtml}
             const handleAudioTriggerClick = (event) => {
                 const target = event.target instanceof Element ? event.target.closest("[data-active-receiver-audio]") : null;
                 if (!target) return;
+                preserveOverviewScrollPosition();
                 const receiver = readActiveReceiverAudioButtonPayload(target);
                 if (!receiver) return;
                 openActiveReceiverAudioPopup(receiver);
@@ -10794,6 +10795,7 @@ ${passwordMarkup.actionsHtml}
             }
             if (muteBtn && muteBtn.dataset.bound !== "1") {
                 muteBtn.addEventListener("click", () => {
+                    preserveOverviewScrollPosition();
                     activeReceiverAudioMuted = !activeReceiverAudioMuted;
                     syncActiveReceiverAudioControls();
                 });
@@ -10801,6 +10803,7 @@ ${passwordMarkup.actionsHtml}
             }
             if (closeBtn && closeBtn.dataset.bound !== "1") {
                 closeBtn.addEventListener("click", () => {
+                    preserveOverviewScrollPosition();
                     closeActiveReceiverAudioPopup();
                 });
                 closeBtn.dataset.bound = "1";
@@ -10816,6 +10819,7 @@ ${passwordMarkup.actionsHtml}
                 modeButtonsEl.addEventListener("click", (event) => {
                     const button = event.target instanceof Element ? event.target.closest("[data-active-receiver-mode]") : null;
                     if (!button || !activeReceiverAudioTarget) return;
+                    preserveOverviewScrollPosition();
                     const modeName = safeText(button.getAttribute("data-active-receiver-mode"), "");
                     if (!modeName) return;
                     activeReceiverAudioSelectedMode = modeName;
@@ -11246,6 +11250,7 @@ ${passwordMarkup.actionsHtml}
             const refreshBtn = byId("system-refresh");
             if (refreshBtn) {
                 refreshBtn.addEventListener("click", () => {
+                    preserveOverviewScrollPosition();
                     refreshSystemInfo(true).catch(() => { });
                 });
             }
@@ -11352,6 +11357,7 @@ ${passwordMarkup.actionsHtml}
                 if (!toggleBtn) return;
                 if (toggleBtn.dataset.bound !== "true") {
                     toggleBtn.addEventListener("click", () => {
+                        preserveOverviewScrollPosition();
                         const collapsed = !panel.classList.contains("is-collapsed");
                         applyDashboardPanelCollapsedState(panel, collapsed, true);
                     });
@@ -11386,6 +11392,7 @@ ${passwordMarkup.actionsHtml}
                 if (!toggleBtn) return;
                 if (toggleBtn.dataset.bound !== "true") {
                     toggleBtn.addEventListener("click", () => {
+                        preserveOverviewScrollPosition();
                         const collapsed = !card.classList.contains("is-collapsed");
                         applyReceiverScanResultCardCollapsedState(card, collapsed, true);
                     });
@@ -11420,6 +11427,7 @@ ${passwordMarkup.actionsHtml}
                 if (!toggleBtn) return;
                 if (toggleBtn.dataset.bound !== "true") {
                     toggleBtn.addEventListener("click", () => {
+                        preserveOverviewScrollPosition();
                         const collapsed = !card.classList.contains("is-collapsed");
                         applySystemCardCollapsedState(card, collapsed, true);
                     });
