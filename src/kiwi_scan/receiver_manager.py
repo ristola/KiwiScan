@@ -653,6 +653,41 @@ class _ReceiverWorker(threading.Thread):
         except Exception:
             pass
 
+    def _verify_pipeline_alive(self) -> bool:
+        """Check if the audio pipeline (kiwirecorder → sox → af2udp → ft8modem) is still alive.
+        
+        Returns True if the main pipeline process and all decoder processes are running.
+        Returns False if any process has exited.
+        """
+        if self._proc is None:
+            return False
+        # Check if main pipeline process is still running
+        if self._proc.poll() is not None:
+            logger.warning(
+                "Pipeline process dead rx=%s %s:%d reason=%s",
+                self._rx, self._host, self._port, self._last_spawn_error_reason or "unknown"
+            )
+            return False
+        # Check if any decoder processes have exited
+        for proc in list(self._decoder_procs):
+            if proc.poll() is not None:
+                logger.warning(
+                    "Decoder process dead rx=%s %s:%d",
+                    self._rx, self._host, self._port
+                )
+                return False
+        return True
+
+    def _trigger_pipeline_respawn(self) -> None:
+        """Trigger a controlled respawn of the broken pipeline by terminating and re-triggering spawn."""
+        logger.info(
+            "Triggering pipeline respawn due to broken audio pipe rx=%s %s:%d",
+            self._rx, self._host, self._port
+        )
+        # Gracefully stop the current process; the watchdog will respawn it
+        self._last_spawn_error_reason = "pipeline_broken_detected"
+        self._terminate_proc(graceful=False)
+
     def _kiwi_rx_chan(self) -> int:
         mode_norm = self._mode_label.strip().upper()
         if ("SSB" in mode_norm) or ("PHONE" in mode_norm):
@@ -3859,10 +3894,18 @@ class ReceiverManager:
                     health_state = "silent"
                     if not last_reason:
                         last_reason = "silent_no_decodes"
+                    # Verify audio pipe is still alive when receiver goes silent
+                    if assignment is not None and is_digital and not self._verify_pipeline_alive():
+                        self._trigger_pipeline_respawn()
+                        last_reason = "silent_pipeline_broken"
                 elif visible_on_kiwi and decode_total == 0 and decoder_age_s is not None and decoder_age_s > silent_threshold_s:
                     health_state = "silent"
                     if not last_reason:
                         last_reason = "silent_no_decodes"
+                    # Verify audio pipe is still alive when receiver goes silent
+                    if assignment is not None and is_digital and not self._verify_pipeline_alive():
+                        self._trigger_pipeline_respawn()
+                        last_reason = "silent_pipeline_broken"
 
             no_decode_warn = False
             if is_digital and assignment is not None and health_state not in {"stalled", "silent"}:
