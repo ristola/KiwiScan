@@ -4539,6 +4539,41 @@
             font-weight: 600;
         }
 
+        .manual-rx-select-compact {
+            width: fit-content;
+            min-height: 2.35rem;
+            border-radius: 10px;
+            border: 1px solid var(--line);
+            background: color-mix(in srgb, var(--panel), white 16%);
+            color: var(--ink);
+            padding: 0.5rem 0.72rem;
+            font: inherit;
+            font-size: 0.84rem;
+            font-weight: 600;
+        }
+
+        .manual-rx-select-compact:focus-visible {
+            outline: none;
+            border-color: color-mix(in srgb, var(--accent), var(--line) 10%);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent), transparent 76%);
+        }
+
+        .manual-rx-select-compact:disabled {
+            cursor: default;
+            opacity: 0.68;
+        }
+
+        .manual-rx-field-row {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        .manual-rx-field-row .manual-rx-field {
+            flex: 0 0 auto;
+            min-width: 0;
+        }
+
         .manual-rx-select:focus-visible,
         .manual-rx-input:focus-visible {
             outline: none;
@@ -4586,6 +4621,7 @@
         }
 
         body.theme-dark .manual-rx-select,
+        body.theme-dark .manual-rx-select-compact,
         body.theme-dark .manual-rx-input,
         body.theme-dark .manual-rx-toggle,
         body.theme-dark .manual-rx-status {
@@ -9150,10 +9186,22 @@
                             </label>
                         </div>
                         <div class="manual-rx-fields">
-                            <label class="manual-rx-field">
-                                <span class="manual-rx-field-label">Mode</span>
-                                <select class="manual-rx-select" data-manual-field="mode" data-rx="${rxNum}">${modeOptions}</select>
-                            </label>
+                            <div class="manual-rx-field-row">
+                                <label class="manual-rx-field">
+                                    <span class="manual-rx-field-label">Function</span>
+                                    <select class="manual-rx-select-compact" data-manual-field="function" data-rx="${rxNum}">
+                                        <option value="">--</option>
+                                        <option value="FT4">FT4</option>
+                                        <option value="FT8">FT8</option>
+                                        <option value="WSPR">WSPR</option>
+                                        <option value="SSB">SSB</option>
+                                    </select>
+                                </label>
+                                <label class="manual-rx-field">
+                                    <span class="manual-rx-field-label">Mode</span>
+                                    <select class="manual-rx-select-compact" data-manual-field="mode" data-rx="${rxNum}">${modeOptions}</select>
+                                </label>
+                            </div>
                             <label class="manual-rx-field${showBandField ? "" : " is-hidden"}"${showBandField ? "" : " aria-hidden=\"true\""}>
                                 <span class="manual-rx-field-label">Band</span>
                                 <select class="manual-rx-select" data-manual-field="band" data-rx="${rxNum}">${bandOptions}</select>
