@@ -10942,6 +10942,10 @@ ${passwordMarkup.actionsHtml}
             renderReceivers(latestChannelsMap);
             renderAssignments(latestAssignments);
             renderReasons({ channels: {}, reason_counts: {} });
+            // Auto-clear reset state after 5 seconds so stats resume updating
+            setTimeout(() => {
+                overviewDecodeResetActive = false;
+            }, 5000);
         }
 
         function initOverviewStatsResetHold() {
@@ -18993,7 +18997,10 @@ ${passwordMarkup.actionsHtml}
 
         function applyHealth(health) {
             const h = health && typeof health === "object" ? health : {};
-            latestChannelsMap = h.channels || {};
+            // Don't update channel data if reset is still active; just use what we captured
+            if (!overviewDecodeResetActive) {
+                latestChannelsMap = h.channels || {};
+            }
             updateLastKnownSnrCache(latestChannelsMap);
             if (manualAssignmentDashboardInteractionActive()) return;
 
