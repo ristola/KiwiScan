@@ -6967,31 +6967,9 @@
                                     <input id="cfg-kiwi-grid" type="text" placeholder="FM08so"
                                         title="Maidenhead grid square for the configured KiwiSDR">
                                 </label>
-                                <label class="control-field">Kiwi User Password
-                                    <input id="cfg-kiwi-password" type="password" placeholder="Optional"
-                                        autocomplete="new-password"
-                                        title="Stored locally for normal Kiwi receiver connections when only limited no-password channels are available">
-                                </label>
-                                <div class="control-field">User Password Status
-                                    <div class="control-status" id="cfg-kiwi-password-status">Not saved</div>
-                                </div>
-                                <label class="control-field">Kiwi Admin Password
-                                    <input id="cfg-kiwi-admin-password" type="password" placeholder="Optional"
-                                        autocomplete="new-password"
-                                        title="Stored locally for Kiwi admin kick and receiver slot recovery">
-                                </label>
-                                <div class="control-field">Admin Password Status
-                                    <div class="control-status" id="cfg-kiwi-admin-password-status">Not saved</div>
-                                </div>
                             </div>
                             <div class="control-actions kiwi-config-actions" id="cfg-primary-kiwi-actions"
                                 style="margin-top: 0;">
-                                <button class="action-btn" id="cfg-clear-password" type="button"
-                                    data-icon="lock-open">Forget
-                                    User Password</button>
-                                <button class="action-btn" id="cfg-clear-admin-password" type="button"
-                                    data-icon="lock-open">Forget
-                                    Admin Password</button>
                                 <button class="action-btn" id="cfg-remove-primary-kiwi" type="button" hidden>Remove
                                     Kiwi</button>
                             </div>
@@ -10367,8 +10345,6 @@
             const persistedActiveIndex = resolvePersistedConfiguredKiwiIndex(activeIndex, allEntries);
             const primaryEntry = allEntries[0] || buildDefaultConfiguredKiwiEntry();
             const normalizedPrimary = normalizeConfiguredKiwiEntry(primaryEntry, { preserveBlankHost: true }) || buildDefaultConfiguredKiwiEntry();
-            const password = readTextInput("cfg-kiwi-password", "").trim();
-            const adminPassword = readTextInput("cfg-kiwi-admin-password", "").trim();
             const payload = {
                 host: normalizedPrimary.host || KIWI_SETTINGS_DEFAULTS.host,
                 port: normalizedPrimary.port || KIWI_SETTINGS_DEFAULTS.port,
@@ -10380,8 +10356,6 @@
                 discovery_source: latestDiscoverySource,
                 sync_discovered_to_configured: true,
             };
-            if (password) payload.kiwi_password = password;
-            if (adminPassword) payload.kiwi_admin_password = adminPassword;
             return payload;
         }
 
@@ -10442,102 +10416,8 @@
             });
         }
 
-        function setKiwiPasswordUiState(isSet = false) {
-            const input = byId("cfg-kiwi-password");
-            const statusEl = byId("cfg-kiwi-password-status");
-            if (input) {
-                input.value = "";
-                input.placeholder = isSet ? "Saved locally; enter a new value to replace" : "Optional";
-            }
-            if (statusEl) {
-                statusEl.textContent = isSet
-                    ? "Saved locally for Kiwi receiver connections"
-                    : "Not saved";
-            }
-            syncSharedKiwiPasswordUi();
-        }
-
-        function setKiwiAdminPasswordUiState(isSet = false) {
-            const input = byId("cfg-kiwi-admin-password");
-            const statusEl = byId("cfg-kiwi-admin-password-status");
-            if (input) {
-                input.value = "";
-                input.placeholder = isSet ? "Saved locally; enter a new value to replace" : "Optional";
-            }
-            if (statusEl) {
-                statusEl.textContent = isSet
-                    ? "Saved locally for admin kick / slot recovery"
-                    : "Not saved";
-            }
-            syncSharedKiwiPasswordUi();
-        }
-
         function buildSharedKiwiPasswordMirrorMarkup() {
-            const passwordInput = byId("cfg-kiwi-password");
-            const passwordStatusEl = byId("cfg-kiwi-password-status");
-            const adminPasswordInput = byId("cfg-kiwi-admin-password");
-            const adminPasswordStatusEl = byId("cfg-kiwi-admin-password-status");
-            const passwordValue = passwordInput ? passwordInput.value : "";
-            const passwordPlaceholder = (passwordInput && passwordInput.placeholder) || "Optional";
-            const passwordStatus = safeText(passwordStatusEl && passwordStatusEl.textContent, "Not saved");
-            const adminPasswordValue = adminPasswordInput ? adminPasswordInput.value : "";
-            const adminPasswordPlaceholder = (adminPasswordInput && adminPasswordInput.placeholder) || "Optional";
-            const adminPasswordStatus = safeText(adminPasswordStatusEl && adminPasswordStatusEl.textContent, "Not saved");
-            return {
-                fieldsHtml: `
-                                <label class="control-field">Kiwi User Password
-                                    <input type="password" data-shared-kiwi-password="user" value="${escapeHtml(passwordValue)}" placeholder="${escapeHtml(passwordPlaceholder)}"
-                                        autocomplete="new-password"
-                                        title="Stored locally for normal Kiwi receiver connections when only limited no-password channels are available">
-                                </label>
-                                <div class="control-field">User Password Status
-                                    <div class="control-status" data-shared-kiwi-password-status="user">${escapeHtml(passwordStatus)}</div>
-                                </div>
-                                <label class="control-field">Kiwi Admin Password
-                                    <input type="password" data-shared-kiwi-password="admin" value="${escapeHtml(adminPasswordValue)}" placeholder="${escapeHtml(adminPasswordPlaceholder)}"
-                                        autocomplete="new-password"
-                                        title="Stored locally for Kiwi admin kick and receiver slot recovery">
-                                </label>
-                                <div class="control-field">Admin Password Status
-                                    <div class="control-status" data-shared-kiwi-password-status="admin">${escapeHtml(adminPasswordStatus)}</div>
-                                </div>
-                `,
-                actionsHtml: `
-                                <button class="action-btn" type="button" data-action="clear-kiwi-password"
-                                    data-icon="lock-open">Forget User Password</button>
-                                <button class="action-btn" type="button" data-action="clear-kiwi-admin-password"
-                                    data-icon="lock-open">Forget Admin Password</button>
-                `,
-            };
-        }
-
-        function syncSharedKiwiPasswordUi() {
-            const passwordInput = byId("cfg-kiwi-password");
-            const passwordStatusEl = byId("cfg-kiwi-password-status");
-            const adminPasswordInput = byId("cfg-kiwi-admin-password");
-            const adminPasswordStatusEl = byId("cfg-kiwi-admin-password-status");
-            const passwordValue = passwordInput ? passwordInput.value : "";
-            const passwordPlaceholder = (passwordInput && passwordInput.placeholder) || "Optional";
-            const passwordStatus = safeText(passwordStatusEl && passwordStatusEl.textContent, "Not saved");
-            const adminPasswordValue = adminPasswordInput ? adminPasswordInput.value : "";
-            const adminPasswordPlaceholder = (adminPasswordInput && adminPasswordInput.placeholder) || "Optional";
-            const adminPasswordStatus = safeText(adminPasswordStatusEl && adminPasswordStatusEl.textContent, "Not saved");
-            document.querySelectorAll('[data-shared-kiwi-password="user"]').forEach((input) => {
-                if (!(input instanceof HTMLInputElement)) return;
-                input.value = passwordValue;
-                input.placeholder = passwordPlaceholder;
-            });
-            document.querySelectorAll('[data-shared-kiwi-password-status="user"]').forEach((statusEl) => {
-                statusEl.textContent = passwordStatus;
-            });
-            document.querySelectorAll('[data-shared-kiwi-password="admin"]').forEach((input) => {
-                if (!(input instanceof HTMLInputElement)) return;
-                input.value = adminPasswordValue;
-                input.placeholder = adminPasswordPlaceholder;
-            });
-            document.querySelectorAll('[data-shared-kiwi-password-status="admin"]').forEach((statusEl) => {
-                statusEl.textContent = adminPasswordStatus;
-            });
+            return { fieldsHtml: "", actionsHtml: "" };
         }
 
         function renderConfiguredKiwiSettings(entries = [], discoveredEntries = []) {
@@ -10613,7 +10493,6 @@ ${passwordMarkup.actionsHtml}
                     targetActionsEl.appendChild(discoverBtn);
                 }
             }
-            syncSharedKiwiPasswordUi();
             renderTopbarKiwiSelector(safeEntries);
         }
 
@@ -11716,6 +11595,28 @@ ${passwordMarkup.actionsHtml}
             mapInstance.on("dragend", () => {
                 mapDragInProgress = false;
             });
+            // Catch mousedown on the map to set flag BEFORE Leaflet's onMouseDown scrollTo.
+            // Do NOT set the flag for zoom +/- buttons — that would block preserveOverviewScrollPosition.
+            if (mapEl) {
+                mapEl.addEventListener("mousedown", (event) => {
+                    if (event.target && event.target.closest(".leaflet-control-zoom")) return;
+                    mapDragInProgress = true;
+                });
+                mapEl.addEventListener("mouseup", () => {
+                    mapDragInProgress = false;
+                });
+                // For zoom +/- buttons: call preserveOverviewScrollPosition so its 1800 ms rAF
+                // restoration loop runs, and preventDefault the anchor click.
+                mapEl.addEventListener("mousedown", (event) => {
+                    if (!(event.target && event.target.closest(".leaflet-control-zoom"))) return;
+                    preserveOverviewScrollPosition();
+                    mapEl.addEventListener("click", (ev) => {
+                        if (ev.target && ev.target.closest(".leaflet-control-zoom")) {
+                            ev.preventDefault();
+                        }
+                    }, { capture: true, once: true });
+                }, true);
+            }
             mapMarkerLayer = L.layerGroup().addTo(mapInstance);
             homeMarkerLayer = L.layerGroup().addTo(mapInstance);
         }
@@ -15033,8 +14934,6 @@ ${passwordMarkup.actionsHtml}
                 );
                 renderTopbarKiwiSelector(latestConfiguredKiwiEntries);
                 syncTopbarMenuState();
-                setKiwiPasswordUiState(!!cfg.kiwi_password_set);
-                setKiwiAdminPasswordUiState(!!cfg.kiwi_admin_password_set);
                 const nextKiwiSettings = normalizeKiwiSettingsSnapshot(getActiveConfiguredKiwiEntry(collectConfiguredKiwiInputs({ includeBlank: true })));
                 const shouldAutoDiscoverKiwi = !kiwiAutoDiscoverAttempted && !hasConfiguredKiwiIp(nextConfiguredKiwis);
                 const _cfgDwellS = byId("cfg-dwell-s"); if (_cfgDwellS) _cfgDwellS.value = Number.isFinite(Number(cfg.dwell_s)) ? String(Number(cfg.dwell_s)) : "";
@@ -15153,15 +15052,11 @@ ${passwordMarkup.actionsHtml}
             const autosave = !!options.autosave;
             const payload = buildKiwiConfigPayloadFromInputs({ kiwiEntries: options.kiwiEntries });
             const currentEntries = Array.isArray(payload.kiwisdrs) ? payload.kiwisdrs : [];
-            const savedPassword = typeof payload.kiwi_password === "string" && payload.kiwi_password.length > 0;
-            const savedAdminPassword = typeof payload.kiwi_admin_password === "string" && payload.kiwi_admin_password.length > 0;
             setConfigStatus(autosave ? "autosaving Kiwi settings..." : "saving Kiwi settings...");
             try {
                 const saveResult = await postJson("/config", payload);
                 latestPersistedConfiguredKiwiEntries = preserveConfiguredKiwiEntryOrder(currentEntries, latestPersistedConfiguredKiwiEntries);
                 applySavedKiwiDiscoveryState(saveResult, currentEntries);
-                if (savedPassword) setKiwiPasswordUiState(true);
-                if (savedAdminPassword) setKiwiAdminPasswordUiState(true);
                 const stamp = new Date().toLocaleTimeString();
                 setConfigStatus(autosave ? `autosaved Kiwi settings (${stamp})` : "saved Kiwi settings");
                 return true;
@@ -15261,8 +15156,6 @@ ${passwordMarkup.actionsHtml}
                 receiversMode: getCurrentReceiversMode(),
                 overviewTopics: currentOverviewTopics,
             });
-            const savedPassword = typeof payload.kiwi_password === "string" && payload.kiwi_password.length > 0;
-            const savedAdminPassword = typeof payload.kiwi_admin_password === "string" && payload.kiwi_admin_password.length > 0;
             const automationPayload = {
                 uiThemeMode: normalizeUiThemeMode(readTextInput("cfg-ui-theme-mode", "auto"), "auto"),
                 uiThemeNightHour: readNumberInput("cfg-ui-theme-night-hour", 21),
@@ -15282,8 +15175,6 @@ ${passwordMarkup.actionsHtml}
                     postJson("/automation/settings", automationPayload),
                 ]);
                 applySavedKiwiDiscoveryState(configResult, currentEntries);
-                if (savedPassword) setKiwiPasswordUiState(true);
-                if (savedAdminPassword) setKiwiAdminPasswordUiState(true);
                 // Keep latestAutomationSettings in sync so saveAutomationSection
                 // doesn't overwrite these values with a stale snapshot.
                 if (latestAutomationSettings && typeof latestAutomationSettings === "object") {
@@ -16225,10 +16116,6 @@ ${passwordMarkup.actionsHtml}
             const cfgDiscover = byId("cfg-discover");
             const cfgSave = byId("cfg-save");
             const cfgKiwiCards = byId("cfg-discovered-kiwi-cards");
-            const cfgKiwiPassword = byId("cfg-kiwi-password");
-            const cfgKiwiAdminPassword = byId("cfg-kiwi-admin-password");
-            const cfgClearPassword = byId("cfg-clear-password");
-            const cfgClearAdminPassword = byId("cfg-clear-admin-password");
             const cfgRemovePrimaryKiwi = byId("cfg-remove-primary-kiwi");
             const cfgDepsRefresh = byId("cfg-deps-refresh");
             const cfgDepsTest = byId("cfg-deps-test");
@@ -16300,31 +16187,9 @@ ${passwordMarkup.actionsHtml}
                 });
             }
             if (cfgSave) cfgSave.addEventListener("click", () => { saveConfigSection(); });
-            const clearKiwiPassword = async () => {
-                setConfigStatus("clearing Kiwi user password...");
-                try {
-                    await postJson("/config", { clear_kiwi_password: true });
-                    setKiwiPasswordUiState(false);
-                    setConfigStatus("cleared Kiwi user password");
-                } catch (err) {
-                    setConfigStatus(`clear failed: ${String((err && err.message) || err)}`);
-                }
-            };
-            const clearKiwiAdminPassword = async () => {
-                setConfigStatus("clearing Kiwi admin password...");
-                try {
-                    await postJson("/config", { clear_kiwi_admin_password: true });
-                    setKiwiAdminPasswordUiState(false);
-                    setConfigStatus("cleared Kiwi admin password");
-                } catch (err) {
-                    setConfigStatus(`clear failed: ${String((err && err.message) || err)}`);
-                }
-            };
             const removeConfiguredKiwiAtIndex = async (kiwiIndex, entryIdentity = "") => {
                 if (!Number.isFinite(kiwiIndex) || kiwiIndex < 0) return;
-                const inputEntries = collectConfiguredKiwiInputs({ includeBlank: true });
-                const latestEntries = normalizeConfiguredKiwiEntries(latestConfiguredKiwiEntries, { preserveBlankHost: true });
-                const entries = latestEntries.length > inputEntries.length ? latestEntries.slice(0, MAX_CONFIGURED_KIWIS) : inputEntries;
+                const entries = collectConfiguredKiwiInputs({ includeBlank: true }).slice(0, MAX_CONFIGURED_KIWIS);
                 const matchedIndex = entryIdentity
                     ? entries.findIndex((entry, index) => configuredKiwiEntryIdentity(entry, index) === entryIdentity)
                     : -1;
@@ -16345,16 +16210,6 @@ ${passwordMarkup.actionsHtml}
                 renderConfiguredKiwiSettings(entries, latestDiscoveredKiwiEntries);
                 await saveConfiguredKiwiConfig({ autosave: true, kiwiEntries: entries });
             };
-            if (cfgKiwiPassword) {
-                cfgKiwiPassword.addEventListener("input", syncSharedKiwiPasswordUi);
-                cfgKiwiPassword.addEventListener("change", syncSharedKiwiPasswordUi);
-            }
-            if (cfgKiwiAdminPassword) {
-                cfgKiwiAdminPassword.addEventListener("input", syncSharedKiwiPasswordUi);
-                cfgKiwiAdminPassword.addEventListener("change", syncSharedKiwiPasswordUi);
-            }
-            if (cfgClearPassword) cfgClearPassword.addEventListener("click", clearKiwiPassword);
-            if (cfgClearAdminPassword) cfgClearAdminPassword.addEventListener("click", clearKiwiAdminPassword);
             if (cfgRemovePrimaryKiwi) {
                 cfgRemovePrimaryKiwi.addEventListener("click", async () => {
                     await removeConfiguredKiwiAtIndex(0);
@@ -16397,24 +16252,19 @@ ${passwordMarkup.actionsHtml}
             });
             if (cfgKiwiCards && cfgKiwiCards.dataset.bound !== "1") {
                 const queueKiwiAutosave = (event) => {
-                    const mirrorInput = event.target instanceof Element ? event.target.closest('[data-shared-kiwi-password]') : null;
-                    if (mirrorInput) return;
+                    const field = safeText(event.target instanceof Element ? event.target.getAttribute("data-field") : "", "");
+                    if (field === "host") return;
                     scheduleConfigAutosave();
                 };
-                const syncMirrorInput = (event) => {
-                    const target = event.target instanceof Element ? event.target.closest('[data-shared-kiwi-password]') : null;
-                    if (!(target instanceof HTMLInputElement)) return;
-                    const kind = safeText(target.getAttribute("data-shared-kiwi-password"), "");
-                    if (kind === "user" && cfgKiwiPassword) {
-                        cfgKiwiPassword.value = target.value;
-                    } else if (kind === "admin" && cfgKiwiAdminPassword) {
-                        cfgKiwiAdminPassword.value = target.value;
-                    }
-                    syncSharedKiwiPasswordUi();
-                };
                 cfgKiwiCards.addEventListener("input", (event) => {
-                    syncMirrorInput(event);
                     queueKiwiAutosave(event);
+                });
+                cfgKiwiCards.addEventListener("focusout", (event) => {
+                    const target = event.target instanceof Element ? event.target.closest('[data-field="host"]') : null;
+                    if (!target) return;
+                    const relatedTarget = event.relatedTarget instanceof Element ? event.relatedTarget : null;
+                    if (relatedTarget && relatedTarget.closest('[data-action="remove-kiwi"], #cfg-remove-primary-kiwi')) return;
+                    saveConfiguredKiwiConfig({ autosave: true });
                 });
                 cfgKiwiCards.addEventListener("change", (event) => {
                     syncMirrorInput(event);
@@ -16424,14 +16274,6 @@ ${passwordMarkup.actionsHtml}
                     const target = event.target instanceof Element ? event.target.closest("[data-action]") : null;
                     if (!target) return;
                     const action = safeText(target.getAttribute("data-action"), "");
-                    if (action === "clear-kiwi-password") {
-                        await clearKiwiPassword();
-                        return;
-                    }
-                    if (action === "clear-kiwi-admin-password") {
-                        await clearKiwiAdminPassword();
-                        return;
-                    }
                     if (action !== "remove-kiwi") return;
                     const card = target.closest('section[data-secondary-kiwi-index]');
                     const kiwiIndex = Number(card ? card.getAttribute("data-secondary-kiwi-index") : target.getAttribute("data-secondary-kiwi-index"));
@@ -16477,20 +16319,11 @@ ${passwordMarkup.actionsHtml}
                     setUnsupportedReceiverScanBandStatus(targetRole, selectedBandValue);
                     return;
                 }
-
                 const scan = latestReceiverScanStatus;
                 const activeBand = currentReceiverScanBand(scan);
                 const selectedRole = normalizeReceiverScanControlRole(receiverScanActiveSource, "");
                 const runningRole = normalizeReceiverScanControlRole(scan && scan.scan_mode, receiverScanActiveSource || "smart") || "smart";
                 const runningSameBand = !!(scan && scan.running && activeBand === selectedBandValue);
-
-                if (selectedRole !== targetRole) {
-                    receiverScanPendingSource = "";
-                    receiverScanActiveSource = targetRole;
-                    syncReceiverScanControls(scan);
-                    focusReceiverScanLane(targetRole);
-                    return;
-                }
 
                 if (runningSameBand && runningRole === targetRole) {
                     receiverScanPendingSource = targetRole;
@@ -19178,6 +19011,7 @@ ${passwordMarkup.actionsHtml}
             // stays visible between consecutive kick cycles, not just for 25 s.
             const autoKick = h.auto_kick || {};
             const kickLastUnix = Number(autoKick.last_unix || 0);
+            const unstable = Number(h.unstable_receivers || 0);
             const wasAutoKickRecent = (kickLastUnix > 0 && (Date.now() / 1000 - kickLastUnix) < 65) || unstable > 0;
             if (_rxBusyAutoKick !== wasAutoKickRecent) {
                 _rxBusyAutoKick = wasAutoKickRecent;

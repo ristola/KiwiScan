@@ -37,6 +37,11 @@ def mount_static(app: FastAPI) -> None:
         app.mount("/static", _NoCacheHtmlStaticFiles(directory=str(d), html=True), name="static")
 
 
+@router.get("/favicon.ico", include_in_schema=False)
+def favicon() -> Response:
+    return Response(status_code=204)
+
+
 @router.get("/", response_class=HTMLResponse)
 def root_index() -> HTMLResponse:
     """Redirect root to the Pro UI."""
