@@ -9664,7 +9664,7 @@ ${passwordMarkup.actionsHtml}
                 ? (connectionBits.join(" • ") || "Receiver is live on the Kiwi.")
                 : (enabled
                     ? `Ready: ${formatManualAssignmentFrequencyKHz(resolvedFreqKHz || resolveManualAssignmentSuggestedFrequencyKHz(band, mode))} kHz ${mode} on ${band}.`
-                    : "Receiver idle until enabled.");
+                    : "");
             return {
                 rx: Number(rxNum),
                 enabled,
@@ -10020,7 +10020,7 @@ ${passwordMarkup.actionsHtml}
                     }
                 } else if (field === "mode") {
                     draft.mode = resolveManualAssignmentMode(target.value, Number(draft.freq_khz || seed.freq_khz), seed.mode || MANUAL_RECEIVER_DEFAULT_MODE);
-                    draft.band_exposed = isManualAssignmentBandSelectableMode(draft.mode);
+                    draft.band_exposed = true;
                     if (isManualAssignmentBandSelectableMode(draft.mode)) {
                         draft.freq_khz = formatManualAssignmentFrequencyKHz(resolveManualAssignmentSuggestedFrequencyKHz(draft.band, draft.mode));
                         draft.freq_auto = true;
@@ -10044,14 +10044,6 @@ ${passwordMarkup.actionsHtml}
                 }
 
                 if (card instanceof HTMLElement) {
-                    const showBandField = isManualAssignmentBandSelectableMode(draft.mode);
-                    const bandSelect = card.querySelector(`select[data-manual-field="band"][data-rx="${rxNum}"]`);
-                    const bandField = bandSelect instanceof HTMLElement ? bandSelect.closest(".manual-rx-field") : null;
-                    if (bandField instanceof HTMLElement) {
-                        bandField.classList.toggle("is-hidden", !showBandField);
-                        if (showBandField) bandField.removeAttribute("aria-hidden");
-                        else bandField.setAttribute("aria-hidden", "true");
-                    }
                     const freqInput = card.querySelector(`input[data-manual-field="freq"][data-rx="${rxNum}"]`);
                     if (freqInput instanceof HTMLInputElement && (field === "mode" || field === "band")) {
                         freqInput.value = safeText(draft.freq_khz, "");
@@ -10142,16 +10134,15 @@ ${passwordMarkup.actionsHtml}
                             ? `Will tune to ${previewFreq} kHz ${mode} on ${band}.`
                             : "Settings save automatically. Turn Active on to start this receiver.")
                         : (enabled || seed.live)
-                            ? safeText(seed.summary, "Receiver idle until enabled.")
-                            : "Receiver idle until enabled.";
-                const metaText = seed.live ? "Receiver is currently live." : (enabled ? "Ready to apply." : "No live allocation.");
+                            ? safeText(seed.summary, "")
+                            : "";
+                const metaText = seed.live ? "Receiver is currently live." : (enabled ? "Ready to apply." : "");
                 const modeOptions = MANUAL_RECEIVER_MODE_OPTIONS.map((option) => (
                     `<option value="${escapeHtml(option)}"${option === mode ? " selected" : ""}>${escapeHtml(option)}</option>`
                 )).join("");
                 const bandOptions = MAP_BAND_OPTIONS.map((option) => (
                     `<option value="${escapeHtml(option)}"${option === band ? " selected" : ""}>${escapeHtml(option.toUpperCase())}</option>`
                 )).join("");
-                const showBandField = isManualAssignmentBandSelectableMode(mode);
                 const canListen = !!seed.live && Number.isFinite(Number(previewFreq)) && Number(previewFreq) > 0;
                 const listenTitle = seed.live ? `Listen to RX${rxNum}` : (enabled ? `RX${rxNum} is applying — wait for LIVE status to listen` : `Enable RX${rxNum} to listen`);
                 return `
@@ -10182,14 +10173,14 @@ ${passwordMarkup.actionsHtml}
                                     </select>
                                 </label>
                                 <label class="manual-rx-field">
+                                    <span class="manual-rx-field-label">Band</span>
+                                    <select class="manual-rx-select-compact" data-manual-field="band" data-rx="${rxNum}">${bandOptions}</select>
+                                </label>
+                                <label class="manual-rx-field">
                                     <span class="manual-rx-field-label">Mode</span>
                                     <select class="manual-rx-select-compact" data-manual-field="mode" data-rx="${rxNum}">${modeOptions}</select>
                                 </label>
                             </div>
-                            <label class="manual-rx-field${showBandField ? "" : " is-hidden"}"${showBandField ? "" : " aria-hidden=\"true\""}>
-                                <span class="manual-rx-field-label">Band</span>
-                                <select class="manual-rx-select" data-manual-field="band" data-rx="${rxNum}">${bandOptions}</select>
-                            </label>
                             <label class="manual-rx-field manual-rx-field-full">
                                 <span class="manual-rx-field-label">Frequency kHz</span>
                                 <input class="manual-rx-input" type="number" min="0.01" step="0.01" inputmode="decimal" value="${escapeHtml(previewFreq)}" data-manual-field="freq" data-rx="${rxNum}">
