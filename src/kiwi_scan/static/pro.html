@@ -4,6 +4,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
     <title>KiwiScan Pro Console</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -7231,21 +7232,20 @@
                                     <input id="cfg-kiwi-grid" type="text" placeholder="FM08so"
                                         title="Maidenhead grid square for the configured KiwiSDR">
                                 </label>
-                                <label class="control-field">Kiwi User Password
-                                    <input id="cfg-kiwi-password" type="password" placeholder="Optional"
-                                        autocomplete="new-password"
-                                        title="Stored locally for normal Kiwi receiver connections when only limited no-password channels are available">
+                                <label class="control-field">Kiwi User Password (disabled for now)
+                                    <input id="cfg-kiwi-password" type="text" placeholder="Temporarily disabled"
+                                        autocomplete="off" disabled title="Password support is temporarily disabled">
                                 </label>
                                 <div class="control-field">User Password Status
-                                    <div class="control-status" id="cfg-kiwi-password-status">Not saved</div>
+                                    <div class="control-status" id="cfg-kiwi-password-status">Disabled for now</div>
                                 </div>
-                                <label class="control-field">Kiwi Admin Password
-                                    <input id="cfg-kiwi-admin-password" type="password" placeholder="Optional"
-                                        autocomplete="new-password"
-                                        title="Stored locally for Kiwi admin kick and receiver slot recovery">
+                                <label class="control-field">Kiwi Admin Password (disabled for now)
+                                    <input id="cfg-kiwi-admin-password" type="text" placeholder="Temporarily disabled"
+                                        autocomplete="off" disabled title="Password support is temporarily disabled">
                                 </label>
                                 <div class="control-field">Admin Password Status
-                                    <div class="control-status" id="cfg-kiwi-admin-password-status">Not saved</div>
+                                    <div class="control-status" id="cfg-kiwi-admin-password-status">Disabled for now
+                                    </div>
                                 </div>
                             </div>
                             <div class="control-actions kiwi-config-actions" id="cfg-primary-kiwi-actions"
@@ -7745,7 +7745,7 @@
         const MANUAL_RECEIVER_RXS = Object.freeze([0, 1, 2, 3, 4, 5, 6, 7]);
         const MANUAL_RECEIVER_DEFAULT_BAND = "20m";
         const MANUAL_RECEIVER_DEFAULT_MODE = "USB";
-        const MANUAL_RECEIVER_DEFAULT_FREQ_KHZ = 14200.0;
+        const MANUAL_RECEIVER_DEFAULT_FREQ_KHZ = 0.0;
         const MANUAL_RECEIVER_MODE_OPTIONS = Object.freeze(["FT8", "FT4", "WSPR", "USB", "LSB", "AM", "FM", "CW"]);
         const MANUAL_ASSIGNMENT_INTERACTION_GRACE_MS = 4600;
         const DASHBOARD_SELECT_INTERACTION_GRACE_MS = 12000;
@@ -8817,8 +8817,6 @@
             const persistedActiveIndex = resolvePersistedConfiguredKiwiIndex(activeIndex, allEntries);
             const primaryEntry = allEntries[0] || buildDefaultConfiguredKiwiEntry();
             const normalizedPrimary = normalizeConfiguredKiwiEntry(primaryEntry, { preserveBlankHost: true }) || buildDefaultConfiguredKiwiEntry();
-            const password = readTextInput("cfg-kiwi-password", "").trim();
-            const adminPassword = readTextInput("cfg-kiwi-admin-password", "").trim();
             const payload = {
                 host: normalizedPrimary.host || KIWI_SETTINGS_DEFAULTS.host,
                 port: normalizedPrimary.port || KIWI_SETTINGS_DEFAULTS.port,
@@ -8830,8 +8828,6 @@
                 discovery_source: latestDiscoverySource,
                 sync_discovered_to_configured: true,
             };
-            if (password) payload.kiwi_password = password;
-            if (adminPassword) payload.kiwi_admin_password = adminPassword;
             return payload;
         }
 
@@ -8897,12 +8893,11 @@
             const statusEl = byId("cfg-kiwi-password-status");
             if (input) {
                 input.value = "";
-                input.placeholder = isSet ? "Saved locally; enter a new value to replace" : "Optional";
+                input.placeholder = "Temporarily disabled";
+                input.disabled = true;
             }
             if (statusEl) {
-                statusEl.textContent = isSet
-                    ? "Saved locally for Kiwi receiver connections"
-                    : "Not saved";
+                statusEl.textContent = "Disabled for now";
             }
             syncSharedKiwiPasswordUi();
         }
@@ -8912,12 +8907,11 @@
             const statusEl = byId("cfg-kiwi-admin-password-status");
             if (input) {
                 input.value = "";
-                input.placeholder = isSet ? "Saved locally; enter a new value to replace" : "Optional";
+                input.placeholder = "Temporarily disabled";
+                input.disabled = true;
             }
             if (statusEl) {
-                statusEl.textContent = isSet
-                    ? "Saved locally for admin kick / slot recovery"
-                    : "Not saved";
+                statusEl.textContent = "Disabled for now";
             }
             syncSharedKiwiPasswordUi();
         }
@@ -8927,35 +8921,29 @@
             const passwordStatusEl = byId("cfg-kiwi-password-status");
             const adminPasswordInput = byId("cfg-kiwi-admin-password");
             const adminPasswordStatusEl = byId("cfg-kiwi-admin-password-status");
-            const passwordValue = passwordInput ? passwordInput.value : "";
-            const passwordPlaceholder = (passwordInput && passwordInput.placeholder) || "Optional";
-            const passwordStatus = safeText(passwordStatusEl && passwordStatusEl.textContent, "Not saved");
-            const adminPasswordValue = adminPasswordInput ? adminPasswordInput.value : "";
-            const adminPasswordPlaceholder = (adminPasswordInput && adminPasswordInput.placeholder) || "Optional";
-            const adminPasswordStatus = safeText(adminPasswordStatusEl && adminPasswordStatusEl.textContent, "Not saved");
             return {
                 fieldsHtml: `
-                                <label class="control-field">Kiwi User Password
-                                    <input type="password" data-shared-kiwi-password="user" value="${escapeHtml(passwordValue)}" placeholder="${escapeHtml(passwordPlaceholder)}"
-                                        autocomplete="new-password"
-                                        title="Stored locally for normal Kiwi receiver connections when only limited no-password channels are available">
+                                <label class="control-field">Kiwi User Password (disabled for now)
+                                    <input type="text" data-shared-kiwi-password="user" value="" placeholder="Temporarily disabled"
+                                        autocomplete="off" disabled
+                                        title="Password support is temporarily disabled">
                                 </label>
                                 <div class="control-field">User Password Status
-                                    <div class="control-status" data-shared-kiwi-password-status="user">${escapeHtml(passwordStatus)}</div>
+                                    <div class="control-status" data-shared-kiwi-password-status="user">Disabled for now</div>
                                 </div>
-                                <label class="control-field">Kiwi Admin Password
-                                    <input type="password" data-shared-kiwi-password="admin" value="${escapeHtml(adminPasswordValue)}" placeholder="${escapeHtml(adminPasswordPlaceholder)}"
-                                        autocomplete="new-password"
-                                        title="Stored locally for Kiwi admin kick and receiver slot recovery">
+                                <label class="control-field">Kiwi Admin Password (disabled for now)
+                                    <input type="text" data-shared-kiwi-password="admin" value="" placeholder="Temporarily disabled"
+                                        autocomplete="off" disabled
+                                        title="Password support is temporarily disabled">
                                 </label>
                                 <div class="control-field">Admin Password Status
-                                    <div class="control-status" data-shared-kiwi-password-status="admin">${escapeHtml(adminPasswordStatus)}</div>
+                                    <div class="control-status" data-shared-kiwi-password-status="admin">Disabled for now</div>
                                 </div>
                 `,
                 actionsHtml: `
-                                <button class="action-btn" type="button" data-action="clear-kiwi-password"
+                                <button class="action-btn" type="button" data-action="clear-kiwi-password" disabled
                                     data-icon="lock-open">Forget User Password</button>
-                                <button class="action-btn" type="button" data-action="clear-kiwi-admin-password"
+                                <button class="action-btn" type="button" data-action="clear-kiwi-admin-password" disabled
                                     data-icon="lock-open">Forget Admin Password</button>
                 `,
             };
@@ -9533,7 +9521,7 @@ ${passwordMarkup.actionsHtml}
 
         function formatManualAssignmentFrequencyKHz(value) {
             const num = Number(value);
-            if (!Number.isFinite(num) || num <= 0) return "";
+            if (!Number.isFinite(num)) return "";
             return num.toFixed(2);
         }
 
@@ -9583,6 +9571,7 @@ ${passwordMarkup.actionsHtml}
         function resolveManualAssignmentSuggestedFrequencyKHz(bandValue, modeValue) {
             const band = normalizeManualAssignmentBand(bandValue, MANUAL_RECEIVER_DEFAULT_BAND);
             const mode = resolveManualAssignmentMode(modeValue, 0, MANUAL_RECEIVER_DEFAULT_MODE);
+            if (mode === "USB" || mode === "LSB") return MANUAL_RECEIVER_DEFAULT_FREQ_KHZ;
             if (mode === "FT8" && Number.isFinite(Number(BAND_FT8_FREQS_KHZ[band]))) return Number(BAND_FT8_FREQS_KHZ[band]);
             if (mode === "FT4" && Number.isFinite(Number(BAND_FT4_FREQS_KHZ[band]))) return Number(BAND_FT4_FREQS_KHZ[band]);
             if (mode === "WSPR" && Number.isFinite(Number(BAND_WSPR_FREQS_KHZ[band]))) return Number(BAND_WSPR_FREQS_KHZ[band]);
@@ -9623,7 +9612,7 @@ ${passwordMarkup.actionsHtml}
                     mode: MANUAL_RECEIVER_DEFAULT_MODE,
                     freq_khz: formatManualAssignmentFrequencyKHz(MANUAL_RECEIVER_DEFAULT_FREQ_KHZ),
                     freq_auto: false,
-                    band_exposed: false,
+                    band_exposed: true,
                     dirty: !!saveProfile,
                 };
             }
@@ -9653,7 +9642,7 @@ ${passwordMarkup.actionsHtml}
                     freq_khz: Number(MANUAL_RECEIVER_DEFAULT_FREQ_KHZ.toFixed(3)),
                 }));
                 await postJson("/admin/manual-assignments", activeKiwiTargetPayload({ assignments }));
-                manualAssignmentStatusText = "All manual receiver assignments cleared and reset to USB 14200.";
+                manualAssignmentStatusText = "All manual receiver assignments cleared and reset to USB 0.00.";
                 await refresh();
             }
 
@@ -9776,7 +9765,7 @@ ${passwordMarkup.actionsHtml}
                     mode: seed.mode,
                     freq_khz: safeText(seed.freq_khz, ""),
                     freq_auto: !!seed.freq_auto,
-                    band_exposed: !!(existing && existing.band_exposed && isManualAssignmentBandSelectableMode(seed.mode)),
+                    band_exposed: true,
                     dirty: false,
                 };
                 manualAssignmentDrafts[key] = next;
@@ -10105,7 +10094,7 @@ ${passwordMarkup.actionsHtml}
                     }
                 } else if (field === "mode") {
                     draft.mode = resolveManualAssignmentMode(target.value, Number(draft.freq_khz || seed.freq_khz), seed.mode || MANUAL_RECEIVER_DEFAULT_MODE);
-                    draft.band_exposed = isManualAssignmentBandSelectableMode(draft.mode);
+                    draft.band_exposed = true;
                     if (isManualAssignmentBandSelectableMode(draft.mode)) {
                         draft.freq_khz = formatManualAssignmentFrequencyKHz(resolveManualAssignmentSuggestedFrequencyKHz(draft.band, draft.mode));
                         draft.freq_auto = true;
@@ -10133,9 +10122,8 @@ ${passwordMarkup.actionsHtml}
                     const bandSelect = card.querySelector(`select[data-manual-field="band"][data-rx="${rxNum}"]`);
                     const bandField = bandSelect instanceof HTMLElement ? bandSelect.closest(".manual-rx-field") : null;
                     if (bandField instanceof HTMLElement) {
-                        bandField.classList.toggle("is-hidden", !showBandField);
-                        if (showBandField) bandField.removeAttribute("aria-hidden");
-                        else bandField.setAttribute("aria-hidden", "true");
+                        bandField.classList.remove("is-hidden");
+                        bandField.removeAttribute("aria-hidden");
                     }
                     const freqInput = card.querySelector(`input[data-manual-field="freq"][data-rx="${rxNum}"]`);
                     if (freqInput instanceof HTMLInputElement && (field === "mode" || field === "band")) {
@@ -10219,7 +10207,7 @@ ${passwordMarkup.actionsHtml}
                         : seed.live
                             ? safeText(seed.health_text, "Live")
                             : (enabled ? "Staged" : "Idle");
-                const previewFreq = formatManualAssignmentFrequencyKHz(freqText || resolveManualAssignmentSuggestedFrequencyKHz(band, mode));
+                const previewFreq = formatManualAssignmentFrequencyKHz(safeText(freqText, "") ? Number(freqText) : resolveManualAssignmentSuggestedFrequencyKHz(band, mode));
                 const summaryText = errorText
                     ? errorText
                     : draft.dirty
@@ -10236,7 +10224,7 @@ ${passwordMarkup.actionsHtml}
                 const bandOptions = MAP_BAND_OPTIONS.map((option) => (
                     `<option value="${escapeHtml(option)}"${option === band ? " selected" : ""}>${escapeHtml(option.toUpperCase())}</option>`
                 )).join("");
-                const showBandField = isManualAssignmentBandSelectableMode(mode);
+                const showBandField = true;
                 const canListen = !!seed.live && Number.isFinite(Number(previewFreq)) && Number(previewFreq) > 0;
                 const listenTitle = seed.live ? `Listen to RX${rxNum}` : (enabled ? `RX${rxNum} is applying — wait for LIVE status to listen` : `Enable RX${rxNum} to listen`);
                 return `
@@ -10856,7 +10844,15 @@ ${passwordMarkup.actionsHtml}
                 closeBtn.dataset.bound = "1";
             }
             if (volumeInput && volumeInput.dataset.bound !== "1") {
+                volumeInput.addEventListener("pointerdown", () => {
+                    preserveOverviewScrollPosition();
+                });
+                volumeInput.addEventListener("click", (event) => {
+                    event.stopPropagation();
+                    preserveOverviewScrollPosition();
+                });
                 volumeInput.addEventListener("input", () => {
+                    preserveOverviewScrollPosition();
                     activeReceiverAudioVolume = Math.max(0, Math.min(1, Number(volumeInput.value) / 100));
                     syncActiveReceiverAudioControls();
                 });
@@ -17367,7 +17363,6 @@ ${passwordMarkup.actionsHtml}
                 if (targetMode === "manual") {
                     await postJson("/auto_set_receivers", {
                         enabled: false,
-                        kiwi_key: getConfiguredKiwiProfileKey(collectConfiguredKiwiInputs({ includeBlank: true }), activeConfiguredKiwiIndex),
                     });
                     setAutomationStatus("Manual Mode ON — waiting for receivers to stop...");
                     const result = await waitForReceiversModeTransition("manual");
@@ -19251,8 +19246,6 @@ ${passwordMarkup.actionsHtml}
         function startDecodeWebSocket() {
             const host = window.location.hostname;
             const urls = [
-                `ws://${host}:4010/?role=pro`,
-                `ws://${host}:4010/ws/decodes?role=pro`,
                 `ws://${window.location.host}/ws/decodes`,
             ];
 
@@ -20436,6 +20429,7 @@ ${passwordMarkup.actionsHtml}
 
         function applyHealth(health) {
             const h = health && typeof health === "object" ? health : {};
+            const unstable = Number(h.unstable_receivers || 0);
             latestChannelsMap = h.channels || {};
             updateLastKnownSnrCache(latestChannelsMap);
             if (manualAssignmentDashboardInteractionActive()) return;
