@@ -4724,7 +4724,8 @@ class ReceiverManager:
                     and self._workers.get(int(rx)) is not None
                     for rx in current_rxs | desired_rxs
                 )
-                if host_changed or starting_from_empty or not any_fixed_preserved:
+                external_empty_start = bool(starting_from_empty and not allow_starting_from_empty_full_reset)
+                if host_changed or (starting_from_empty and not external_empty_start) or (not any_fixed_preserved and not external_empty_start):
                     # When starting from empty (e.g. after Manual mode), always use
                     # force_all=True so ALL users (including competing controllers) are
                     # evicted.  Then start workers immediately (2 s sleep) to claim
@@ -4764,6 +4765,10 @@ class ReceiverManager:
                         self._wait_for_kiwi_slots_stable_clear(
                             host=str(host), port=int(port), stable_secs=10.0, timeout_s=60.0
                         )
+                elif external_empty_start:
+                    logger.info(
+                        "Starting from empty via external runtime request; skipping Kiwi kick/wait for immediate apply"
+                    )
                 else:
                     # Fixed workers are preserved — /users will never reach 0, so the
                     # stable-clear wait above would burn the full 60 s timeout without

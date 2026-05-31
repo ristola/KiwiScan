@@ -48,7 +48,7 @@ COPY requirements.txt pyproject.toml README.md ./
 RUN python -m venv "$VIRTUAL_ENV" \
   && "$VIRTUAL_ENV/bin/pip" install --no-cache-dir --upgrade pip \
   && "$VIRTUAL_ENV/bin/pip" install --no-cache-dir -r requirements.txt \
-  && "$VIRTUAL_ENV/bin/pip" install --no-cache-dir 'pytest>=7'
+  && "$VIRTUAL_ENV/bin/pip" install --no-cache-dir 'pytest==9.0.3'
 
 COPY src ./src
 COPY vendor ./vendor
