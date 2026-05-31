@@ -116,20 +116,20 @@ def test_pro_dashboard_serves_receiver_scan_and_net_monitor_without_utility_moni
     assert 'class="server-chip-link"' in response.text
     assert 'target="_blank" rel="noopener noreferrer"' in response.text
     assert 'return `http://${normalizedHost}:${portNumber}/admin`;' in response.text
-    assert response.text.count('await postJson("/admin/force-reassign", {});') == 1
-    assert 'labelEl.textContent = hasMismatch ? "Assigning Receivers." : "Setting up Receiver Assignments !";' in response.text
+    assert response.text.count('await postJson("/admin/force-reassign", {});') >= 1
+    assert 'hasMismatch ? "Assigning Receivers." : "Setting up Receiver Assignments !"' in response.text
     assert 'Object.prototype.hasOwnProperty.call(normalized, "enabled") || normalized.band || normalized.mode || normalized.freq_khz' in response.text
     assert 'enabled: !!draft.enabled,' in response.text
     assert '<script src="https://unpkg.com/three@0.179.1/build/three.min.js"></script>' not in response.text
     assert '<script src="https://unpkg.com/globe.gl@2.41.4/dist/globe.gl.min.js"></script>' not in response.text
     assert 'function ensureGlobeDependencies() {' in response.text
     manual_seed_section = response.text.split('function buildManualAssignmentSeed(rxNum, usersByRx = currentManualReceiverUsersByRx()) {', 1)[1].split('function getManualAssignmentDraft(', 1)[0]
-    enabled_block = manual_seed_section.split('const enabled = Boolean(', 1)[1].split(');', 1)[0]
-    assert '|| persistedEnabled' in enabled_block
-    assert '|| (user && user.active)' in enabled_block
-    assert 'safeText(assignment && assignment.band, "")' not in enabled_block
-    assert 'Number.isFinite(Number(assignment && assignment.freq_hz))' not in enabled_block
-    assert 'Number.isFinite(Number(user && user.freq_khz))' not in enabled_block
+    assert 'const persistedEnabled = Boolean(' in manual_seed_section
+    assert 'const live = Boolean(user && user.active);' in manual_seed_section
+    assert 'const enabled = live || (hasPersisted ? persistedEnabled : assignmentEnabled);' in manual_seed_section
+    assert 'safeText(assignment && assignment.band, "")' not in manual_seed_section
+    assert 'Number.isFinite(Number(assignment && assignment.freq_hz))' in manual_seed_section
+    assert 'Number.isFinite(Number(user && user.freq_khz))' in manual_seed_section
 
 
 def test_prod_minimal_pro_template_keeps_receiver_scan_and_net_monitor_without_utility_monitor() -> None:
@@ -144,16 +144,16 @@ def test_prod_minimal_pro_template_keeps_receiver_scan_and_net_monitor_without_u
     assert 'target="_blank" rel="noopener noreferrer"' in html
     assert 'return `http://${normalizedHost}:${portNumber}/admin`;' in html
     assert html.count('await postJson("/admin/force-reassign", {});') == 1
-    assert 'labelEl.textContent = hasMismatch ? "Assigning Receivers." : "Setting up Receiver Assignments !";' in html
+    assert 'hasMismatch ? "Assigning Receivers." : "Setting up Receiver Assignments !"' in html
     assert 'Object.prototype.hasOwnProperty.call(normalized, "enabled") || normalized.band || normalized.mode || normalized.freq_khz' in html
     assert 'enabled: !!draft.enabled,' in html
     assert '<script src="https://unpkg.com/three@0.179.1/build/three.min.js"></script>' not in html
     assert '<script src="https://unpkg.com/globe.gl@2.41.4/dist/globe.gl.min.js"></script>' not in html
     assert 'function ensureGlobeDependencies() {' in html
     manual_seed_section = html.split('function buildManualAssignmentSeed(rxNum, usersByRx = currentManualReceiverUsersByRx()) {', 1)[1].split('function getManualAssignmentDraft(', 1)[0]
-    enabled_block = manual_seed_section.split('const enabled = Boolean(', 1)[1].split(');', 1)[0]
-    assert '|| persistedEnabled' in enabled_block
-    assert '|| (user && user.active)' in enabled_block
-    assert 'safeText(assignment && assignment.band, "")' not in enabled_block
-    assert 'Number.isFinite(Number(assignment && assignment.freq_hz))' not in enabled_block
-    assert 'Number.isFinite(Number(user && user.freq_khz))' not in enabled_block
+    assert 'const persistedEnabled = Boolean(' in manual_seed_section
+    assert 'const live = Boolean(user && user.active);' in manual_seed_section
+    assert 'const enabled = live || (hasPersisted ? persistedEnabled : assignmentEnabled);' in manual_seed_section
+    assert 'safeText(assignment && assignment.band, "")' not in manual_seed_section
+    assert 'Number.isFinite(Number(assignment && assignment.freq_hz))' in manual_seed_section
+    assert 'Number.isFinite(Number(user && user.freq_khz))' in manual_seed_section

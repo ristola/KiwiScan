@@ -33,7 +33,7 @@ def _make_manager() -> ReceiverManager:
     )
 
 
-def _make_worker(*, initial_rx_chan_adjust: int = 0) -> _ReceiverWorker:
+def _make_worker(*, initial_rx_chan_adjust: int | None = None) -> _ReceiverWorker:
     return _ReceiverWorker(
         kiwirecorder_path=Path("/bin/sh"),
         ft8modem_path=Path("/bin/sh"),
@@ -291,6 +291,58 @@ def test_apply_assignments_switching_targets_preserves_inactive_runtime_workers(
         },
     }
     assert manager._runtime_target_states[manager._runtime_target_key("kiwi-a.local", 8073)].resource_slot != manager._runtime_target_states[manager._runtime_target_key("kiwi-b.local", 8074)].resource_slot
+
+
+def test_apply_assignments_frequency_only_change_hot_reconfigures_worker(monkeypatch) -> None:
+    manager = _make_manager()
+
+    initial = ReceiverAssignment(rx=0, band="20m", freq_hz=14_074_000.0, mode_label="FT8", sideband="USB")
+    desired = ReceiverAssignment(rx=0, band="20m", freq_hz=14_075_000.0, mode_label="FT8", sideband="LSB")
+
+    class _FakeWorker:
+        def __init__(self, *, rx: int, label: str) -> None:
+            self.rx = int(rx)
+            self._active_user_label = str(label)
+            self._rx_chan_adjust = 0
+            self.update_calls: list[tuple[str, float, str, str | None]] = []
+
+        def start(self) -> None:
+            return None
+
+        def is_alive(self) -> bool:
+            return True
+
+        def update_assignment(self, *, band: str, freq_hz: float, mode_label: str, sideband: str | None) -> None:
+            self.update_calls.append((str(band), float(freq_hz), str(mode_label), sideband))
+
+    worker = _FakeWorker(rx=0, label=manager._expected_user_label(initial))
+    manager._active_host = "kiwi.local"
+    manager._active_port = 8073
+    manager._assignments = {0: initial}
+    manager._workers = {0: worker}
+
+    stop_calls: list[int] = []
+
+    monkeypatch.setattr(manager, "_seed_health_summary_cache", lambda assignments: None)
+    monkeypatch.setattr(manager, "_seed_truth_snapshot_cache", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_required_dependency_errors", lambda assignments: [])
+    monkeypatch.setattr(manager, "_refresh_starting_health_summary_cache", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_fetch_live_auto_users", lambda host, port: {})
+    monkeypatch.setattr(manager, "_startup_slot_stable_s", lambda: 0.0)
+    monkeypatch.setattr(manager, "_startup_poll_interval_s", lambda: 0.0)
+    monkeypatch.setattr(manager, "_startup_short_pause_s", lambda: 0.0)
+    monkeypatch.setattr(manager, "_startup_retry_pause_s", lambda: 0.0)
+    monkeypatch.setattr(manager, "_startup_slot_clear_stable_s", lambda: 0.0)
+    monkeypatch.setattr(manager, "_stop_worker", lambda w, **kwargs: stop_calls.append(int(getattr(w, "rx", -1))))
+    monkeypatch.setattr(manager, "_make_worker", lambda **kwargs: (_ for _ in ()).throw(AssertionError("_make_worker should not be called")))
+
+    manager.apply_assignments("kiwi.local", 8073, {0: desired})
+
+    assert stop_calls == []
+    assert manager._workers[0] is worker
+    assert worker.update_calls == [("20m", 14_075_000.0, "FT8", "LSB")]
+    assert manager._assignments[0].freq_hz == 14_075_000.0
+    assert manager._assignments[0].sideband == "LSB"
 
 
 def test_roaming_correction_plan_accepts_low_slot_swap() -> None:

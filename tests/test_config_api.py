@@ -273,10 +273,14 @@ def test_post_config_persists_discovered_kiwis(monkeypatch) -> None:
 
     assert config_response.status_code == 200
     payload = config_response.json()
-    assert payload["discovered_kiwis"] == [
-        {"host": "10.13.1.235", "port": 8073, "sdr_hw": "KiwiSDR 1"},
-        {"host": "10.13.1.236", "port": 8074, "sdr_hw": "KiwiSDR 2"},
-    ]
+    discovered = payload["discovered_kiwis"]
+    assert len(discovered) == 2
+    assert discovered[0]["host"] == "10.13.1.235"
+    assert discovered[0]["port"] == 8073
+    assert discovered[0]["sdr_hw"] == "KiwiSDR 1"
+    assert discovered[1]["host"] == "10.13.1.236"
+    assert discovered[1]["port"] == 8074
+    assert discovered[1]["sdr_hw"] == "KiwiSDR 2"
 
 
 def test_get_config_enriches_discovered_only_remote_kiwi_status(monkeypatch) -> None:
@@ -580,9 +584,11 @@ def test_post_config_can_prune_discovered_kiwis_to_configured(monkeypatch) -> No
     assert payload["kiwisdrs"] == [
         {"host": "10.13.1.236", "port": 8074, "latitude": 39.1, "longitude": -77.2, "grid": "FM09aa"},
     ]
-    assert payload["discovered_kiwis"] == [
-        {"host": "10.13.1.236", "port": 8074, "sdr_hw": "KiwiSDR 2"},
-    ]
+    discovered = payload["discovered_kiwis"]
+    assert len(discovered) == 1
+    assert discovered[0]["host"] == "10.13.1.236"
+    assert discovered[0]["port"] == 8074
+    assert discovered[0]["sdr_hw"] == "KiwiSDR 2"
 
 
 def test_get_config_does_not_deadlock_with_locking_password_helper(monkeypatch) -> None:

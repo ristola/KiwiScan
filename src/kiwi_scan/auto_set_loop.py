@@ -216,23 +216,38 @@ class AutoSetLoop:
         self._last_error = None
 
     def _target_kiwi_keys(self, settings: Dict[str, Any]) -> list[str]:
+        all_keys: list[str] = []
+        all_seen: set[str] = set()
         keys: list[str] = []
         seen: set[str] = set()
         configured_keys = self._configured_kiwi_keys_from_config()
+
+        def _append_all(key: str) -> None:
+            if key and key not in all_seen:
+                all_keys.append(key)
+                all_seen.add(key)
+
         kiwi_modes = settings.get("kiwiModes")
         if isinstance(kiwi_modes, dict):
             for raw_key in kiwi_modes.keys():
                 key = self._normalize_kiwi_key(raw_key)
-                if not key or key in seen:
+                if not key:
+                    continue
+                _append_all(key)
+                if key in seen:
                     continue
                 if configured_keys is not None and key not in configured_keys:
                     continue
                 keys.append(key)
                 seen.add(key)
         active_key = self._normalize_kiwi_key(settings.get("activeKiwiKey"))
-        if active_key and active_key not in seen and (configured_keys is None or active_key in configured_keys):
-            keys.append(active_key)
-            seen.add(active_key)
+        if active_key:
+            _append_all(active_key)
+            if active_key not in seen and (configured_keys is None or active_key in configured_keys):
+                keys.append(active_key)
+                seen.add(active_key)
+        if not keys and all_keys:
+            return all_keys
         if not keys:
             keys.append("")
         return keys
@@ -243,23 +258,22 @@ class AutoSetLoop:
     def pause_for_external(self, reason: str = "external", kiwi_key: str | None = None) -> None:
         with self._state_lock:
             hold_reason = str(reason or "external")
-            key = self._normalize_kiwi_key(kiwi_key)
+            key = str(kiwi_key or "").strip()
             if key:
                 self._external_hold_by_kiwi[key] = hold_reason
-                self._reset_kiwi_state_locked(key, manual_mode_cleared=True)
             else:
                 self._external_hold_reason = hold_reason
-                self._manual_mode_cleared = True
-                self._did_startup_apply = False
-                self._last_schedule_key = None
-                self._last_apply_signature = None
-                self._last_applied_band_config = None
+            self._manual_mode_cleared = True
+            self._did_startup_apply = False
+            self._last_schedule_key = None
+            self._last_apply_signature = None
+            self._last_applied_band_config = None
         self.notify_settings_changed()
 
     def resume_from_external(self, reason: str | None = None, kiwi_key: str | None = None) -> None:
         with self._state_lock:
-            key = self._normalize_kiwi_key(kiwi_key)
             changed = False
+            key = str(kiwi_key or "").strip()
             if key:
                 current_reason = self._external_hold_by_kiwi.get(key)
                 if current_reason is not None and (reason is None or str(reason) == str(current_reason)):

@@ -729,23 +729,38 @@ class AutoSetLoop:
 
         sick: list[int] = []
         for rx in (0, 1):
-            ch = channels.get(str(rx))
-            if not isinstance(ch, dict):
+        all_keys: list[str] = []
+        all_seen: set[str] = set()
+        keys: list[str] = []
+        seen: set[str] = set()
                 sick.append(int(rx))
+
+        def _append_all(key: str) -> None:
+            if key and key not in all_seen:
+                all_keys.append(key)
+                all_seen.add(key)
+
                 continue
             if not bool(ch.get("active")) or not bool(ch.get("visible_on_kiwi")):
                 sick.append(int(rx))
                 continue
-            if str(ch.get("status_level") or "").strip().lower() == "fault":
-                sick.append(int(rx))
-
+                if not key:
         return ("healthy", []) if not sick else ("sick", sick)
-
-    def _restart_sick_receivers(self, sick: list[dict]) -> None:
+                _append_all(key)
+                if key in seen:
+                    continue
+                if configured_keys is not None and key not in configured_keys:
+                    continue
+                keys.append(key)
+                seen.add(key)
         """Restart one stuck fixed receiver via the targeted admin endpoint.
-
-        Fixed-slot recovery must reclaim one home slot at a time. Restarting more
-        than one fixed receiver in the same cycle reopens multiple slots and lets
+        if active_key:
+            _append_all(active_key)
+            if active_key not in seen and (configured_keys is None or active_key in configured_keys):
+                keys.append(active_key)
+                seen.add(active_key)
+        if not keys and all_keys:
+            return all_keys
         Kiwi remap the displaced FIXED_* workers into the wrong free channel.
         """
         if not sick:

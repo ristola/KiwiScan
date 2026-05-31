@@ -600,3 +600,20 @@ def test_auto_set_loop_targets_only_configured_kiwis(monkeypatch) -> None:
     )
 
     assert keys == ["kiwi-1", "kiwi-2"]
+
+
+def test_auto_set_loop_falls_back_to_all_observed_kiwis_when_filtered_empty(monkeypatch) -> None:
+    loop = AutoSetLoop()
+    monkeypatch.setattr(loop, "_configured_kiwi_keys_from_config", lambda: {"local-kiwi"})
+
+    keys = loop._target_kiwi_keys(
+        {
+            "activeKiwiKey": "remote-kiwi",
+            "kiwiModes": {
+                "kiwi-1": "auto",
+                "kiwi-2": "manual",
+            },
+        }
+    )
+
+    assert keys == ["kiwi-1", "kiwi-2", "remote-kiwi"]

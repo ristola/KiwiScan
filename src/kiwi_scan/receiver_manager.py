@@ -3908,16 +3908,42 @@ class ReceiverManager:
                     if not last_reason:
                         last_reason = "silent_no_decodes"
                     # Verify audio pipe is still alive when receiver goes silent
-                    if assignment is not None and is_digital and not self._verify_pipeline_alive():
-                        self._trigger_pipeline_respawn()
+                    pipeline_ok = True
+                    if worker is not None:
+                        verify_pipeline = getattr(worker, "_verify_pipeline_alive", None)
+                        if callable(verify_pipeline):
+                            try:
+                                pipeline_ok = bool(verify_pipeline())
+                            except Exception:
+                                # Health endpoint must not fail because a worker probe failed.
+                                pipeline_ok = True
+                    if assignment is not None and is_digital and not pipeline_ok:
+                        if worker is not None:
+                            try:
+                                worker._trigger_pipeline_respawn()
+                            except Exception:
+                                pass
                         last_reason = "silent_pipeline_broken"
                 elif visible_on_kiwi and decode_total == 0 and decoder_age_s is not None and decoder_age_s > silent_threshold_s:
                     health_state = "silent"
                     if not last_reason:
                         last_reason = "silent_no_decodes"
                     # Verify audio pipe is still alive when receiver goes silent
-                    if assignment is not None and is_digital and not self._verify_pipeline_alive():
-                        self._trigger_pipeline_respawn()
+                    pipeline_ok = True
+                    if worker is not None:
+                        verify_pipeline = getattr(worker, "_verify_pipeline_alive", None)
+                        if callable(verify_pipeline):
+                            try:
+                                pipeline_ok = bool(verify_pipeline())
+                            except Exception:
+                                # Health endpoint must not fail because a worker probe failed.
+                                pipeline_ok = True
+                    if assignment is not None and is_digital and not pipeline_ok:
+                        if worker is not None:
+                            try:
+                                worker._trigger_pipeline_respawn()
+                            except Exception:
+                                pass
                         last_reason = "silent_pipeline_broken"
 
             no_decode_warn = False

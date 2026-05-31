@@ -375,9 +375,14 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
 
         users_available, live_status, live_details, live_host, live_port = _live_users_assignments()
         now = time.time()
-        prefer_receiver_manager, mismatch_rxs = _should_prefer_receiver_manager(reference_status, live_status, live_details)
-        if not prefer_receiver_manager:
-            prefer_receiver_manager, mismatch_rxs = _health_summary_prefers_receiver_manager(reference_status)
+        explicit_kiwi_requested = bool(requested_host and requested_port > 0)
+        if explicit_kiwi_requested and users_available:
+            prefer_receiver_manager = False
+            mismatch_rxs = []
+        else:
+            prefer_receiver_manager, mismatch_rxs = _should_prefer_receiver_manager(reference_status, live_status, live_details)
+            if not prefer_receiver_manager:
+                prefer_receiver_manager, mismatch_rxs = _health_summary_prefers_receiver_manager(reference_status)
         if users_available and not prefer_receiver_manager:
             _last_live_assignments = dict(live_status)
             _last_live_ok_unix = float(now)
@@ -389,7 +394,6 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
             _last_live_port_by_target[target_key] = _last_live_port
 
         cache_fresh = (_last_live_ok_unix > 0.0) and ((now - _last_live_ok_unix) <= 30.0)
-        explicit_kiwi_requested = bool(requested_host and requested_port > 0)
         if users_available and not prefer_receiver_manager:
             assignments_out = live_status
             source = "kiwi_users"

@@ -326,7 +326,9 @@ def _sync_active_kiwi_mode(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(kiwi_modes, dict):
         kiwi_modes = {}
         payload["kiwiModes"] = kiwi_modes
-    kiwi_modes[active_key] = receivers_mode
+    existing_mode = str(kiwi_modes.get(active_key) or "").strip().lower()
+    if existing_mode not in _RECEIVERS_MODES:
+        kiwi_modes[active_key] = receivers_mode
 
     kiwi_profiles = payload.get("kiwiProfiles")
     if not isinstance(kiwi_profiles, dict):
@@ -335,7 +337,9 @@ def _sync_active_kiwi_mode(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(profile, dict):
         profile = {}
         kiwi_profiles[active_key] = profile
-    profile["receiversMode"] = receivers_mode
+    profile_mode = str(profile.get("receiversMode") or "").strip().lower()
+    if profile_mode not in _RECEIVERS_MODES:
+        profile["receiversMode"] = str(kiwi_modes.get(active_key) or receivers_mode)
     return payload
 
 

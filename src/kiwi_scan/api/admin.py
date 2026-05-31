@@ -704,7 +704,7 @@ def make_router(
                 freq_hz=freq_khz * 1000.0,
                 mode_label=mode_label,
                 sideband=sideband,
-                user_label_override=f"MAN_RX{rx}_{band}_{mode_label}",
+                user_label_override=f"MANUAL_RX{rx}_{band}_{mode_label}",
                 ignore_slot_check=True,
             )
 
