@@ -10074,20 +10074,15 @@ ${passwordMarkup.actionsHtml}
                         errors[manualReceiverDraftKey(rxNum)] = "Band, frequency, and mode are required.";
                         continue;
                     }
-                    if (mode === "SSB" && Number(rxNum) > 1) {
-                        errors[manualReceiverDraftKey(rxNum)] = "SSB can only run on RX0 or RX1.";
-                        continue;
-                    } else {
-                        assignments.push({
-                            rx: rxNum,
-                            enabled: true,
-                            band,
-                            freq_khz: Number(freqKHz.toFixed(3)),
-                            mode,
-                            function: fn || undefined,
-                        });
-                        continue;
-                    }
+                    assignments.push({
+                        rx: rxNum,
+                        enabled: true,
+                        band,
+                        freq_khz: Number(freqKHz.toFixed(3)),
+                        mode,
+                        function: fn || undefined,
+                    });
+                    continue;
                 }
                 assignments.push({ rx: rxNum, enabled: false });
             }

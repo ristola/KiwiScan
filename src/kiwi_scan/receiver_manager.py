@@ -1493,16 +1493,6 @@ class _ReceiverWorker(threading.Thread):
                 return None
         norm = self._mode_label.strip().upper()
         mode = self._non_digital_kiwirecorder_mode()
-        if ("SSB" in norm) or ("PHONE" in norm):
-            if int(self._rx) not in {0, 1}:
-                logger.error(
-                    "Refusing to spawn SSB/PHONE outside RX0/RX1: rx=%s band=%s mode=%s",
-                    self._rx,
-                    self._band,
-                    self._mode_label,
-                )
-                self._last_spawn_error_reason = "ssb_rx_policy_violation"
-                return None
         cmd = [
             self._python_cmd,
             str(self._kiwirecorder_path),
@@ -4859,7 +4849,14 @@ class ReceiverManager:
             inactive_workers_to_stop = self._activate_runtime_target_locked(host, port)
             prior_host = str(getattr(self, "_active_host", "") or "")
             prior_port = int(getattr(self, "_active_port", 0) or 0)
-            assignments = self._normalize_ssb_receivers(assignments)
+            semi_mode_assignments = bool(assignments) and all(
+                int(rx) >= 2
+                and bool(getattr(assignments[int(rx)], "ignore_slot_check", False))
+                and not str(getattr(assignments[int(rx)], "user_label_override", "") or "").strip().upper().startswith(("MANUAL_", "MAN_"))
+                for rx in assignments.keys()
+            )
+            if semi_mode_assignments:
+                assignments = self._normalize_ssb_receivers(assignments)
 
             for inactive_worker in inactive_workers_to_stop:
                 self._stop_worker(inactive_worker, join_timeout_s=3.0, graceful=False)
