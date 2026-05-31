@@ -10063,7 +10063,11 @@ ${passwordMarkup.actionsHtml}
                 const freqText = safeText(draft.freq_khz, "");
                 const freqKHz = Number(freqText);
                 const band = normalizeManualAssignmentBand(draft.band, "");
-                const mode = resolveManualAssignmentMode(draft.mode, freqKHz, "");
+                let mode = resolveManualAssignmentMode(draft.mode, freqKHz, "");
+                // Normalize LSB/USB back to SSB for backend compatibility
+                if (mode === "LSB" || mode === "USB") {
+                    mode = "SSB";
+                }
                 const fn = normalizeManualAssignmentFunction(draft.function, mode, "");
                 if (enabled) {
                     if (!band || !mode || !Number.isFinite(freqKHz) || freqKHz <= 0) {
@@ -10207,7 +10211,7 @@ ${passwordMarkup.actionsHtml}
 
 
         function initManualReceiverEditor(container) {
-            if (!container || container.dataset.manualEditorBound === "1") return;
+            if (!container || !container.dataset || container.dataset.manualEditorBound === "1") return;
             container.dataset.manualEditorBound = "1";
 
             const isManualInteractiveTarget = (target) => (
