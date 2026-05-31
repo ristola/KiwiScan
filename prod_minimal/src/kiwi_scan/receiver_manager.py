@@ -3321,6 +3321,29 @@ class ReceiverManager:
         no_decode_warning = 0
         reason_counts: Dict[str, int] = {}
         now = time.time()
+        # If FT8 is actively decoding on a band, treat FT4 no-decode warnings on that
+        # same band as informational noise rather than a receiver warning.
+        band_has_active_ft8_decode: Dict[str, bool] = {}
+        for rx_k, assignment_k in assignments.items():
+            if assignment_k is None:
+                continue
+            band_key = str(getattr(assignment_k, "band", "") or "").strip().lower()
+            mode_key = str(getattr(assignment_k, "mode_label", "") or "").strip().upper()
+            if not band_key or mode_key != "FT8":
+                continue
+            activity_k = activity_by_rx.get(rx_k, {})
+            decode_ts_raw = activity_k.get("decode_timestamps", [])
+            decode_ts_k = decode_ts_raw if isinstance(decode_ts_raw, list) else []
+            has_recent_ft8_decode = False
+            for ts in decode_ts_k:
+                try:
+                    if float(ts) >= (now - 90.0):
+                        has_recent_ft8_decode = True
+                        break
+                except Exception:
+                    continue
+            if has_recent_ft8_decode:
+                band_has_active_ft8_decode[band_key] = True
         remap_grace_s = self._digital_remap_grace_seconds()
         rx_set = sorted(set(list(assignments.keys()) + list(watchdog_by_rx.keys())))
         for rx in rx_set:
@@ -3598,6 +3621,10 @@ class ReceiverManager:
                         or (decode_total == 0 and decoder_age_s is not None and decoder_age_s >= warn_after_s)
                     )
                 )
+                if no_decode_warn and mode_label == "FT4":
+                    band_key = str(getattr(assignment, "band", "") or "").strip().lower()
+                    if band_key and band_has_active_ft8_decode.get(band_key, False):
+                        no_decode_warn = False
 
             is_unstable = (assignment is not None) and (
                 consecutive >= 3 or backoff_s >= 8.0 or (is_ssb and not is_active) or health_state == "stalled"

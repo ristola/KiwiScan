@@ -337,7 +337,10 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
             expected_assignments: Dict[int, Dict[str, object]],
         ) -> tuple[bool, list[int]]:
             try:
-                summary = receiver_mgr.health_summary()  # type: ignore[attr-defined]
+                if requested_host and requested_port > 0 and hasattr(receiver_mgr, "health_summary_for_target"):
+                    summary = receiver_mgr.health_summary_for_target(requested_host, requested_port)  # type: ignore[attr-defined]
+                else:
+                    summary = receiver_mgr.health_summary()  # type: ignore[attr-defined]
             except Exception:
                 return (False, [])
             if not isinstance(summary, dict):

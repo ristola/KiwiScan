@@ -683,6 +683,10 @@ def make_router(
             if not mode_label:
                 raise HTTPException(status_code=400, detail=f"Assignment {index} has an unsupported mode")
 
+            requested_function = _normalize_manual_assignment_mode(raw_entry.get("function"))
+            if requested_function in {"FT8", "FT4", "WSPR"}:
+                mode_label = requested_function
+
             try:
                 freq_khz = float(raw_entry.get("freq_khz") or 0.0)
             except Exception as exc:

@@ -4554,25 +4554,46 @@
         .manual-rx-toggle {
             display: inline-flex;
             align-items: center;
-            gap: 7px;
-            padding: 0.18rem 0.54rem;
+            justify-content: center;
+            min-width: 6.6rem;
+            min-height: 2.15rem;
+            padding: 0.32rem 0.9rem;
             border-radius: 999px;
-            background: color-mix(in srgb, var(--panel), white 20%);
-            border: 1px solid var(--line);
-            color: var(--fg);
-            font-size: 0.74rem;
-            font-weight: 800;
+            border: 1px solid transparent;
+            color: #ffffff;
+            font-size: 0.76rem;
+            font-weight: 900;
             letter-spacing: 0.04em;
             text-transform: uppercase;
             white-space: nowrap;
+            cursor: pointer;
+            transition: transform 0.14s ease, filter 0.2s ease, box-shadow 0.2s ease;
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.22);
         }
 
-        .manual-rx-toggle input[type="checkbox"] {
-            width: 14px;
-            height: 14px;
-            margin: 0;
-            accent-color: var(--accent);
-            cursor: pointer;
+        .manual-rx-toggle:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.03);
+        }
+
+        .manual-rx-toggle:active {
+            transform: translateY(0);
+            filter: brightness(0.98);
+        }
+
+        .manual-rx-toggle:focus-visible {
+            outline: none;
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent), transparent 72%), 0 8px 18px rgba(15, 23, 42, 0.22);
+        }
+
+        .manual-rx-toggle.is-enabled {
+            background: linear-gradient(180deg, #22c55e, #16a34a);
+            border-color: color-mix(in srgb, #16a34a, black 14%);
+        }
+
+        .manual-rx-toggle.is-disabled {
+            background: linear-gradient(180deg, #ef4444, #dc2626);
+            border-color: color-mix(in srgb, #b91c1c, black 12%);
         }
 
         .manual-rx-fields {
@@ -4661,7 +4682,7 @@
 
         .manual-rx-select:disabled,
         .manual-rx-input:disabled,
-        .manual-rx-toggle input[type="checkbox"]:disabled {
+        .manual-rx-toggle:disabled {
             cursor: default;
             opacity: 0.68;
         }
@@ -4701,7 +4722,6 @@
         body.theme-dark .manual-rx-select,
         body.theme-dark .manual-rx-select-compact,
         body.theme-dark .manual-rx-input,
-        body.theme-dark .manual-rx-toggle,
         body.theme-dark .manual-rx-status {
             background: color-mix(in srgb, var(--panel), white 6%);
         }
@@ -7611,6 +7631,9 @@
         let activeReceiverAudioStreamToken = 0;
         let manualAssignmentDrafts = {};
         let manualAssignmentErrorsByRx = {};
+        let manualAssignmentDraftsByProfile = {};
+        let manualAssignmentErrorsByProfile = {};
+        let manualAssignmentStatusByProfile = {};
         let manualAssignmentsSaveInFlight = false;
         let manualAssignmentStatusText = "";
         let manualAssignmentRefreshTimer = null;
@@ -7760,7 +7783,8 @@
         const MANUAL_RECEIVER_DEFAULT_BAND = "20m";
         const MANUAL_RECEIVER_DEFAULT_MODE = "USB";
         const MANUAL_RECEIVER_DEFAULT_FREQ_KHZ = 14200.0;
-        const MANUAL_RECEIVER_MODE_OPTIONS = Object.freeze(["FT8", "FT4", "WSPR", "USB", "LSB", "AM", "FM", "CW"]);
+        const MANUAL_RECEIVER_MODE_OPTIONS = Object.freeze(["USB", "LSB", "AM", "FM", "CW"]);
+        const MANUAL_FUNCTION_OPTIONS = Object.freeze(["FT4", "FT8", "WSPR", "SSB"]);
         const MANUAL_ASSIGNMENT_INTERACTION_GRACE_MS = 4600;
         const DASHBOARD_SELECT_INTERACTION_GRACE_MS = 12000;
         const MANUAL_ASSIGNMENT_COMMIT_DELAY_MS = 220;
@@ -8858,6 +8882,13 @@
             if (!selectorEl) return;
             const KIWI3_SELECT_DISABLED_INDEX = 2;
             const safeEntries = Array.isArray(entries) && entries.length ? entries : [buildDefaultConfiguredKiwiEntry()];
+            const configuredIndexes = safeEntries
+                .map((entry, idx) => (entry && isConfiguredKiwiHost(entry.host) ? idx : -1))
+                .filter((idx) => idx >= 0);
+            const hasAnyConfigured = configuredIndexes.length > 0;
+            const loadingFallbackActiveIndex = hasAnyConfigured
+                ? normalizeActiveConfiguredKiwiIndex(activeConfiguredKiwiIndex, safeEntries)
+                : 0;
             const fallbackDiscovered = normalizeDiscoveredKiwiEntries(
                 Array.isArray(latestSystemInfo && latestSystemInfo.kiwi && latestSystemInfo.kiwi.discovered_kiwis)
                     ? latestSystemInfo.kiwi.discovered_kiwis
@@ -8874,7 +8905,9 @@
                 const index = Number(button.getAttribute("data-kiwi-select-index"));
                 const entry = Number.isFinite(index) ? safeEntries[index] : null;
                 const configured = !!entry && isConfiguredKiwiHost(entry.host);
-                const isActive = configured && index === activeConfiguredKiwiIndex;
+                const isActive = hasAnyConfigured
+                    ? (configured && index === activeConfiguredKiwiIndex)
+                    : (index === loadingFallbackActiveIndex);
                 const key = configured
                     ? `${safeText(entry && entry.host, "")}:${Number(entry && entry.port) || 0}`
                     : "";
@@ -8884,18 +8917,25 @@
                 const labelEl = button.querySelector(".topbar-kiwi-label");
                 const metaEl = button.querySelector(".topbar-kiwi-meta");
                 const kiwiSelectionTemporarilyDisabled = index === KIWI3_SELECT_DISABLED_INDEX;
-                button.hidden = !configured;
+                const showWhileLoading = !hasAnyConfigured && (index === 0 || index === 1);
+                button.hidden = !(configured || showWhileLoading);
                 button.style.order = configured && Number.isFinite(displayIndex) ? String(displayIndex) : "";
                 if (labelEl) labelEl.textContent = `KIWI ${Number.isFinite(displayIndex) ? displayIndex : "?"}`;
-                if (metaEl) metaEl.textContent = configured ? (isActive ? "ACTIVE" : "READY") : "UNSET";
+                if (metaEl) {
+                    if (configured) metaEl.textContent = isActive ? "ACTIVE" : "READY";
+                    else if (showWhileLoading) metaEl.textContent = isActive ? "ACTIVE" : "LOADING";
+                    else metaEl.textContent = "UNSET";
+                }
                 button.setAttribute("aria-pressed", isActive ? "true" : "false");
-                button.disabled = !configured || kiwiSelectionTemporarilyDisabled;
+                button.disabled = kiwiSelectionTemporarilyDisabled || (!configured && !showWhileLoading);
                 if (configured) {
                     if (kiwiSelectionTemporarilyDisabled) {
                         button.title = "Kiwi 3 selection is temporarily disabled";
                     } else {
                         button.title = `Use KiwiSDR #${Number.isFinite(displayIndex) ? displayIndex : (index + 1)} (${entry.host}:${entry.port || KIWI_SETTINGS_DEFAULTS.port})`;
                     }
+                } else if (showWhileLoading) {
+                    button.title = "Kiwi selector is loading...";
                 } else {
                     button.title = `Configure KiwiSDR #${index + 1} in Settings`;
                 }
@@ -9294,10 +9334,24 @@ ${passwordMarkup.actionsHtml}
         function ensureManualAssignmentDraftProfileBound() {
             const profileKey = currentManualAssignmentProfileKey();
             if (manualAssignmentDraftProfileKey === profileKey) return profileKey;
+
+            const previousProfileKey = manualAssignmentDraftProfileKey;
+            if (previousProfileKey) {
+                manualAssignmentDraftsByProfile[previousProfileKey] = JSON.parse(JSON.stringify(manualAssignmentDrafts || {}));
+                manualAssignmentErrorsByProfile[previousProfileKey] = JSON.parse(JSON.stringify(manualAssignmentErrorsByRx || {}));
+                manualAssignmentStatusByProfile[previousProfileKey] = safeText(manualAssignmentStatusText, "");
+            }
+
             manualAssignmentDraftProfileKey = profileKey;
-            manualAssignmentDrafts = {};
-            manualAssignmentErrorsByRx = {};
-            manualAssignmentStatusText = "";
+            manualAssignmentDrafts = profileKey && manualAssignmentDraftsByProfile[profileKey]
+                ? JSON.parse(JSON.stringify(manualAssignmentDraftsByProfile[profileKey]))
+                : {};
+            manualAssignmentErrorsByRx = profileKey && manualAssignmentErrorsByProfile[profileKey]
+                ? JSON.parse(JSON.stringify(manualAssignmentErrorsByProfile[profileKey]))
+                : {};
+            manualAssignmentStatusText = profileKey && Object.prototype.hasOwnProperty.call(manualAssignmentStatusByProfile, profileKey)
+                ? safeText(manualAssignmentStatusByProfile[profileKey], "")
+                : "";
             if (manualAssignmentCommitTimer) {
                 window.clearTimeout(manualAssignmentCommitTimer);
                 manualAssignmentCommitTimer = null;
@@ -9434,6 +9488,7 @@ ${passwordMarkup.actionsHtml}
             const raw = String(safeText(modeValue, "")).trim().toUpperCase();
             if (!raw) return fallback;
             if (MANUAL_RECEIVER_MODE_OPTIONS.includes(raw)) return raw;
+            if (raw === "FT8" || raw === "FT4" || raw === "WSPR") return "USB";
             if (raw === "NBFM") return "FM";
             if (raw === "AMN" || raw === "SAM") return "AM";
             if (raw === "CWN") return "CW";
@@ -9444,6 +9499,77 @@ ${passwordMarkup.actionsHtml}
         function isManualAssignmentBandSelectableMode(modeValue) {
             const mode = resolveManualAssignmentMode(modeValue, 0, "");
             return mode === "FT8" || mode === "FT4" || mode === "WSPR";
+        }
+
+        function normalizeManualAssignmentFunction(functionValue, modeValue = "", fallback = "") {
+            const raw = String(functionValue || "").trim().toUpperCase();
+            if (MANUAL_FUNCTION_OPTIONS.includes(raw)) return raw;
+            const mode = resolveManualAssignmentMode(modeValue, 0, "");
+            if (mode === "FT4" || mode === "FT8" || mode === "WSPR") return mode;
+            return fallback;
+        }
+
+        function manualBandsForFunction(functionValue) {
+            const fn = normalizeManualAssignmentFunction(functionValue, "", "");
+            if (fn === "FT8") {
+                return MAP_BAND_OPTIONS.filter((band) => Number.isFinite(Number(BAND_FT8_FREQS_KHZ[band])));
+            }
+            if (fn === "FT4") {
+                return MAP_BAND_OPTIONS.filter((band) => Number.isFinite(Number(BAND_FT4_FREQS_KHZ[band])));
+            }
+            if (fn === "WSPR") {
+                return MAP_BAND_OPTIONS.filter((band) => Number.isFinite(Number(BAND_WSPR_FREQS_KHZ[band])));
+            }
+            return [...MAP_BAND_OPTIONS];
+        }
+
+        function resolveManualFunctionSuggestedFrequencyKHz(bandValue, functionValue, modeValue) {
+            const band = normalizeManualAssignmentBand(bandValue, MANUAL_RECEIVER_DEFAULT_BAND);
+            const fn = normalizeManualAssignmentFunction(functionValue, "", "");
+            if (fn === "FT8") {
+                return Number(BAND_FT8_FREQS_KHZ[band] || BAND_FT8_FREQS_KHZ[MANUAL_RECEIVER_DEFAULT_BAND] || MANUAL_RECEIVER_DEFAULT_FREQ_KHZ);
+            }
+            if (fn === "FT4") {
+                return Number(BAND_FT4_FREQS_KHZ[band] || BAND_FT4_FREQS_KHZ[MANUAL_RECEIVER_DEFAULT_BAND] || MANUAL_RECEIVER_DEFAULT_FREQ_KHZ);
+            }
+            if (fn === "WSPR") {
+                return Number(BAND_WSPR_FREQS_KHZ[band] || BAND_WSPR_FREQS_KHZ[MANUAL_RECEIVER_DEFAULT_BAND] || MANUAL_RECEIVER_DEFAULT_FREQ_KHZ);
+            }
+            return resolveManualAssignmentSuggestedFrequencyKHz(band, modeValue || MANUAL_RECEIVER_DEFAULT_MODE);
+        }
+
+        function applyManualFunctionSelection(draft, seed, functionValue) {
+            const fn = normalizeManualAssignmentFunction(functionValue, draft && draft.mode, "");
+            draft.function = fn;
+            if (!fn) return;
+
+            const allowedBands = manualBandsForFunction(fn);
+            let band = normalizeManualAssignmentBand(draft.band, "");
+            if (!band || !allowedBands.includes(band)) {
+                const seedBand = normalizeManualAssignmentBand(seed && seed.band, "");
+                if (seedBand && allowedBands.includes(seedBand)) band = seedBand;
+            }
+            if (!band || !allowedBands.includes(band)) {
+                band = allowedBands.includes(MANUAL_RECEIVER_DEFAULT_BAND)
+                    ? MANUAL_RECEIVER_DEFAULT_BAND
+                    : (allowedBands[0] || "");
+            }
+            draft.band = band;
+
+            if (fn === "FT4" || fn === "FT8" || fn === "WSPR") {
+                draft.mode = "USB";
+            } else if (fn === "SSB") {
+                const seedFreq = Number(draft.freq_khz || (seed && seed.freq_khz));
+                draft.mode = resolveManualAssignmentMode("SSB", seedFreq, MANUAL_RECEIVER_DEFAULT_MODE);
+            }
+
+            const suggested = resolveManualFunctionSuggestedFrequencyKHz(
+                draft.band || MANUAL_RECEIVER_DEFAULT_BAND,
+                fn,
+                draft.mode || MANUAL_RECEIVER_DEFAULT_MODE,
+            );
+            draft.freq_khz = formatManualAssignmentFrequencyKHz(suggested);
+            draft.freq_auto = true;
         }
 
         function formatManualAssignmentFrequencyKHz(value) {
@@ -9465,11 +9591,13 @@ ${passwordMarkup.actionsHtml}
                 "",
             );
             if (mode) normalized.mode = mode;
+            const manualFunction = normalizeManualAssignmentFunction(entry.function, mode, "");
+            if (manualFunction) normalized.function = manualFunction;
             const hasEnabled = Object.prototype.hasOwnProperty.call(entry, "enabled");
             if (hasEnabled) {
                 normalized.enabled = !!entry.enabled;
             }
-            return (Object.prototype.hasOwnProperty.call(normalized, "enabled") || normalized.band || normalized.mode || normalized.freq_khz) ? normalized : {};
+            return (Object.prototype.hasOwnProperty.call(normalized, "enabled") || normalized.band || normalized.mode || normalized.freq_khz || normalized.function) ? normalized : {};
         }
 
         function normalizeManualAssignmentProfileMap(raw = {}) {
@@ -9513,9 +9641,6 @@ ${passwordMarkup.actionsHtml}
             for (const rxNum of MANUAL_RECEIVER_RXS) {
                 defaults[manualReceiverDraftKey(rxNum)] = normalizeManualAssignmentProfileEntry({
                     enabled: false,
-                    band: MANUAL_RECEIVER_DEFAULT_BAND,
-                    mode: MANUAL_RECEIVER_DEFAULT_MODE,
-                    freq_khz: MANUAL_RECEIVER_DEFAULT_FREQ_KHZ,
                 });
             }
             return defaults;
@@ -9534,10 +9659,10 @@ ${passwordMarkup.actionsHtml}
                 const key = manualReceiverDraftKey(rxNum);
                 manualAssignmentDrafts[key] = {
                     enabled: false,
-                    band: MANUAL_RECEIVER_DEFAULT_BAND,
-                    mode: MANUAL_RECEIVER_DEFAULT_MODE,
-                    freq_khz: formatManualAssignmentFrequencyKHz(MANUAL_RECEIVER_DEFAULT_FREQ_KHZ),
-                    freq_auto: false,
+                    band: "",
+                    mode: "",
+                    freq_khz: "",
+                    freq_auto: true,
                     band_exposed: false,
                     dirty: !!saveProfile,
                 };
@@ -9563,15 +9688,13 @@ ${passwordMarkup.actionsHtml}
                 const assignments = MANUAL_RECEIVER_RXS.map((rxNum) => ({
                     rx: rxNum,
                     enabled: false,
-                    band: MANUAL_RECEIVER_DEFAULT_BAND,
-                    mode: MANUAL_RECEIVER_DEFAULT_MODE,
-                    freq_khz: Number(MANUAL_RECEIVER_DEFAULT_FREQ_KHZ.toFixed(3)),
                 }));
                 await postJson("/admin/manual-assignments", activeKiwiTargetPayload({ assignments }));
-                manualAssignmentStatusText = "All manual receiver assignments cleared and reset to USB 14200.";
+                manualAssignmentStatusText = "All manual receiver assignments cleared and reset to defaults.";
                 await refresh();
             }
 
+            autoUnhideDecodeOverviewTopics();
             markManualAssignmentInteraction(1200);
             scheduleManualAssignmentPanelRefresh(0);
             return defaults;
@@ -9615,7 +9738,13 @@ ${passwordMarkup.actionsHtml}
         }
 
         function getManualAssignmentForRx(rxNum) {
-            if (latestAssignmentsSource === "kiwi_users" || !latestAssignments || typeof latestAssignments !== "object") return {};
+            if (latestAssignmentsSource === "kiwi_users") return {};
+            if (!latestAssignments || typeof latestAssignments !== "object") return {};
+            const activeKiwiKey = String(getActiveRuntimeKiwiKey() || "").trim();
+            const assignmentsEndpointKey = latestAssignmentsHost && Number.isFinite(Number(latestAssignmentsPort)) && Number(latestAssignmentsPort) > 0
+                ? `${latestAssignmentsHost}:${Number(latestAssignmentsPort)}`
+                : "";
+            if (activeKiwiKey && assignmentsEndpointKey && activeKiwiKey !== assignmentsEndpointKey) return {};
             const entry = latestAssignments[String(rxNum)];
             return entry && typeof entry === "object" ? entry : {};
         }
@@ -9623,27 +9752,87 @@ ${passwordMarkup.actionsHtml}
         function buildManualAssignmentSeed(rxNum, usersByRx = currentManualReceiverUsersByRx()) {
             ensureManualAssignmentDraftProfileBound();
             const persisted = getPersistedManualAssignmentForRx(rxNum);
+            const assignment = getManualAssignmentForRx(rxNum);
             const hasPersisted = Object.keys(persisted || {}).length > 0;
+            const persistedEnabled = Boolean(
+                Object.prototype.hasOwnProperty.call(persisted || {}, "enabled") && persisted.enabled
+            );
+            const usePersistedTuning = hasPersisted && persistedEnabled;
+            const assignmentFreqKHz = Number.isFinite(Number(assignment && assignment.freq_khz))
+                ? Number(assignment.freq_khz)
+                : (Number.isFinite(Number(assignment && assignment.freq_hz)) ? (Number(assignment.freq_hz) / 1000.0) : null);
+            const assignmentMode = resolveManualAssignmentMode(
+                safeText(assignment && assignment.mode, safeText(assignment && assignment.mode_label, "")),
+                assignmentFreqKHz,
+                "",
+            );
+            const assignmentBand = normalizeManualAssignmentBand(assignment && assignment.band, "");
+            const assignmentFunction = normalizeManualAssignmentFunction(
+                safeText(assignment && assignment.function, ""),
+                assignmentMode,
+                "",
+            );
+            const hasAssignmentTuning = !!(assignmentBand || assignmentMode || assignmentFunction || (assignmentFreqKHz != null));
+            const assignmentEnabled = Object.prototype.hasOwnProperty.call(assignment || {}, "enabled")
+                ? !!assignment.enabled
+                : false;
             const channel = latestChannelsMap && typeof latestChannelsMap === "object"
                 ? (latestChannelsMap[String(rxNum)] || {})
                 : {};
             const user = usersByRx.get(Number(rxNum)) || {};
             const live = Boolean(user && user.active);
-            const persistedFreqKHz = Number.isFinite(Number(persisted && persisted.freq_khz)) ? Number(persisted.freq_khz) : null;
-            const resolvedFreqKHz = persistedFreqKHz || MANUAL_RECEIVER_DEFAULT_FREQ_KHZ;
+            const liveLabel = String(safeText(user && user.name, "")).toUpperCase();
+            const liveFunctionFromLabel = liveLabel.includes("FT8")
+                ? "FT8"
+                : (liveLabel.includes("FT4") ? "FT4" : (liveLabel.includes("WSPR") ? "WSPR" : ""));
+            const persistedFreqKHz = usePersistedTuning && Number.isFinite(Number(persisted && persisted.freq_khz))
+                ? Number(persisted.freq_khz)
+                : null;
+            const liveFreqKHz = Number.isFinite(Number(user && user.freq_khz))
+                ? Number(user.freq_khz)
+                : (Number.isFinite(Number(channel && channel.freq_hz)) ? (Number(channel.freq_hz) / 1000.0) : null);
+            const resolvedFreqKHz = persistedFreqKHz != null
+                ? persistedFreqKHz
+                : (hasAssignmentTuning
+                    ? assignmentFreqKHz
+                    : (live ? liveFreqKHz : null));
             const band = normalizeManualAssignmentBand(
-                persisted && persisted.band,
-                MANUAL_RECEIVER_DEFAULT_BAND,
+                usePersistedTuning
+                    ? (persisted && persisted.band)
+                    : (hasAssignmentTuning
+                        ? assignmentBand
+                        : (live ? safeText(channel && channel.band, "") : "")),
+                "",
             );
             const mode = resolveManualAssignmentMode(
-                safeText(persisted && persisted.mode, ""),
+                usePersistedTuning
+                    ? safeText(persisted && persisted.mode, "")
+                    : (hasAssignmentTuning
+                        ? assignmentMode
+                        : (live ? safeText((channel && (channel.mode_label || channel.mode)), "") : "")),
                 resolvedFreqKHz,
-                MANUAL_RECEIVER_DEFAULT_MODE,
+                "",
             );
-            const persistedEnabled = Boolean(
-                Object.prototype.hasOwnProperty.call(persisted || {}, "enabled") && persisted.enabled
+            const manualFunction = normalizeManualAssignmentFunction(
+                usePersistedTuning
+                    ? (persisted && persisted.function)
+                    : (hasAssignmentTuning
+                        ? assignmentFunction
+                        : (safeText(channel && channel.function, "") || liveFunctionFromLabel)),
+                mode,
+                "",
             );
-            const enabled = hasPersisted ? persistedEnabled : false;
+            const functionForMode = normalizeManualAssignmentFunction(manualFunction, mode, "");
+            const forcedDigitalUsb = functionForMode === "FT4" || functionForMode === "FT8" || functionForMode === "WSPR";
+            const seedMode = forcedDigitalUsb ? "USB" : mode;
+            const seedFreqKHz = forcedDigitalUsb
+                ? resolveManualFunctionSuggestedFrequencyKHz(
+                    band || MANUAL_RECEIVER_DEFAULT_BAND,
+                    functionForMode,
+                    seedMode || MANUAL_RECEIVER_DEFAULT_MODE,
+                )
+                : resolvedFreqKHz;
+            const enabled = live || (hasPersisted ? persistedEnabled : assignmentEnabled);
             const kiwiRx = Number.isFinite(Number(user && user.kiwi_rx))
                 ? Number(user.kiwi_rx)
                 : null;
@@ -9663,14 +9852,15 @@ ${passwordMarkup.actionsHtml}
             const summary = live
                 ? (connectionBits.join(" • ") || "Receiver is live on the Kiwi.")
                 : (enabled
-                    ? `Ready: ${formatManualAssignmentFrequencyKHz(resolvedFreqKHz || resolveManualAssignmentSuggestedFrequencyKHz(band, mode))} kHz ${mode} on ${band}.`
+                    ? `Ready: ${formatManualAssignmentFrequencyKHz(seedFreqKHz || resolveManualAssignmentSuggestedFrequencyKHz(band || MANUAL_RECEIVER_DEFAULT_BAND, seedMode || MANUAL_RECEIVER_DEFAULT_MODE))} kHz ${seedMode || MANUAL_RECEIVER_DEFAULT_MODE} on ${band || MANUAL_RECEIVER_DEFAULT_BAND}.`
                     : "");
             return {
                 rx: Number(rxNum),
                 enabled,
                 band,
-                mode,
-                freq_khz: formatManualAssignmentFrequencyKHz(resolvedFreqKHz || resolveManualAssignmentSuggestedFrequencyKHz(band, mode)),
+                mode: seedMode,
+                function: functionForMode,
+                freq_khz: formatManualAssignmentFrequencyKHz(seedFreqKHz),
                 freq_auto: !enabled,
                 live,
                 kiwi_rx: Number.isFinite(Number(kiwiRx)) ? Number(kiwiRx) : null,
@@ -9689,6 +9879,7 @@ ${passwordMarkup.actionsHtml}
                     enabled: !!seed.enabled,
                     band: seed.band,
                     mode: seed.mode,
+                    function: normalizeManualAssignmentFunction(seed.function, seed.mode, ""),
                     freq_khz: safeText(seed.freq_khz, ""),
                     freq_auto: !!seed.freq_auto,
                     band_exposed: !!(existing && existing.band_exposed && isManualAssignmentBandSelectableMode(seed.mode)),
@@ -9696,6 +9887,21 @@ ${passwordMarkup.actionsHtml}
                 };
                 manualAssignmentDrafts[key] = next;
                 return next;
+            }
+            if (!existing.dirty && seed && seed.live) {
+                const seedFunction = normalizeManualAssignmentFunction(seed.function, seed.mode, "");
+                existing.enabled = true;
+                if (safeText(seed.band, "")) existing.band = seed.band;
+                if (safeText(seed.mode, "")) existing.mode = seed.mode;
+                if (seedFunction) existing.function = seedFunction;
+                if (safeText(seed.freq_khz, "")) {
+                    existing.freq_khz = seed.freq_khz;
+                    existing.freq_auto = !!seed.freq_auto;
+                }
+            }
+            const existingFunction = normalizeManualAssignmentFunction(existing.function, existing.mode, "");
+            if ((existingFunction === "FT4" || existingFunction === "FT8" || existingFunction === "WSPR") && existing.mode !== "USB") {
+                existing.mode = "USB";
             }
             return existing;
         }
@@ -9710,6 +9916,7 @@ ${passwordMarkup.actionsHtml}
                     enabled: !!draft.enabled,
                     band: draft.band,
                     mode: draft.mode,
+                    function: draft.function,
                     freq_khz: draft.freq_khz,
                 });
                 if (Object.keys(entry).length) next[manualReceiverDraftKey(rxNum)] = entry;
@@ -9795,6 +10002,7 @@ ${passwordMarkup.actionsHtml}
                 const freqKHz = Number(freqText);
                 const band = normalizeManualAssignmentBand(draft.band, "");
                 const mode = resolveManualAssignmentMode(draft.mode, freqKHz, "");
+                const fn = normalizeManualAssignmentFunction(draft.function, mode, "");
                 if (enabled) {
                     if (!band || !mode || !Number.isFinite(freqKHz) || freqKHz <= 0) {
                         errors[manualReceiverDraftKey(rxNum)] = "Band, frequency, and mode are required.";
@@ -9805,6 +10013,7 @@ ${passwordMarkup.actionsHtml}
                             band,
                             freq_khz: Number(freqKHz.toFixed(3)),
                             mode,
+                            function: fn || undefined,
                         });
                         continue;
                     }
@@ -9992,7 +10201,9 @@ ${passwordMarkup.actionsHtml}
                     draft.enabled = !!(target instanceof HTMLInputElement && target.checked);
                     if (!safeText(draft.band, "")) draft.band = seed.band || MANUAL_RECEIVER_DEFAULT_BAND;
                     if (!safeText(draft.mode, "")) draft.mode = seed.mode || MANUAL_RECEIVER_DEFAULT_MODE;
-                    if (draft.freq_auto || !safeText(draft.freq_khz, "")) {
+                    if (draft.function) {
+                        applyManualFunctionSelection(draft, seed, draft.function);
+                    } else if (draft.freq_auto || !safeText(draft.freq_khz, "")) {
                         draft.freq_khz = formatManualAssignmentFrequencyKHz(resolveManualAssignmentSuggestedFrequencyKHz(draft.band, draft.mode));
                         draft.freq_auto = true;
                     }
@@ -10012,7 +10223,9 @@ ${passwordMarkup.actionsHtml}
                 } else if (field === "band") {
                     draft.band = normalizeManualAssignmentBand(target.value, seed.band || MANUAL_RECEIVER_DEFAULT_BAND);
                     draft.band_exposed = true;
-                    if (isManualAssignmentBandSelectableMode(draft.mode)) {
+                    if (draft.function) {
+                        applyManualFunctionSelection(draft, seed, draft.function);
+                    } else if (isManualAssignmentBandSelectableMode(draft.mode)) {
                         draft.freq_khz = formatManualAssignmentFrequencyKHz(resolveManualAssignmentSuggestedFrequencyKHz(draft.band, draft.mode));
                         draft.freq_auto = true;
                     } else if (draft.freq_auto || !safeText(draft.freq_khz, "")) {
@@ -10020,13 +10233,18 @@ ${passwordMarkup.actionsHtml}
                     }
                 } else if (field === "mode") {
                     draft.mode = resolveManualAssignmentMode(target.value, Number(draft.freq_khz || seed.freq_khz), seed.mode || MANUAL_RECEIVER_DEFAULT_MODE);
+                    draft.function = normalizeManualAssignmentFunction(draft.function, draft.mode, "");
                     draft.band_exposed = true;
-                    if (isManualAssignmentBandSelectableMode(draft.mode)) {
+                    if (draft.function) {
+                        applyManualFunctionSelection(draft, seed, draft.function);
+                    } else if (isManualAssignmentBandSelectableMode(draft.mode)) {
                         draft.freq_khz = formatManualAssignmentFrequencyKHz(resolveManualAssignmentSuggestedFrequencyKHz(draft.band, draft.mode));
                         draft.freq_auto = true;
                     } else if (draft.freq_auto || !safeText(draft.freq_khz, "")) {
                         draft.freq_khz = formatManualAssignmentFrequencyKHz(resolveManualAssignmentSuggestedFrequencyKHz(draft.band, draft.mode));
                     }
+                } else if (field === "function") {
+                    applyManualFunctionSelection(draft, seed, target.value);
                 } else if (field === "freq") {
                     draft.freq_khz = String(target.value || "").trim();
                     draft.freq_auto = !safeText(draft.freq_khz, "");
@@ -10044,8 +10262,18 @@ ${passwordMarkup.actionsHtml}
                 }
 
                 if (card instanceof HTMLElement) {
+                    const modeSelect = card.querySelector(`select[data-manual-field="mode"][data-rx="${rxNum}"]`);
+                    if (modeSelect instanceof HTMLSelectElement && (field === "enabled" || field === "band" || field === "function" || field === "mode")) {
+                        const modeValue = safeText(draft.mode, "");
+                        const selectedFunction = normalizeManualAssignmentFunction(draft.function, draft.mode, "");
+                        const lockModeSelection = selectedFunction === "FT4" || selectedFunction === "FT8" || selectedFunction === "WSPR";
+                        if (modeSelect.value !== modeValue) {
+                            modeSelect.value = modeValue;
+                        }
+                        modeSelect.disabled = lockModeSelection;
+                    }
                     const freqInput = card.querySelector(`input[data-manual-field="freq"][data-rx="${rxNum}"]`);
-                    if (freqInput instanceof HTMLInputElement && (field === "mode" || field === "band")) {
+                    if (freqInput instanceof HTMLInputElement && (field === "mode" || field === "band" || field === "function")) {
                         freqInput.value = safeText(draft.freq_khz, "");
                         // Update listen button state when frequency changes due to mode/band change
                         const freqNum = Number(draft.freq_khz);
@@ -10064,11 +10292,15 @@ ${passwordMarkup.actionsHtml}
                 draft.dirty = true;
                 delete manualAssignmentErrorsByRx[manualReceiverDraftKey(rxNum)];
                 markManualAssignmentInteraction();
+                autoUnhideDecodeOverviewTopics();
                 syncManualAssignmentAudioPopupForRx(rxNum);
                 scheduleManualAssignmentCommit({
                     applyRuntime: field === "enabled" ? true : !!draft.enabled,
                     delayMs: MANUAL_ASSIGNMENT_COMMIT_DELAY_MS,
                 });
+                if (field === "function") {
+                    renderManualReceiverAssignments(currentManualReceiverUsersByRx());
+                }
             });
 
             container.addEventListener("click", async (event) => {
@@ -10081,6 +10313,54 @@ ${passwordMarkup.actionsHtml}
                 }
                 lockManualOverviewScroll();
                 const action = String(target.getAttribute("data-manual-action") || "").trim();
+                if (action === "toggle-enabled") {
+                    event.preventDefault();
+                    const rxNum = Number(target.getAttribute("data-rx"));
+                    if (!Number.isFinite(rxNum)) return;
+                    const usersByRx = currentManualReceiverUsersByRx();
+                    const seed = buildManualAssignmentSeed(rxNum, usersByRx);
+                    const draft = getManualAssignmentDraft(rxNum, seed);
+                    draft.enabled = !draft.enabled;
+                    if (!safeText(draft.band, "")) draft.band = seed.band || MANUAL_RECEIVER_DEFAULT_BAND;
+                    if (!safeText(draft.mode, "")) draft.mode = seed.mode || MANUAL_RECEIVER_DEFAULT_MODE;
+                    if (draft.function) {
+                        applyManualFunctionSelection(draft, seed, draft.function);
+                    } else if (draft.freq_auto || !safeText(draft.freq_khz, "")) {
+                        draft.freq_khz = formatManualAssignmentFrequencyKHz(resolveManualAssignmentSuggestedFrequencyKHz(draft.band, draft.mode));
+                        draft.freq_auto = true;
+                    }
+                    draft.dirty = true;
+                    delete manualAssignmentErrorsByRx[manualReceiverDraftKey(rxNum)];
+
+                    if (target instanceof HTMLButtonElement) {
+                        target.setAttribute("aria-pressed", draft.enabled ? "true" : "false");
+                        target.classList.toggle("is-enabled", draft.enabled);
+                        target.classList.toggle("is-disabled", !draft.enabled);
+                        target.textContent = draft.enabled ? "Enabled" : "Disabled";
+                    }
+
+                    const card = target.closest("[data-manual-rx-card]");
+                    if (card instanceof HTMLElement) {
+                        const freqNum = Number(draft.freq_khz || seed.freq_khz);
+                        const canListen = !!seed.live && Number.isFinite(freqNum) && freqNum > 0;
+                        const listenBtn = card.querySelector(`button[data-manual-action="listen"][data-rx="${rxNum}"]`);
+                        if (listenBtn instanceof HTMLButtonElement) {
+                            if (canListen) {
+                                listenBtn.removeAttribute("disabled");
+                            } else {
+                                listenBtn.setAttribute("disabled", "");
+                            }
+                        }
+                    }
+
+                    autoUnhideDecodeOverviewTopics();
+                    syncManualAssignmentAudioPopupForRx(rxNum);
+                    scheduleManualAssignmentCommit({
+                        applyRuntime: true,
+                        delayMs: MANUAL_ASSIGNMENT_COMMIT_DELAY_MS,
+                    });
+                    return;
+                }
                 if (action === "listen") {
                     event.preventDefault();
                     if (target instanceof HTMLButtonElement && target.disabled) return;
@@ -10104,9 +10384,13 @@ ${passwordMarkup.actionsHtml}
                 const seed = buildManualAssignmentSeed(rxNum, usersByRx);
                 const draft = getManualAssignmentDraft(rxNum, seed);
                 const enabled = !!draft.enabled;
-                const band = normalizeManualAssignmentBand(draft.band, seed.band || MANUAL_RECEIVER_DEFAULT_BAND);
+                const selectedFunction = normalizeManualAssignmentFunction(draft.function, draft.mode, "");
+                const lockModeSelection = selectedFunction === "FT4" || selectedFunction === "FT8" || selectedFunction === "WSPR";
                 const freqText = safeText(draft.freq_khz, seed.freq_khz);
-                const mode = resolveManualAssignmentMode(draft.mode, Number(freqText), seed.mode || MANUAL_RECEIVER_DEFAULT_MODE);
+                const selectedBand = normalizeManualAssignmentBand(draft.band, "");
+                const selectedMode = resolveManualAssignmentMode(draft.mode, Number(freqText), "");
+                const band = selectedBand || normalizeManualAssignmentBand(seed.band, MANUAL_RECEIVER_DEFAULT_BAND);
+                const mode = selectedMode || resolveManualAssignmentMode(seed.mode, Number(freqText), MANUAL_RECEIVER_DEFAULT_MODE);
                 const errorKey = manualReceiverDraftKey(rxNum);
                 const errorText = safeText(manualAssignmentErrorsByRx[errorKey], "");
                 const toneClass = errorText
@@ -10138,11 +10422,20 @@ ${passwordMarkup.actionsHtml}
                             : "";
                 const metaText = seed.live ? "Receiver is currently live." : (enabled ? "Ready to apply." : "");
                 const modeOptions = MANUAL_RECEIVER_MODE_OPTIONS.map((option) => (
-                    `<option value="${escapeHtml(option)}"${option === mode ? " selected" : ""}>${escapeHtml(option)}</option>`
+                    `<option value="${escapeHtml(option)}"${option === selectedMode ? " selected" : ""}>${escapeHtml(option)}</option>`
                 )).join("");
-                const bandOptions = MAP_BAND_OPTIONS.map((option) => (
-                    `<option value="${escapeHtml(option)}"${option === band ? " selected" : ""}>${escapeHtml(option.toUpperCase())}</option>`
+                const bandOptionPool = manualBandsForFunction(selectedFunction);
+                const bandOptions = bandOptionPool.map((option) => (
+                    `<option value="${escapeHtml(option)}"${option === selectedBand ? " selected" : ""}>${escapeHtml(option.toUpperCase())}</option>`
                 )).join("");
+                const functionOptions = MANUAL_FUNCTION_OPTIONS.map((option) => (
+                    `<option value="${escapeHtml(option)}"${option === selectedFunction ? " selected" : ""}>${escapeHtml(option)}</option>`
+                )).join("");
+                const modeOptionsWithDefault = `<option value="">--</option>${modeOptions}`;
+                const bandOptionsWithDefault = `<option value="">--</option>${bandOptions}`;
+                const functionOptionsWithDefault = `<option value="">--</option>${functionOptions}`;
+                const activeToggleText = enabled ? "Enabled" : "Disabled";
+                const activeToggleClass = enabled ? "is-enabled" : "is-disabled";
                 const canListen = !!seed.live && Number.isFinite(Number(previewFreq)) && Number(previewFreq) > 0;
                 const listenTitle = seed.live ? `Listen to RX${rxNum}` : (enabled ? `RX${rxNum} is applying — wait for LIVE status to listen` : `Enable RX${rxNum} to listen`);
                 return `
@@ -10155,30 +10448,21 @@ ${passwordMarkup.actionsHtml}
                                 </div>
                                 <div class="manual-rx-meta">${escapeHtml(metaText)}</div>
                             </div>
-                            <label class="manual-rx-toggle">
-                                <input type="checkbox" data-manual-field="enabled" data-rx="${rxNum}"${enabled ? " checked" : ""}>
-                                Active
-                            </label>
+                            <button type="button" class="manual-rx-toggle ${activeToggleClass}" data-manual-action="toggle-enabled" data-rx="${rxNum}" aria-pressed="${enabled ? "true" : "false"}">${activeToggleText}</button>
                         </div>
                         <div class="manual-rx-fields">
                             <div class="manual-rx-field-row">
                                 <label class="manual-rx-field">
                                     <span class="manual-rx-field-label">Function</span>
-                                    <select class="manual-rx-select-compact" data-manual-field="function" data-rx="${rxNum}">
-                                        <option value="">--</option>
-                                        <option value="FT4">FT4</option>
-                                        <option value="FT8">FT8</option>
-                                        <option value="WSPR">WSPR</option>
-                                        <option value="SSB">SSB</option>
-                                    </select>
+                                    <select class="manual-rx-select-compact" data-manual-field="function" data-rx="${rxNum}">${functionOptionsWithDefault}</select>
                                 </label>
                                 <label class="manual-rx-field">
                                     <span class="manual-rx-field-label">Band</span>
-                                    <select class="manual-rx-select-compact" data-manual-field="band" data-rx="${rxNum}">${bandOptions}</select>
+                                    <select class="manual-rx-select-compact" data-manual-field="band" data-rx="${rxNum}">${bandOptionsWithDefault}</select>
                                 </label>
                                 <label class="manual-rx-field">
                                     <span class="manual-rx-field-label">Mode</span>
-                                    <select class="manual-rx-select-compact" data-manual-field="mode" data-rx="${rxNum}">${modeOptions}</select>
+                                    <select class="manual-rx-select-compact" data-manual-field="mode" data-rx="${rxNum}"${lockModeSelection ? " disabled" : ""}>${modeOptionsWithDefault}</select>
                                 </label>
                             </div>
                             <label class="manual-rx-field manual-rx-field-full">
@@ -13421,16 +13705,37 @@ ${passwordMarkup.actionsHtml}
             return normalized.includes("FT4") || normalized.includes("FT8") || normalized.includes("WSPR");
         }
 
+        function isDigitalDecodeOverviewFunction(functionValue) {
+            const normalized = String(safeText(functionValue, ""))
+                .trim()
+                .toUpperCase()
+                .replace(/[^A-Z0-9]/g, "");
+            if (!normalized) return false;
+            return normalized === "FT4" || normalized === "FT8" || normalized === "WSPR";
+        }
+
+        function isDigitalDecodeOverviewAssignmentEntry(entry, options = {}) {
+            if (!entry || typeof entry !== "object") return false;
+            if (options.requireEnabled && !entry.enabled) return false;
+            if (isDigitalDecodeOverviewFunction(entry.function)) return true;
+            return isDigitalDecodeOverviewMode(entry.mode || entry.mode_label);
+        }
+
         function hasDigitalDecodeOverviewAssignments() {
+            const drafts = manualAssignmentDrafts && typeof manualAssignmentDrafts === "object"
+                ? manualAssignmentDrafts
+                : {};
+            for (const entry of Object.values(drafts)) {
+                if (isDigitalDecodeOverviewAssignmentEntry(entry, { requireEnabled: true })) return true;
+            }
+
             if (getCurrentReceiversMode() === "manual") {
                 const profile = resolveKiwiUiProfile(latestAutomationSettings);
                 const manualAssignments = profile && profile.manualAssignments && typeof profile.manualAssignments === "object"
                     ? profile.manualAssignments
                     : {};
                 for (const entry of Object.values(manualAssignments)) {
-                    if (!entry || typeof entry !== "object") continue;
-                    if (!entry.enabled) continue;
-                    if (isDigitalDecodeOverviewMode(entry.mode || entry.mode_label)) return true;
+                    if (isDigitalDecodeOverviewAssignmentEntry(entry, { requireEnabled: true })) return true;
                 }
                 return false;
             }
@@ -13440,22 +13745,19 @@ ${passwordMarkup.actionsHtml}
                 ? profile.manualAssignments
                 : {};
             for (const entry of Object.values(manualAssignments)) {
-                if (!entry || typeof entry !== "object") continue;
-                if (!entry.enabled) continue;
-                if (isDigitalDecodeOverviewMode(entry.mode || entry.mode_label)) return true;
+                if (isDigitalDecodeOverviewAssignmentEntry(entry, { requireEnabled: true })) return true;
             }
 
             const assignments = latestAssignments && typeof latestAssignments === "object" ? latestAssignments : {};
             for (const entry of Object.values(assignments)) {
-                if (!entry || typeof entry !== "object") continue;
-                if (isDigitalDecodeOverviewMode(entry.mode || entry.mode_label)) return true;
+                if (isDigitalDecodeOverviewAssignmentEntry(entry)) return true;
             }
 
             const channels = latestChannelsMap && typeof latestChannelsMap === "object" ? latestChannelsMap : {};
             for (const channel of Object.values(channels)) {
                 if (!channel || typeof channel !== "object") continue;
                 if (!channel.active && !channel.visible_on_kiwi) continue;
-                if (isDigitalDecodeOverviewMode(channel.mode || channel.mode_label)) return true;
+                if (isDigitalDecodeOverviewAssignmentEntry(channel)) return true;
             }
 
             return false;
@@ -13473,7 +13775,8 @@ ${passwordMarkup.actionsHtml}
         }
 
         function autoUnhideDecodeOverviewTopics() {
-            const shouldShowDigitalTopics = hasDigitalDecodeOverviewAssignments();
+            const mode = getCurrentReceiversMode();
+            const shouldShowDigitalTopics = mode === "auto" || hasDigitalDecodeOverviewAssignments();
             const nextPrefs = normalizeOverviewTopicPrefs(overviewTopicPrefs, overviewTopicPrefs);
             let changed = false;
             for (const key of DIGITAL_DECODE_OVERVIEW_SEQUENCE) {
@@ -13570,7 +13873,8 @@ ${passwordMarkup.actionsHtml}
             return {
                 receiversMode: normalizeReceiversMode(profile.receiversMode, fallback.receiversMode),
                 overviewTopics: normalizeOverviewTopicPrefs(profile.overviewTopics, fallback.overviewTopics),
-                manualAssignments: normalizeManualAssignmentProfileMap(profile.manualAssignments),
+                // Manual receiver drafts are runtime/session-only and should not survive refresh.
+                manualAssignments: {},
             };
         }
 
@@ -15684,12 +15988,16 @@ ${passwordMarkup.actionsHtml}
             return `Gathering Data from Kiwi ${resolvedIndex + 1}...`;
         }
 
+        function hasActiveKiwiSwitchBusyLabel() {
+            return !!activeConfiguredKiwiSaveInFlight && Number.isFinite(Number(activeConfiguredKiwiSwitchTargetIndex));
+        }
+
         function setReceiversBusy(busy, label) {
             _rxBusyManual = busy;
             const labelEl = byId("rx-busy-label");
             if (labelEl && label) labelEl.textContent = label;
             else if (labelEl && busy && !label) {
-                labelEl.textContent = Number.isFinite(Number(activeConfiguredKiwiSwitchTargetIndex))
+                labelEl.textContent = hasActiveKiwiSwitchBusyLabel()
                     ? activeKiwiSwitchBusyLabel()
                     : "Setting up Receiver Assignments !";
             }
@@ -15760,7 +16068,10 @@ ${passwordMarkup.actionsHtml}
         }
 
         function receiversModeShowsDecodeOverview(mode = getCurrentReceiversMode()) {
-            return hasDigitalDecodeOverviewAssignments();
+            const normalizedMode = normalizeReceiversMode(mode, "auto");
+            if (normalizedMode === "auto" || normalizedMode === "semi") return true;
+            if (normalizedMode === "scan") return false;
+            return hasDigitalDecodeOverviewAssignments() || hasDigitalDecodeOverviewActivity();
         }
 
         function isOverviewTopicModeVisible(key, mode = getCurrentReceiversMode()) {
@@ -16551,11 +16862,22 @@ ${passwordMarkup.actionsHtml}
                 const nextHourOffset = Number.isFinite(Number(a.uiThemeHourOffset))
                     ? clampUiThemeHourOffset(a.uiThemeHourOffset)
                     : clampUiThemeHourOffset(authoritativeUiThemeHourOffset || currentUiThemeHourOffset || storedHourOffset || UI_THEME_DEFAULT_HOUR_OFFSET);
-                const nextProfile = resolveKiwiUiProfile(latestAutomationSettings);
+                const profileEntries = Array.isArray(latestPersistedConfiguredKiwiEntries) && latestPersistedConfiguredKiwiEntries.length
+                    ? latestPersistedConfiguredKiwiEntries
+                    : (Array.isArray(latestConfiguredKiwiEntries) && latestConfiguredKiwiEntries.length
+                        ? latestConfiguredKiwiEntries
+                        : collectConfiguredKiwiInputs({ includeBlank: true }));
+                const hasRealConfiguredEntries = profileEntries.some((entry) => entry && isConfiguredKiwiHost(entry.host));
+                const nextProfile = resolveKiwiUiProfile(latestAutomationSettings, {
+                    entries: profileEntries,
+                    index: activeConfiguredKiwiIndex,
+                });
                 const nextOverviewTopics = normalizeOverviewTopicPrefs(nextProfile.overviewTopics, overviewTopicPrefs);
                 authoritativeUiThemeNightHour = nextNightHour;
                 authoritativeUiThemeHourOffset = nextHourOffset;
-                const savedReceiversMode = nextProfile.receiversMode;
+                const savedReceiversMode = hasRealConfiguredEntries
+                    ? nextProfile.receiversMode
+                    : getCurrentReceiversMode();
                 latestAutomationSettings = {
                     ...latestAutomationSettings,
                     receiversMode: savedReceiversMode,
@@ -19202,11 +19524,20 @@ ${passwordMarkup.actionsHtml}
             const kiwi = latestSystemInfo && latestSystemInfo.kiwi && typeof latestSystemInfo.kiwi === "object"
                 ? latestSystemInfo.kiwi
                 : {};
+            const activeReceiverRows = buildActiveReceiverRows(kiwi.active_users, kiwi.raw_users);
             const activeUsersByRx = new Map(
-                buildActiveReceiverRows(kiwi.active_users, kiwi.raw_users)
+                activeReceiverRows
                     .map((user) => [Number(user && user.rx), user])
                     .filter(([rxNum, user]) => Number.isFinite(rxNum) && !!user)
             );
+            const manualUsersByRx = mapManualUsersByRx(activeReceiverRows);
+            const inferDigitalFunctionFromLabel = (labelValue) => {
+                const label = String(safeText(labelValue, "")).toUpperCase();
+                if (label.includes("FT8")) return "FT8";
+                if (label.includes("FT4")) return "FT4";
+                if (label.includes("WSPR")) return "WSPR";
+                return "";
+            };
             if (!managedModeActive && currentMode !== "manual") {
                 currentBandAssignments = {};
                 _bandChartLiveBands = [];
@@ -19222,17 +19553,34 @@ ${passwordMarkup.actionsHtml}
             const healthChannelEntries = Object.entries(latestChannelsMap)
                 .filter(([rx, ch]) => ch && ch.band && ch.mode && !reservedManagedReceivers.has(Number(rx)));
             const sourceRows = healthChannelEntries.length
-                ? healthChannelEntries.map(([rx, ch]) => [rx, { band: ch.band, mode: ch.mode }])
+                ? healthChannelEntries.map(([rx, ch]) => {
+                    const assignment = assignments && typeof assignments === "object"
+                        ? (assignments[String(rx)] || {})
+                        : {};
+                    const manualUser = manualUsersByRx.get(Number(rx)) || {};
+                    return [rx, {
+                        band: safeText(ch && ch.band, safeText(assignment && assignment.band, "")),
+                        mode: safeText(ch && ch.mode, safeText(assignment && assignment.mode, "")),
+                        mode_label: safeText(ch && ch.mode_label, safeText(assignment && assignment.mode_label, "")),
+                        function: safeText(ch && ch.function, safeText(assignment && assignment.function, inferDigitalFunctionFromLabel(manualUser && manualUser.name))),
+                        active: Boolean((ch && ch.active) || (assignment && assignment.active)),
+                    }];
+                })
                 : ((assignments && typeof assignments === "object" ? Object.entries(assignments) : [])
                     .filter(([rx]) => !reservedManagedReceivers.has(Number(rx))));
             const list = sourceRows
                 .filter(([, item]) => item && typeof item === "object")
-                .filter(([, item]) => isDigitalDecodeOverviewMode(item.mode || item.mode_label))
+                .filter(([, item]) => {
+                    if (isDigitalDecodeOverviewAssignmentEntry(item)) return true;
+                    return currentMode === "manual" && !!item.active;
+                })
                 .map(([rx, item]) => ({
                     rxNum: Number(rx),
                     rxLabel: `RX${rx}`,
                     band: String(safeText(item.band, "unknown")).replace(/^(\d+)\s*[mM]$/, "$1m"),
-                    mode: String(item.mode || "").trim() || "?",
+                    mode: String(
+                        safeText(item.function, "") || safeText(item.mode_label, "") || safeText(item.mode, "") || "?"
+                    ).trim() || "?",
                     snrText: snrAvgTextForRx(`RX${rx}`),
                 }))
                 .sort((a, b) => {
@@ -19442,7 +19790,9 @@ ${passwordMarkup.actionsHtml}
                             modeAgg[modeName] = { pm: count, ph: count, tot: count };
                         });
                     }
-                    const MODE_SORT_ORDER = ["FT4", "FT8", "WSPR", "SSB"];
+                    const MODE_SORT_ORDER = currentMode === "auto"
+                        ? ["FT4", "FT8", "WSPR", "SSB"]
+                        : ["FT8", "FT4", "WSPR", "SSB"];
                     const decodeRateRows = modeOrder
                         .slice()
                         .sort((a, b) => {
@@ -20332,7 +20682,7 @@ ${passwordMarkup.actionsHtml}
                 _rxBusyAutoKick = wasAutoKickRecent;
                 const labelEl = byId("rx-busy-label");
                 if (labelEl && !_rxBusyManual && !_rxBusyMismatch) {
-                    labelEl.textContent = Number.isFinite(Number(activeConfiguredKiwiSwitchTargetIndex))
+                    labelEl.textContent = hasActiveKiwiSwitchBusyLabel()
                         ? activeKiwiSwitchBusyLabel()
                         : (unstable > 0 ? "Stabilizing\u2026" : (wasAutoKickRecent ? "Reassigning\u2026" : "Setting up Receiver Assignments !"));
                 }
@@ -20566,12 +20916,17 @@ ${passwordMarkup.actionsHtml}
 
             // Show overlay while slot assignments don't match what the Kiwi reports.
             const mismatchRxs = Array.isArray(s.assignments_mismatch_rxs) ? s.assignments_mismatch_rxs : [];
-            const hasMismatch = mismatchRxs.length > 0 || s.assignments_source === "busy";
+            const activeKiwiKey = String(getActiveRuntimeKiwiKey() || "").trim();
+            const assignmentsEndpointKey = latestAssignmentsHost && Number.isFinite(Number(latestAssignmentsPort)) && Number(latestAssignmentsPort) > 0
+                ? `${latestAssignmentsHost}:${Number(latestAssignmentsPort)}`
+                : "";
+            const assignmentsMatchActiveKiwi = !activeKiwiKey || !assignmentsEndpointKey || activeKiwiKey === assignmentsEndpointKey;
+            const hasMismatch = assignmentsMatchActiveKiwi && (mismatchRxs.length > 0 || s.assignments_source === "busy");
             if (_rxBusyMismatch !== hasMismatch) {
                 _rxBusyMismatch = hasMismatch;
                 const labelEl = byId("rx-busy-label");
                 if (labelEl && !_rxBusyManual && !_rxBusyAutoKick) {
-                    labelEl.textContent = Number.isFinite(Number(activeConfiguredKiwiSwitchTargetIndex))
+                    labelEl.textContent = hasActiveKiwiSwitchBusyLabel()
                         ? activeKiwiSwitchBusyLabel()
                         : (hasMismatch ? "Assigning Receivers." : "Setting up Receiver Assignments !");
                 }
