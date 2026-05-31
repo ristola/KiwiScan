@@ -7516,7 +7516,7 @@
         const MANUAL_RECEIVER_DEFAULT_MODE = "USB";
         const MANUAL_RECEIVER_DEFAULT_FREQ_KHZ = 14200.0;
         const MANUAL_RECEIVER_MODE_OPTIONS = Object.freeze(["USB", "LSB", "AM", "FM", "CW"]);
-        const MANUAL_FUNCTION_OPTIONS = Object.freeze(["FT4", "FT8", "WSPR", "SSB"]);
+        const MANUAL_FUNCTION_OPTIONS = Object.freeze(["FT4", "FT8", "WSPR", "SSB", "CW"]);
         const MANUAL_ASSIGNMENT_INTERACTION_GRACE_MS = 4600;
         const DASHBOARD_SELECT_INTERACTION_GRACE_MS = 12000;
         const MANUAL_ASSIGNMENT_COMMIT_DELAY_MS = 220;
@@ -7531,6 +7531,29 @@
             "60m": 5357.0,
             "80m": 3900.0,
             "160m": 1900.0,
+        });
+        const BAND_SSB_START_FREQS_KHZ = Object.freeze({
+            "10m": 28300.0,
+            "12m": 24930.0,
+            "15m": 21275.0,
+            "17m": 18110.0,
+            "20m": 14150.0,
+            "30m": 10130.0,
+            "40m": 7125.0,
+            "60m": 5357.0,
+            "80m": 3600.0,
+            "160m": 1800.0,
+        });
+        const BAND_CW_START_FREQS_KHZ = Object.freeze({
+            "10m": 28000.0,
+            "12m": 24890.0,
+            "15m": 21000.0,
+            "17m": 18068.0,
+            "20m": 14000.0,
+            "30m": 10100.0,
+            "40m": 7000.0,
+            "80m": 3500.0,
+            "160m": 1800.0,
         });
         const BAND_CW_FREQS_KHZ = Object.freeze({
             "10m": 28040.0,
@@ -8566,6 +8589,7 @@
             if (MANUAL_FUNCTION_OPTIONS.includes(raw)) return raw;
             const mode = resolveManualAssignmentMode(modeValue, 0, "");
             if (mode === "FT4" || mode === "FT8" || mode === "WSPR") return mode;
+            if (mode === "CW") return "CW";
             return fallback;
         }
 
@@ -8580,7 +8604,21 @@
             if (fn === "WSPR") {
                 return MAP_BAND_OPTIONS.filter((band) => Number.isFinite(Number(BAND_WSPR_FREQS_KHZ[band])));
             }
+            if (fn === "SSB") {
+                return MAP_BAND_OPTIONS.filter((band) => band !== "30m" && band !== "60m");
+            }
+            if (fn === "CW") {
+                return MAP_BAND_OPTIONS.filter((band) => band !== "60m");
+            }
             return [...MAP_BAND_OPTIONS];
+        }
+
+        function filterManualBandOptionsForFunction(functionValue, bands) {
+            const fn = normalizeManualAssignmentFunction(functionValue, "", "");
+            const pool = Array.isArray(bands) ? bands : [];
+            if (fn === "SSB") return pool.filter((band) => band !== "30m" && band !== "60m");
+            if (fn === "CW") return pool.filter((band) => band !== "60m");
+            return pool;
         }
 
         function resolveManualFunctionSuggestedFrequencyKHz(bandValue, functionValue, modeValue) {
@@ -8594,6 +8632,12 @@
             }
             if (fn === "WSPR") {
                 return Number(BAND_WSPR_FREQS_KHZ[band] || BAND_WSPR_FREQS_KHZ[MANUAL_RECEIVER_DEFAULT_BAND] || MANUAL_RECEIVER_DEFAULT_FREQ_KHZ);
+            }
+            if (fn === "SSB") {
+                return Number(BAND_SSB_START_FREQS_KHZ[band] || BAND_PHONE_FREQS_KHZ[band] || MANUAL_RECEIVER_DEFAULT_FREQ_KHZ);
+            }
+            if (fn === "CW") {
+                return Number(BAND_CW_START_FREQS_KHZ[band] || BAND_CW_FREQS_KHZ[band] || MANUAL_RECEIVER_DEFAULT_FREQ_KHZ);
             }
             return resolveManualAssignmentSuggestedFrequencyKHz(band, modeValue || MANUAL_RECEIVER_DEFAULT_MODE);
         }
@@ -8610,18 +8654,36 @@
                 if (seedBand && allowedBands.includes(seedBand)) band = seedBand;
             }
             if (!band || !allowedBands.includes(band)) {
-                band = allowedBands.includes(MANUAL_RECEIVER_DEFAULT_BAND)
-                    ? MANUAL_RECEIVER_DEFAULT_BAND
-                    : (allowedBands[0] || "");
+                if (fn === "SSB" || fn === "CW") {
+                    band = "";
+                } else {
+                    band = allowedBands.includes(MANUAL_RECEIVER_DEFAULT_BAND)
+                        ? MANUAL_RECEIVER_DEFAULT_BAND
+                        : (allowedBands[0] || "");
+                }
             }
             draft.band = band;
 
             if (fn === "FT4" || fn === "FT8" || fn === "WSPR") {
                 draft.mode = "USB";
             } else if (fn === "SSB") {
-                const seedFreq = Number(draft.freq_khz || (seed && seed.freq_khz));
-                const ssbMode = resolveManualAssignmentMode("SSB", seedFreq, MANUAL_RECEIVER_DEFAULT_MODE);
-                draft.mode = ssbMode;
+                if (draft.band) {
+                    const ssbFreq = Number(resolveManualFunctionSuggestedFrequencyKHz(
+                        draft.band || MANUAL_RECEIVER_DEFAULT_BAND,
+                        "SSB",
+                        draft.mode || MANUAL_RECEIVER_DEFAULT_MODE,
+                    ));
+                    const ssbMode = resolveManualAssignmentMode("SSB", ssbFreq, MANUAL_RECEIVER_DEFAULT_MODE);
+                    draft.mode = ssbMode;
+                }
+            } else if (fn === "CW") {
+                draft.mode = "CW";
+            }
+
+            if ((fn === "SSB" || fn === "CW") && !draft.band) {
+                draft.freq_khz = "";
+                draft.freq_auto = true;
+                return;
             }
 
             const suggested = resolveManualFunctionSuggestedFrequencyKHz(
@@ -9268,6 +9330,26 @@
 
                 const card = target.closest("[data-manual-rx-card]");
                 if (card instanceof HTMLElement) {
+                    const bandSelect = card.querySelector(`select[data-manual-field="band"][data-rx="${rxNum}"]`);
+                    if (bandSelect instanceof HTMLSelectElement && (field === "enabled" || field === "band" || field === "function" || field === "mode")) {
+                        const selectedFunction = normalizeManualAssignmentFunction(draft.function, draft.mode, "");
+                        const allowedBands = filterManualBandOptionsForFunction(selectedFunction, manualBandsForFunction(selectedFunction));
+                        const selectedBand = normalizeManualAssignmentBand(draft.band, "");
+                        const normalizedBand = allowedBands.includes(selectedBand) ? selectedBand : "";
+                        const bandOptions = allowedBands.map((option) => (
+                            `<option value="${escapeHtml(option)}"${option === normalizedBand ? " selected" : ""}>${escapeHtml(option.toUpperCase())}</option>`
+                        )).join("");
+                        const bandOptionsWithDefault = `<option value="">--</option>${bandOptions}`;
+                        if (bandSelect.innerHTML !== bandOptionsWithDefault) {
+                            bandSelect.innerHTML = bandOptionsWithDefault;
+                        }
+                        if (bandSelect.value !== normalizedBand) {
+                            bandSelect.value = normalizedBand;
+                        }
+                        if (normalizedBand !== selectedBand) {
+                            draft.band = normalizedBand;
+                        }
+                    }
                     const modeSelect = card.querySelector(`select[data-manual-field="mode"][data-rx="${rxNum}"]`);
                     if (modeSelect instanceof HTMLSelectElement && (field === "enabled" || field === "band" || field === "function" || field === "mode")) {
                         const modeValue = safeText(draft.mode, "");
@@ -9427,7 +9509,7 @@
                 const modeOptions = MANUAL_RECEIVER_MODE_OPTIONS.map((option) => (
                     `<option value="${escapeHtml(option)}"${option === selectedMode ? " selected" : ""}>${escapeHtml(option)}</option>`
                 )).join("");
-                const bandOptionPool = manualBandsForFunction(selectedFunction);
+                const bandOptionPool = filterManualBandOptionsForFunction(selectedFunction, manualBandsForFunction(selectedFunction));
                 const bandOptions = bandOptionPool.map((option) => (
                     `<option value="${escapeHtml(option)}"${option === selectedBand ? " selected" : ""}>${escapeHtml(option.toUpperCase())}</option>`
                 )).join("");
