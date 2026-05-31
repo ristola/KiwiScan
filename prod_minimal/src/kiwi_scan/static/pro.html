@@ -9082,6 +9082,7 @@
                 if (enabled) {
                     if (!band || !mode || !Number.isFinite(freqKHz) || freqKHz <= 0) {
                         errors[manualReceiverDraftKey(rxNum)] = "Band, frequency, and mode are required.";
+                        continue;
                     } else {
                         assignments.push({
                             rx: rxNum,
