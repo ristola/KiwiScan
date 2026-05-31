@@ -10134,7 +10134,15 @@ ${passwordMarkup.actionsHtml}
                         manualAssignmentStatusText = "Complete the highlighted receiver cards before activating them.";
                         return;
                     }
-                    await postJson("/admin/manual-assignments", activeKiwiTargetPayload({ assignments }));
+                    const payload = activeKiwiTargetPayload({ assignments });
+                    if (assignments.length > 0) {
+                        assignments.forEach((a, idx) => {
+                            if (a && a.enabled) {
+                                console.log(`[Commit] RX${a.rx}: ${a.band} ${a.mode_label} ${Number(a.freq_hz / 1000.0).toFixed(3)} kHz`);
+                            }
+                        });
+                    }
+                    await postJson("/admin/manual-assignments", payload);
                     runtimeApplied = true;
                     Object.keys(manualAssignmentDrafts).forEach((key) => {
                         manualAssignmentDrafts[key] = {
@@ -10275,6 +10283,7 @@ ${passwordMarkup.actionsHtml}
                 const usersByRx = currentManualReceiverUsersByRx();
                 const seed = buildManualAssignmentSeed(rxNum, usersByRx);
                 const draft = getManualAssignmentDraft(rxNum, seed);
+                const oldFreq = draft.freq_khz;
                 draft.freq_khz = String(target.value || "").trim();
                 draft.freq_auto = !safeText(draft.freq_khz, "");
                 draft.dirty = true;
@@ -10291,6 +10300,12 @@ ${passwordMarkup.actionsHtml}
                     } else {
                         listenBtn.setAttribute("disabled", "");
                     }
+                }
+
+                // Diagnostic logging for arrow key testing
+                const isArrowKeyEvent = event instanceof InputEvent && !event.data;
+                if (isArrowKeyEvent || Number(oldFreq) !== freqNum) {
+                    console.log(`[ManualRX${rxNum}] Freq: ${oldFreq}→${draft.freq_khz} kHz | Live: ${seed.live} | Enabled: ${draft.enabled} | ApplyRuntime: ${!!draft.enabled} | Arrow: ${isArrowKeyEvent}`);
                 }
 
                 markManualAssignmentInteraction();
