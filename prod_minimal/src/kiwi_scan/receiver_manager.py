@@ -4642,6 +4642,8 @@ class ReceiverManager:
                     mode_label=desired.mode_label,
                     sideband=desired.sideband,
                 )
+                # Update stored assignment so future comparisons use the new frequency
+                self._assignments[int(rx)] = desired
 
             if not assignments:
                 self._assignments.clear()
