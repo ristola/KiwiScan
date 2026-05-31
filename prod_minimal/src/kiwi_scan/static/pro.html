@@ -9262,6 +9262,14 @@
             container.addEventListener("focusin", (event) => {
                 const target = event.target;
                 if (!isManualInteractiveTarget(target)) return;
+                if (
+                    target instanceof HTMLInputElement
+                    && String(target.dataset.manualField || "").trim() === "freq"
+                    && manualAssignmentCommitTimer
+                ) {
+                    window.clearTimeout(manualAssignmentCommitTimer);
+                    manualAssignmentCommitTimer = null;
+                }
                 markManualAssignmentInteraction();
                 if (manualAssignmentRefreshTimer) {
                     window.clearTimeout(manualAssignmentRefreshTimer);
@@ -9273,7 +9281,56 @@
             container.addEventListener("focusout", (event) => {
                 const target = event.target;
                 if (!isManualInteractiveTarget(target)) return;
-                markManualAssignmentInteraction(300);
+                window.setTimeout(() => {
+                    const nextActive = document.activeElement;
+                    const focusStayedInManualField = nextActive instanceof Element
+                        && container.contains(nextActive)
+                        && !!nextActive.closest("[data-manual-field]");
+                    if (focusStayedInManualField) {
+                        markManualAssignmentInteraction();
+                        return;
+                    }
+                    markManualAssignmentInteraction(1800);
+                }, 0);
+            });
+
+            container.addEventListener("input", (event) => {
+                const target = event.target;
+                if (!(target instanceof HTMLInputElement)) return;
+                const field = String(target.dataset.manualField || "").trim();
+                if (field !== "freq") return;
+                const rxNum = Number(target.dataset.rx);
+                if (!Number.isFinite(rxNum)) return;
+
+                const usersByRx = currentManualReceiverUsersByRx();
+                const seed = buildManualAssignmentSeed(rxNum, usersByRx);
+                const draft = getManualAssignmentDraft(rxNum, seed);
+                draft.freq_khz = String(target.value || "").trim();
+                draft.freq_auto = !safeText(draft.freq_khz, "");
+                draft.dirty = true;
+                delete manualAssignmentErrorsByRx[manualReceiverDraftKey(rxNum)];
+
+                const freqNum = Number(draft.freq_khz);
+                const validForCommit = !safeText(draft.freq_khz, "") || (Number.isFinite(freqNum) && freqNum > 0);
+                const card = target.closest("[data-manual-rx-card]");
+                const canListen = !!seed.live && Number.isFinite(freqNum) && freqNum > 0;
+                const listenBtn = card?.querySelector(`button[data-manual-action="listen"][data-rx="${rxNum}"]`);
+                if (listenBtn instanceof HTMLButtonElement) {
+                    if (canListen) {
+                        listenBtn.removeAttribute("disabled");
+                    } else {
+                        listenBtn.setAttribute("disabled", "");
+                    }
+                }
+
+                markManualAssignmentInteraction();
+                autoUnhideDecodeOverviewTopics();
+                if (validForCommit) {
+                    scheduleManualAssignmentCommit({
+                        applyRuntime: !!draft.enabled,
+                        delayMs: 700,
+                    });
+                }
             });
 
             container.addEventListener("change", (event) => {

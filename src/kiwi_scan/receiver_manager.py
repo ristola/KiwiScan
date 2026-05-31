@@ -5002,16 +5002,36 @@ class ReceiverManager:
                     if rx not in assignments:
                         to_stop.add(rx)
                         continue
-                    if not self._assignment_equivalent(self._assignments[rx], assignments[rx]):
+                    current_asn = self._assignments[rx]
+                    desired_asn = assignments[rx]
+                    is_equiv = self._assignment_equivalent(current_asn, desired_asn)
+                    if not is_equiv:
+                        # Check if frequency-only change
+                        freq_only_change = (
+                            int(current_asn.rx) == int(desired_asn.rx)
+                            and str(current_asn.band) == str(desired_asn.band)
+                            and str(current_asn.mode_label or "").strip().upper() == str(desired_asn.mode_label or "").strip().upper()
+                        )
+                        if freq_only_change:
+                            logger.debug(
+                                "Frequency-only change detected for RX%s: %s %s %.1f→%.1f kHz",
+                                rx,
+                                current_asn.band,
+                                current_asn.mode_label,
+                                float(current_asn.freq_hz) / 1000.0,
+                                float(desired_asn.freq_hz) / 1000.0,
+                            )
                         # For SSB mode, use the existing hot-reconfiguration logic
-                        if self._can_hot_reconfigure_ssb(self._assignments[rx], assignments[rx]):
+                        if self._can_hot_reconfigure_ssb(current_asn, desired_asn):
                             to_reconfigure.add(rx)
                         # For any other mode (digital), allow hot reconfiguration if band/mode are
                         # unchanged (only freq/sideband differ). This prevents losing receiver
                         # assignments during manual UI frequency adjustments.
-                        elif self._can_hot_reconfigure_frequency(self._assignments[rx], assignments[rx]):
+                        elif self._can_hot_reconfigure_frequency(current_asn, desired_asn):
+                            logger.debug("Hot-reconfigure frequency for RX%s (band=%s mode=%s)", rx, current_asn.band, current_asn.mode_label)
                             to_reconfigure.add(rx)
                         else:
+                            logger.debug("Stopping RX%s (non-frequency change)", rx)
                             to_stop.add(rx)
 
             # Capture offsets from workers about to be stopped so replacements inherit them.
