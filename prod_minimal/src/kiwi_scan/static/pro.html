@@ -9148,7 +9148,7 @@
                     if (assignments.length > 0) {
                         assignments.forEach((a, idx) => {
                             if (a && a.enabled) {
-                                console.log(`[Commit] RX${a.rx}: ${a.band} ${a.mode_label} ${Number(a.freq_hz / 1000.0).toFixed(3)} kHz`);
+                                console.log(`[Commit] RX${a.rx}: ${a.band} ${a.mode} ${Number(a.freq_khz).toFixed(3)} kHz`);
                             }
                         });
                     }
