@@ -149,6 +149,8 @@ def make_router(*, receiver_mgr: object, af2udp_path: Path, ft8modem_path: Path)
             if not match:
                 match = re.search(r"^(?:AUTO|FIXED|ROAM\d)(\d+[mM])([A-Z0-9/\-]+)$", name, flags=re.IGNORECASE)
             if not match:
+                match = re.search(r"^MAN(?:UAL)?[\s_-]*RX\d+[\s_-]*([^_]+)_(.+)$", name, flags=re.IGNORECASE)
+            if not match:
                 return None
             freq_hz = None
             try:

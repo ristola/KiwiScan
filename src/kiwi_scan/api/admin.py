@@ -67,6 +67,68 @@ def _normalize_manual_assignment_mode(value: object) -> str:
     return _MANUAL_ASSIGNMENT_MODE_ALIASES.get(raw, "")
 
 
+def _resolved_target_key(*, host: str, port: int, kiwi_key: str | None = None, resolved_kiwi_key: str | None = None) -> str:
+    resolved = str(resolved_kiwi_key or "").strip()
+    if resolved:
+        return resolved
+    requested = str(kiwi_key or "").strip()
+    if requested:
+        return requested
+    target_host = str(host or "").strip()
+    target_port = int(port or 0)
+    if target_host and target_port > 0:
+        return f"{target_host}:{target_port}"
+    return ""
+
+
+def _resolve_request_target(
+    mgr: object,
+    *,
+    kiwi_key: str | None = None,
+    kiwi_index: object | None = None,
+) -> tuple[str, int, str]:
+    resolved_kiwi_key = ""
+    resolve_runtime_target = getattr(mgr, "resolve_runtime_target", None)
+    if callable(resolve_runtime_target):
+        resolved = resolve_runtime_target(
+            kiwi_key=kiwi_key,
+            kiwi_index=kiwi_index if kiwi_index not in (None, "") else None,
+        )
+        host = str((resolved or {}).get("host") or "").strip()
+        port = int((resolved or {}).get("port") or 0)
+        resolved_kiwi_key = str((resolved or {}).get("kiwi_key") or "").strip()
+    else:
+        manager_lock = getattr(mgr, "lock", None)
+        if manager_lock is not None:
+            with manager_lock:  # type: ignore[union-attr]
+                host = str(getattr(mgr, "host", "") or "").strip()
+                port = int(getattr(mgr, "port", 0) or 0)
+        else:
+            host = str(getattr(mgr, "host", "") or "").strip()
+            port = int(getattr(mgr, "port", 0) or 0)
+
+    if not host or port <= 0:
+        raise HTTPException(status_code=503, detail="KiwiSDR host is not configured")
+
+    target_key = _resolved_target_key(
+        host=host,
+        port=port,
+        kiwi_key=kiwi_key,
+        resolved_kiwi_key=resolved_kiwi_key,
+    )
+    return host, port, target_key
+
+
+async def _parse_target_payload(request: Request) -> tuple[str | None, object | None]:
+    try:
+        payload = await request.json()
+    except Exception:
+        return None, None
+    if not isinstance(payload, dict):
+        return None, None
+    return str(payload.get("kiwi_key") or "").strip() or None, payload.get("kiwi_index")
+
+
 _MANUAL_EXTERNAL_HOLD_REASON = "manual_assignments"
 
 
@@ -628,32 +690,18 @@ def make_router(
         kiwi_index = payload.get("kiwi_index")
         resolved_kiwi_key = ""
 
-        resolve_runtime_target = getattr(mgr, "resolve_runtime_target", None)
-        if callable(resolve_runtime_target):
-            try:
-                resolved = resolve_runtime_target(
-                    kiwi_key=kiwi_key,
-                    kiwi_index=kiwi_index if kiwi_index not in (None, "") else None,
-                )
-            except ValueError as exc:
-                raise HTTPException(status_code=400, detail=str(exc))
-            except Exception as exc:
-                raise HTTPException(status_code=500, detail=f"Failed resolving Kiwi target: {exc}")
-            host = str((resolved or {}).get("host") or "").strip()
-            port = int((resolved or {}).get("port") or 0)
-            resolved_kiwi_key = str((resolved or {}).get("kiwi_key") or "").strip()
-        else:
-            manager_lock = getattr(mgr, "lock", None)
-            if manager_lock is not None:
-                with manager_lock:  # type: ignore[union-attr]
-                    host = str(getattr(mgr, "host", "") or "").strip()
-                    port = int(getattr(mgr, "port", 0) or 0)
-            else:
-                host = str(getattr(mgr, "host", "") or "").strip()
-                port = int(getattr(mgr, "port", 0) or 0)
-
-        if not host or port <= 0:
-            raise HTTPException(status_code=503, detail="KiwiSDR host is not configured")
+        try:
+            host, port, resolved_kiwi_key = _resolve_request_target(
+                mgr,
+                kiwi_key=kiwi_key,
+                kiwi_index=kiwi_index,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Failed resolving Kiwi target: {exc}")
 
         desired_assignments: dict[int, ReceiverAssignment] = {}
         seen_receivers: set[int] = set()
@@ -712,10 +760,7 @@ def make_router(
             if auto_set_loop is not None:
                 pause_for_external = getattr(auto_set_loop, "pause_for_external", None)
                 if callable(pause_for_external):
-                    # Use a global hold: receiver_mgr is a shared runtime target, so
-                    # per-kiwi holds can still let another kiwi re-apply and preempt
-                    # manual assignment startup mid-flight.
-                    pause_for_external(_MANUAL_EXTERNAL_HOLD_REASON)
+                    pause_for_external(_MANUAL_EXTERNAL_HOLD_REASON, kiwi_key=resolved_kiwi_key or None)
             dependency_errors_getter = getattr(receiver_mgr, "_required_dependency_errors", None)
             if callable(dependency_errors_getter):
                 dependency_errors = dependency_errors_getter(desired_assignments)  # type: ignore[misc]
@@ -737,41 +782,89 @@ def make_router(
             "ok": True,
             "host": host,
             "port": port,
-            "kiwi_key": resolved_kiwi_key or (kiwi_key or ""),
+            "kiwi_key": resolved_kiwi_key,
             "active_receivers": sorted(desired_assignments.keys()),
             "status": "applied",
         }
 
     @router.post("/admin/restore-roaming-receivers")
-    def restore_roaming_receivers_endpoint() -> dict:
+    async def restore_roaming_receivers_endpoint(request: Request) -> dict:
         if auto_set_loop is None:
             raise HTTPException(status_code=503, detail="auto_set_loop unavailable")
+        kiwi_key, kiwi_index = await _parse_target_payload(request)
+        resolved_kiwi_key = kiwi_key or ""
+        if mgr is not None:
+            try:
+                _host, _port, resolved_kiwi_key = _resolve_request_target(
+                    mgr,
+                    kiwi_key=kiwi_key,
+                    kiwi_index=kiwi_index,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+            except HTTPException:
+                raise
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=f"Failed resolving Kiwi target: {exc}")
         try:
             resume_from_external = getattr(auto_set_loop, "resume_from_external", None)
             if callable(resume_from_external):
-                resume_from_external(_MANUAL_EXTERNAL_HOLD_REASON)
-            applied = bool(auto_set_loop.apply_current_settings(force=True, sync_state=True))  # type: ignore[attr-defined]
+                resume_from_external(_MANUAL_EXTERNAL_HOLD_REASON, kiwi_key=resolved_kiwi_key or None)
+            applied = bool(auto_set_loop.apply_current_settings(  # type: ignore[attr-defined]
+                force=True,
+                sync_state=True,
+                kiwi_key=resolved_kiwi_key or None,
+            ))
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Failed restoring roaming receivers: {exc}")
         if not applied:
             raise HTTPException(status_code=409, detail="Auto roaming restore is not available in the current mode")
-        return {"ok": True, "status": "restored", "reserved_receivers": [0, 1]}
+        return {
+            "ok": True,
+            "status": "restored",
+            "reserved_receivers": [0, 1],
+            "kiwi_key": resolved_kiwi_key,
+        }
 
     @router.post("/admin/clear-roaming-receivers")
-    def clear_roaming_receivers_endpoint() -> dict:
+    async def clear_roaming_receivers_endpoint(request: Request) -> dict:
         if receiver_mgr is None or mgr is None:
             raise HTTPException(status_code=503, detail="receiver management unavailable")
         reserved_slots = [0, 1]
         paused_external = False
+        kiwi_key, kiwi_index = await _parse_target_payload(request)
+        resolved_kiwi_key = kiwi_key or ""
         try:
             if auto_set_loop is not None:
-                auto_set_loop.pause_for_external(semi_hold_reason)  # type: ignore[attr-defined]
+                if mgr is not None:
+                    try:
+                        _host, _port, resolved_kiwi_key = _resolve_request_target(
+                            mgr,
+                            kiwi_key=kiwi_key,
+                            kiwi_index=kiwi_index,
+                        )
+                    except ValueError as exc:
+                        raise HTTPException(status_code=400, detail=str(exc))
+                    except HTTPException:
+                        raise
+                    except Exception as exc:
+                        raise HTTPException(status_code=500, detail=f"Failed resolving Kiwi target: {exc}")
+                auto_set_loop.pause_for_external(semi_hold_reason, kiwi_key=resolved_kiwi_key or None)  # type: ignore[attr-defined]
                 paused_external = True
             _resolve_rt = getattr(mgr, "resolve_runtime_target", None)
             if callable(_resolve_rt):
-                _target = _resolve_rt()
+                _target = _resolve_rt(
+                    kiwi_key=kiwi_key,
+                    kiwi_index=kiwi_index if kiwi_index not in (None, "") else None,
+                )
                 host = str(_target.get("host") or getattr(mgr, "host", ""))
                 port = int(_target.get("port") or getattr(mgr, "port", 8073))
+                resolved_kiwi_key = _resolved_target_key(
+                    host=host,
+                    port=port,
+                    kiwi_key=kiwi_key,
+                    resolved_kiwi_key=str(_target.get("kiwi_key") or "").strip(),
+                )
             else:
                 manager_lock = getattr(mgr, "lock", None)
                 if manager_lock is not None:
@@ -813,13 +906,14 @@ def make_router(
         finally:
             if paused_external and auto_set_loop is not None:
                 try:
-                    auto_set_loop.resume_from_external(semi_hold_reason)  # type: ignore[attr-defined]
+                    auto_set_loop.resume_from_external(semi_hold_reason, kiwi_key=resolved_kiwi_key or None)  # type: ignore[attr-defined]
                 except Exception:
                     pass
         return {
             "ok": True,
             "status": "cleared",
             "reserved_receivers": reserved_slots,
+            "kiwi_key": resolved_kiwi_key,
         }
 
     @router.post("/admin/runtime/restart")

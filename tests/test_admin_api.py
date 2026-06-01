@@ -43,7 +43,7 @@ def test_clear_roaming_receivers_endpoint_clears_only_rx0_rx1() -> None:
     cleanup_calls: list[set[str]] = []
     wait_calls: list[tuple[str, int, set[int], float, float]] = []
     apply_calls: list[tuple[str, int, dict[int, object], bool]] = []
-    loop_calls: list[tuple[str, str]] = []
+    loop_calls: list[tuple[str, str, str | None]] = []
 
     class _FakeWorker:
         def __init__(self, label: str) -> None:
@@ -81,21 +81,38 @@ def test_clear_roaming_receivers_endpoint_clears_only_rx0_rx1() -> None:
             (str(host), int(port), set(slots), float(stable_secs), float(timeout_s))
         ),
     )
-    mgr = SimpleNamespace(lock=threading.Lock(), host="kiwi.local", port=8073)
+    mgr = SimpleNamespace(
+        lock=threading.Lock(),
+        host="kiwi.local",
+        port=8073,
+        resolve_runtime_target=lambda kiwi_key=None, kiwi_index=None: {
+            "host": "kiwi.local",
+            "port": 8073,
+            "kiwi_key": str(kiwi_key or "kiwi.local:8073"),
+        },
+    )
     auto_set_loop = SimpleNamespace(
-        pause_for_external=lambda reason: loop_calls.append(("pause", str(reason))),
-        resume_from_external=lambda reason: loop_calls.append(("resume", str(reason))),
+        pause_for_external=lambda reason, kiwi_key=None: loop_calls.append(("pause", str(reason), str(kiwi_key) if kiwi_key is not None else None)),
+        resume_from_external=lambda reason, kiwi_key=None: loop_calls.append(("resume", str(reason), str(kiwi_key) if kiwi_key is not None else None)),
     )
 
     app = FastAPI()
     app.include_router(make_router(receiver_mgr=receiver_mgr, mgr=mgr, auto_set_loop=auto_set_loop))
     client = TestClient(app)
 
-    response = client.post("/admin/clear-roaming-receivers")
+    response = client.post("/admin/clear-roaming-receivers", json={"kiwi_key": "kiwi.local:8073"})
 
     assert response.status_code == 200
-    assert response.json() == {"ok": True, "status": "cleared", "reserved_receivers": [0, 1]}
-    assert loop_calls == [("pause", "semi_transition"), ("resume", "semi_transition")]
+    assert response.json() == {
+        "ok": True,
+        "status": "cleared",
+        "reserved_receivers": [0, 1],
+        "kiwi_key": "kiwi.local:8073",
+    }
+    assert loop_calls == [
+        ("pause", "semi_transition", "kiwi.local:8073"),
+        ("resume", "semi_transition", "kiwi.local:8073"),
+    ]
     assert stop_calls == ["ROAM_60m_FT8", "ROAM_80m_MIX"]
     assert wait_missing_calls == [
         ("kiwi.local", 8073, {"ROAM_60m_FT8", "ROAM_80m_MIX"}, 4.0),
@@ -115,26 +132,42 @@ def test_clear_roaming_receivers_endpoint_clears_only_rx0_rx1() -> None:
 
 
 def test_restore_roaming_receivers_endpoint_applies_current_auto_settings() -> None:
-    apply_calls: list[tuple[bool, bool]] = []
+    apply_calls: list[tuple[bool, bool, str | None]] = []
+    resume_calls: list[tuple[str, str | None]] = []
 
     auto_set_loop = SimpleNamespace(
-        apply_current_settings=lambda force=False, sync_state=True: apply_calls.append((bool(force), bool(sync_state))) or True,
+        apply_current_settings=lambda force=False, sync_state=True, kiwi_key=None: apply_calls.append((bool(force), bool(sync_state), str(kiwi_key) if kiwi_key is not None else None)) or True,
+        resume_from_external=lambda reason, kiwi_key=None: resume_calls.append((str(reason), str(kiwi_key) if kiwi_key is not None else None)),
+    )
+    mgr = SimpleNamespace(
+        resolve_runtime_target=lambda kiwi_key=None, kiwi_index=None: {
+            "host": "kiwi-2.local",
+            "port": 8074,
+            "kiwi_key": str(kiwi_key or "kiwi-2.local:8074"),
+        },
     )
 
     app = FastAPI()
-    app.include_router(make_router(auto_set_loop=auto_set_loop))
+    app.include_router(make_router(auto_set_loop=auto_set_loop, mgr=mgr))
     client = TestClient(app)
 
-    response = client.post("/admin/restore-roaming-receivers")
+    response = client.post("/admin/restore-roaming-receivers", json={"kiwi_key": "kiwi-2.local:8074"})
 
     assert response.status_code == 200
-    assert response.json() == {"ok": True, "status": "restored", "reserved_receivers": [0, 1]}
-    assert apply_calls == [(True, True)]
+    assert response.json() == {
+        "ok": True,
+        "status": "restored",
+        "reserved_receivers": [0, 1],
+        "kiwi_key": "kiwi-2.local:8074",
+    }
+    assert resume_calls == [("manual_assignments", "kiwi-2.local:8074")]
+    assert apply_calls == [(True, True, "kiwi-2.local:8074")]
 
 
 def test_manual_assignments_endpoint_targets_requested_kiwi_and_applies_enabled_receivers() -> None:
     apply_calls: list[tuple[str, int, dict[int, object], bool]] = []
     resolve_calls: list[tuple[object, object]] = []
+    pause_calls: list[tuple[str, str | None]] = []
 
     receiver_mgr = SimpleNamespace(
         apply_assignments=lambda host, port, assignments, allow_starting_from_empty_full_reset=True: apply_calls.append(
@@ -149,9 +182,12 @@ def test_manual_assignments_endpoint_targets_requested_kiwi_and_applies_enabled_
             "kiwi_key": str(kiwi_key or "kiwi-2.local:8074"),
         },
     )
+    auto_set_loop = SimpleNamespace(
+        pause_for_external=lambda reason, kiwi_key=None: pause_calls.append((str(reason), str(kiwi_key) if kiwi_key is not None else None)),
+    )
 
     app = FastAPI()
-    app.include_router(make_router(receiver_mgr=receiver_mgr, mgr=mgr))
+    app.include_router(make_router(receiver_mgr=receiver_mgr, mgr=mgr, auto_set_loop=auto_set_loop))
     client = TestClient(app)
 
     response = client.post(
@@ -177,6 +213,7 @@ def test_manual_assignments_endpoint_targets_requested_kiwi_and_applies_enabled_
         "status": "applied",
     }
     assert resolve_calls == [("kiwi-2.local:8074", None)]
+    assert pause_calls == [("manual_assignments", "kiwi-2.local:8074")]
     assert len(apply_calls) == 1
     host, port, assignments, allow_full_reset = apply_calls[0]
     assert (host, port, allow_full_reset) == ("kiwi-2.local", 8074, False)

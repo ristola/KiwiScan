@@ -118,6 +118,8 @@ def test_pro_dashboard_serves_receiver_scan_and_net_monitor_without_utility_moni
     assert 'return `http://${normalizedHost}:${portNumber}/admin`;' in response.text
     assert response.text.count('await postJson("/admin/force-reassign", {});') >= 1
     assert 'hasMismatch ? "Assigning Receivers." : "Setting up Receiver Assignments !"' in response.text
+    assert 'const hasBusyPlaceholder = statusSource === "busy"' in response.text
+    assert 'statusSource === "busy" && !hasBusyPlaceholder' in response.text
     assert 'Object.prototype.hasOwnProperty.call(normalized, "enabled") || normalized.band || normalized.mode || normalized.freq_khz' in response.text
     assert 'enabled: !!draft.enabled,' in response.text
     assert '<script src="https://unpkg.com/three@0.179.1/build/three.min.js"></script>' not in response.text
@@ -130,6 +132,37 @@ def test_pro_dashboard_serves_receiver_scan_and_net_monitor_without_utility_moni
     assert 'safeText(assignment && assignment.band, "")' not in manual_seed_section
     assert 'Number.isFinite(Number(assignment && assignment.freq_hz))' in manual_seed_section
     assert 'Number.isFinite(Number(user && user.freq_khz))' in manual_seed_section
+    assert 'getJson(appendActiveKiwiKey("/system/info"), SYSTEM_INFO_TIMEOUT_MS)' in response.text
+    assert 'getJson("/system/info", SYSTEM_INFO_TIMEOUT_MS)' not in response.text
+    assert 'async function refresh(force = false) {' in response.text
+    assert 'function manualAssignmentDraftDirtyActive() {' in response.text
+    assert 'function manualAssignmentEditorMounted(container = byId("active-receivers-table")) {' in response.text
+    assert 'function preserveOverviewScrollPosition() {' in response.text
+    assert response.text.count('if (manualAssignmentDashboardInteractionActive()) return;') >= 2
+    assert 'markManualAssignmentInteraction(field === "freq" ? 12000 : 1800);' in response.text
+    assert 'if (manualAssignmentEditorMounted(usersEl)) {' in response.text
+    assert 'manualAssignmentDraftDirtyActive() || manualAssignmentInteractionLocked() || manualAssignmentFieldHasFocus(usersEl)' in response.text
+    assert 'if (focusedManualField || manualAssignmentEditorActive || manualAssignmentDraftDirtyActive() || manualAssignmentInteractionLocked()) {' in response.text
+
+    active_kiwi_switch_section = response.text.split('async function saveActiveConfiguredKiwiSelection(index) {', 1)[1].split('async function saveConfigSection(options = {}) {', 1)[0]
+    assert 'latestSystemInfo = null;' in active_kiwi_switch_section
+    assert 'lastSystemInfoRefreshMs = 0;' in active_kiwi_switch_section
+    assert 'latestChannelsMap = {};' in active_kiwi_switch_section
+    assert 'await refreshSystemInfo(true).catch(() => { });' in active_kiwi_switch_section
+    assert 'await refresh(true);' in active_kiwi_switch_section
+    assert 'window.kiwiProSetView("overview", false);' in active_kiwi_switch_section
+
+    manual_commit_section = response.text.split('async function commitManualAssignmentChanges({ applyRuntime = false } = {}) {', 1)[1].split('} finally {', 1)[0]
+    assert 'await refresh();' not in manual_commit_section
+
+    sync_mode_section = response.text.split('function syncReceiversModeFromBackendState() {', 1)[1].split('function buildActiveReceiverRows(', 1)[0]
+    assert 'if (manualAssignmentDashboardInteractionActive()) return;' in sync_mode_section
+
+    manual_input_section = response.text.split('container.addEventListener("input", (event) => {', 1)[1].split('container.addEventListener("change", (event) => {', 1)[0]
+    assert 'const validForCommit = Number.isFinite(freqNum) && freqNum > 0;' in manual_input_section
+    assert 'manualAssignmentCommitApplyRuntime = false;' in manual_input_section
+    assert 'if (validForCommit) {' in manual_input_section
+    assert 'applyRuntime: !!draft.enabled,' in manual_input_section
 
 
 def test_prod_minimal_pro_template_keeps_receiver_scan_and_net_monitor_without_utility_monitor() -> None:
@@ -145,6 +178,8 @@ def test_prod_minimal_pro_template_keeps_receiver_scan_and_net_monitor_without_u
     assert 'return `http://${normalizedHost}:${portNumber}/admin`;' in html
     assert html.count('await postJson("/admin/force-reassign", {});') == 1
     assert 'hasMismatch ? "Assigning Receivers." : "Setting up Receiver Assignments !"' in html
+    assert 'const hasBusyPlaceholder = statusSource === "busy"' in html
+    assert 'statusSource === "busy" && !hasBusyPlaceholder' in html
     assert 'Object.prototype.hasOwnProperty.call(normalized, "enabled") || normalized.band || normalized.mode || normalized.freq_khz' in html
     assert 'enabled: !!draft.enabled,' in html
     assert '<script src="https://unpkg.com/three@0.179.1/build/three.min.js"></script>' not in html
@@ -157,3 +192,32 @@ def test_prod_minimal_pro_template_keeps_receiver_scan_and_net_monitor_without_u
     assert 'safeText(assignment && assignment.band, "")' not in manual_seed_section
     assert 'Number.isFinite(Number(assignment && assignment.freq_hz))' in manual_seed_section
     assert 'Number.isFinite(Number(user && user.freq_khz))' in manual_seed_section
+    assert 'getJson(appendActiveKiwiKey("/system/info"), SYSTEM_INFO_TIMEOUT_MS)' in html
+    assert 'getJson("/system/info", SYSTEM_INFO_TIMEOUT_MS)' not in html
+    assert 'async function refresh(force = false) {' in html
+    assert 'function manualAssignmentDraftDirtyActive() {' in html
+    assert 'function manualAssignmentEditorMounted(container = byId("active-receivers-table")) {' in html
+    assert 'markManualAssignmentInteraction(field === "freq" ? 12000 : 1800);' in html
+    assert 'if (manualAssignmentEditorMounted(usersEl)) {' in html
+    assert 'manualAssignmentDraftDirtyActive() || manualAssignmentInteractionLocked() || manualAssignmentFieldHasFocus(usersEl)' in html
+    assert 'if (focusedManualField || manualAssignmentEditorActive || manualAssignmentDraftDirtyActive() || manualAssignmentInteractionLocked()) {' in html
+
+    active_kiwi_switch_section = html.split('async function saveActiveConfiguredKiwiSelection(index) {', 1)[1].split('async function saveConfigSection(options = {}) {', 1)[0]
+    assert 'latestSystemInfo = null;' in active_kiwi_switch_section
+    assert 'lastSystemInfoRefreshMs = 0;' in active_kiwi_switch_section
+    assert 'latestChannelsMap = {};' in active_kiwi_switch_section
+    assert 'await refreshSystemInfo(true).catch(() => { });' in active_kiwi_switch_section
+    assert 'await refresh(true);' in active_kiwi_switch_section
+    assert 'window.kiwiProSetView("overview", false);' in active_kiwi_switch_section
+
+    sync_mode_section = html.split('function syncReceiversModeFromBackendState() {', 1)[1].split('function buildActiveReceiverRows(', 1)[0]
+    assert 'if (manualAssignmentDashboardInteractionActive()) return;' in sync_mode_section
+
+    manual_input_section = html.split('container.addEventListener("input", (event) => {', 1)[1].split('container.addEventListener("change", (event) => {', 1)[0]
+    assert 'const validForCommit = Number.isFinite(freqNum) && freqNum > 0;' in manual_input_section
+    assert 'manualAssignmentCommitApplyRuntime = false;' in manual_input_section
+    assert 'if (validForCommit) {' in manual_input_section
+    assert 'applyRuntime: !!draft.enabled,' in manual_input_section
+
+    manual_commit_section = html.split('async function commitManualAssignmentChanges({ applyRuntime = false } = {}) {', 1)[1].split('} finally {', 1)[0]
+    assert 'await refresh();' not in manual_commit_section

@@ -265,6 +265,45 @@ def test_decodes_status_accepts_readable_live_labels_with_mix_and_all(monkeypatc
     assert body["assignments"]["7"] == {"band": "17m", "mode": "ALL", "freq_hz": 18102300.0}
 
 
+def test_decodes_status_accepts_manual_live_labels(monkeypatch) -> None:
+    payload = [
+        {"i": 3, "n": "MAN_RX3_40m_SSB", "f": 7125000.0, "t": "0:00:34"},
+        {"i": 5, "n": "MANUAL_RX5_20m_FT8", "f": 14074000.0, "t": "0:00:18"},
+    ]
+
+    def _fake_urlopen(req, timeout=0.5):
+        url = req.full_url if hasattr(req, "full_url") else str(req)
+        assert url == "http://kiwi.local:8073/users?json=1"
+        assert timeout == 0.5
+        return _UrlResponse(payload)
+
+    monkeypatch.setattr(decodes_status_api.urllib.request, "urlopen", _fake_urlopen)
+
+    receiver_mgr = _ReceiverMgrStub()
+    receiver_mgr._assignments = {
+        3: SimpleNamespace(band="40m", mode_label="SSB", freq_hz=7_125_000.0),
+        5: SimpleNamespace(band="20m", mode_label="FT8", freq_hz=14_074_000.0),
+    }
+    app = FastAPI()
+    app.include_router(
+        decodes_status_api.make_router(
+            receiver_mgr=receiver_mgr,
+            af2udp_path=Path("/tmp/af2udp"),
+            ft8modem_path=Path("/tmp/ft8modem"),
+        )
+    )
+    client = TestClient(app)
+
+    response = client.get("/decodes/status")
+    assert response.status_code == 200
+
+    body = response.json()
+    assert body["assignments_source"] == "kiwi_users"
+    assert body["assignments_mismatch_rxs"] == []
+    assert body["assignments"]["3"] == {"band": "40m", "mode": "SSB", "freq_hz": 7125000.0}
+    assert body["assignments"]["5"] == {"band": "20m", "mode": "FT8", "freq_hz": 14074000.0}
+
+
 def test_decodes_status_exposes_decoder_crash_tails_for_rx_logs(monkeypatch, tmp_path) -> None:
     payload = [
         {"i": 2, "n": "FIXED_20m_MIX", "f": 14077000.0, "t": "0:02:15"},

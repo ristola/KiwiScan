@@ -4,6 +4,7 @@ import logging
 import math
 import re
 import os
+import socket
 import shlex
 import shutil
 import signal
@@ -230,6 +231,7 @@ class _ReceiverWorker(threading.Thread):
     _DIGITAL_USB_LOW_CUT_HZ = 0
     _DIGITAL_USB_HIGH_CUT_HZ = 3100
     _DIGITAL_RESAMPLE_GAIN = 0.25
+    _RIGCTL_PORT_STRIDE = 32
 
     def __init__(
         self,
@@ -321,6 +323,17 @@ class _ReceiverWorker(threading.Thread):
 
     def _decoder_udp_port(self, base_port: int) -> int:
         return int(base_port) + (int(self._runtime_resource_slot) * 1000) + int(self._rx)
+
+    def _rigctl_base_port(self) -> int:
+        return self._env_int("KIWISCAN_RIGCTL_BASE_PORT", 36400, min_v=1024, max_v=64900)
+
+    def _rigctl_port(self) -> int:
+        return int(self._rigctl_base_port()) + (int(self._runtime_resource_slot) * int(self._RIGCTL_PORT_STRIDE)) + int(self._rx)
+
+    @staticmethod
+    def _rigctl_address() -> str:
+        raw = str(os.environ.get("KIWISCAN_RIGCTL_ADDR", "127.0.0.1") or "").strip()
+        return raw or "127.0.0.1"
 
     def _watchdog_base_backoff_s(self) -> float:
         return self._env_float("KIWISCAN_WATCHDOG_BASE_BACKOFF_S", 0.5, min_v=0.1, max_v=5.0)
@@ -897,24 +910,40 @@ class _ReceiverWorker(threading.Thread):
             return False
         return True
 
-    def _is_digital_mode(self) -> bool:
-        norm = self._mode_label.strip().upper()
+    @staticmethod
+    def _is_digital_mode_label(mode_label: str) -> bool:
+        norm = str(mode_label or "").strip().upper()
         return norm in {
             "FT4", "FT8", "FT4 / FT8", "FT4/FT8", "FT8 / FT4", "FT8/FT4",
             "WSPR", "FT4 / FT8 / WSPR", "FT4 / WSPR",
         }
 
-    def _is_triple_mode(self) -> bool:
-        norm = self._mode_label.strip().upper()
+    def _is_digital_mode(self) -> bool:
+        return self._is_digital_mode_label(self._mode_label)
+
+    @staticmethod
+    def _is_triple_mode_label(mode_label: str) -> bool:
+        norm = str(mode_label or "").strip().upper()
         return "FT4" in norm and "FT8" in norm and "WSPR" in norm
 
-    def _is_dual_mode(self) -> bool:
-        norm = self._mode_label.strip().upper()
+    def _is_triple_mode(self) -> bool:
+        return self._is_triple_mode_label(self._mode_label)
+
+    @staticmethod
+    def _is_dual_mode_label(mode_label: str) -> bool:
+        norm = str(mode_label or "").strip().upper()
         return "FT4" in norm and "FT8" in norm and "WSPR" not in norm
 
-    def _is_ft4_wspr_mode(self) -> bool:
-        norm = self._mode_label.strip().upper()
+    def _is_dual_mode(self) -> bool:
+        return self._is_dual_mode_label(self._mode_label)
+
+    @staticmethod
+    def _is_ft4_wspr_mode_label(mode_label: str) -> bool:
+        norm = str(mode_label or "").strip().upper()
         return norm == "FT4 / WSPR"
+
+    def _is_ft4_wspr_mode(self) -> bool:
+        return self._is_ft4_wspr_mode_label(self._mode_label)
 
     def _decoder_mode(self) -> str:
         norm = self._mode_label.strip().upper()
@@ -991,17 +1020,29 @@ class _ReceiverWorker(threading.Thread):
         logger.warning("WSPR selected but wsprd not found on PATH")
         return None
 
-    def _ssb_assignment_sideband(self) -> str:
-        if self._sideband:
-            return "lsb" if self._sideband == "LSB" else "usb"
-        ranges = bandplan_ranges_for_label("Phone", band=self._band)
+    @staticmethod
+    def _ssb_assignment_sideband_for(band: str, sideband: Optional[str]) -> str:
+        normalized_sideband = str(sideband or "").strip().upper()
+        if normalized_sideband:
+            return "lsb" if normalized_sideband == "LSB" else "usb"
+        ranges = bandplan_ranges_for_label("Phone", band=str(band))
         if ranges:
             max_hz = max(max(start_hz, end_hz) for start_hz, end_hz in ranges)
             return "lsb" if max_hz < 10_000_000 else "usb"
         return "usb"
 
-    def _non_digital_kiwirecorder_mode(self) -> str:
-        norm = self._mode_label.strip().upper()
+    def _ssb_assignment_sideband(self) -> str:
+        return self._ssb_assignment_sideband_for(self._band, self._sideband)
+
+    @classmethod
+    def _non_digital_kiwirecorder_mode_for(
+        cls,
+        *,
+        band: str,
+        mode_label: str,
+        sideband: Optional[str],
+    ) -> str:
+        norm = str(mode_label or "").strip().upper()
         if norm in {"AM", "AMN", "SAM"}:
             return "am"
         if norm in {"FM", "NBFM"}:
@@ -1013,8 +1054,98 @@ class _ReceiverWorker(threading.Thread):
         if norm == "USB":
             return "usb"
         if ("SSB" in norm) or ("PHONE" in norm):
-            return self._ssb_assignment_sideband()
+            return cls._ssb_assignment_sideband_for(band, sideband)
         return "usb"
+
+    def _non_digital_kiwirecorder_mode(self) -> str:
+        return self._non_digital_kiwirecorder_mode_for(
+            band=self._band,
+            mode_label=self._mode_label,
+            sideband=self._sideband,
+        )
+
+    def _supports_live_rigctl_reconfigure(self, *, band: str, mode_label: str) -> bool:
+        if self._stop_event.is_set():
+            return False
+        proc = self._proc
+        if proc is None:
+            return False
+        try:
+            if proc.poll() is not None:
+                return False
+        except Exception:
+            return False
+        if not self._is_digital_mode_label(mode_label):
+            return True
+        if self._is_triple_mode_label(mode_label):
+            return False
+        if self._is_dual_mode_label(mode_label):
+            return False
+        if self._is_ft4_wspr_mode_label(mode_label):
+            return False
+        return True
+
+    def _send_rigctl_command(self, command: str, *, timeout_s: float = 0.75) -> str:
+        payload = (str(command or "").strip() + "\n").encode("ascii", errors="ignore")
+        with socket.create_connection((self._rigctl_address(), self._rigctl_port()), timeout=max(0.1, float(timeout_s))) as sock:
+            sock.settimeout(max(0.1, float(timeout_s)))
+            sock.sendall(payload)
+            chunks: list[bytes] = []
+            while True:
+                try:
+                    chunk = sock.recv(4096)
+                except socket.timeout:
+                    break
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                if b"\n" in chunk:
+                    break
+        return b"".join(chunks).decode("ascii", errors="ignore")
+
+    def _try_live_rigctl_reconfigure(
+        self,
+        *,
+        band: str,
+        freq_hz: float,
+        mode_label: str,
+        sideband: Optional[str],
+    ) -> bool:
+        if not self._supports_live_rigctl_reconfigure(band=band, mode_label=mode_label):
+            return False
+        try:
+            if self._is_digital_mode_label(mode_label):
+                reply = self._send_rigctl_command(f"F {float(freq_hz):.3f}")
+                ok = "RPRT 0" in reply
+            else:
+                desired_mode = self._non_digital_kiwirecorder_mode_for(
+                    band=band,
+                    mode_label=mode_label,
+                    sideband=sideband,
+                )
+                mode_reply = self._send_rigctl_command(f"M {desired_mode}")
+                if "RPRT 0" not in mode_reply:
+                    return False
+                freq_reply = self._send_rigctl_command(f"F {float(freq_hz):.3f}")
+                ok = "RPRT 0" in freq_reply
+        except Exception:
+            logger.debug(
+                "live rigctl reconfigure failed rx=%s host=%s port=%s",
+                self._rx,
+                self._host,
+                self._port,
+                exc_info=True,
+            )
+            return False
+        if ok:
+            logger.info(
+                "Live rigctl reconfigure rx=%s band=%s mode=%s freq=%.3f kHz",
+                self._rx,
+                band,
+                mode_label,
+                float(freq_hz) / 1000.0,
+            )
+        return bool(ok)
 
     def update_assignment(
         self,
@@ -1029,6 +1160,13 @@ class _ReceiverWorker(threading.Thread):
             self._freq_hz = float(freq_hz)
             self._mode_label = str(mode_label or "FT8")
             self._sideband = str(sideband).strip().upper() if sideband else None
+        if self._try_live_rigctl_reconfigure(
+            band=self._band,
+            freq_hz=self._freq_hz,
+            mode_label=self._mode_label,
+            sideband=self._sideband,
+        ):
+            return
         self._reconfigure.set()
         self._terminate_proc()
 
@@ -1298,7 +1436,8 @@ class _ReceiverWorker(threading.Thread):
         password_arg = f" --password {shlex.quote(self._password)}" if self._password else ""
         kiwirecorder_base_cmd = (
             f"{self._python_cmd} {self._kiwirecorder_path} --busy-timeout 5 "
-            f"-s {self._host} -p {self._port}{password_arg}"
+            f"-s {self._host} -p {self._port}{password_arg} "
+            f"--rigctl --rigctl-port {self._rigctl_port()} --rigctl-addr {self._rigctl_address()}"
         )
         self._active_user_label = user_label
         self._kill_local_kiwi_user_processes(user_label)
@@ -1510,6 +1649,11 @@ class _ReceiverWorker(threading.Thread):
             user_label,
             "--nc",
             "--quiet",
+            "--rigctl",
+            "--rigctl-port",
+            str(self._rigctl_port()),
+            "--rigctl-addr",
+            self._rigctl_address(),
         ]
         try:
             self._last_spawn_error_reason = "process_exited"
@@ -4992,12 +5136,68 @@ class ReceiverManager:
                             "skipping full Kiwi reset",
                             sorted(_new_manual_rxs - _existing_manual_rxs),
                         )
+                elif current_rxs == desired_rxs:
+                    _manual_hot_reconfigurable = True
+                    for rx in sorted(current_rxs):
+                        current_asn = self._assignments.get(int(rx))
+                        desired_asn = assignments.get(int(rx))
+                        if current_asn is None or desired_asn is None:
+                            _manual_hot_reconfigurable = False
+                            break
+                        if self._assignment_equivalent(current_asn, desired_asn):
+                            continue
+                        if self._can_hot_reconfigure_ssb(current_asn, desired_asn) or self._can_hot_reconfigure_frequency(current_asn, desired_asn):
+                            continue
+                        _manual_hot_reconfigurable = False
+                        break
+                    if _manual_hot_reconfigurable:
+                        did_full_reset = False
+                        logger.info("Manual-mode apply: hot-reconfigurable update detected; skipping full Kiwi reset")
                 if did_full_reset:
                     logger.info("Manual-mode apply: forcing full Kiwi receiver reset (no roaming-slot carryover)")
             if starting_from_empty and not bootstrap_fixed_first and allow_starting_from_empty_full_reset:
                 did_full_reset = True
             if force_full_reset:
                 logger.warning("Band-plan change detected; forcing full Kiwi receiver reset before re-apply")
+
+            if manual_mode_assignments and not host_changed and current_rxs and current_rxs == desired_rxs:
+                manual_hot_reconfigure_rxs: set[int] = set()
+                for rx in sorted(current_rxs):
+                    current_asn = self._assignments.get(int(rx))
+                    desired_asn = assignments.get(int(rx))
+                    worker = self._workers.get(int(rx))
+                    if current_asn is None or desired_asn is None or worker is None:
+                        manual_hot_reconfigure_rxs.clear()
+                        break
+                    if int(current_asn.rx) != int(desired_asn.rx):
+                        manual_hot_reconfigure_rxs.clear()
+                        break
+                    if str(current_asn.band) != str(desired_asn.band):
+                        manual_hot_reconfigure_rxs.clear()
+                        break
+                    if not (
+                        self._can_hot_reconfigure_ssb(current_asn, desired_asn)
+                        or self._can_hot_reconfigure_frequency(current_asn, desired_asn)
+                    ):
+                        manual_hot_reconfigure_rxs.clear()
+                        break
+                    manual_hot_reconfigure_rxs.add(int(rx))
+                if manual_hot_reconfigure_rxs:
+                    for rx in sorted(manual_hot_reconfigure_rxs):
+                        worker = self._workers.get(int(rx))
+                        desired_asn = assignments.get(int(rx))
+                        if worker is None or desired_asn is None:
+                            continue
+                        self._activity_by_rx.pop(int(rx), None)
+                        worker.update_assignment(
+                            band=desired_asn.band,
+                            freq_hz=desired_asn.freq_hz,
+                            mode_label=desired_asn.mode_label,
+                            sideband=desired_asn.sideband,
+                        )
+                        self._assignments[int(rx)] = desired_asn
+                    self._store_active_runtime_state_locked()
+                    return
 
             to_stop: set[int] = set()
             to_reconfigure: set[int] = set()
@@ -5056,6 +5256,22 @@ class ReceiverManager:
                         else:
                             logger.debug("Stopping RX%s (non-frequency change)", rx)
                             to_stop.add(rx)
+                if manual_mode_assignments and not did_full_reset and current_rxs == desired_rxs:
+                    _manual_hot_reconfigurable = True
+                    for rx in sorted(current_rxs):
+                        current_asn = self._assignments.get(int(rx))
+                        desired_asn = assignments.get(int(rx))
+                        if current_asn is None or desired_asn is None:
+                            _manual_hot_reconfigurable = False
+                            break
+                        if self._assignment_equivalent(current_asn, desired_asn):
+                            continue
+                        if self._can_hot_reconfigure_ssb(current_asn, desired_asn) or self._can_hot_reconfigure_frequency(current_asn, desired_asn):
+                            continue
+                        _manual_hot_reconfigurable = False
+                        break
+                    if _manual_hot_reconfigurable:
+                        to_reconfigure.update(int(rx) for rx in current_rxs)
 
             # Capture offsets from workers about to be stopped so replacements inherit them.
             adjust_cache: Dict[int, int] = {}
@@ -5286,6 +5502,24 @@ class ReceiverManager:
                     return
                 if rx in self._workers and rx in self._assignments and self._assignment_equivalent(self._assignments[rx], assignments[rx]) and not host_changed:
                     return
+                if manual_mode_assignments and not did_full_reset and rx in self._workers and rx in self._assignments and rx in assignments:
+                    current_asn = self._assignments.get(rx)
+                    desired_asn = assignments.get(rx)
+                    if current_asn is not None and desired_asn is not None and (
+                        self._can_hot_reconfigure_ssb(current_asn, desired_asn)
+                        or self._can_hot_reconfigure_frequency(current_asn, desired_asn)
+                    ):
+                        worker = self._workers.get(rx)
+                        if worker is not None:
+                            self._activity_by_rx.pop(int(rx), None)
+                            worker.update_assignment(
+                                band=desired_asn.band,
+                                freq_hz=desired_asn.freq_hz,
+                                mode_label=desired_asn.mode_label,
+                                sideband=desired_asn.sideband,
+                            )
+                            self._assignments[int(rx)] = desired_asn
+                            return
                 desired = assignments[rx]
                 _start_adjust = 0
                 if manual_mode_assignments and manual_rx_chan_adjust is not None and not manual_aggressive_slot_claim:

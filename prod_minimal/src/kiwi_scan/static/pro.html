@@ -7353,16 +7353,20 @@
         let manualAssignmentRefreshTimer = null;
         let manualAssignmentDraftProfileKey = "";
         let manualAssignmentInteractionUntil = 0;
+        let manualAssignmentEditorActive = false;
         let dashboardSelectInteractionUntil = 0;
         let dashboardSelectInteractionBound = false;
         let manualAssignmentCommitTimer = null;
         let manualAssignmentCommitApplyRuntime = false;
+        let manualAssignmentLastCommitSignature = "";
         const FAULT_LOG_NEW_WINDOW_S = 90;
         let lastRateTickMs = Date.now();
         let refreshTimer = null;
         let refreshIntervalMs = 2000;
         let refreshPaused = false;
         let refreshInFlight = false;
+        let refreshQueued = false;
+        let refreshQueueWaiters = [];
         let lastSuccessfulRefreshMs = null;
         let initialRefreshAttemptCount = 0;
         let currentUiThemeMode = "auto";
@@ -7463,6 +7467,7 @@
         const RECENT_DECODE_RENDER_LIMIT = 5000;
         const MAP_POINT_TTL_MS = 24 * 60 * 60 * 1000;
         const SYSTEM_INFO_CACHE_MS = 15000;
+        const MANUAL_SYSTEM_INFO_CACHE_MS = 4000;
         const SYSTEM_INFO_TIMEOUT_MS = 4000;
         const INITIAL_REFRESH_FAST_TIMEOUT_MS = 500;
         const INITIAL_REFRESH_WARM_TIMEOUT_MS = 2500;
@@ -7520,6 +7525,7 @@
         const MANUAL_ASSIGNMENT_INTERACTION_GRACE_MS = 4600;
         const DASHBOARD_SELECT_INTERACTION_GRACE_MS = 12000;
         const MANUAL_ASSIGNMENT_COMMIT_DELAY_MS = 220;
+        const MANUAL_ASSIGNMENT_SEED_SYNC_HOLDOFF_MS = 15000;
         const BAND_PHONE_FREQS_KHZ = Object.freeze({
             "10m": 28350.0,
             "12m": 24933.0,
@@ -8458,6 +8464,10 @@
             return Number(manualAssignmentInteractionUntil) > Date.now();
         }
 
+        function manualAssignmentDraftDirtyActive() {
+            return Object.values(manualAssignmentDrafts || {}).some((draft) => !!(draft && draft.dirty));
+        }
+
         function markDashboardSelectInteraction(durationMs = DASHBOARD_SELECT_INTERACTION_GRACE_MS) {
             dashboardSelectInteractionUntil = Math.max(
                 Number(dashboardSelectInteractionUntil) || 0,
@@ -8467,6 +8477,11 @@
 
         function dashboardSelectInteractionLocked() {
             return Number(dashboardSelectInteractionUntil) > Date.now();
+        }
+
+        function manualAssignmentEditorMounted(container = byId("active-receivers-table")) {
+            return container instanceof Element
+                && !!container.querySelector("[data-manual-field], [data-manual-action]");
         }
 
         function initDashboardSelectInteractionLock() {
@@ -8509,8 +8524,13 @@
 
         function manualAssignmentDashboardInteractionActive(container = byId("active-receivers-table")) {
             if (dashboardSelectInteractionLocked()) return true;
+            const usersEl = container || undefined;
+            if (manualAssignmentEditorMounted(usersEl)) {
+                if (manualAssignmentEditorActive) return true;
+                return manualAssignmentDraftDirtyActive() || manualAssignmentInteractionLocked() || manualAssignmentFieldHasFocus(usersEl);
+            }
             if (getCurrentReceiversMode() !== "manual") return false;
-            return manualAssignmentInteractionLocked() || manualAssignmentFieldHasFocus(container || undefined);
+            return false;
         }
 
         function manualAssignmentFieldHasFocus(container = byId("active-receivers-table")) {
@@ -8530,7 +8550,7 @@
                 manualAssignmentRefreshTimer = null;
                 const usersEl = byId("active-receivers-table");
                 if (!usersEl) return;
-                if (manualAssignmentFieldHasFocus(usersEl) || manualAssignmentInteractionLocked() || dashboardSelectInteractionLocked()) {
+                if (manualAssignmentEditorActive || manualAssignmentDraftDirtyActive() || manualAssignmentFieldHasFocus(usersEl) || manualAssignmentInteractionLocked() || dashboardSelectInteractionLocked()) {
                     scheduleManualAssignmentPanelRefresh(160);
                     return;
                 }
@@ -8579,6 +8599,15 @@
             return fallback;
         }
 
+        function resolveManualAssignmentDisplayedMode(modeValue, freqKHz, sidebandValue = "", fallback = MANUAL_RECEIVER_DEFAULT_MODE) {
+            const rawMode = String(safeText(modeValue, "")).trim().toUpperCase();
+            const sideband = String(safeText(sidebandValue, "")).trim().toUpperCase();
+            if ((rawMode === "SSB" || rawMode === "PHONE") && (sideband === "USB" || sideband === "LSB")) {
+                return sideband;
+            }
+            return resolveManualAssignmentMode(modeValue, freqKHz, fallback);
+        }
+
         function isManualAssignmentBandSelectableMode(modeValue) {
             const mode = resolveManualAssignmentMode(modeValue, 0, "");
             return mode === "FT8" || mode === "FT4" || mode === "WSPR";
@@ -8591,6 +8620,25 @@
             if (mode === "FT4" || mode === "FT8" || mode === "WSPR") return mode;
             if (mode === "CW") return "CW";
             return fallback;
+        }
+
+        function isManualAssignmentModeAutoSelected(functionValue, bandValue, modeValue) {
+            const fn = normalizeManualAssignmentFunction(functionValue, modeValue, "");
+            const mode = resolveManualAssignmentMode(modeValue, 0, "");
+            if (!fn || !mode) return false;
+            if (fn === "FT4" || fn === "FT8" || fn === "WSPR") return mode === "USB";
+            if (fn === "CW") return mode === "CW";
+            if (fn === "SSB") {
+                const band = normalizeManualAssignmentBand(bandValue, "");
+                if (!band) return false;
+                const ssbFreq = Number(resolveManualFunctionSuggestedFrequencyKHz(
+                    band,
+                    "SSB",
+                    MANUAL_RECEIVER_DEFAULT_MODE,
+                ));
+                return mode === resolveManualAssignmentMode("SSB", ssbFreq, "");
+            }
+            return false;
         }
 
         function manualBandsForFunction(functionValue) {
@@ -8645,7 +8693,10 @@
         function applyManualFunctionSelection(draft, seed, functionValue) {
             const fn = normalizeManualAssignmentFunction(functionValue, draft && draft.mode, "");
             draft.function = fn;
-            if (!fn) return;
+            if (!fn) {
+                draft.mode_auto = false;
+                return;
+            }
 
             const allowedBands = manualBandsForFunction(fn);
             let band = normalizeManualAssignmentBand(draft.band, "");
@@ -8666,6 +8717,7 @@
 
             if (fn === "FT4" || fn === "FT8" || fn === "WSPR") {
                 draft.mode = "USB";
+                draft.mode_auto = true;
             } else if (fn === "SSB") {
                 if (draft.band) {
                     const ssbFreq = Number(resolveManualFunctionSuggestedFrequencyKHz(
@@ -8676,8 +8728,10 @@
                     const ssbMode = resolveManualAssignmentMode("SSB", ssbFreq, MANUAL_RECEIVER_DEFAULT_MODE);
                     draft.mode = ssbMode;
                 }
+                draft.mode_auto = true;
             } else if (fn === "CW") {
                 draft.mode = "CW";
+                draft.mode_auto = true;
             }
 
             if ((fn === "SSB" || fn === "CW") && !draft.band) {
@@ -8785,6 +8839,7 @@
                     mode: "",
                     freq_khz: "",
                     freq_auto: true,
+                    mode_auto: true,
                     band_exposed: false,
                     dirty: !!saveProfile,
                 };
@@ -8865,6 +8920,11 @@
             ensureManualAssignmentDraftProfileBound();
             const persisted = getPersistedManualAssignmentForRx(rxNum);
             const assignment = getManualAssignmentForRx(rxNum);
+            const channel = latestChannelsMap && typeof latestChannelsMap === "object"
+                ? (latestChannelsMap[String(rxNum)] || {})
+                : {};
+            const user = usersByRx.get(Number(rxNum)) || {};
+            const live = Boolean(user && user.active);
             const hasPersisted = Object.keys(persisted || {}).length > 0;
             const persistedEnabled = Boolean(
                 Object.prototype.hasOwnProperty.call(persisted || {}, "enabled") && persisted.enabled
@@ -8873,14 +8933,21 @@
             const assignmentFreqKHz = Number.isFinite(Number(assignment && assignment.freq_khz))
                 ? Number(assignment.freq_khz)
                 : (Number.isFinite(Number(assignment && assignment.freq_hz)) ? (Number(assignment.freq_hz) / 1000.0) : null);
-            const assignmentMode = resolveManualAssignmentMode(
-                safeText(assignment && assignment.mode, safeText(assignment && assignment.mode_label, "")),
+            const assignmentModeRaw = safeText(assignment && assignment.mode, safeText(assignment && assignment.mode_label, ""));
+            const assignmentMode = resolveManualAssignmentDisplayedMode(
+                assignmentModeRaw,
                 assignmentFreqKHz,
+                safeText(assignment && assignment.sideband, safeText(user && user.mode, "")),
                 "",
             );
             const assignmentBand = normalizeManualAssignmentBand(assignment && assignment.band, "");
             const assignmentFunction = normalizeManualAssignmentFunction(
-                safeText(assignment && assignment.function, ""),
+                safeText(
+                    assignment && assignment.function,
+                    (String(assignmentModeRaw || "").trim().toUpperCase() === "SSB" || String(assignmentModeRaw || "").trim().toUpperCase() === "PHONE")
+                        ? "SSB"
+                        : "",
+                ),
                 assignmentMode,
                 "",
             );
@@ -8888,11 +8955,6 @@
             const assignmentEnabled = Object.prototype.hasOwnProperty.call(assignment || {}, "enabled")
                 ? !!assignment.enabled
                 : false;
-            const channel = latestChannelsMap && typeof latestChannelsMap === "object"
-                ? (latestChannelsMap[String(rxNum)] || {})
-                : {};
-            const user = usersByRx.get(Number(rxNum)) || {};
-            const live = Boolean(user && user.active);
             const liveLabel = String(safeText(user && user.name, "")).toUpperCase();
             const liveFunctionFromLabel = liveLabel.includes("FT8")
                 ? "FT8"
@@ -8916,12 +8978,20 @@
                         : (live ? safeText(channel && channel.band, "") : "")),
                 "",
             );
+            const liveMode = live
+                ? resolveManualAssignmentDisplayedMode(
+                    safeText(user && user.mode, safeText((channel && (channel.mode_label || channel.mode)), "")),
+                    liveFreqKHz,
+                    safeText(user && user.mode, ""),
+                    "",
+                )
+                : "";
             const mode = resolveManualAssignmentMode(
                 usePersistedTuning
                     ? safeText(persisted && persisted.mode, "")
                     : (hasAssignmentTuning
                         ? assignmentMode
-                        : (live ? safeText((channel && (channel.mode_label || channel.mode)), "") : "")),
+                        : liveMode),
                 resolvedFreqKHz,
                 "",
             );
@@ -8930,7 +9000,7 @@
                     ? (persisted && persisted.function)
                     : (hasAssignmentTuning
                         ? assignmentFunction
-                        : (safeText(channel && channel.function, "") || liveFunctionFromLabel)),
+                        : (safeText(channel && channel.function, liveFunctionFromLabel || ((liveMode === "USB" || liveMode === "LSB") ? "SSB" : "")))),
                 mode,
                 "",
             );
@@ -8976,6 +9046,7 @@
                 function: functionForMode,
                 freq_khz: formatManualAssignmentFrequencyKHz(seedFreqKHz),
                 freq_auto: !enabled,
+                mode_auto: isManualAssignmentModeAutoSelected(functionForMode, band, seedMode),
                 live,
                 kiwi_rx: Number.isFinite(Number(kiwiRx)) ? Number(kiwiRx) : null,
                 health_level: level,
@@ -8996,13 +9067,19 @@
                     function: normalizeManualAssignmentFunction(seed.function, seed.mode, ""),
                     freq_khz: safeText(seed.freq_khz, ""),
                     freq_auto: !!seed.freq_auto,
+                    mode_auto: !!seed.mode_auto,
                     band_exposed: !!(existing && existing.band_exposed && isManualAssignmentBandSelectableMode(seed.mode)),
                     dirty: false,
                 };
                 manualAssignmentDrafts[key] = next;
                 return next;
             }
-            if (!existing.dirty && seed && seed.live) {
+            if (!Object.prototype.hasOwnProperty.call(existing, "mode_auto")) {
+                existing.mode_auto = isManualAssignmentModeAutoSelected(existing.function, existing.band, existing.mode);
+            }
+            const seedSyncHoldUntil = Number(existing.seed_sync_hold_until) || 0;
+            const seedSyncBlocked = seedSyncHoldUntil > Date.now() || manualAssignmentInteractionLocked() || manualAssignmentFieldHasFocus();
+            if (!existing.dirty && seed && seed.live && !seedSyncBlocked) {
                 const seedFunction = normalizeManualAssignmentFunction(seed.function, seed.mode, "");
                 existing.enabled = true;
                 if (safeText(seed.band, "")) existing.band = seed.band;
@@ -9012,10 +9089,12 @@
                     existing.freq_khz = seed.freq_khz;
                     existing.freq_auto = !!seed.freq_auto;
                 }
+                existing.mode_auto = !!seed.mode_auto;
             }
             const existingFunction = normalizeManualAssignmentFunction(existing.function, existing.mode, "");
             if ((existingFunction === "FT4" || existingFunction === "FT8" || existingFunction === "WSPR") && existing.mode !== "USB") {
                 existing.mode = "USB";
+                existing.mode_auto = true;
             }
             return existing;
         }
@@ -9036,6 +9115,21 @@
                 if (Object.keys(entry).length) next[manualReceiverDraftKey(rxNum)] = entry;
             }
             return next;
+        }
+
+        function buildManualAssignmentRenderSignature(users) {
+            const usersByRx = mapManualUsersByRx(users);
+            return JSON.stringify(MANUAL_RECEIVER_RXS.map((rxNum) => {
+                const seed = buildManualAssignmentSeed(rxNum, usersByRx);
+                return {
+                    rx: rxNum,
+                    enabled: !!seed.enabled,
+                    band: seed.band,
+                    mode: seed.mode,
+                    function: normalizeManualAssignmentFunction(seed.function, seed.mode, ""),
+                    freq_khz: safeText(seed.freq_khz, ""),
+                };
+            }));
         }
 
         function buildManualAssignmentAudioStreamUrl(rxNum) {
@@ -9073,12 +9167,14 @@
                 const freqText = safeText(draft.freq_khz, "");
                 const freqKHz = Number(freqText);
                 const band = normalizeManualAssignmentBand(draft.band, "");
-                let mode = resolveManualAssignmentMode(draft.mode, freqKHz, "");
-                // Normalize LSB/USB back to SSB for backend compatibility
-                if (mode === "LSB" || mode === "USB") {
+                const displayMode = resolveManualAssignmentMode(draft.mode, freqKHz, "");
+                const fn = normalizeManualAssignmentFunction(draft.function, displayMode, "");
+                let mode = displayMode;
+                let sideband;
+                if (fn === "SSB" && (displayMode === "LSB" || displayMode === "USB")) {
+                    sideband = displayMode;
                     mode = "SSB";
                 }
-                const fn = normalizeManualAssignmentFunction(draft.function, mode, "");
                 if (enabled) {
                     if (!band || !mode || !Number.isFinite(freqKHz) || freqKHz <= 0) {
                         errors[manualReceiverDraftKey(rxNum)] = "Band, frequency, and mode are required.";
@@ -9090,6 +9186,7 @@
                         band,
                         freq_khz: Number(freqKHz.toFixed(3)),
                         mode,
+                        sideband: sideband || undefined,
                         function: fn || undefined,
                     });
                     continue;
@@ -9133,9 +9230,18 @@
             const usersByRx = currentManualReceiverUsersByRx();
             const manualAssignments = snapshotManualAssignmentProfileDrafts(usersByRx);
             const { assignments, errors } = buildManualAssignmentRequest(usersByRx);
+            const commitSignature = JSON.stringify({
+                applyRuntime: !!applyRuntime,
+                manualAssignments,
+                assignments,
+            });
+            if (!Object.keys(errors).length && commitSignature === manualAssignmentLastCommitSignature) {
+                return;
+            }
             manualAssignmentErrorsByRx = errors;
             manualAssignmentsSaveInFlight = true;
             let runtimeApplied = false;
+            console.log(`[Commit] Starting: applyRuntime=${applyRuntime}, enabled=${assignments.filter(a => a?.enabled).length}/${assignments.length}, errors=${Object.keys(errors).length}`);
             manualAssignmentStatusText = applyRuntime
                 ? (assignments.some((entry) => entry && entry.enabled)
                     ? "Saving and applying manual receiver settings..."
@@ -9158,12 +9264,8 @@
                     }
                     await postJson("/admin/manual-assignments", payload);
                     runtimeApplied = true;
-                    Object.keys(manualAssignmentDrafts).forEach((key) => {
-                        manualAssignmentDrafts[key] = {
-                            ...manualAssignmentDrafts[key],
-                            dirty: false,
-                        };
-                    });
+                    lastSystemInfoRefreshMs = 0;
+                    refreshSystemInfo(true).catch(() => { });
                     manualAssignmentStatusText = assignments.some((entry) => entry && entry.enabled)
                         ? "Manual receiver settings applied. Saving profile..."
                         : "Manual receiver assignments cleared. Saving profile...";
@@ -9174,18 +9276,18 @@
                     notifyBackend: false,
                     manualAssignments,
                 });
+                Object.keys(manualAssignmentDrafts).forEach((key) => {
+                    manualAssignmentDrafts[key] = {
+                        ...manualAssignmentDrafts[key],
+                        dirty: false,
+                    };
+                });
+                manualAssignmentLastCommitSignature = commitSignature;
                 if (applyRuntime) {
                     manualAssignmentStatusText = assignments.some((entry) => entry && entry.enabled)
                         ? "Manual receiver settings saved and applied."
                         : "All manual receiver assignments cleared.";
-                    await refresh();
                 } else {
-                    Object.keys(manualAssignmentDrafts).forEach((key) => {
-                        manualAssignmentDrafts[key] = {
-                            ...manualAssignmentDrafts[key],
-                            dirty: false,
-                        };
-                    });
                     manualAssignmentStatusText = "Manual receiver settings saved.";
                 }
             } catch (err) {
@@ -9215,7 +9317,6 @@
                 }
             } finally {
                 manualAssignmentsSaveInFlight = false;
-                scheduleManualAssignmentPanelRefresh(0);
             }
         }
 
@@ -9274,6 +9375,7 @@
             container.addEventListener("focusin", (event) => {
                 const target = event.target;
                 if (!isManualInteractiveTarget(target)) return;
+                manualAssignmentEditorActive = true;
                 if (
                     target instanceof HTMLInputElement
                     && String(target.dataset.manualField || "").trim() === "freq"
@@ -9281,8 +9383,9 @@
                 ) {
                     window.clearTimeout(manualAssignmentCommitTimer);
                     manualAssignmentCommitTimer = null;
+                    manualAssignmentCommitApplyRuntime = false;
                 }
-                markManualAssignmentInteraction();
+                markManualAssignmentInteraction(6000);
                 if (manualAssignmentRefreshTimer) {
                     window.clearTimeout(manualAssignmentRefreshTimer);
                     manualAssignmentRefreshTimer = null;
@@ -9293,16 +9396,21 @@
             container.addEventListener("focusout", (event) => {
                 const target = event.target;
                 if (!isManualInteractiveTarget(target)) return;
+                const field = target instanceof HTMLElement
+                    ? String(target.dataset.manualField || "").trim()
+                    : "";
                 window.setTimeout(() => {
                     const nextActive = document.activeElement;
                     const focusStayedInManualField = nextActive instanceof Element
                         && container.contains(nextActive)
                         && !!nextActive.closest("[data-manual-field]");
                     if (focusStayedInManualField) {
+                        manualAssignmentEditorActive = true;
                         markManualAssignmentInteraction();
                         return;
                     }
-                    markManualAssignmentInteraction(1800);
+                    manualAssignmentEditorActive = false;
+                    markManualAssignmentInteraction(field === "freq" ? 12000 : 1800);
                 }, 0);
             });
 
@@ -9314,17 +9422,26 @@
                 const rxNum = Number(target.dataset.rx);
                 if (!Number.isFinite(rxNum)) return;
 
+                // Lock interaction IMMEDIATELY to prevent renders during rapid typing/arrows
+                markManualAssignmentInteraction(12000);
+                lockManualOverviewScroll();
+
                 const usersByRx = currentManualReceiverUsersByRx();
                 const seed = buildManualAssignmentSeed(rxNum, usersByRx);
                 const draft = getManualAssignmentDraft(rxNum, seed);
-                const oldFreq = draft.freq_khz;
                 draft.freq_khz = String(target.value || "").trim();
                 draft.freq_auto = !safeText(draft.freq_khz, "");
                 draft.dirty = true;
+                draft.seed_sync_hold_until = Date.now() + MANUAL_ASSIGNMENT_SEED_SYNC_HOLDOFF_MS;
                 delete manualAssignmentErrorsByRx[manualReceiverDraftKey(rxNum)];
 
+                if (manualAssignmentRefreshTimer) {
+                    window.clearTimeout(manualAssignmentRefreshTimer);
+                    manualAssignmentRefreshTimer = null;
+                }
+
                 const freqNum = Number(draft.freq_khz);
-                const validForCommit = !safeText(draft.freq_khz, "") || (Number.isFinite(freqNum) && freqNum > 0);
+                const validForCommit = Number.isFinite(freqNum) && freqNum > 0;
                 const card = target.closest("[data-manual-rx-card]");
                 const canListen = !!seed.live && Number.isFinite(freqNum) && freqNum > 0;
                 const listenBtn = card?.querySelector(`button[data-manual-action="listen"][data-rx="${rxNum}"]`);
@@ -9336,20 +9453,20 @@
                     }
                 }
 
-                // Diagnostic logging for arrow key testing
-                const isArrowKeyEvent = event instanceof InputEvent && !event.data;
-                if (isArrowKeyEvent || Number(oldFreq) !== freqNum) {
-                    console.log(`[ManualRX${rxNum}] Freq: ${oldFreq}→${draft.freq_khz} kHz | Live: ${seed.live} | Enabled: ${draft.enabled} | ApplyRuntime: ${!!draft.enabled} | Arrow: ${isArrowKeyEvent}`);
+                if (manualAssignmentCommitTimer) {
+                    window.clearTimeout(manualAssignmentCommitTimer);
+                    manualAssignmentCommitTimer = null;
                 }
-
-                markManualAssignmentInteraction();
-                autoUnhideDecodeOverviewTopics();
+                manualAssignmentCommitApplyRuntime = false;
                 if (validForCommit) {
                     scheduleManualAssignmentCommit({
                         applyRuntime: !!draft.enabled,
-                        delayMs: 700,
+                        delayMs: MANUAL_ASSIGNMENT_COMMIT_DELAY_MS,
                     });
                 }
+
+                autoUnhideDecodeOverviewTopics();
+                syncManualAssignmentAudioPopupForRx(rxNum);
             });
 
             container.addEventListener("change", (event) => {
@@ -9359,16 +9476,17 @@
                 if (!field) return;
                 const rxNum = Number(target.dataset.rx);
                 if (!Number.isFinite(rxNum)) return;
-
                 const usersByRx = currentManualReceiverUsersByRx();
                 const seed = buildManualAssignmentSeed(rxNum, usersByRx);
                 const draft = getManualAssignmentDraft(rxNum, seed);
+                const selectedFunction = normalizeManualAssignmentFunction(draft.function, draft.mode, "");
+                const preserveSelectedMode = selectedFunction === "SSB" && draft.mode_auto === false;
 
                 if (field === "enabled") {
                     draft.enabled = !!(target instanceof HTMLInputElement && target.checked);
                     if (!safeText(draft.band, "")) draft.band = seed.band || MANUAL_RECEIVER_DEFAULT_BAND;
                     if (!safeText(draft.mode, "")) draft.mode = seed.mode || MANUAL_RECEIVER_DEFAULT_MODE;
-                    if (draft.function) {
+                    if (draft.function && !preserveSelectedMode) {
                         applyManualFunctionSelection(draft, seed, draft.function);
                     } else if (draft.freq_auto || !safeText(draft.freq_khz, "")) {
                         draft.freq_khz = formatManualAssignmentFrequencyKHz(resolveManualAssignmentSuggestedFrequencyKHz(draft.band, draft.mode));
@@ -9377,7 +9495,7 @@
                 } else if (field === "band") {
                     draft.band = normalizeManualAssignmentBand(target.value, seed.band || MANUAL_RECEIVER_DEFAULT_BAND);
                     draft.band_exposed = true;
-                    if (draft.function) {
+                    if (draft.function && !preserveSelectedMode) {
                         applyManualFunctionSelection(draft, seed, draft.function);
                     } else if (isManualAssignmentBandSelectableMode(draft.mode)) {
                         draft.freq_khz = formatManualAssignmentFrequencyKHz(resolveManualAssignmentSuggestedFrequencyKHz(draft.band, draft.mode));
@@ -9387,11 +9505,10 @@
                     }
                 } else if (field === "mode") {
                     draft.mode = resolveManualAssignmentMode(target.value, Number(draft.freq_khz || seed.freq_khz), seed.mode || MANUAL_RECEIVER_DEFAULT_MODE);
+                    draft.mode_auto = false;
                     draft.function = normalizeManualAssignmentFunction(draft.function, draft.mode, "");
                     draft.band_exposed = true;
-                    if (draft.function) {
-                        applyManualFunctionSelection(draft, seed, draft.function);
-                    } else if (isManualAssignmentBandSelectableMode(draft.mode)) {
+                    if (isManualAssignmentBandSelectableMode(draft.mode)) {
                         draft.freq_khz = formatManualAssignmentFrequencyKHz(resolveManualAssignmentSuggestedFrequencyKHz(draft.band, draft.mode));
                         draft.freq_auto = true;
                     } else if (draft.freq_auto || !safeText(draft.freq_khz, "")) {
@@ -9443,15 +9560,20 @@
                 }
 
                 draft.dirty = true;
+                draft.seed_sync_hold_until = Date.now() + MANUAL_ASSIGNMENT_SEED_SYNC_HOLDOFF_MS;
                 delete manualAssignmentErrorsByRx[manualReceiverDraftKey(rxNum)];
-                markManualAssignmentInteraction();
-                autoUnhideDecodeOverviewTopics();
+                // For freq field in change handler, use consistent 12-second lock to prevent renders
+                if (field === "freq") {
+                    markManualAssignmentInteraction(12000);
+                } else {
+                    markManualAssignmentInteraction();
+                }
                 scheduleManualAssignmentCommit({
                     applyRuntime: field === "enabled" ? true : !!draft.enabled,
                     delayMs: MANUAL_ASSIGNMENT_COMMIT_DELAY_MS,
                 });
                 if (field === "function") {
-                    renderManualReceiverAssignments(currentManualReceiverUsersByRx());
+                    scheduleManualAssignmentPanelRefresh(0);
                 }
             });
 
@@ -9472,16 +9594,19 @@
                     const usersByRx = currentManualReceiverUsersByRx();
                     const seed = buildManualAssignmentSeed(rxNum, usersByRx);
                     const draft = getManualAssignmentDraft(rxNum, seed);
+                    const selectedFunction = normalizeManualAssignmentFunction(draft.function, draft.mode, "");
+                    const preserveSelectedMode = selectedFunction === "SSB" && draft.mode_auto === false;
                     draft.enabled = !draft.enabled;
                     if (!safeText(draft.band, "")) draft.band = seed.band || MANUAL_RECEIVER_DEFAULT_BAND;
                     if (!safeText(draft.mode, "")) draft.mode = seed.mode || MANUAL_RECEIVER_DEFAULT_MODE;
-                    if (draft.function) {
+                    if (draft.function && !preserveSelectedMode) {
                         applyManualFunctionSelection(draft, seed, draft.function);
                     } else if (draft.freq_auto || !safeText(draft.freq_khz, "")) {
                         draft.freq_khz = formatManualAssignmentFrequencyKHz(resolveManualAssignmentSuggestedFrequencyKHz(draft.band, draft.mode));
                         draft.freq_auto = true;
                     }
                     draft.dirty = true;
+                    draft.seed_sync_hold_until = Date.now() + MANUAL_ASSIGNMENT_SEED_SYNC_HOLDOFF_MS;
                     delete manualAssignmentErrorsByRx[manualReceiverDraftKey(rxNum)];
 
                     if (target instanceof HTMLButtonElement) {
@@ -9541,6 +9666,22 @@
         function renderManualReceiverAssignments(usersEl, users, kiwi) {
             const usersByRx = mapManualUsersByRx(users);
             const toolbarStatus = currentManualAssignmentRequestStatus(kiwi);
+            const activeEl = usersEl instanceof HTMLElement ? document.activeElement : null;
+            const focusedManualField = activeEl instanceof Element && usersEl instanceof HTMLElement && usersEl.contains(activeEl) && activeEl.closest("[data-manual-field]")
+                ? activeEl
+                : null;
+            const focusedManualRx = focusedManualField ? Number(focusedManualField.getAttribute("data-rx")) : null;
+            const focusedManualFieldName = focusedManualField ? String(focusedManualField.getAttribute("data-manual-field") || "") : "";
+            const focusedManualFieldValue = focusedManualField instanceof HTMLInputElement ? focusedManualField.value : null;
+            const focusedManualFieldStart = focusedManualField instanceof HTMLInputElement ? focusedManualField.selectionStart : null;
+            const focusedManualFieldEnd = focusedManualField instanceof HTMLInputElement ? focusedManualField.selectionEnd : null;
+            if (focusedManualField || manualAssignmentEditorActive || manualAssignmentDraftDirtyActive() || manualAssignmentInteractionLocked()) {
+                const noteEl = usersEl instanceof HTMLElement
+                    ? usersEl.querySelector(".manual-rx-toolbar-note")
+                    : null;
+                if (noteEl instanceof HTMLElement) noteEl.textContent = toolbarStatus;
+                return;
+            }
             const cardsHtml = MANUAL_RECEIVER_RXS.map((rxNum) => {
                 const seed = buildManualAssignmentSeed(rxNum, usersByRx);
                 const draft = getManualAssignmentDraft(rxNum, seed);
@@ -9655,6 +9796,21 @@
                 <div class="manual-rx-grid">${cardsHtml}</div>
             `;
             initManualReceiverEditor(usersEl);
+            if (focusedManualField instanceof HTMLElement && Number.isFinite(focusedManualRx) && focusedManualFieldName) {
+                window.requestAnimationFrame(() => {
+                    const restoredField = usersEl.querySelector(`[data-manual-field="${focusedManualFieldName}"][data-rx="${focusedManualRx}"]`);
+                    if (restoredField instanceof HTMLElement && restoredField instanceof HTMLInputElement) {
+                        restoredField.focus({ preventScroll: true });
+                        if (Number.isFinite(Number(focusedManualFieldStart)) && Number.isFinite(Number(focusedManualFieldEnd))) {
+                            try {
+                                restoredField.setSelectionRange(focusedManualFieldStart, focusedManualFieldEnd);
+                            } catch (_) {
+                                // Selection range may not be settable for all input types
+                            }
+                        }
+                    }
+                });
+            }
         }
 
         function compactAutoModeLabel(mode) {
@@ -9786,6 +9942,7 @@
         }
 
         function syncReceiversModeFromBackendState() {
+            if (manualAssignmentDashboardInteractionActive()) return;
             const receiverScanActive = !!(
                 receiverScanPreparePending
                 || (latestReceiverScanStatus && (latestReceiverScanStatus.running || latestReceiverScanStatus.mode_active))
@@ -9939,7 +10096,8 @@
 
         function renderSystemPanel(data) {
             latestSystemInfo = data && typeof data === "object" ? data : {};
-            if (manualAssignmentDashboardInteractionActive()) {
+            const isInteracting = manualAssignmentDashboardInteractionActive();
+            if (isInteracting) {
                 scheduleManualAssignmentPanelRefresh(160);
                 return;
             }
@@ -10032,7 +10190,9 @@
             const currentMode = getCurrentReceiversMode();
             if (currentMode === "manual") {
                 ensureManualAssignmentDraftProfileBound();
-                if (usersEl.querySelector("[data-manual-field]") && (manualAssignmentFieldHasFocus(usersEl) || manualAssignmentInteractionLocked())) {
+                const hasFocus = manualAssignmentFieldHasFocus(usersEl);
+                const isLocked = manualAssignmentDraftDirtyActive() || manualAssignmentInteractionLocked();
+                if (hasFocus || isLocked) {
                     _updateRxBusyOverlay();
                     return;
                 }
@@ -10056,7 +10216,7 @@
             }
             lastActiveReceiversTableSignature = usersSignature;
             if (currentMode === "manual") {
-                renderManualReceiverAssignments(usersEl, users, kiwi);
+                scheduleManualAssignmentPanelRefresh(0);
                 _updateRxBusyOverlay();
                 return;
             }
@@ -10088,14 +10248,17 @@
 
         async function refreshSystemInfo(force = false) {
             const now = Date.now();
-            if (!force && latestSystemInfo && (now - lastSystemInfoRefreshMs) < SYSTEM_INFO_CACHE_MS) {
+            const cacheMs = getCurrentReceiversMode() === "manual"
+                ? MANUAL_SYSTEM_INFO_CACHE_MS
+                : SYSTEM_INFO_CACHE_MS;
+            if (!force && latestSystemInfo && (now - lastSystemInfoRefreshMs) < cacheMs) {
                 renderSystemPanel(latestSystemInfo);
                 return latestSystemInfo;
             }
             if (systemInfoRequest) return systemInfoRequest;
             setSystemStatus("loading...");
             const deferFirstRender = !force && lastSuccessfulRefreshMs === null;
-            systemInfoRequest = getJson("/system/info", SYSTEM_INFO_TIMEOUT_MS)
+            systemInfoRequest = getJson(appendActiveKiwiKey("/system/info"), SYSTEM_INFO_TIMEOUT_MS)
                 .then((data) => {
                     lastSystemInfoRefreshMs = Date.now();
                     latestSystemInfo = data;
@@ -15632,10 +15795,15 @@ ${passwordMarkup.actionsHtml}
                 // Runtime receiver mode transitions are triggered by explicit controls.
                 await applyActiveKiwiUiProfile(nextProfile, { applyRuntime: false });
                 setConfigStatus(`Now viewing Kiwi ${nextDisplayIndex + 1} data (${receiversModeStatusLabel(nextProfile.receiversMode)}).`);
+                latestSystemInfo = null;
+                lastSystemInfoRefreshMs = 0;
+                latestChannelsMap = {};
+                if (typeof window.kiwiProSetView === "function") window.kiwiProSetView("overview", false);
                 renderTopbarKiwiSelector(entries);
                 syncTopbarMenuState();
                 resetDecodeDashboardState();
-                await refresh();
+                await refreshSystemInfo(true).catch(() => { });
+                await refresh(true);
                 const queuedIndex = pendingActiveConfiguredKiwiIndex;
                 pendingActiveConfiguredKiwiIndex = null;
                 if (Number.isFinite(queuedIndex) && queuedIndex !== activeConfiguredKiwiIndex) {
@@ -16458,7 +16626,7 @@ ${passwordMarkup.actionsHtml}
                 try {
                     const [health, system] = await Promise.all([
                         getJson(activeKiwiHealthUrl()),
-                        getJson("/system/info"),
+                        getJson(appendActiveKiwiKey("/system/info")),
                     ]);
                     if (system && typeof system === "object") {
                         latestSystemInfo = system;
@@ -16568,14 +16736,14 @@ ${passwordMarkup.actionsHtml}
                     return !!result.ok;
                 } else {
                     if (targetMode === "semi") {
-                        await postJson("/admin/clear-roaming-receivers", {});
+                        await postJson("/admin/clear-roaming-receivers", activeKiwiTargetPayload({}));
                         setAutomationStatus(
                             transitioningFromScan
                                 ? "Semi Mode ON — keeping fixed receivers active while RX0/RX1 stay free..."
                                 : "Semi Mode ON — clearing RX0/RX1 while fixed receivers stay assigned..."
                         );
                     } else {
-                        await postJson("/admin/restore-roaming-receivers", {});
+                        await postJson("/admin/restore-roaming-receivers", activeKiwiTargetPayload({}));
                         setAutomationStatus(
                             transitioningFromScan
                                 ? "Auto Mode ON — adding RX0/RX1 roaming receivers..."
@@ -19787,7 +19955,11 @@ ${passwordMarkup.actionsHtml}
                 ? `${latestAssignmentsHost}:${Number(latestAssignmentsPort)}`
                 : "";
             const assignmentsMatchActiveKiwi = !activeKiwiKey || !assignmentsEndpointKey || activeKiwiKey === assignmentsEndpointKey;
-            const hasMismatch = assignmentsMatchActiveKiwi && (mismatchRxs.length > 0 || s.assignments_source === "busy");
+            const statusSource = safeText(s.assignments_source, "");
+            const hasBusyPlaceholder = statusSource === "busy"
+                && !assignmentsEndpointKey
+                && Object.keys(latestAssignments).length === 0;
+            const hasMismatch = assignmentsMatchActiveKiwi && (mismatchRxs.length > 0 || (statusSource === "busy" && !hasBusyPlaceholder));
             if (_rxBusyMismatch !== hasMismatch) {
                 _rxBusyMismatch = hasMismatch;
                 const labelEl = byId("rx-busy-label");
@@ -20271,112 +20443,132 @@ ${passwordMarkup.actionsHtml}
         }
         // ── End Smart Scheduler ─────────────────────────────────────────────
 
-        async function refresh() {
+        function resolveQueuedRefreshWaiters() {
+            if (!refreshQueueWaiters.length) return;
+            const waiters = refreshQueueWaiters.splice(0, refreshQueueWaiters.length);
+            waiters.forEach((resolve) => {
+                try {
+                    resolve();
+                } catch (_) { }
+            });
+        }
+
+        async function refresh(force = false) {
             if (dashboardSelectInteractionLocked()) return;
-            if (refreshInFlight) return;
-            refreshInFlight = true;
-            const isFirstLoad = lastSuccessfulRefreshMs === null;
-            try {
-                // First-load: do one fast probe so the UI can show "Connecting…" quickly,
-                // then switch to a warmer timeout so a slow backend can still initialize.
-                const TIMEOUT = !isFirstLoad
-                    ? REFRESH_TIMEOUT_MS
-                    : (initialRefreshAttemptCount === 0
-                        ? INITIAL_REFRESH_FAST_TIMEOUT_MS
-                        : INITIAL_REFRESH_WARM_TIMEOUT_MS);
-                if (isFirstLoad) initialRefreshAttemptCount += 1;
-
-                // Fire all requests simultaneously but track whether each core endpoint
-                // has already been applied via its own .then() so we don't re-apply below.
-                const healthP = getJson(activeKiwiHealthUrl(), TIMEOUT).catch(() => null);
-                const statusP = getJson(appendActiveKiwiKey("/decodes/status"), TIMEOUT).catch(() => null);
-                const versionP = getJson("/version", TIMEOUT).catch(() => null);
-                const deltaP = pollDecodeDelta().catch(() => null);
-                const chartP = getJson(activeKiwiDecodesChartUrl(), TIMEOUT).catch(() => null);
-                const receiverScanP = getJson(appendActiveKiwiKey("/receiver_scan/status"), TIMEOUT).catch(() => null);
-                const bandScanResultsP = getJson("/band_scan/results", TIMEOUT).catch(() => null);
-                const netMonitorP = getJson(appendActiveKiwiKey("/net_monitor/status"), TIMEOUT).catch(() => null);
-                const captionMonitorP = getJson(appendActiveKiwiKey("/caption/status"), TIMEOUT).catch(() => null);
-
-                // Apply core data the instant each endpoint responds — don't wait for all.
-                let appliedHealth = false, appliedStatus = false;
-                healthP.then(d => { if (d) { appliedHealth = true; applyHealth(d); updateDecodeStreamChip(); } });
-                statusP.then(d => { if (d) { appliedStatus = true; applyStatus(d); } });
-
-                const [health, status, version, deltaInfo, chartData, receiverScan, bandScanResults, netMonitor, captionMonitor] = await Promise.all([
-                    healthP, statusP, versionP, deltaP, chartP, receiverScanP, bandScanResultsP, netMonitorP, captionMonitorP,
-                ]);
-
-                if (version && typeof version === "object") {
-                    applyVersion(version);
-                }
-
-                // Both core endpoints unreachable — server not yet ready.
-                // Show a soft connecting state and schedule a fast retry so the UI
-                // comes alive as soon as the server is ready (not after a full 2 s interval).
-                if (!health && !status) {
-                    updateServerChipFromState();
-                    updateRefreshStatus();
-                    if (lastSuccessfulRefreshMs === null) {
-                        setTimeout(() => { if (lastSuccessfulRefreshMs === null && !refreshInFlight) refresh(); }, 500);
-                    }
-                    return;
-                }
-
-                const now = Date.now();
-                // Use WS burst for rate when WS is connected (avoids double-counting with HTTP delta).
-                // Fall back to HTTP delta count when WS is disconnected.
-                let messagesThisInterval = wsRef
-                    ? wsMessageBurst
-                    : Number((deltaInfo && deltaInfo.count) || 0);
-                if (decodeRateWarmupCycles > 0) {
-                    messagesThisInterval = 0;
-                    decodeRateWarmupCycles -= 1;
-                }
-                const ratePerMin = (messagesThisInterval * 60000) / Math.max(1, now - lastRateTickMs);
-                lastRateTickMs = now;
-                lastIntervalMessages = messagesThisInterval;
-                wsMessageBurst = 0;
-                rateHistory.push({ t: now, rate: ratePerMin });
-                rateHistory = rateHistory.slice(-GRAPH_HISTORY_MAX_SAMPLES);
-
-                // Only call apply* here if the early .then() didn't already do it.
-                if (!appliedHealth) applyHealth(health);
-                if (!appliedStatus) applyStatus(status);
-                if (chartData) applyChartData(chartData);
-                if (receiverScan) applyReceiverScanStatus(receiverScan);
-                if (bandScanResults) renderBandScanResults(bandScanResults);
-                if (netMonitor) applyNetMonitorStatus(netMonitor);
-                if (captionMonitor) applyCaptionMonitorStatus(captionMonitor);
-                updateDecodeStreamChip();
-                // Only fetch /system/info when the System panel is open — it makes
-                // blocking Kiwi HTTP calls and must not run on every 2 s heartbeat.
-                if (currentSectionNavId === "system") {
-                    refreshSystemInfo(false).catch(() => { });
-                }
-                getJson('/smart_scheduler/status').then(d => {
-                    if (d) applySmartScheduler(d);
-                }).catch(() => { });
-                renderTrend();
-                applyExecutiveSummary(status, health, ratePerMin);
-                byId("subtitle").textContent = DEFAULT_SUBTITLE_TEXT;
-                const refreshTsEl = byId("refresh-ts");
-                if (refreshTsEl) {
-                    refreshTsEl.textContent = `Last update: ${new Date().toLocaleTimeString()}`;
-                }
-                lastSuccessfulRefreshMs = Date.now();
-                initialRefreshAttemptCount = 0;
-                updateRefreshCadenceLabel();
-                updateRefreshStatus();
-            } catch (err) {
-                // Unexpected JS error in apply logic (not a server timeout — those are
-                // handled above as null results and never reach here).
-                updateServerChipFromState();
-                console.error("refresh error:", err);
-                updateRefreshStatus();
-            } finally {
-                refreshInFlight = false;
+            if (refreshInFlight) {
+                if (!force) return;
+                refreshQueued = true;
+                return new Promise((resolve) => {
+                    refreshQueueWaiters.push(resolve);
+                });
             }
+            do {
+                refreshInFlight = true;
+                refreshQueued = false;
+                const isFirstLoad = lastSuccessfulRefreshMs === null;
+                try {
+                    // First-load: do one fast probe so the UI can show "Connecting…" quickly,
+                    // then switch to a warmer timeout so a slow backend can still initialize.
+                    const TIMEOUT = !isFirstLoad
+                        ? REFRESH_TIMEOUT_MS
+                        : (initialRefreshAttemptCount === 0
+                            ? INITIAL_REFRESH_FAST_TIMEOUT_MS
+                            : INITIAL_REFRESH_WARM_TIMEOUT_MS);
+                    if (isFirstLoad) initialRefreshAttemptCount += 1;
+
+                    // Fire all requests simultaneously but track whether each core endpoint
+                    // has already been applied via its own .then() so we don't re-apply below.
+                    const healthP = getJson(activeKiwiHealthUrl(), TIMEOUT).catch(() => null);
+                    const statusP = getJson(appendActiveKiwiKey("/decodes/status"), TIMEOUT).catch(() => null);
+                    const versionP = getJson("/version", TIMEOUT).catch(() => null);
+                    const deltaP = pollDecodeDelta().catch(() => null);
+                    const chartP = getJson(activeKiwiDecodesChartUrl(), TIMEOUT).catch(() => null);
+                    const receiverScanP = getJson(appendActiveKiwiKey("/receiver_scan/status"), TIMEOUT).catch(() => null);
+                    const bandScanResultsP = getJson("/band_scan/results", TIMEOUT).catch(() => null);
+                    const netMonitorP = getJson(appendActiveKiwiKey("/net_monitor/status"), TIMEOUT).catch(() => null);
+                    const captionMonitorP = getJson(appendActiveKiwiKey("/caption/status"), TIMEOUT).catch(() => null);
+
+                    // Apply core data the instant each endpoint responds — don't wait for all.
+                    let appliedHealth = false, appliedStatus = false;
+                    healthP.then(d => { if (d) { appliedHealth = true; applyHealth(d); updateDecodeStreamChip(); } });
+                    statusP.then(d => { if (d) { appliedStatus = true; applyStatus(d); } });
+
+                    const [health, status, version, deltaInfo, chartData, receiverScan, bandScanResults, netMonitor, captionMonitor] = await Promise.all([
+                        healthP, statusP, versionP, deltaP, chartP, receiverScanP, bandScanResultsP, netMonitorP, captionMonitorP,
+                    ]);
+
+                    if (version && typeof version === "object") {
+                        applyVersion(version);
+                    }
+
+                    // Both core endpoints unreachable — server not yet ready.
+                    // Show a soft connecting state and schedule a fast retry so the UI
+                    // comes alive as soon as the server is ready (not after a full 2 s interval).
+                    if (!health && !status) {
+                        updateServerChipFromState();
+                        updateRefreshStatus();
+                        if (lastSuccessfulRefreshMs === null) {
+                            setTimeout(() => { if (lastSuccessfulRefreshMs === null && !refreshInFlight) refresh(); }, 500);
+                        }
+                        return;
+                    }
+
+                    const now = Date.now();
+                    // Use WS burst for rate when WS is connected (avoids double-counting with HTTP delta).
+                    // Fall back to HTTP delta count when WS is disconnected.
+                    let messagesThisInterval = wsRef
+                        ? wsMessageBurst
+                        : Number((deltaInfo && deltaInfo.count) || 0);
+                    if (decodeRateWarmupCycles > 0) {
+                        messagesThisInterval = 0;
+                        decodeRateWarmupCycles -= 1;
+                    }
+                    const ratePerMin = (messagesThisInterval * 60000) / Math.max(1, now - lastRateTickMs);
+                    lastRateTickMs = now;
+                    lastIntervalMessages = messagesThisInterval;
+                    wsMessageBurst = 0;
+                    rateHistory.push({ t: now, rate: ratePerMin });
+                    rateHistory = rateHistory.slice(-GRAPH_HISTORY_MAX_SAMPLES);
+
+                    // Only call apply* here if the early .then() didn't already do it.
+                    if (!appliedHealth) applyHealth(health);
+                    if (!appliedStatus) applyStatus(status);
+                    if (chartData) applyChartData(chartData);
+                    if (receiverScan) applyReceiverScanStatus(receiverScan);
+                    if (bandScanResults) renderBandScanResults(bandScanResults);
+                    if (netMonitor) applyNetMonitorStatus(netMonitor);
+                    if (captionMonitor) applyCaptionMonitorStatus(captionMonitor);
+                    updateDecodeStreamChip();
+                    // Only fetch /system/info when the System panel is open — it makes
+                    // blocking Kiwi HTTP calls and must not run on every 2 s heartbeat.
+                    if (currentSectionNavId === "system" || getCurrentReceiversMode() === "manual") {
+                        refreshSystemInfo(false).catch(() => { });
+                    }
+                    getJson('/smart_scheduler/status').then(d => {
+                        if (d) applySmartScheduler(d);
+                    }).catch(() => { });
+                    renderTrend();
+                    applyExecutiveSummary(status, health, ratePerMin);
+                    byId("subtitle").textContent = DEFAULT_SUBTITLE_TEXT;
+                    const refreshTsEl = byId("refresh-ts");
+                    if (refreshTsEl) {
+                        refreshTsEl.textContent = `Last update: ${new Date().toLocaleTimeString()}`;
+                    }
+                    lastSuccessfulRefreshMs = Date.now();
+                    initialRefreshAttemptCount = 0;
+                    updateRefreshCadenceLabel();
+                    updateRefreshStatus();
+                } catch (err) {
+                    // Unexpected JS error in apply logic (not a server timeout — those are
+                    // handled above as null results and never reach here).
+                    updateServerChipFromState();
+                    console.error("refresh error:", err);
+                    updateRefreshStatus();
+                } finally {
+                    refreshInFlight = false;
+                }
+            } while (refreshQueued && !dashboardSelectInteractionLocked());
+            resolveQueuedRefreshWaiters();
         }
 
         function runStartupStep(name, fn) {

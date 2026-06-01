@@ -333,6 +333,7 @@ def test_apply_assignments_frequency_only_change_hot_reconfigures_worker(monkeyp
     monkeypatch.setattr(manager, "_startup_short_pause_s", lambda: 0.0)
     monkeypatch.setattr(manager, "_startup_retry_pause_s", lambda: 0.0)
     monkeypatch.setattr(manager, "_startup_slot_clear_stable_s", lambda: 0.0)
+    monkeypatch.setattr(manager, "_force_full_reset_on_band_change_enabled", lambda: False)
     monkeypatch.setattr(manager, "_stop_worker", lambda w, **kwargs: stop_calls.append(int(getattr(w, "rx", -1))))
     monkeypatch.setattr(manager, "_make_worker", lambda **kwargs: (_ for _ in ()).throw(AssertionError("_make_worker should not be called")))
 
@@ -343,6 +344,129 @@ def test_apply_assignments_frequency_only_change_hot_reconfigures_worker(monkeyp
     assert worker.update_calls == [("20m", 14_075_000.0, "FT8", "LSB")]
     assert manager._assignments[0].freq_hz == 14_075_000.0
     assert manager._assignments[0].sideband == "LSB"
+
+
+def test_apply_assignments_manual_ssb_frequency_change_hot_reconfigures_worker(monkeypatch) -> None:
+    manager = _make_manager()
+
+    initial = ReceiverAssignment(
+        rx=3,
+        band="40m",
+        freq_hz=7_290_000.0,
+        mode_label="SSB",
+        sideband="LSB",
+        ignore_slot_check=True,
+        user_label_override="MANUAL_RX3_40m_SSB",
+    )
+    desired = ReceiverAssignment(
+        rx=3,
+        band="40m",
+        freq_hz=7_295_000.0,
+        mode_label="SSB",
+        sideband="LSB",
+        ignore_slot_check=True,
+        user_label_override="MANUAL_RX3_40m_SSB",
+    )
+
+    class _FakeWorker:
+        def __init__(self, *, rx: int, label: str) -> None:
+            self.rx = int(rx)
+            self._active_user_label = str(label)
+            self._rx_chan_adjust = 0
+            self.update_calls: list[tuple[str, float, str, str | None]] = []
+
+        def start(self) -> None:
+            return None
+
+        def is_alive(self) -> bool:
+            return True
+
+        def update_assignment(self, *, band: str, freq_hz: float, mode_label: str, sideband: str | None) -> None:
+            self.update_calls.append((str(band), float(freq_hz), str(mode_label), sideband))
+
+    worker = _FakeWorker(rx=3, label=manager._expected_user_label(initial))
+    manager._active_host = "kiwi.local"
+    manager._active_port = 8073
+    manager._assignments = {3: initial}
+    manager._workers = {3: worker}
+
+    stop_calls: list[int] = []
+
+    monkeypatch.setattr(manager, "_seed_health_summary_cache", lambda assignments: None)
+    monkeypatch.setattr(manager, "_seed_truth_snapshot_cache", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_required_dependency_errors", lambda assignments: [])
+    monkeypatch.setattr(manager, "_refresh_starting_health_summary_cache", lambda **kwargs: None)
+    monkeypatch.setattr(manager, "_fetch_live_auto_users", lambda host, port: {})
+    monkeypatch.setattr(manager, "_startup_slot_stable_s", lambda: 0.0)
+    monkeypatch.setattr(manager, "_startup_poll_interval_s", lambda: 0.0)
+    monkeypatch.setattr(manager, "_startup_short_pause_s", lambda: 0.0)
+    monkeypatch.setattr(manager, "_startup_retry_pause_s", lambda: 0.0)
+    monkeypatch.setattr(manager, "_startup_slot_clear_stable_s", lambda: 0.0)
+    monkeypatch.setattr(manager, "_force_full_reset_on_band_change_enabled", lambda: False)
+    monkeypatch.setattr(manager, "_stop_worker", lambda w, **kwargs: stop_calls.append(int(getattr(w, "rx", -1))))
+    monkeypatch.setattr(manager, "_make_worker", lambda **kwargs: (_ for _ in ()).throw(AssertionError("_make_worker should not be called")))
+
+    manager.apply_assignments("kiwi.local", 8073, {3: desired})
+
+    assert stop_calls == []
+    assert manager._workers[3] is worker
+    assert worker.update_calls == [("40m", 7_295_000.0, "SSB", "LSB")]
+    assert manager._assignments[3].freq_hz == 7_295_000.0
+    assert manager._assignments[3].sideband == "LSB"
+
+
+def test_receiver_worker_update_assignment_uses_rigctl_for_live_ssb_retune(monkeypatch) -> None:
+    worker = _make_worker_for_assignment(rx=3, band="40m", freq_hz=7_290_000.0, mode_label="SSB")
+    worker._sideband = "LSB"
+    worker._proc = SimpleNamespace(poll=lambda: None)
+
+    commands: list[str] = []
+    terminate_calls: list[bool] = []
+
+    monkeypatch.setattr(worker, "_send_rigctl_command", lambda command, timeout_s=0.75: commands.append(str(command)) or "RPRT 0\n")
+    monkeypatch.setattr(worker, "_terminate_proc", lambda *args, **kwargs: terminate_calls.append(True))
+
+    worker.update_assignment(band="20m", freq_hz=14_200_000.0, mode_label="SSB", sideband="USB")
+
+    assert commands == ["M usb", "F 14200000.000"]
+    assert terminate_calls == []
+    assert worker._band == "20m"
+    assert worker._freq_hz == 14_200_000.0
+    assert worker._mode_label == "SSB"
+    assert worker._sideband == "USB"
+
+
+def test_receiver_worker_update_assignment_uses_rigctl_for_single_digital_retune(monkeypatch) -> None:
+    worker = _make_worker_for_assignment(rx=0, band="20m", freq_hz=14_074_000.0, mode_label="FT8")
+    worker._proc = SimpleNamespace(poll=lambda: None)
+
+    commands: list[str] = []
+    terminate_calls: list[bool] = []
+
+    monkeypatch.setattr(worker, "_send_rigctl_command", lambda command, timeout_s=0.75: commands.append(str(command)) or "RPRT 0\n")
+    monkeypatch.setattr(worker, "_terminate_proc", lambda *args, **kwargs: terminate_calls.append(True))
+
+    worker.update_assignment(band="20m", freq_hz=14_075_000.0, mode_label="FT8", sideband=None)
+
+    assert commands == ["F 14075000.000"]
+    assert terminate_calls == []
+    assert worker._freq_hz == 14_075_000.0
+
+
+def test_receiver_worker_update_assignment_restarts_unsupported_dual_iq_mode(monkeypatch) -> None:
+    worker = _make_worker_for_assignment(rx=0, band="20m", freq_hz=14_074_000.0, mode_label="FT8 / FT4")
+    worker._proc = SimpleNamespace(poll=lambda: None)
+
+    commands: list[str] = []
+    terminate_calls: list[bool] = []
+
+    monkeypatch.setattr(worker, "_send_rigctl_command", lambda command, timeout_s=0.75: commands.append(str(command)) or "RPRT 0\n")
+    monkeypatch.setattr(worker, "_terminate_proc", lambda *args, **kwargs: terminate_calls.append(True))
+
+    worker.update_assignment(band="20m", freq_hz=14_075_000.0, mode_label="FT8 / FT4", sideband=None)
+
+    assert commands == []
+    assert terminate_calls == [True]
 
 
 def test_roaming_correction_plan_accepts_low_slot_swap() -> None:

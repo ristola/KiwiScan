@@ -1237,7 +1237,13 @@ class AutoSetLoop:
         if not applied:
             return
 
-    def apply_current_settings(self, *, force: bool = False, sync_state: bool = True) -> bool:
+    def apply_current_settings(
+        self,
+        *,
+        force: bool = False,
+        sync_state: bool = True,
+        kiwi_key: str | None = None,
+    ) -> bool:
         """Apply the current automation payload immediately.
 
         Used by explicit mode-transition endpoints so the caller can request a
@@ -1254,30 +1260,31 @@ class AutoSetLoop:
 
         settings = self._load_settings()
         applied = False
-        for kiwi_key in self._target_kiwi_keys(settings):
+        target_kiwi_keys = [self._normalize_kiwi_key(kiwi_key)] if kiwi_key is not None else self._target_kiwi_keys(settings)
+        for target_kiwi_key in target_kiwi_keys:
             with self._state_lock:
-                kiwi_hold_reason = self._external_hold_reason_for_kiwi_locked(kiwi_key)
+                kiwi_hold_reason = self._external_hold_reason_for_kiwi_locked(target_kiwi_key)
             if kiwi_hold_reason:
                 logger.debug(
                     "apply_current_settings skipped for %s — external hold active (%s)",
-                    kiwi_key or "<default>",
+                    target_kiwi_key or "<default>",
                     kiwi_hold_reason,
                 )
                 continue
-            receivers_mode = self._receivers_mode(settings, kiwi_key=kiwi_key)
+            receivers_mode = self._receivers_mode(settings, kiwi_key=target_kiwi_key)
             if receivers_mode == "scan":
-                logger.debug("apply_current_settings skipped for %s — Scan Mode is active", kiwi_key or "<default>")
+                logger.debug("apply_current_settings skipped for %s — Scan Mode is active", target_kiwi_key or "<default>")
                 continue
             if receivers_mode == "manual":
-                logger.debug("apply_current_settings skipped for %s — Auto Mode is OFF", kiwi_key or "<default>")
+                logger.debug("apply_current_settings skipped for %s — Auto Mode is OFF", target_kiwi_key or "<default>")
                 continue
 
-            schedule_key = self._current_schedule_key(settings, kiwi_key=kiwi_key)
-            payload = self._build_payload(settings, schedule_key=schedule_key, kiwi_key=kiwi_key)
-            payload = self._target_auto_set_payload(settings, payload, kiwi_key=kiwi_key)
+            schedule_key = self._current_schedule_key(settings, kiwi_key=target_kiwi_key)
+            payload = self._build_payload(settings, schedule_key=schedule_key, kiwi_key=target_kiwi_key)
+            payload = self._target_auto_set_payload(settings, payload, kiwi_key=target_kiwi_key)
             if force:
                 payload["force"] = True
-            apply_signature = self._apply_signature(settings, schedule_key, kiwi_key=kiwi_key)
+            apply_signature = self._apply_signature(settings, schedule_key, kiwi_key=target_kiwi_key)
             band_config = self._band_config_signature(payload)
 
             self._post_auto_set(payload)
@@ -1285,7 +1292,7 @@ class AutoSetLoop:
 
             now = time.time()
             with self._state_lock:
-                state = self._kiwi_state_locked(kiwi_key)
+                state = self._kiwi_state_locked(target_kiwi_key)
                 state["last_success_ts"] = now
                 state["last_error"] = None
                 state["manual_mode_cleared"] = False

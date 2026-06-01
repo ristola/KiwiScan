@@ -1092,7 +1092,7 @@ def options_cross_product(options):
 
         # time() returns seconds, so add pid and host index to make timestamp unique per connection
         opt_single.ws_timestamp = int(time.time() + os.getpid() + i) & 0xffffffff
-        for x in ['server_port', 'password', 'tlimit_password', 'frequency', 'agc_gain', 'filename', 'station', 'user']:
+        for x in ['server_port', 'password', 'tlimit_password', 'frequency', 'agc_gain', 'filename', 'station', 'user', 'rigctl_port']:
             opt_single.__dict__[x] = _sel_entry(i, opt_single.__dict__[x])
         l.append(opt_single)
         multiple_connections = i
@@ -1507,6 +1507,25 @@ def main():
                       help='Print progress messages on stderr (doesn\'t affect streamed data)')
     parser.add_option_group(group)
 
+    group = OptionGroup(parser, "Rig control options", "")
+    group.add_option('--rigctl', '--enable-rigctl',
+                      dest='rigctl_enabled',
+                      default=False,
+                      action='store_true',
+                      help='Enable rigctld backend for frequency changes.')
+    group.add_option('--rigctl-port', '--rigctl-port',
+                      dest='rigctl_port',
+                      type='string', default=[6400],
+                      help='Port listening for rigctl commands (default 6400, can be comma separated list',
+                      action='callback',
+                      callback_args=(int,),
+                      callback=get_comma_separated_args)
+    group.add_option('--rigctl-addr', '--rigctl-address',
+                      dest='rigctl_address',
+                      type='string', default=None,
+                      help='Address to listen on (default 127.0.0.1)')
+    parser.add_option_group(group)
+
     group = OptionGroup(parser, "KiwiSDR development options", "")
     group.add_option('--gc-stats',
                       dest='gc_stats',
@@ -1649,8 +1668,6 @@ def main():
             logging.fatal(e)
             return
 
-    options.rigctl_enabled = False
-    
     options.maxdb = clamp(options.maxdb, -170, -10)
     options.mindb = clamp(options.mindb, -190, -30)
     if options.maxdb <= options.mindb:

@@ -729,38 +729,23 @@ class AutoSetLoop:
 
         sick: list[int] = []
         for rx in (0, 1):
-        all_keys: list[str] = []
-        all_seen: set[str] = set()
-        keys: list[str] = []
-        seen: set[str] = set()
+            ch = channels.get(str(rx))
+            if not isinstance(ch, dict):
                 sick.append(int(rx))
-
-        def _append_all(key: str) -> None:
-            if key and key not in all_seen:
-                all_keys.append(key)
-                all_seen.add(key)
-
                 continue
             if not bool(ch.get("active")) or not bool(ch.get("visible_on_kiwi")):
                 sick.append(int(rx))
                 continue
-                if not key:
+            if str(ch.get("status_level") or "").strip().lower() == "fault":
+                sick.append(int(rx))
+
         return ("healthy", []) if not sick else ("sick", sick)
-                _append_all(key)
-                if key in seen:
-                    continue
-                if configured_keys is not None and key not in configured_keys:
-                    continue
-                keys.append(key)
-                seen.add(key)
+
+    def _restart_sick_receivers(self, sick: list[dict]) -> None:
         """Restart one stuck fixed receiver via the targeted admin endpoint.
-        if active_key:
-            _append_all(active_key)
-            if active_key not in seen and (configured_keys is None or active_key in configured_keys):
-                keys.append(active_key)
-                seen.add(active_key)
-        if not keys and all_keys:
-            return all_keys
+
+        Fixed-slot recovery must reclaim one home slot at a time. Restarting more
+        than one fixed receiver in the same cycle reopens multiple slots and lets
         Kiwi remap the displaced FIXED_* workers into the wrong free channel.
         """
         if not sick:
@@ -1111,7 +1096,13 @@ class AutoSetLoop:
             self._last_schedule_key = None
             self._last_applied_band_config = None
 
-    def apply_current_settings(self, *, force: bool = False, sync_state: bool = True) -> bool:
+    def apply_current_settings(
+        self,
+        *,
+        force: bool = False,
+        sync_state: bool = True,
+        kiwi_key: str | None = None,
+    ) -> bool:
         """Apply the current automation payload immediately.
 
         Used by explicit mode-transition endpoints so the caller can request a
@@ -1126,28 +1117,28 @@ class AutoSetLoop:
             )
             return False
 
-        current_kiwi_key = str(settings.get("activeKiwiKey") or "").strip()
+        settings = self._load_settings()
+        target_kiwi_key = str(kiwi_key if kiwi_key is not None else settings.get("activeKiwiKey") or "").strip()
         with self._state_lock:
-            kiwi_hold_reason = self._external_hold_reason_for_kiwi_locked(current_kiwi_key)
+            kiwi_hold_reason = self._external_hold_reason_for_kiwi_locked(target_kiwi_key)
         if kiwi_hold_reason:
             logger.debug(
                 "apply_current_settings skipped for %s — external hold active (%s)",
-                current_kiwi_key or "<default>",
+                target_kiwi_key or "<default>",
                 kiwi_hold_reason,
             )
             return False
 
-        settings = self._load_settings()
-        if self._receivers_mode(settings) == "scan":
-            logger.debug("apply_current_settings skipped — Scan Mode is active")
+        if self._receivers_mode(settings, kiwi_key=target_kiwi_key) == "scan":
+            logger.debug("apply_current_settings skipped for %s — Scan Mode is active", target_kiwi_key or "<default>")
             return False
-        if self._receivers_mode(settings) == "manual":
-            logger.debug("apply_current_settings skipped — Auto Mode is OFF")
+        if self._receivers_mode(settings, kiwi_key=target_kiwi_key) == "manual":
+            logger.debug("apply_current_settings skipped for %s — Auto Mode is OFF", target_kiwi_key or "<default>")
             return False
 
-        schedule_key = self._current_schedule_key(settings)
-        payload = self._build_payload(settings, schedule_key=schedule_key)
-        payload = self._target_auto_set_payload(settings, payload)
+        schedule_key = self._current_schedule_key(settings, kiwi_key=target_kiwi_key)
+        payload = self._build_payload(settings, schedule_key=schedule_key, kiwi_key=target_kiwi_key)
+        payload = self._target_auto_set_payload(settings, payload, kiwi_key=target_kiwi_key)
         if force:
             payload["force"] = True
         apply_signature = self._apply_signature(settings, schedule_key)
