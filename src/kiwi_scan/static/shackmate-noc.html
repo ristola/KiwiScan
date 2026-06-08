@@ -1,0 +1,3404 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ShackMate</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <style media="not all">
+        background: #081016;
+        --panel: #11161d;
+        --panel-2: #151b23;
+
+        .rf-map-view {
+            position: absolute;
+            inset: 0;
+            --line: #26313d;
+            --line-strong: #354353;
+            --fg: #edf3f7;
+            --muted-2: #6f7d8c;
+            --blue: #2f8cff;
+
+            .rf-map-view[hidden] {
+                display: none !important;
+                --red: #f45d67;
+                --violet: #9a7cff;
+
+                .rf-map-toolbar {
+                    position: absolute;
+                    top: 0.7rem;
+                    right: 0.7rem;
+                    z-index: 450;
+                    display: flex;
+                    gap: 0.4rem;
+                    align-items: center;
+
+                    * {
+
+                        .rf-map .leaflet-container,
+                        .rf-map .leaflet-tile-pane {
+                            background: #081016;
+                            min-width: 320px;
+                            min-height: 100vh;
+
+                            .rf-map .leaflet-control-attribution {
+                                background: rgba(8, 11, 15, 0.78);
+                                color: var(--muted);
+
+                                button,
+                                input,
+                                .rf-map .leaflet-control-attribution a {
+                                    color: var(--cyan);
+
+                                    .shell {
+                                        display: grid;
+
+                                        .rf-site-marker {
+                                            display: grid;
+                                            place-items: center;
+                                            width: 1.35rem;
+                                            height: 1.35rem;
+                                            border: 2px solid rgba(191, 219, 254, 0.95);
+                                            border-radius: 999px;
+                                            background: color-mix(in srgb, var(--blue), transparent 18%);
+                                            box-shadow: 0 0 0 9px rgba(47, 140, 255, 0.14), 0 0 22px rgba(39, 213, 255, 0.4);
+
+                                            .rail {
+                                                position: sticky;
+
+                                                .rf-decode-marker {
+                                                    width: 0.75rem;
+                                                    height: 0.75rem;
+                                                    border: 1px solid rgba(237, 243, 247, 0.8);
+                                                    border-radius: 999px;
+                                                    height: 100vh;
+                                                    background: var(--cyan);
+                                                    box-shadow: 0 0 16px rgba(39, 213, 255, 0.65);
+                                                    display: grid;
+                                                    grid-template-rows: auto 1fr auto;
+
+                                                    .rf-map-popup {
+                                                        color: #0b1220;
+                                                        font-weight: 700;
+                                                    }
+
+                                                    .rf-map-footer {
+                                                        position: absolute;
+                                                        left: 0.75rem;
+                                                        right: 0.75rem;
+                                                        bottom: 0.75rem;
+                                                        z-index: 440;
+                                                        display: flex;
+                                                        gap: 0.5rem;
+                                                        justify-content: space-between;
+                                                        align-items: center;
+                                                        color: var(--muted);
+                                                        font-size: 0.72rem;
+                                                        font-weight: 800;
+                                                        pointer-events: none;
+                                                        z-index: 5;
+                                                    }
+
+                                                    .rail-logo {
+                                                        display: grid;
+                                                        place-items: center;
+                                                        height: var(--topbar);
+                                                        border-bottom: 1px solid var(--line);
+                                                        color: var(--cyan);
+                                                        font-weight: 800;
+                                                        letter-spacing: 0.08em;
+                                                    }
+
+                                                    .rail-nav,
+                                                    .rail-tools {
+                                                        display: grid;
+                                                        gap: 0.55rem;
+                                                        justify-items: center;
+                                                        padding: 0.75rem 0;
+                                                    }
+
+                                                    .nav-btn {
+                                                        width: 2.35rem;
+                                                        height: 2.35rem;
+                                                        display: grid;
+                                                        place-items: center;
+                                                        border: 1px solid transparent;
+                                                        border-radius: 6px;
+                                                        background: transparent;
+                                                        color: var(--muted);
+                                                        cursor: pointer;
+                                                    }
+
+                                                    .nav-btn:hover,
+                                                    .nav-btn.is-active {
+                                                        border-color: color-mix(in srgb, var(--blue), transparent 30%);
+                                                        background: color-mix(in srgb, var(--blue), transparent 84%);
+                                                        color: var(--fg);
+                                                    }
+
+                                                    [data-view-section][hidden] {
+                                                        display: none !important;
+                                                    }
+
+                                                    [data-site-scope][hidden] {
+                                                        display: none !important;
+                                                    }
+
+                                                    .view-intro {
+                                                        display: grid;
+                                                        grid-template-columns: minmax(0, 1fr) auto;
+                                                        gap: 0.75rem;
+                                                        align-items: center;
+                                                    }
+
+                                                    .view-intro h1 {
+                                                        margin: 0;
+                                                        font-size: 1.35rem;
+                                                        line-height: 1.1;
+                                                    }
+
+                                                    .view-intro p {
+                                                        margin: 0.35rem 0 0;
+                                                        color: var(--muted);
+                                                        font-size: 0.82rem;
+                                                        white-space: pre-line;
+                                                    }
+
+                                                    .main {
+                                                        min-width: 0;
+                                                    }
+
+                                                    .topbar {
+                                                        position: sticky;
+                                                        top: 0;
+                                                        z-index: 4;
+                                                        height: var(--topbar);
+                                                        display: grid;
+                                                        grid-template-columns: minmax(0, 1fr) auto;
+                                                        align-items: center;
+                                                        gap: 1rem;
+                                                        padding: 0 1.1rem;
+                                                        border-bottom: 1px solid var(--line);
+                                                        background: rgba(14, 18, 24, 0.96);
+                                                        backdrop-filter: blur(18px);
+                                                    }
+
+                                                    .brand {
+                                                        min-width: 0;
+                                                        display: flex;
+                                                        align-items: center;
+                                                        gap: 0.85rem;
+                                                    }
+
+                                                    .brand-mark {
+                                                        width: 2rem;
+                                                        height: 2rem;
+                                                        display: grid;
+                                                        place-items: center;
+                                                        border-radius: 7px;
+                                                        background: linear-gradient(135deg, rgba(47, 140, 255, 0.9), rgba(39, 213, 255, 0.72));
+                                                        color: #061018;
+                                                        font-weight: 900;
+                                                    }
+
+                                                    .brand-title {
+                                                        min-width: 0;
+                                                    }
+
+                                                    .brand-title strong {
+                                                        display: block;
+                                                        overflow: hidden;
+                                                        text-overflow: ellipsis;
+                                                        white-space: nowrap;
+                                                        font-size: 0.98rem;
+                                                        letter-spacing: 0.01em;
+                                                    }
+
+                                                    .brand-title span {
+                                                        display: block;
+                                                        overflow: hidden;
+                                                        text-overflow: ellipsis;
+                                                        white-space: nowrap;
+                                                        color: var(--muted);
+                                                        font-size: 0.74rem;
+                                                    }
+
+                                                    .top-actions {
+                                                        display: flex;
+                                                        align-items: center;
+                                                        gap: 0.55rem;
+                                                    }
+
+                                                    .icon-btn,
+                                                    .command-btn {
+                                                        border: 1px solid var(--line);
+                                                        border-radius: 5px;
+                                                        background: var(--panel-2);
+                                                        color: var(--fg);
+                                                        cursor: pointer;
+                                                    }
+
+                                                    .icon-btn {
+                                                        width: 2.15rem;
+                                                        height: 2.15rem;
+                                                        display: grid;
+                                                        place-items: center;
+                                                    }
+
+                                                    .command-btn {
+                                                        min-height: 2.15rem;
+                                                        padding: 0 0.85rem;
+                                                        color: var(--muted);
+                                                        font-size: 0.78rem;
+                                                        font-weight: 800;
+                                                        text-transform: uppercase;
+                                                    }
+
+                                                    .icon-btn:hover,
+                                                    .command-btn:hover {
+                                                        border-color: var(--line-strong);
+                                                        background: var(--panel-3);
+                                                        color: var(--fg);
+                                                    }
+
+                                                    .content {
+                                                        display: grid;
+                                                        grid-template-columns: 18.5rem minmax(0, 1fr);
+                                                        gap: 0.75rem;
+                                                        padding: 0.75rem;
+                                                    }
+
+                                                    .sidebar {
+                                                        display: grid;
+                                                        gap: 0.75rem;
+                                                        align-content: start;
+                                                    }
+
+                                                    .panel {
+                                                        border: 1px solid var(--line);
+                                                        border-radius: 8px;
+                                                        background: linear-gradient(180deg, rgba(21, 27, 35, 0.96), rgba(13, 17, 23, 0.98));
+                                                        box-shadow: 0 10px 32px rgba(0, 0, 0, 0.22);
+                                                    }
+
+                                                    .panel-header {
+                                                        display: flex;
+                                                        align-items: center;
+                                                        justify-content: space-between;
+                                                        gap: 0.75rem;
+                                                        padding: 0.8rem 0.85rem 0;
+                                                    }
+
+                                                    .panel-title {
+                                                        display: flex;
+                                                        align-items: center;
+                                                        gap: 0.45rem;
+                                                        min-width: 0;
+                                                        color: var(--fg);
+                                                        font-size: 0.82rem;
+                                                        font-weight: 800;
+                                                    }
+
+                                                    .panel-title span:last-child {
+                                                        overflow: hidden;
+                                                        text-overflow: ellipsis;
+                                                        white-space: nowrap;
+                                                    }
+
+                                                    .panel-body {
+                                                        padding: 0.85rem;
+                                                    }
+
+                                                    .status-dot {
+                                                        width: 0.45rem;
+                                                        height: 0.45rem;
+                                                        border-radius: 50%;
+                                                        background: var(--muted-2);
+                                                        box-shadow: 0 0 0 3px rgba(153, 167, 182, 0.12);
+                                                    }
+
+                                                    .status-dot.ok {
+                                                        background: var(--green);
+                                                        box-shadow: 0 0 0 3px rgba(53, 201, 111, 0.16);
+                                                    }
+
+                                                    .status-dot.warn {
+                                                        background: var(--yellow);
+                                                        box-shadow: 0 0 0 3px rgba(240, 183, 47, 0.16);
+                                                    }
+
+                                                    .status-dot.bad {
+                                                        background: var(--red);
+                                                        box-shadow: 0 0 0 3px rgba(244, 93, 103, 0.16);
+                                                    }
+
+                                                    .pill {
+                                                        display: inline-flex;
+                                                        align-items: center;
+                                                        gap: 0.35rem;
+                                                        min-height: 1.55rem;
+                                                        padding: 0.15rem 0.55rem;
+                                                        border: 1px solid var(--line);
+                                                        border-radius: 999px;
+                                                        background: rgba(255, 255, 255, 0.03);
+                                                        color: var(--muted);
+                                                        font-size: 0.72rem;
+                                                        font-weight: 750;
+                                                        white-space: nowrap;
+                                                    }
+
+                                                    .pill.ok {
+                                                        border-color: rgba(53, 201, 111, 0.32);
+                                                        color: #a9f0c4;
+                                                    }
+
+                                                    .pill.warn {
+                                                        border-color: rgba(240, 183, 47, 0.35);
+                                                        color: #ffd985;
+                                                    }
+
+                                                    .site-switcher {
+                                                        display: grid;
+                                                        grid-template-columns: 1fr 1fr;
+                                                        gap: 0.35rem;
+                                                        padding: 0.25rem;
+                                                        border: 1px solid var(--line);
+                                                        border-radius: 6px;
+                                                        background: rgba(255, 255, 255, 0.03);
+                                                    }
+
+                                                    .site-tab {
+                                                        min-height: 2.1rem;
+                                                        border: 0;
+                                                        border-radius: 4px;
+                                                        background: transparent;
+                                                        color: var(--muted);
+                                                        font-weight: 800;
+                                                        cursor: pointer;
+                                                    }
+
+                                                    .site-tab.is-active {
+                                                        background: color-mix(in srgb, var(--blue), transparent 78%);
+                                                        color: var(--fg);
+                                                    }
+
+                                                    .metric-grid {
+                                                        display: grid;
+                                                        grid-template-columns: 1fr 1fr;
+                                                        gap: 0.55rem;
+                                                        margin-top: 0.75rem;
+                                                    }
+
+                                                    .mini-metric {
+                                                        min-width: 0;
+                                                        padding: 0.65rem;
+                                                        border: 1px solid var(--line);
+                                                        border-radius: 6px;
+                                                        background: rgba(255, 255, 255, 0.025);
+                                                    }
+
+                                                    .mini-metric span {
+                                                        display: block;
+                                                        color: var(--muted);
+                                                        font-size: 0.68rem;
+                                                        font-weight: 700;
+                                                        text-transform: uppercase;
+                                                    }
+
+                                                    .mini-metric strong {
+                                                        display: block;
+                                                        margin-top: 0.2rem;
+                                                        overflow-wrap: anywhere;
+                                                        font-size: 1rem;
+                                                    }
+
+                                                    .link-lines {
+                                                        display: grid;
+                                                        gap: 0.45rem;
+                                                    }
+
+                                                    .link-row {
+                                                        display: grid;
+                                                        grid-template-columns: auto 1fr auto;
+                                                        align-items: center;
+                                                        gap: 0.55rem;
+                                                        color: var(--muted);
+                                                        font-size: 0.78rem;
+                                                    }
+
+                                                    .link-row strong {
+                                                        color: var(--fg);
+                                                    }
+
+                                                    .bar {
+                                                        height: 0.45rem;
+                                                        overflow: hidden;
+                                                        border-radius: 999px;
+                                                        background: #202834;
+                                                    }
+
+                                                    .bar>span {
+                                                        display: block;
+                                                        width: var(--value, 50%);
+                                                        height: 100%;
+                                                        border-radius: inherit;
+                                                        background: linear-gradient(90deg, var(--blue), var(--cyan));
+                                                    }
+
+                                                    .bar.green>span {
+                                                        background: var(--green);
+                                                    }
+
+                                                    .bar.yellow>span {
+                                                        background: var(--yellow);
+                                                    }
+
+                                                    .main-grid {
+                                                        display: grid;
+                                                        gap: 0.75rem;
+                                                        min-width: 0;
+                                                    }
+
+                                                    .hero-row {
+                                                        display: grid;
+                                                        grid-template-columns: minmax(0, 1fr) 22rem;
+                                                        gap: 0.75rem;
+                                                        min-width: 0;
+                                                    }
+
+                                                    .overview {
+                                                        min-height: 13rem;
+                                                        display: grid;
+                                                        grid-template-rows: auto 1fr;
+                                                        overflow: hidden;
+                                                    }
+
+                                                    .kpi-strip {
+                                                        display: grid;
+                                                        grid-template-columns: repeat(5, minmax(0, 1fr));
+                                                        gap: 0.55rem;
+                                                    }
+
+                                                    .kpi {
+                                                        min-width: 0;
+                                                        padding: 0.65rem 0.7rem;
+                                                        border: 1px solid var(--line);
+                                                        border-radius: 6px;
+                                                        background: rgba(255, 255, 255, 0.025);
+                                                    }
+
+                                                    .kpi span {
+                                                        display: flex;
+                                                        align-items: center;
+                                                        gap: 0.4rem;
+                                                        min-width: 0;
+                                                        color: var(--muted);
+                                                        font-size: 0.7rem;
+                                                        font-weight: 800;
+                                                        text-transform: uppercase;
+                                                    }
+
+                                                    .kpi strong {
+                                                        display: block;
+                                                        margin-top: 0.25rem;
+                                                        font-size: clamp(1.15rem, 2vw, 1.85rem);
+                                                        line-height: 1.05;
+                                                    }
+
+                                                    .activity-chart {
+                                                        position: relative;
+                                                        min-height: 15.5rem;
+                                                        margin-top: 0.85rem;
+                                                        overflow: hidden;
+                                                        border: 1px solid var(--line);
+                                                        border-radius: 7px;
+                                                        background:
+                                                            linear-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px),
+                                                            linear-gradient(90deg, rgba(255, 255, 255, 0.055) 1px, transparent 1px),
+                                                            #0b1016;
+                                                        background-size: 100% 20%, 8.333% 100%, auto;
+                                                    }
+
+                                                    .chart-bars {
+                                                        position: absolute;
+                                                        inset: 1rem 1rem 2.2rem 1rem;
+                                                        display: grid;
+                                                        grid-template-columns: repeat(36, minmax(3px, 1fr));
+                                                        align-items: end;
+                                                        gap: 0.15rem;
+                                                    }
+
+                                                    .chart-bars span {
+                                                        display: block;
+                                                        min-height: 0.25rem;
+                                                        border-radius: 3px 3px 0 0;
+                                                        background: rgba(153, 167, 182, 0.2);
+                                                    }
+
+                                                    .chart-line {
+                                                        position: absolute;
+                                                        inset: 0.85rem 0.85rem 1.75rem 0.85rem;
+                                                        width: calc(100% - 1.7rem);
+                                                        height: calc(100% - 2.6rem);
+                                                        overflow: visible;
+                                                    }
+
+                                                    .chart-line polyline {
+                                                        fill: none;
+                                                        stroke-linecap: round;
+                                                        stroke-linejoin: round;
+                                                    }
+
+                                                    .chart-axis {
+                                                        position: absolute;
+                                                        left: 1rem;
+                                                        right: 1rem;
+                                                        bottom: 0.6rem;
+                                                        display: flex;
+                                                        justify-content: space-between;
+                                                        color: var(--muted-2);
+                                                        font-size: 0.68rem;
+                                                        font-weight: 700;
+                                                    }
+
+                                                    .spectrum-grid {
+                                                        display: grid;
+                                                        grid-template-columns: repeat(8, minmax(0, 1fr));
+                                                        gap: 0.55rem;
+                                                    }
+
+                                                    .band-card {
+                                                        position: relative;
+                                                        min-height: 7.8rem;
+                                                        display: grid;
+                                                        grid-template-rows: auto 1fr auto;
+                                                        gap: 0.5rem;
+                                                        padding: 0.7rem;
+                                                        overflow: hidden;
+                                                        border: 1px solid var(--line);
+                                                        border-radius: 7px;
+                                                        background: #101720;
+                                                    }
+
+                                                    .band-card::before {
+                                                        content: "";
+                                                        position: absolute;
+                                                        left: 0;
+                                                        right: 0;
+                                                        bottom: 0;
+                                                        height: 2.3rem;
+                                                        opacity: 0.75;
+                                                        background: linear-gradient(180deg, transparent, rgba(47, 140, 255, 0.28));
+                                                    }
+
+                                                    .band-card.is-busy::before {
+                                                        background: linear-gradient(180deg, transparent, rgba(240, 183, 47, 0.34));
+                                                    }
+
+                                                    .band-card.is-voice::before {
+                                                        background: linear-gradient(180deg, transparent, rgba(154, 124, 255, 0.34));
+                                                    }
+
+                                                    .band-name {
+                                                        position: relative;
+                                                        color: var(--fg);
+                                                        font-size: 0.95rem;
+                                                        font-weight: 900;
+                                                    }
+
+                                                    .band-mode {
+                                                        position: relative;
+                                                        align-self: start;
+                                                        color: var(--muted);
+                                                        font-size: 0.72rem;
+                                                        font-weight: 800;
+                                                        text-transform: uppercase;
+                                                    }
+
+                                                    .band-bottom {
+                                                        position: relative;
+                                                        display: flex;
+                                                        align-items: end;
+                                                        justify-content: space-between;
+                                                        gap: 0.45rem;
+                                                        font-size: 0.74rem;
+                                                    }
+
+                                                    .spark {
+                                                        display: flex;
+                                                        align-items: end;
+                                                        gap: 2px;
+                                                        height: 2rem;
+                                                    }
+
+                                                    .spark i {
+                                                        display: block;
+                                                        width: 3px;
+                                                        height: var(--h, 35%);
+                                                        border-radius: 999px;
+                                                        background: color-mix(in srgb, var(--cyan), transparent 12%);
+                                                    }
+
+                                                    .backend-grid {
+                                                        display: grid;
+                                                        grid-template-columns: 1fr 1fr;
+                                                        gap: 0.75rem;
+                                                    }
+
+                                                    .backend-card {
+                                                        display: grid;
+                                                        gap: 0.8rem;
+                                                        padding: 0.85rem;
+                                                        border: 1px solid var(--line);
+                                                        border-radius: 8px;
+                                                        background: linear-gradient(180deg, rgba(22, 29, 39, 0.96), rgba(11, 15, 21, 0.98));
+                                                    }
+
+                                                    .backend-head {
+                                                        display: grid;
+                                                        grid-template-columns: auto 1fr auto;
+                                                        align-items: center;
+                                                        gap: 0.7rem;
+                                                    }
+
+                                                    .backend-icon {
+                                                        width: 2.35rem;
+                                                        height: 2.35rem;
+                                                        display: grid;
+                                                        place-items: center;
+                                                        border: 1px solid rgba(47, 140, 255, 0.45);
+                                                        border-radius: 7px;
+                                                        background: rgba(47, 140, 255, 0.14);
+                                                        color: #a8d3ff;
+                                                        font-weight: 900;
+                                                    }
+
+                                                    .backend-name {
+                                                        min-width: 0;
+                                                    }
+
+                                                    .backend-name strong,
+                                                    .device-name strong {
+                                                        display: block;
+                                                        overflow: hidden;
+                                                        text-overflow: ellipsis;
+                                                        white-space: nowrap;
+                                                        font-size: 0.92rem;
+                                                    }
+
+                                                    .backend-name span,
+                                                    .device-name span {
+                                                        display: block;
+                                                        overflow: hidden;
+                                                        text-overflow: ellipsis;
+                                                        white-space: nowrap;
+                                                        color: var(--muted);
+                                                        font-size: 0.72rem;
+                                                    }
+
+                                                    .slot-grid {
+                                                        display: grid;
+                                                        grid-template-columns: repeat(4, minmax(0, 1fr));
+                                                        gap: 0.4rem;
+                                                    }
+
+                                                    .slot {
+                                                        min-height: 4.2rem;
+                                                        display: grid;
+                                                        align-content: space-between;
+                                                        gap: 0.45rem;
+                                                        padding: 0.5rem;
+                                                        border: 1px solid var(--line);
+                                                        border-radius: 6px;
+                                                        background: rgba(255, 255, 255, 0.025);
+                                                    }
+
+                                                    .slot span {
+                                                        color: var(--muted);
+                                                        font-size: 0.66rem;
+                                                        font-weight: 800;
+                                                        text-transform: uppercase;
+                                                    }
+
+                                                    .slot strong {
+                                                        font-size: 0.82rem;
+                                                    }
+
+                                                    .map-layout {
+                                                        display: grid;
+                                                        grid-template-columns: minmax(0, 1.15fr) minmax(17rem, 0.85fr);
+                                                        gap: 0.75rem;
+                                                    }
+
+                                                    .rf-map {
+                                                        min-height: 24rem;
+                                                        overflow: hidden;
+                                                        border: 1px solid var(--line);
+                                                        border-radius: 8px;
+                                                        background:
+                                                            radial-gradient(circle at 35% 40%, rgba(47, 140, 255, 0.12), transparent 28%),
+                                                            radial-gradient(circle at 70% 58%, rgba(53, 201, 111, 0.08), transparent 26%),
+                                                            #081016;
+                                                    }
+
+                                                    .rf-map svg {
+                                                        width: 100%;
+                                                        height: 100%;
+                                                        min-height: 24rem;
+                                                        display: block;
+                                                    }
+
+                                                    .map-grid-line {
+                                                        stroke: rgba(153, 167, 182, 0.08);
+                                                        stroke-width: 1;
+                                                    }
+
+                                                    .path-blue {
+                                                        stroke: rgba(39, 213, 255, 0.62);
+                                                        stroke-width: 3;
+                                                        stroke-dasharray: 7 8;
+                                                        animation: dash 12s linear infinite;
+                                                    }
+
+                                                    .path-green {
+                                                        stroke: rgba(53, 201, 111, 0.58);
+                                                        stroke-width: 2.5;
+                                                        stroke-dasharray: 3 7;
+                                                        animation: dash 9s linear infinite reverse;
+                                                    }
+
+                                                    .path-violet {
+                                                        stroke: rgba(154, 124, 255, 0.55);
+                                                        stroke-width: 2.5;
+                                                        stroke-dasharray: 10 10;
+                                                        animation: dash 15s linear infinite;
+                                                    }
+
+                                                    @keyframes dash {
+                                                        to {
+                                                            stroke-dashoffset: -160;
+                                                        }
+                                                    }
+
+                                                    .map-node circle:first-child {
+                                                        fill: rgba(47, 140, 255, 0.16);
+                                                        stroke: rgba(47, 140, 255, 0.5);
+                                                        stroke-width: 2;
+                                                    }
+
+                                                    .map-node circle:last-child {
+                                                        fill: var(--cyan);
+                                                    }
+
+                                                    .map-node text {
+                                                        fill: var(--fg);
+                                                        font-size: 13px;
+                                                        font-weight: 800;
+                                                    }
+
+                                                    .activity-list {
+                                                        display: grid;
+                                                        gap: 0.55rem;
+                                                    }
+
+                                                    .activity-item,
+                                                    .device-card {
+                                                        display: grid;
+                                                        grid-template-columns: auto minmax(0, 1fr) auto;
+                                                        align-items: center;
+                                                        gap: 0.65rem;
+                                                        padding: 0.65rem;
+                                                        border: 1px solid var(--line);
+                                                        border-radius: 7px;
+                                                        background: rgba(255, 255, 255, 0.025);
+                                                    }
+
+                                                    .device-icon {
+                                                        width: 2.2rem;
+                                                        height: 2.2rem;
+                                                        display: grid;
+                                                        place-items: center;
+                                                        border-radius: 6px;
+                                                        background: rgba(255, 255, 255, 0.055);
+                                                        color: var(--cyan);
+                                                        font-size: 1rem;
+                                                        font-weight: 900;
+                                                    }
+
+                                                    .inventory-grid {
+                                                        display: grid;
+                                                        grid-template-columns: minmax(0, 1fr) 21rem;
+                                                        gap: 0.75rem;
+                                                    }
+
+                                                    .device-list {
+                                                        display: grid;
+                                                        grid-template-columns: repeat(3, minmax(0, 1fr));
+                                                        gap: 0.55rem;
+                                                    }
+
+                                                    .add-form {
+                                                        display: grid;
+                                                        gap: 0.65rem;
+                                                    }
+
+                                                    .add-form-card {
+                                                        display: grid;
+                                                        align-content: start;
+                                                        gap: 0.75rem;
+                                                        padding: 0.85rem;
+                                                        border: 1px solid var(--line);
+                                                        border-radius: 8px;
+                                                        background: rgba(255, 255, 255, 0.025);
+                                                    }
+
+                                                    .field {
+                                                        display: grid;
+                                                        gap: 0.3rem;
+                                                    }
+
+                                                    .field label {
+                                                        color: var(--muted);
+                                                        font-size: 0.68rem;
+                                                        font-weight: 800;
+                                                        text-transform: uppercase;
+                                                    }
+
+                                                    .field input,
+                                                    .field select {
+                                                        min-width: 0;
+                                                        width: 100%;
+                                                        min-height: 2.25rem;
+                                                        border: 1px solid var(--line);
+                                                        border-radius: 5px;
+                                                        background: #0c1118;
+                                                        color: var(--fg);
+                                                        padding: 0 0.65rem;
+                                                        outline: none;
+                                                    }
+
+                                                    .field input:focus,
+                                                    .field select:focus {
+                                                        border-color: rgba(47, 140, 255, 0.7);
+                                                        box-shadow: 0 0 0 3px rgba(47, 140, 255, 0.14);
+                                                    }
+
+                                                    .form-row {
+                                                        display: grid;
+                                                        grid-template-columns: 1fr 1fr;
+                                                        gap: 0.55rem;
+                                                    }
+
+                                                    .wide-btn {
+                                                        width: 100%;
+                                                        min-height: 2.35rem;
+                                                        border: 1px solid rgba(47, 140, 255, 0.55);
+                                                        border-radius: 5px;
+                                                        background: rgba(47, 140, 255, 0.16);
+                                                        color: #cfe7ff;
+                                                        font-weight: 900;
+                                                        cursor: pointer;
+                                                    }
+
+                                                    .wide-btn:hover {
+                                                        background: rgba(47, 140, 255, 0.25);
+                                                    }
+
+                                                    .footer-grid {
+                                                        display: grid;
+                                                        grid-template-columns: repeat(4, minmax(0, 1fr));
+                                                        gap: 0.75rem;
+                                                    }
+
+                                                    .small-graph {
+                                                        height: 3.6rem;
+                                                        display: grid;
+                                                        align-items: end;
+                                                        grid-template-columns: repeat(18, 1fr);
+                                                        gap: 2px;
+                                                    }
+
+                                                    .small-graph span {
+                                                        min-height: 0.35rem;
+                                                        border-radius: 3px 3px 0 0;
+                                                        background: rgba(53, 201, 111, 0.68);
+                                                    }
+
+                                                    @media (max-width: 1240px) {
+
+                                                        .content,
+                                                        .hero-row,
+                                                        .map-layout,
+                                                        .inventory-grid {
+                                                            grid-template-columns: 1fr;
+                                                        }
+
+                                                        .sidebar {
+                                                            grid-template-columns: repeat(2, minmax(0, 1fr));
+                                                        }
+
+                                                        .spectrum-grid {
+                                                            grid-template-columns: repeat(4, minmax(0, 1fr));
+                                                        }
+                                                    }
+
+                                                    @media (max-width: 820px) {
+                                                        .shell {
+                                                            grid-template-columns: 1fr;
+                                                        }
+
+                                                        .rail {
+                                                            position: static;
+                                                            height: auto;
+                                                            grid-template-columns: auto 1fr auto;
+                                                            grid-template-rows: auto;
+                                                            border-right: 0;
+                                                            border-bottom: 1px solid var(--line);
+                                                        }
+
+                                                        .rail-logo {
+                                                            width: 3.6rem;
+                                                            border-bottom: 0;
+                                                            border-right: 1px solid var(--line);
+                                                        }
+
+                                                        .rail-nav,
+                                                        .rail-tools {
+                                                            grid-auto-flow: column;
+                                                            justify-content: start;
+                                                            overflow-x: auto;
+                                                            padding: 0.45rem;
+                                                        }
+
+                                                        .topbar {
+                                                            position: static;
+                                                            grid-template-columns: 1fr;
+                                                            height: auto;
+                                                            padding: 0.75rem;
+                                                        }
+
+                                                        .top-actions {
+                                                            overflow-x: auto;
+                                                            padding-bottom: 0.1rem;
+                                                        }
+
+                                                        .content {
+                                                            padding: 0.55rem;
+                                                        }
+
+                                                        .sidebar,
+                                                        .backend-grid,
+                                                        .device-list,
+                                                        .footer-grid,
+                                                        .kpi-strip {
+                                                            grid-template-columns: 1fr;
+                                                        }
+
+                                                        .spectrum-grid {
+                                                            grid-template-columns: repeat(2, minmax(0, 1fr));
+                                                        }
+
+                                                        .view-intro {
+                                                            grid-template-columns: 1fr;
+                                                        }
+                                                    }
+
+                                                    @media (max-width: 520px) {
+
+                                                        .form-row,
+                                                        .slot-grid,
+                                                        .metric-grid {
+                                                            grid-template-columns: 1fr;
+                                                        }
+
+                                                        .spectrum-grid {
+                                                            grid-template-columns: 1fr;
+                                                        }
+                                                    }
+    </style>
+    <style id="shackmate-recovery-style">
+        :root {
+            color-scheme: dark;
+            --bg: #080b0f;
+            --panel: #11161d;
+            --panel-2: #151b23;
+            --panel-3: #1a222d;
+            --line: #26313d;
+            --line-strong: #354353;
+            --fg: #edf3f7;
+            --muted: #99a7b6;
+            --muted-2: #6f7d8c;
+            --blue: #2f8cff;
+            --cyan: #27d5ff;
+            --green: #35c96f;
+            --yellow: #f0b72f;
+            --red: #f45d67;
+            --violet: #9a7cff;
+            --sidebar: 4.45rem;
+            --topbar: 3.25rem;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-width: 320px;
+            min-height: 100vh;
+            overflow-x: hidden;
+            background: var(--bg);
+            color: var(--fg);
+        }
+
+        button,
+        input,
+        select {
+            font: inherit;
+        }
+
+        a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        [data-view-section][hidden],
+        [data-site-scope][hidden],
+        .rf-map-view[hidden] {
+            display: none !important;
+        }
+
+        .shell {
+            display: grid;
+            grid-template-columns: var(--sidebar) minmax(0, 1fr);
+            min-height: 100vh;
+        }
+
+        .rail {
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            border-right: 1px solid var(--line);
+            background: #0a0d12;
+            z-index: 5;
+        }
+
+        .rail-logo {
+            display: grid;
+            place-items: center;
+            height: var(--topbar);
+            border-bottom: 1px solid var(--line);
+            color: var(--cyan);
+            font-weight: 800;
+            letter-spacing: 0.08em;
+        }
+
+        .rail-nav,
+        .rail-tools {
+            display: grid;
+            gap: 0.55rem;
+            justify-items: center;
+            padding: 0.75rem 0;
+        }
+
+        .nav-btn {
+            width: 2.35rem;
+            height: 2.35rem;
+            display: grid;
+            place-items: center;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            background: transparent;
+            color: var(--muted);
+            cursor: pointer;
+        }
+
+        .nav-btn:hover,
+        .nav-btn.is-active {
+            border-color: color-mix(in srgb, var(--blue), transparent 30%);
+            background: color-mix(in srgb, var(--blue), transparent 84%);
+            color: var(--fg);
+        }
+
+        .main {
+            min-width: 0;
+        }
+
+        .topbar {
+            position: sticky;
+            top: 0;
+            z-index: 4;
+            height: var(--topbar);
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 1rem;
+            padding: 0 1.1rem;
+            border-bottom: 1px solid var(--line);
+            background: rgba(14, 18, 24, 0.96);
+            backdrop-filter: blur(18px);
+        }
+
+        .brand {
+            min-width: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+        }
+
+        .brand-mark {
+            width: 2rem;
+            height: 2rem;
+            display: grid;
+            place-items: center;
+            border-radius: 7px;
+            background: linear-gradient(135deg, #2f8cff, #27d5ff);
+            color: #061018;
+            font-weight: 900;
+        }
+
+        .brand-title {
+            min-width: 0;
+        }
+
+        .brand-title strong,
+        .brand-title span {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .brand-title strong {
+            font-size: 0.98rem;
+        }
+
+        .brand-title span {
+            color: var(--muted);
+            font-size: 0.74rem;
+        }
+
+        .top-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+        }
+
+        .content {
+            display: grid;
+            grid-template-columns: 18.5rem minmax(0, 1fr);
+            gap: 0.75rem;
+            padding: 0.75rem;
+        }
+
+        .sidebar {
+            display: grid;
+            gap: 0.75rem;
+            align-content: start;
+        }
+
+        .panel,
+        .backend-card,
+        .device-card,
+        .activity-item,
+        .kpi,
+        .mini-metric {
+            border: 1px solid var(--line);
+            background: linear-gradient(180deg, rgba(21, 27, 35, 0.96), rgba(13, 17, 23, 0.98));
+            box-shadow: 0 10px 32px rgba(0, 0, 0, 0.22);
+        }
+
+        .panel,
+        .backend-card {
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .panel-header,
+        .backend-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            padding: 0.85rem;
+        }
+
+        .panel-title {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+            min-width: 0;
+            color: var(--fg);
+            font-size: 0.82rem;
+            font-weight: 800;
+        }
+
+        .panel-body {
+            padding: 0.85rem;
+        }
+
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.65rem;
+        }
+
+        .metric-grid .mini-metric {
+            margin: 0;
+        }
+
+        .panel-body>div:not([class]) {
+            display: grid;
+            gap: 0.55rem;
+        }
+
+        .panel-body>div:not([class])>div {
+            display: grid;
+            grid-template-columns: minmax(4.5rem, auto) minmax(0, 1fr) auto;
+            gap: 0.45rem;
+            align-items: center;
+            color: var(--fg);
+            font-size: 0.78rem;
+            font-weight: 800;
+        }
+
+        .panel-body>div:not([class]) strong {
+            min-width: 4.5rem;
+        }
+
+        .status-dot {
+            width: 0.45rem;
+            height: 0.45rem;
+            border-radius: 50%;
+            background: var(--muted-2);
+            box-shadow: 0 0 0 3px rgba(153, 167, 182, 0.1);
+        }
+
+        .status-dot.ok {
+            background: var(--green);
+            box-shadow: 0 0 0 3px rgba(53, 201, 111, 0.16);
+        }
+
+        .status-dot.warn {
+            background: var(--yellow);
+            box-shadow: 0 0 0 3px rgba(240, 183, 47, 0.16);
+        }
+
+        .status-dot.bad {
+            background: var(--red);
+            box-shadow: 0 0 0 3px rgba(244, 93, 103, 0.16);
+        }
+
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            min-height: 1.35rem;
+            padding: 0.22rem 0.58rem;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.035);
+            color: var(--muted);
+            font-size: 0.72rem;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .pill.ok {
+            border-color: rgba(53, 201, 111, 0.45);
+            color: #9df5bf;
+        }
+
+        .pill.warn {
+            border-color: rgba(240, 183, 47, 0.45);
+            color: #ffd77a;
+        }
+
+        .pill.bad {
+            border-color: rgba(244, 93, 103, 0.55);
+            color: #ff9aa1;
+        }
+
+        .icon-btn,
+        .command-btn {
+            min-height: 2.15rem;
+            border: 1px solid var(--line);
+            border-radius: 5px;
+            background: var(--panel-2);
+            color: var(--fg);
+            cursor: pointer;
+            font-size: 0.78rem;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .icon-btn {
+            width: 2.15rem;
+            display: grid;
+            place-items: center;
+        }
+
+        .command-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 0.8rem;
+        }
+
+        .icon-btn:hover,
+        .command-btn:hover {
+            border-color: var(--line-strong);
+            background: var(--panel-3);
+        }
+
+        .site-tabs,
+        .site-switcher {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.35rem;
+            padding: 0.3rem;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .site-tab {
+            min-height: 2.5rem;
+            border: 1px solid transparent;
+            border-radius: 5px;
+            background: transparent;
+            color: var(--muted);
+            font-weight: 900;
+            cursor: pointer;
+        }
+
+        .site-tab.is-active {
+            border-color: #b9d7ff;
+            background: rgba(47, 140, 255, 0.28);
+            color: var(--fg);
+            box-shadow: inset 0 0 0 1px rgba(185, 215, 255, 0.45);
+        }
+
+        .site-switcher+.metric-grid {
+            margin-top: 0.75rem;
+        }
+
+        .link-lines {
+            display: grid;
+            gap: 0.45rem;
+        }
+
+        .link-row {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 0.55rem;
+            color: var(--muted);
+            font-size: 0.78rem;
+            line-height: 1.1;
+        }
+
+        .link-row strong {
+            min-width: 0;
+            color: var(--fg);
+        }
+
+        .link-row>span:last-child {
+            white-space: nowrap;
+            text-align: right;
+        }
+
+        .mini-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.75rem;
+            margin-top: 0.85rem;
+        }
+
+        .mini-metric {
+            border-radius: 6px;
+            padding: 0.75rem;
+            min-height: 4.5rem;
+        }
+
+        .mini-metric span,
+        .kpi span {
+            display: block;
+            color: var(--muted);
+            font-size: 0.72rem;
+            font-weight: 900;
+            text-transform: uppercase;
+        }
+
+        .mini-metric strong,
+        .kpi strong {
+            display: block;
+            margin-top: 0.45rem;
+            color: var(--fg);
+            font-size: 1.55rem;
+            line-height: 1;
+        }
+
+        .workspace {
+            display: grid;
+            gap: 0.75rem;
+            min-width: 0;
+        }
+
+        .view-intro {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 0.75rem;
+            align-items: center;
+            min-height: 6rem;
+            padding: 0.85rem;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: linear-gradient(180deg, rgba(17, 22, 29, 0.98), rgba(8, 11, 15, 0.98));
+        }
+
+        .view-intro h1 {
+            margin: 0;
+            font-size: 1.35rem;
+            line-height: 1.1;
+        }
+
+        .view-intro p {
+            margin: 0.35rem 0 0;
+            color: var(--muted);
+            font-size: 0.82rem;
+            white-space: pre-line;
+        }
+
+        .kpi-strip {
+            display: grid;
+            grid-template-columns: repeat(6, minmax(0, 1fr));
+            gap: 0.55rem;
+        }
+
+        .kpi {
+            border-radius: 6px;
+            padding: 0.7rem;
+            min-height: 5rem;
+        }
+
+        .dashboard-grid,
+        .backend-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.75rem;
+        }
+
+        .backend-name,
+        .device-name {
+            min-width: 0;
+        }
+
+        .backend-name strong,
+        .device-name strong {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 0.86rem;
+        }
+
+        .backend-name span,
+        .device-name span {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--muted);
+            font-size: 0.72rem;
+        }
+
+        .backend-icon,
+        .device-icon {
+            width: 2rem;
+            height: 2rem;
+            display: grid;
+            place-items: center;
+            border-radius: 6px;
+            background: rgba(47, 140, 255, 0.16);
+            color: #b9d7ff;
+            font-weight: 900;
+        }
+
+        .activity-list {
+            display: grid;
+            gap: 0.55rem;
+        }
+
+        .activity-item,
+        .device-card {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 0.65rem;
+            border-radius: 6px;
+            padding: 0.7rem;
+        }
+
+        .slot-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.4rem;
+            padding: 0 0.85rem 0.85rem;
+        }
+
+        .slot {
+            min-height: 4.2rem;
+            display: grid;
+            align-content: space-between;
+            gap: 0.45rem;
+            padding: 0.5rem;
+            border: 1px solid var(--line);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.025);
+        }
+
+        .slot span {
+            color: var(--muted);
+            font-size: 0.66rem;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .slot strong {
+            font-size: 0.82rem;
+        }
+
+        .bar {
+            height: 0.42rem;
+            border-radius: 999px;
+            overflow: hidden;
+            background: rgba(153, 167, 182, 0.16);
+        }
+
+        .bar>span {
+            display: block;
+            width: var(--value, 0%);
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, var(--blue), var(--cyan));
+        }
+
+        .bar.green>span {
+            background: linear-gradient(90deg, #1f9d55, var(--green));
+        }
+
+        .bar.yellow>span {
+            background: linear-gradient(90deg, #c98c18, var(--yellow));
+        }
+
+        .main-grid {
+            display: grid;
+            gap: 0.75rem;
+            min-width: 0;
+        }
+
+        .hero-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 22rem;
+            gap: 0.75rem;
+            min-width: 0;
+        }
+
+        .overview {
+            min-height: 13rem;
+            display: grid;
+            grid-template-rows: auto 1fr;
+            overflow: hidden;
+        }
+
+        .footer-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.75rem;
+        }
+
+        .spectrum-grid {
+            display: grid;
+            grid-template-columns: repeat(8, minmax(0, 1fr));
+            gap: 0.55rem;
+        }
+
+        .inventory-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 21rem;
+            gap: 0.75rem;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.55rem;
+        }
+
+        .band-card {
+            position: relative;
+            min-height: 7.8rem;
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            gap: 0.5rem;
+            padding: 0.7rem;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: 7px;
+            background: #101720;
+        }
+
+        .band-card::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 2.3rem;
+            opacity: 0.75;
+            background: linear-gradient(180deg, transparent, rgba(47, 140, 255, 0.28));
+        }
+
+        .band-card.is-busy::before {
+            background: linear-gradient(180deg, transparent, rgba(240, 183, 47, 0.34));
+        }
+
+        .band-card.is-voice::before {
+            background: linear-gradient(180deg, transparent, rgba(154, 124, 255, 0.34));
+        }
+
+        .band-name {
+            position: relative;
+            color: var(--fg);
+            font-size: 0.95rem;
+            font-weight: 900;
+        }
+
+        .band-mode {
+            position: relative;
+            align-self: start;
+            color: var(--muted);
+            font-size: 0.72rem;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .band-bottom {
+            position: relative;
+            display: flex;
+            align-items: end;
+            justify-content: space-between;
+            gap: 0.45rem;
+            font-size: 0.74rem;
+        }
+
+        .add-form {
+            display: grid;
+            gap: 0.65rem;
+        }
+
+        .add-form-card {
+            display: grid;
+            align-content: start;
+            gap: 0.75rem;
+            padding: 0.85rem;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.025);
+        }
+
+        .field {
+            display: grid;
+            gap: 0.3rem;
+        }
+
+        .field label {
+            color: var(--muted);
+            font-size: 0.68rem;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .field input,
+        .field select {
+            min-width: 0;
+            width: 100%;
+            min-height: 2.25rem;
+            border: 1px solid var(--line);
+            border-radius: 5px;
+            background: #0c1118;
+            color: var(--fg);
+            padding: 0 0.65rem;
+            outline: none;
+        }
+
+        .field input:focus,
+        .field select:focus {
+            border-color: rgba(47, 140, 255, 0.7);
+            box-shadow: 0 0 0 3px rgba(47, 140, 255, 0.14);
+        }
+
+        .wide-btn {
+            width: 100%;
+            min-height: 2.35rem;
+            border: 1px solid rgba(47, 140, 255, 0.55);
+            border-radius: 5px;
+            background: rgba(47, 140, 255, 0.16);
+            color: #cfe7ff;
+            font-weight: 900;
+            cursor: pointer;
+        }
+
+        .wide-btn:hover {
+            background: rgba(47, 140, 255, 0.25);
+        }
+
+        .map-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1.15fr) minmax(17rem, 0.85fr);
+            gap: 0.75rem;
+        }
+
+        .rf-map {
+            position: relative;
+            min-height: 24rem;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #081016;
+        }
+
+        .rf-map-view {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            min-height: 24rem;
+        }
+
+        .rf-map-toolbar {
+            position: absolute;
+            top: 0.7rem;
+            right: 0.7rem;
+            z-index: 450;
+            display: flex;
+            gap: 0.4rem;
+            align-items: center;
+        }
+
+        .rf-map .leaflet-container,
+        .rf-map .leaflet-tile-pane {
+            background: #081016;
+        }
+
+        .rf-map .leaflet-control-attribution {
+            background: rgba(8, 11, 15, 0.78);
+            color: var(--muted);
+        }
+
+        .rf-map .leaflet-control-attribution a {
+            color: var(--cyan);
+        }
+
+        .rf-site-marker {
+            width: 1.35rem;
+            height: 1.35rem;
+            border: 2px solid rgba(191, 219, 254, 0.95);
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--blue), transparent 18%);
+            box-shadow: 0 0 0 9px rgba(47, 140, 255, 0.14), 0 0 22px rgba(39, 213, 255, 0.4);
+        }
+
+        .rf-decode-marker {
+            width: 0.75rem;
+            height: 0.75rem;
+            border: 1px solid rgba(237, 243, 247, 0.8);
+            border-radius: 999px;
+            background: var(--cyan);
+            box-shadow: 0 0 16px rgba(39, 213, 255, 0.65);
+        }
+
+        .rf-map-popup {
+            color: #0b1220;
+            font-weight: 700;
+        }
+
+        .rf-map-footer {
+            position: absolute;
+            left: 0.75rem;
+            right: 0.75rem;
+            bottom: 0.75rem;
+            z-index: 440;
+            display: flex;
+            gap: 0.5rem;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--muted);
+            font-size: 0.72rem;
+            font-weight: 800;
+            pointer-events: none;
+        }
+
+        .activity-chart {
+            position: relative;
+            min-height: 15.5rem;
+            margin-top: 0.85rem;
+            overflow: hidden;
+            border: 1px solid var(--line);
+            border-radius: 7px;
+            background: linear-gradient(rgba(255, 255, 255, 0.055) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.055) 1px, transparent 1px), #0b1016;
+            background-size: 100% 20%, 8.333% 100%, auto;
+        }
+
+        .chart-bars {
+            position: absolute;
+            inset: 1rem 1rem 2.2rem 1rem;
+            display: grid;
+            grid-template-columns: repeat(36, minmax(3px, 1fr));
+            align-items: end;
+            gap: 0.15rem;
+            opacity: 1;
+            padding: 0;
+        }
+
+        .chart-bars span {
+            display: block;
+            min-height: 0.25rem;
+            border-radius: 3px 3px 0 0;
+            background: rgba(53, 201, 111, 0.26);
+        }
+
+        .chart-line {
+            position: absolute;
+            inset: 0.85rem 0.85rem 1.75rem 0.85rem;
+            width: calc(100% - 1.7rem);
+            height: calc(100% - 2.6rem);
+            display: block;
+            overflow: visible;
+        }
+
+        .chart-line polyline {
+            fill: none;
+            vector-effect: non-scaling-stroke;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .chart-axis {
+            position: absolute;
+            left: 1rem;
+            right: 1rem;
+            bottom: 0.6rem;
+            display: flex;
+            justify-content: space-between;
+            color: var(--muted-2);
+            font-size: 0.68rem;
+            font-weight: 700;
+        }
+
+        .small-graph {
+            height: 3.6rem;
+            display: grid;
+            align-items: end;
+            grid-template-columns: repeat(18, minmax(0, 1fr));
+            gap: 2px;
+        }
+
+        .small-graph span {
+            display: block;
+            min-height: 0.35rem;
+            border-radius: 3px 3px 0 0;
+            background: rgba(53, 201, 111, 0.68);
+        }
+
+        .spark {
+            display: flex;
+            align-items: end;
+            gap: 2px;
+            height: 2rem;
+            min-height: 2rem;
+            padding: 0;
+        }
+
+        .spark i {
+            display: block;
+            width: 3px;
+            height: var(--h, 35%);
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--cyan), transparent 12%);
+            opacity: 0.9;
+        }
+
+        .spark i {
+            height: var(--h);
+        }
+
+        .device-list {
+            display: grid;
+            gap: 0.55rem;
+        }
+
+        .sdr-form {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
+            gap: 0.55rem;
+        }
+
+        .sdr-form input,
+        .sdr-form select {
+            min-width: 0;
+            border: 1px solid var(--line);
+            border-radius: 5px;
+            padding: 0.55rem;
+            background: #0d1117;
+            color: var(--fg);
+        }
+
+        @media (max-width: 1100px) {
+            .content {
+                grid-template-columns: 1fr;
+            }
+
+            .sidebar {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .hero-row,
+            .dashboard-grid,
+            .backend-grid,
+            .map-layout,
+            .inventory-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .footer-grid,
+            .spectrum-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 720px) {
+            :root {
+                --sidebar: 3.4rem;
+            }
+
+            .topbar {
+                grid-template-columns: 1fr;
+                height: auto;
+                padding: 0.6rem;
+            }
+
+            .top-actions {
+                flex-wrap: wrap;
+            }
+
+            .sidebar,
+            .kpi-strip,
+            .mini-grid,
+            .footer-grid,
+            .spectrum-grid,
+            .form-row,
+            .sdr-form {
+                grid-template-columns: 1fr;
+            }
+
+            .slot-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="shell">
+        <aside class="rail" aria-label="NOC navigation">
+            <div class="rail-logo">SM</div>
+            <nav class="rail-nav">
+                <button class="nav-btn is-active" type="button" title="Operations" data-view="operations"
+                    aria-pressed="true">O</button>
+                <button class="nav-btn" type="button" title="Spectrum" data-view="spectrum"
+                    aria-pressed="false">S</button>
+                <button class="nav-btn" type="button" title="RF Map" data-view="map" aria-pressed="false">M</button>
+                <button class="nav-btn" type="button" title="Receivers" data-view="receivers"
+                    aria-pressed="false">R</button>
+                <button class="nav-btn" type="button" title="ADS-B" data-view="adsb" aria-pressed="false">A</button>
+            </nav>
+            <div class="rail-tools">
+                <button class="nav-btn" type="button" title="Setup" data-view="setup" aria-pressed="false">C</button>
+            </div>
+        </aside>
+
+        <main class="main">
+            <header class="topbar">
+                <div class="brand">
+                    <div class="brand-mark">K</div>
+                    <div class="brand-title">
+                        <strong>ShackMate</strong>
+                        <span>Operations Center - Bridged (VLAN 73) - N4LDR &amp; WD4VA for SDR Receivers.</span>
+                    </div>
+                </div>
+                <div class="top-actions">
+                    <span class="pill ok" id="noc-live-status"><span class="status-dot ok"></span>Loading Kiwi
+                        Activity</span>
+                    <span class="pill" id="noc-last-refresh">Live</span>
+                    <a class="command-btn" href="/pro">Original Kiwi Setup</a>
+                    <button class="icon-btn" type="button" title="Refresh">R</button>
+                </div>
+            </header>
+
+            <div class="content">
+                <aside class="sidebar">
+                    <section class="panel">
+                        <div class="panel-header">
+                            <div class="panel-title"><span class="status-dot ok"></span><span>Site Fabric</span></div>
+                            <span class="pill">VLAN 73</span>
+                        </div>
+                        <div class="panel-body">
+                            <div class="site-switcher" role="tablist" aria-label="Site filter">
+                                <button class="site-tab is-active" type="button" data-site="n4ldr">Site A
+                                    (N4LDR)</button>
+                                <button class="site-tab" type="button" data-site="wd4va">Site B (WD4VA)</button>
+                            </div>
+                            <div class="metric-grid">
+                                <div class="mini-metric"><span>Gateways</span><strong id="site-gateways">1</strong>
+                                </div>
+                                <div class="mini-metric"><span>Kiwis</span><strong id="site-kiwis">2</strong></div>
+                                <div class="mini-metric"><span>RTL-SDRs</span><strong id="site-rtls">8</strong></div>
+                                <div class="mini-metric"><span>Active RX</span><strong id="site-active-rx">--</strong>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="panel">
+                        <div class="panel-header">
+                            <div class="panel-title"><span class="status-dot ok"></span><span>WAN and VPN</span></div>
+                        </div>
+                        <div class="panel-body link-lines">
+                            <div class="link-row"><span class="status-dot ok"></span><strong>N4LDR VPN</strong><span>8
+                                    ms</span></div>
+                            <div class="bar green" style="--value: 99%"><span></span></div>
+                            <div class="link-row"><span class="status-dot ok"></span><strong>WD4VA VPN</strong><span>13
+                                    ms</span></div>
+                            <div class="bar green" style="--value: 96%"><span></span></div>
+                            <div class="link-row"><span class="status-dot warn"></span><strong>Packet
+                                    Loss</strong><span>0.3%</span></div>
+                            <div class="bar yellow" style="--value: 18%"><span></span></div>
+                        </div>
+                    </section>
+
+                    <section class="panel">
+                        <div class="panel-header">
+                            <div class="panel-title"><span class="status-dot ok"></span><span>Protocol Mix</span></div>
+                        </div>
+                        <div class="panel-body link-lines">
+                            <div class="link-row"><strong>FT8</strong>
+                                <div class="bar" style="--value: 72%"><span></span></div><span>9.8k/hr</span>
+                            </div>
+                            <div class="link-row"><strong>FT4</strong>
+                                <div class="bar" style="--value: 28%"><span></span></div><span>1.4k/hr</span>
+                            </div>
+                            <div class="link-row"><strong>WSPR</strong>
+                                <div class="bar" style="--value: 18%"><span></span></div><span>422/hr</span>
+                            </div>
+                            <div class="link-row"><strong>Voice</strong>
+                                <div class="bar" style="--value: 44%"><span></span></div><span>7 ch</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="panel">
+                        <div class="panel-header">
+                            <div class="panel-title"><span class="status-dot ok"></span><span>ADS-B / Airband</span>
+                            </div>
+                        </div>
+                        <div class="panel-body link-lines">
+                            <div class="link-row"><span
+                                    class="status-dot ok"></span><strong>Aircraft</strong><span>42</span></div>
+                            <div class="link-row"><span class="status-dot ok"></span><strong>N4LDR
+                                    Feed</strong><span>1090 MHz</span></div>
+                            <div class="link-row"><span class="status-dot ok"></span><strong>WD4VA
+                                    Feed</strong><span>978 MHz</span></div>
+                        </div>
+                    </section>
+                </aside>
+
+                <section class="main-grid">
+                    <section class="panel">
+                        <div class="panel-body view-intro">
+                            <div>
+                                <h1 id="view-title">Operations</h1>
+                                <p id="view-subtitle">Site A (N4LDR): two KiwiSDR backends and eight RTL-SDRs.
+                                    Site B (WD4VA): one KiwiSDR at 10.123.73.61 and eight RTL-SDRs.</p>
+                            </div>
+                            <span class="pill ok" id="noc-selected-site"><span class="status-dot ok"></span>Site A
+                                (N4LDR)</span>
+                        </div>
+                    </section>
+
+                    <div class="hero-row" data-view-section="operations">
+                        <section class="panel overview">
+                            <div class="panel-header">
+                                <div class="panel-title"><span class="status-dot ok"></span><span>Operations
+                                        Center</span></div>
+                                <span class="pill" id="noc-startup-mode">Checking Startup</span>
+                            </div>
+                            <div class="panel-body">
+                                <div class="kpi-strip">
+                                    <div class="kpi"><span><span
+                                                class="status-dot ok"></span>Sites</span><strong>2</strong></div>
+                                    <div class="kpi"><span><span
+                                                class="status-dot ok"></span>Kiwis</span><strong>3</strong></div>
+                                    <div class="kpi"><span><span class="status-dot ok"></span>Active
+                                            RX</span><strong id="noc-total-active-rx">--</strong></div>
+                                    <div class="kpi"><span><span
+                                                class="status-dot ok"></span>RTL-SDRs</span><strong>16</strong></div>
+                                    <div class="kpi"><span><span class="status-dot ok"></span>Decode
+                                            Buckets</span><strong id="noc-decode-buckets">--</strong>
+                                    </div>
+                                    <div class="kpi"><span><span class="status-dot ok"></span>Auto
+                                            Kiwis</span><strong id="noc-auto-kiwis">--</strong></div>
+                                </div>
+                                <div class="activity-chart" aria-label="Internet and RF activity chart">
+                                    <div class="chart-bars" aria-hidden="true">
+                                        <span style="height:45%"></span><span style="height:50%"></span><span
+                                            style="height:48%"></span><span style="height:52%"></span><span
+                                            style="height:47%"></span><span style="height:46%"></span><span
+                                            style="height:44%"></span><span style="height:42%"></span><span
+                                            style="height:40%"></span><span style="height:37%"></span><span
+                                            style="height:35%"></span><span style="height:34%"></span><span
+                                            style="height:36%"></span><span style="height:39%"></span><span
+                                            style="height:43%"></span><span style="height:46%"></span><span
+                                            style="height:48%"></span><span style="height:44%"></span><span
+                                            style="height:41%"></span><span style="height:38%"></span><span
+                                            style="height:42%"></span><span style="height:49%"></span><span
+                                            style="height:55%"></span><span style="height:58%"></span><span
+                                            style="height:53%"></span><span style="height:47%"></span><span
+                                            style="height:45%"></span><span style="height:52%"></span><span
+                                            style="height:63%"></span><span style="height:68%"></span><span
+                                            style="height:58%"></span><span style="height:51%"></span><span
+                                            style="height:48%"></span><span style="height:60%"></span><span
+                                            style="height:74%"></span><span style="height:57%"></span>
+                                    </div>
+                                    <svg class="chart-line" viewBox="0 0 100 100" preserveAspectRatio="none"
+                                        aria-hidden="true">
+                                        <polyline
+                                            points="0,64 4,58 7,61 10,55 13,66 16,72 19,76 22,74 25,71 28,68 31,70 34,66 37,72 40,78 43,75 46,68 49,62 52,66 55,59 58,52 61,44 64,34 67,42 70,51 73,47 76,45 79,39 82,48 85,56 88,43 91,36 94,41 97,49 100,55"
+                                            stroke="rgba(39, 213, 255, 0.85)" stroke-width="1.4" />
+                                        <polyline
+                                            points="0,80 8,78 16,82 24,79 32,81 40,76 48,78 56,74 64,69 72,76 80,73 88,65 96,61 100,66"
+                                            stroke="rgba(154, 124, 255, 0.8)" stroke-width="1" />
+                                        <polyline
+                                            points="0,50 10,51 20,49 30,50 40,48 50,47 60,46 70,45 80,44 90,45 100,43"
+                                            stroke="rgba(240, 183, 47, 0.74)" stroke-width="0.8" />
+                                    </svg>
+                                    <div class="chart-axis">
+                                        <span>02:00</span><span>08:00</span><span>14:00</span><span>20:00</span><span>Now</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="panel">
+                            <div class="panel-header">
+                                <div class="panel-title"><span class="status-dot ok"></span><span>Site Health</span>
+                                </div>
+                            </div>
+                            <div class="panel-body activity-list">
+                                <div class="activity-item" data-site-scope="n4ldr"><span class="status-dot ok"></span>
+                                    <div class="device-name"><strong>Site A (N4LDR)</strong><span>Two Kiwi backends
+                                            and eight RTL-SDRs /
+                                            VLAN 73 gateway healthy</span></div><span class="pill ok">99.9%</span>
+                                </div>
+                                <div class="activity-item" data-site-scope="wd4va"><span class="status-dot ok"></span>
+                                    <div class="device-name"><strong>Site B (WD4VA)</strong><span>Kiwi 10.123.73.61 and
+                                            eight RTL-SDRs reachable on VLAN 73</span></div><span
+                                        class="pill ok">Online</span>
+                                </div>
+                                <div class="activity-item" data-site-scope="wd4va"><span class="status-dot warn"></span>
+                                    <div class="device-name"><strong>RTL-SDR Access</strong><span>WD4VA control service
+                                            still needs SBC-side wiring</span></div><span class="pill warn">Next</span>
+                                </div>
+                                <div class="activity-item" data-site-scope="all"><span class="status-dot ok"></span>
+                                    <div class="device-name"><strong>GPS / NTP</strong><span>Both sites synced</span>
+                                    </div><span class="pill ok">Locked</span>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+
+                    <section class="panel" data-view-section="spectrum" hidden>
+                        <div class="panel-header">
+                            <div class="panel-title"><span class="status-dot ok"></span><span>Spectrum Dashboard</span>
+                            </div>
+                            <span class="pill">Radio Wall</span>
+                        </div>
+                        <div class="panel-body spectrum-grid">
+                            <article class="band-card">
+                                <div class="band-name">160m</div>
+                                <div class="band-mode">Open / RX1</div>
+                                <div class="band-bottom"><strong>17</strong>
+                                    <div class="spark"><i style="--h:30%"></i><i style="--h:44%"></i><i
+                                            style="--h:22%"></i><i style="--h:55%"></i><i style="--h:38%"></i></div>
+                                </div>
+                            </article>
+                            <article class="band-card">
+                                <div class="band-name">80m</div>
+                                <div class="band-mode">Open / RX2</div>
+                                <div class="band-bottom"><strong>82</strong>
+                                    <div class="spark"><i style="--h:40%"></i><i style="--h:58%"></i><i
+                                            style="--h:36%"></i><i style="--h:64%"></i><i style="--h:44%"></i></div>
+                                </div>
+                            </article>
+                            <article class="band-card is-busy">
+                                <div class="band-name">40m</div>
+                                <div class="band-mode">Busy / RX4</div>
+                                <div class="band-bottom"><strong>341</strong>
+                                    <div class="spark"><i style="--h:62%"></i><i style="--h:90%"></i><i
+                                            style="--h:66%"></i><i style="--h:74%"></i><i style="--h:82%"></i></div>
+                                </div>
+                            </article>
+                            <article class="band-card">
+                                <div class="band-name">30m</div>
+                                <div class="band-mode">Open / RX6</div>
+                                <div class="band-bottom"><strong>204</strong>
+                                    <div class="spark"><i style="--h:56%"></i><i style="--h:48%"></i><i
+                                            style="--h:70%"></i><i style="--h:54%"></i><i style="--h:64%"></i></div>
+                                </div>
+                            </article>
+                            <article class="band-card is-busy">
+                                <div class="band-name">20m</div>
+                                <div class="band-mode">Busy / RX8</div>
+                                <div class="band-bottom"><strong>516</strong>
+                                    <div class="spark"><i style="--h:75%"></i><i style="--h:92%"></i><i
+                                            style="--h:80%"></i><i style="--h:96%"></i><i style="--h:72%"></i></div>
+                                </div>
+                            </article>
+                            <article class="band-card">
+                                <div class="band-name">17m</div>
+                                <div class="band-mode">Open / RX9</div>
+                                <div class="band-bottom"><strong>118</strong>
+                                    <div class="spark"><i style="--h:34%"></i><i style="--h:52%"></i><i
+                                            style="--h:44%"></i><i style="--h:62%"></i><i style="--h:39%"></i></div>
+                                </div>
+                            </article>
+                            <article class="band-card">
+                                <div class="band-name">15m</div>
+                                <div class="band-mode">Open / RX11</div>
+                                <div class="band-bottom"><strong>91</strong>
+                                    <div class="spark"><i style="--h:28%"></i><i style="--h:36%"></i><i
+                                            style="--h:48%"></i><i style="--h:41%"></i><i style="--h:30%"></i></div>
+                                </div>
+                            </article>
+                            <article class="band-card is-voice">
+                                <div class="band-name">Air</div>
+                                <div class="band-mode">Voice / ADS-B</div>
+                                <div class="band-bottom"><strong>42</strong>
+                                    <div class="spark"><i style="--h:30%"></i><i style="--h:62%"></i><i
+                                            style="--h:24%"></i><i style="--h:74%"></i><i style="--h:42%"></i></div>
+                                </div>
+                            </article>
+                        </div>
+                    </section>
+
+                    <section class="backend-grid" aria-label="Kiwi backends" data-view-section="receivers" hidden>
+                        <article class="backend-card" data-site-scope="n4ldr" data-site-a-kiwi-card="0">
+                            <div class="backend-head">
+                                <div class="backend-icon">K1</div>
+                                <div class="backend-name"><strong>Kiwi 1 Backend</strong><span>Site A (N4LDR) /
+                                        10.13.73.235:8073
+                                        / VLAN 73</span></div>
+                                <span class="pill ok" data-kiwi-status="10.13.73.235:8073">Loading</span>
+                            </div>
+                            <div class="activity-list">
+                                <div class="activity-item"><span class="status-dot ok"></span>
+                                    <div class="device-name"><strong>Saved mode</strong><span
+                                            data-kiwi-mode="10.13.73.235:8073">Loading</span></div><span class="pill"
+                                        data-kiwi-startup="10.13.73.235:8073">Startup</span>
+                                </div>
+                                <div class="activity-item"><span class="status-dot ok"></span>
+                                    <div class="device-name"><strong>Live receivers</strong><span
+                                            data-kiwi-live="10.13.73.235:8073">Waiting for health data</span></div><span
+                                        class="pill" data-kiwi-decodes="10.13.73.235:8073">0 buckets</span>
+                                </div>
+                            </div>
+                            <div class="slot-grid">
+                                <div class="slot"><span>RX0</span><strong>20m FT8</strong></div>
+                                <div class="slot"><span>RX1</span><strong>40m FT8</strong></div>
+                                <div class="slot"><span>RX2</span><strong>30m WSPR</strong></div>
+                                <div class="slot"><span>RX3</span><strong>Voice 7.132</strong></div>
+                                <div class="slot"><span>RX4</span><strong>15m FT4</strong></div>
+                                <div class="slot"><span>RX5</span><strong>10m FT8</strong></div>
+                                <div class="slot"><span>RX6</span><strong>ADS-B Aux</strong></div>
+                                <div class="slot"><span>RX7</span><strong>Roaming</strong></div>
+                            </div>
+                        </article>
+                        <article class="backend-card" data-site-scope="n4ldr" data-site-a-kiwi-card="1">
+                            <div class="backend-head">
+                                <div class="backend-icon">K2</div>
+                                <div class="backend-name"><strong>Kiwi 2 Backend</strong><span>Site A (N4LDR) /
+                                        10.13.73.236:8073
+                                        / VLAN 73</span></div>
+                                <span class="pill ok" data-kiwi-status="10.13.73.236:8073">Loading</span>
+                            </div>
+                            <div class="activity-list">
+                                <div class="activity-item"><span class="status-dot ok"></span>
+                                    <div class="device-name"><strong>Saved mode</strong><span
+                                            data-kiwi-mode="10.13.73.236:8073">Loading</span></div><span class="pill"
+                                        data-kiwi-startup="10.13.73.236:8073">Startup</span>
+                                </div>
+                                <div class="activity-item"><span class="status-dot ok"></span>
+                                    <div class="device-name"><strong>Live receivers</strong><span
+                                            data-kiwi-live="10.13.73.236:8073">Waiting for health data</span></div><span
+                                        class="pill" data-kiwi-decodes="10.13.73.236:8073">0 buckets</span>
+                                </div>
+                            </div>
+                            <div class="slot-grid">
+                                <div class="slot"><span>RX0</span><strong>20m FT8</strong></div>
+                                <div class="slot"><span>RX1</span><strong>80m FT8</strong></div>
+                                <div class="slot"><span>RX2</span><strong>40m WSPR</strong></div>
+                                <div class="slot"><span>RX3</span><strong>Airband</strong></div>
+                                <div class="slot"><span>RX4</span><strong>17m FT8</strong></div>
+                                <div class="slot"><span>RX5</span><strong>Utility</strong></div>
+                                <div class="slot"><span>RX6</span><strong>Caption</strong></div>
+                                <div class="slot"><span>RX7</span><strong>Standby</strong></div>
+                            </div>
+                        </article>
+                        <article class="backend-card" data-site-scope="wd4va">
+                            <div class="backend-head">
+                                <div class="backend-icon">KB</div>
+                                <div class="backend-name"><strong>WD4VA Kiwi Backend</strong><span>Site B (WD4VA) /
+                                        10.123.73.61:8073
+                                        / VLAN 73</span></div>
+                                <span class="pill ok" data-kiwi-status="10.123.73.61:8073">Loading</span>
+                            </div>
+                            <div class="activity-list">
+                                <div class="activity-item"><span class="status-dot ok"></span>
+                                    <div class="device-name"><strong>Saved mode</strong><span
+                                            data-kiwi-mode="10.123.73.61:8073">Loading</span></div><span class="pill"
+                                        data-kiwi-startup="10.123.73.61:8073">Startup</span>
+                                </div>
+                                <div class="activity-item"><span class="status-dot ok"></span>
+                                    <div class="device-name"><strong>Live receivers</strong><span
+                                            data-kiwi-live="10.123.73.61:8073">Waiting for health data</span></div><span
+                                        class="pill" data-kiwi-decodes="10.123.73.61:8073">0 buckets</span>
+                                </div>
+                            </div>
+                            <div class="slot-grid">
+                                <div class="slot"><span>RX0</span><strong>20m FT8</strong></div>
+                                <div class="slot"><span>RX1</span><strong>40m FT8</strong></div>
+                                <div class="slot"><span>RX2</span><strong>80m FT8</strong></div>
+                                <div class="slot"><span>RX3</span><strong>WSPR</strong></div>
+                                <div class="slot"><span>RX4</span><strong>Airband</strong></div>
+                                <div class="slot"><span>RX5</span><strong>Utility</strong></div>
+                                <div class="slot"><span>RX6</span><strong>Roaming</strong></div>
+                                <div class="slot"><span>RX7</span><strong>Standby</strong></div>
+                            </div>
+                        </article>
+                    </section>
+
+                    <section class="panel" data-view-section="map" hidden>
+                        <div class="panel-header">
+                            <div class="panel-title"><span class="status-dot ok"></span><span>Live RF Activity
+                                    Map</span></div>
+                            <span class="pill">Combined Sites</span>
+                        </div>
+                        <div class="panel-body map-layout">
+                            <div class="rf-map" aria-label="RF activity map between sites">
+                                <div class="rf-map-toolbar">
+                                    <button class="command-btn" type="button" id="rf-map-toggle" aria-pressed="false">3D
+                                        Globe</button>
+                                    <button class="icon-btn" type="button" id="rf-map-fit" title="Fit map">F</button>
+                                </div>
+                                <div id="rf-leaflet-map" class="rf-map-view" role="application"
+                                    aria-label="2D RF activity map"></div>
+                                <div id="rf-globe-map" class="rf-map-view" aria-label="3D RF activity globe" hidden>
+                                </div>
+                                <div class="rf-map-footer">
+                                    <span id="rf-map-count">0 live decodes</span>
+                                    <span id="rf-map-updated">Waiting for map data</span>
+                                </div>
+                            </div>
+                            <div class="activity-list">
+                                <div class="activity-item"><span class="status-dot ok"></span>
+                                    <div class="device-name"><strong>40m currently active</strong><span>Both sites
+                                            reporting FT8 decode bursts</span></div><span class="pill ok">Hot</span>
+                                </div>
+                                <div class="activity-item"><span class="status-dot ok"></span>
+                                    <div class="device-name"><strong>20m currently active</strong><span>Kiwi 1 carrying
+                                            peak throughput</span></div><span class="pill ok">516</span>
+                                </div>
+                                <div class="activity-item"><span class="status-dot warn"></span>
+                                    <div class="device-name"><strong>7.132 MHz voice</strong><span>Caption pipeline has
+                                            intermittent traffic</span></div><span class="pill warn">Burst</span>
+                                </div>
+                                <div class="activity-item"><span class="status-dot ok"></span>
+                                    <div class="device-name"><strong>ADS-B merged feed</strong><span>Map centered
+                                            between N4LDR and WD4VA</span></div><span class="pill ok">42</span>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="panel" data-view-section="receivers" hidden>
+                        <div class="panel-header">
+                            <div class="panel-title"><span class="status-dot ok"></span><span>Receiver Inventory</span>
+                            </div>
+                            <span class="pill">RTL-SDR Intake</span>
+                        </div>
+                        <div class="panel-body inventory-grid">
+                            <div class="device-list" id="device-list">
+                                <article class="device-card" data-site-scope="n4ldr">
+                                    <div class="device-icon">R1</div>
+                                    <div class="device-name"><strong>RTL-SDR A1</strong><span>Site A (N4LDR) / HF helper
+                                            / 40m
+                                            FT8</span></div><span class="pill ok">Healthy</span>
+                                </article>
+                                <article class="device-card" data-site-scope="n4ldr">
+                                    <div class="device-icon">R2</div>
+                                    <div class="device-name"><strong>RTL-SDR A2</strong><span>Site A (N4LDR) / ADS-B /
+                                            1090
+                                            MHz</span></div><span class="pill ok">Healthy</span>
+                                </article>
+                                <article class="device-card" data-site-scope="n4ldr">
+                                    <div class="device-icon">R3</div>
+                                    <div class="device-name"><strong>RTL-SDR A3</strong><span>Site A (N4LDR) / Airband /
+                                            Voice</span></div><span class="pill ok">Healthy</span>
+                                </article>
+                                <article class="device-card" data-site-scope="n4ldr">
+                                    <div class="device-icon">R4</div>
+                                    <div class="device-name"><strong>RTL-SDR A4</strong><span>Site A (N4LDR) / WSPR
+                                            monitor</span></div><span class="pill warn">Warm</span>
+                                </article>
+                                <article class="device-card" data-site-scope="n4ldr">
+                                    <div class="device-icon">R5</div>
+                                    <div class="device-name"><strong>RTL-SDR A5</strong><span>Site A (N4LDR) / VHF
+                                            utility</span></div><span class="pill ok">Healthy</span>
+                                </article>
+                                <article class="device-card" data-site-scope="n4ldr">
+                                    <div class="device-icon">R6</div>
+                                    <div class="device-name"><strong>RTL-SDR A6</strong><span>Site A (N4LDR) / spare HF
+                                            helper</span></div><span class="pill ok">Healthy</span>
+                                </article>
+                                <article class="device-card" data-site-scope="n4ldr">
+                                    <div class="device-icon">R7</div>
+                                    <div class="device-name"><strong>RTL-SDR A7</strong><span>Site A (N4LDR) /
+                                            staging</span>
+                                    </div><span class="pill warn">Stage</span>
+                                </article>
+                                <article class="device-card" data-site-scope="n4ldr">
+                                    <div class="device-icon">R8</div>
+                                    <div class="device-name"><strong>RTL-SDR A8</strong><span>Site A (N4LDR) /
+                                            staging</span>
+                                    </div><span class="pill warn">Stage</span>
+                                </article>
+                                <article class="device-card" data-site-scope="wd4va">
+                                    <div class="device-icon">B1</div>
+                                    <div class="device-name"><strong>RTL-SDR B1</strong><span>Site B (WD4VA) / HF
+                                            helper</span></div><span class="pill ok">Healthy</span>
+                                </article>
+                                <article class="device-card" data-site-scope="wd4va">
+                                    <div class="device-icon">B2</div>
+                                    <div class="device-name"><strong>RTL-SDR B2</strong><span>Site B (WD4VA) / ADS-B /
+                                            1090 MHz</span></div><span class="pill ok">Healthy</span>
+                                </article>
+                                <article class="device-card" data-site-scope="wd4va">
+                                    <div class="device-icon">B3</div>
+                                    <div class="device-name"><strong>RTL-SDR B3</strong><span>Site B (WD4VA) / Airband
+                                            voice</span></div><span class="pill ok">Healthy</span>
+                                </article>
+                                <article class="device-card" data-site-scope="wd4va">
+                                    <div class="device-icon">B4</div>
+                                    <div class="device-name"><strong>RTL-SDR B4</strong><span>Site B (WD4VA) / WSPR
+                                            monitor</span></div><span class="pill ok">Healthy</span>
+                                </article>
+                                <article class="device-card" data-site-scope="wd4va">
+                                    <div class="device-icon">B5</div>
+                                    <div class="device-name"><strong>RTL-SDR B5</strong><span>Site B (WD4VA) / VHF
+                                            utility</span></div><span class="pill warn">Stage</span>
+                                </article>
+                                <article class="device-card" data-site-scope="wd4va">
+                                    <div class="device-icon">B6</div>
+                                    <div class="device-name"><strong>RTL-SDR B6</strong><span>Site B (WD4VA) / spare HF
+                                            helper</span></div><span class="pill warn">Stage</span>
+                                </article>
+                                <article class="device-card" data-site-scope="wd4va">
+                                    <div class="device-icon">B7</div>
+                                    <div class="device-name"><strong>RTL-SDR B7</strong><span>Site B (WD4VA) /
+                                            staging</span></div><span class="pill warn">Stage</span>
+                                </article>
+                                <article class="device-card" data-site-scope="wd4va">
+                                    <div class="device-icon">B8</div>
+                                    <div class="device-name"><strong>RTL-SDR B8</strong><span>Site B (WD4VA) /
+                                            staging</span></div><span class="pill warn">Stage</span>
+                                </article>
+                                <article class="device-card" data-site-scope="n4ldr">
+                                    <div class="device-icon">K1</div>
+                                    <div class="device-name"><strong>KiwiSDR 1</strong><span>Site A (N4LDR) / 8 channel
+                                            backend</span></div><span class="pill ok"
+                                        data-kiwi-status="10.13.73.235:8073">Loading</span>
+                                </article>
+                                <article class="device-card" data-site-scope="n4ldr">
+                                    <div class="device-icon">K2</div>
+                                    <div class="device-name"><strong>KiwiSDR 2</strong><span>Site A (N4LDR) / 8 channel
+                                            backend</span></div><span class="pill ok"
+                                        data-kiwi-status="10.13.73.236:8073">Loading</span>
+                                </article>
+                                <article class="device-card" data-site-scope="wd4va">
+                                    <div class="device-icon">KB</div>
+                                    <div class="device-name"><strong>KiwiSDR WD4VA</strong><span>10.123.73.61 / 8
+                                            channel backend</span></div><span class="pill ok"
+                                        data-kiwi-status="10.123.73.61:8073">Loading</span>
+                                </article>
+                            </div>
+                            <form class="add-form-card" id="sdr-form">
+                                <div class="panel-title"><span class="status-dot ok"></span><span>Add RTL-SDR</span>
+                                </div>
+                                <div class="add-form">
+                                    <div class="field">
+                                        <label for="sdr-name">Name</label>
+                                        <input id="sdr-name" name="name" value="RTL-SDR C1" />
+                                    </div>
+                                    <div class="form-row">
+                                        <div class="field">
+                                            <label for="sdr-site">Site</label>
+                                            <select id="sdr-site" name="site">
+                                                <option>Site A (N4LDR)</option>
+                                                <option>Site B (WD4VA)</option>
+                                            </select>
+                                        </div>
+                                        <div class="field">
+                                            <label for="sdr-backend">Backend</label>
+                                            <select id="sdr-backend" name="backend">
+                                                <option>Kiwi 1</option>
+                                                <option>Kiwi 2</option>
+                                                <option>WD4VA Kiwi</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="form-row">
+                                        <div class="field">
+                                            <label for="sdr-vlan">VLAN</label>
+                                            <input id="sdr-vlan" name="vlan" value="73" />
+                                        </div>
+                                        <div class="field">
+                                            <label for="sdr-role">Role</label>
+                                            <select id="sdr-role" name="role">
+                                                <option>HF Helper</option>
+                                                <option>ADS-B</option>
+                                                <option>Airband</option>
+                                                <option>WSPR</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <button class="wide-btn" type="submit">Add Preview Device</button>
+                                </div>
+                            </form>
+                        </div>
+                    </section>
+
+                    <section class="panel" data-view-section="adsb" hidden>
+                        <div class="panel-header">
+                            <div class="panel-title"><span class="status-dot ok"></span><span>ADS-B / Airband</span>
+                            </div>
+                            <span class="pill">Preview Page</span>
+                        </div>
+                        <div class="panel-body map-layout">
+                            <div class="rf-map" aria-label="ADS-B coverage preview">
+                                <svg viewBox="0 0 900 440" role="img"
+                                    aria-label="ADS-B and airband coverage from N4LDR and WD4VA">
+                                    <g>
+                                        <path class="map-grid-line"
+                                            d="M80 40v360M200 40v360M320 40v360M440 40v360M560 40v360M680 40v360M800 40v360" />
+                                        <path class="map-grid-line" d="M40 90h820M40 170h820M40 250h820M40 330h820" />
+                                    </g>
+                                    <circle cx="450" cy="225" r="64" fill="rgba(47,140,255,0.12)"
+                                        stroke="rgba(47,140,255,0.45)" />
+                                    <circle cx="450" cy="225" r="136" fill="rgba(47,140,255,0.07)"
+                                        stroke="rgba(47,140,255,0.25)" />
+                                    <circle cx="450" cy="225" r="212" fill="rgba(53,201,111,0.04)"
+                                        stroke="rgba(53,201,111,0.18)" />
+                                    <path class="path-blue" d="M450 225 L610 130" fill="none" />
+                                    <path class="path-green" d="M450 225 L305 122" fill="none" />
+                                    <path class="path-violet" d="M450 225 L690 300" fill="none" />
+                                    <g class="map-node" transform="translate(450 225)">
+                                        <circle r="50" />
+                                        <circle r="9" /><text x="-64" y="74">Site A (N4LDR)</text>
+                                    </g>
+                                    <g fill="rgba(237,243,247,0.82)" font-size="13" font-weight="800">
+                                        <text x="622" y="128">AAL421</text>
+                                        <text x="250" y="122">N73RF</text>
+                                        <text x="704" y="304">DAL902</text>
+                                    </g>
+                                </svg>
+                            </div>
+                            <div class="activity-list">
+                                <div class="activity-item" data-site-scope="n4ldr"><span class="status-dot ok"></span>
+                                    <div class="device-name"><strong>N4LDR 1090 MHz Feed</strong><span>RTL-SDR A2
+                                            assigned to
+                                            ADS-B</span></div><span class="pill ok">42</span>
+                                </div>
+                                <div class="activity-item" data-site-scope="n4ldr"><span class="status-dot ok"></span>
+                                    <div class="device-name"><strong>N4LDR Airband Voice</strong><span>RTL-SDR A3 staged
+                                            for
+                                            VHF AM monitoring</span></div><span class="pill ok">Ready</span>
+                                </div>
+                                <div class="activity-item" data-site-scope="wd4va"><span class="status-dot ok"></span>
+                                    <div class="device-name"><strong>WD4VA ADS-B Feed</strong><span>RTL-SDR B2 staged
+                                            for remote ADS-B merge</span></div><span class="pill ok">Ready</span>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="panel" data-view-section="setup" hidden>
+                        <div class="panel-header">
+                            <div class="panel-title"><span class="status-dot warn"></span><span>Site Setup</span></div>
+                            <span class="pill">Not Wired</span>
+                        </div>
+                        <div class="panel-body inventory-grid">
+                            <div class="activity-list">
+                                <div class="activity-item" data-site-scope="n4ldr"><span class="status-dot ok"></span>
+                                    <div class="device-name"><strong>Site A (N4LDR)</strong><span>VLAN 73 / two KiwiSDRs
+                                            /
+                                            eight RTL-SDRs</span></div><span class="pill ok">Known</span>
+                                </div>
+                                <div class="activity-item" data-site-scope="wd4va"><span class="status-dot ok"></span>
+                                    <div class="device-name"><strong>Site B (WD4VA)</strong><span>KiwiSDR 10.123.73.61 /
+                                            eight RTL-SDRs</span></div><span class="pill ok">Known</span>
+                                </div>
+                                <div class="activity-item"><span class="status-dot warn"></span>
+                                    <div class="device-name"><strong>Remote SBC Access</strong><span>Future service for
+                                            remote RTL-SDR discovery and control</span></div><span
+                                        class="pill warn">Next</span>
+                                </div>
+                                <div class="activity-item"><span class="status-dot warn"></span>
+                                    <div class="device-name"><strong>Backend API Wiring</strong><span>Replace preview
+                                            data with KiwiScan endpoints once layout settles</span></div><span
+                                        class="pill warn">Later</span>
+                                </div>
+                            </div>
+                            <form class="add-form-card">
+                                <div class="panel-title"><span class="status-dot ok"></span><span>Connection
+                                        Draft</span></div>
+                                <div class="add-form">
+                                    <div class="field"><label>VLAN</label><input value="73" readonly /></div>
+                                    <div class="field"><label>Total Kiwis</label><input value="3" readonly /></div>
+                                    <div class="field"><label>Total RTL-SDRs</label><input value="16" readonly /></div>
+                                    <button class="wide-btn" type="button">Save Draft Later</button>
+                                </div>
+                            </form>
+                        </div>
+                    </section>
+
+                    <section class="footer-grid" data-view-section="operations">
+                        <div class="panel">
+                            <div class="panel-header">
+                                <div class="panel-title"><span class="status-dot ok"></span><span>Receiver
+                                        Utilization</span></div>
+                            </div>
+                            <div class="panel-body">
+                                <div class="small-graph"><span style="height:45%"></span><span
+                                        style="height:55%"></span><span style="height:48%"></span><span
+                                        style="height:72%"></span><span style="height:66%"></span><span
+                                        style="height:80%"></span><span style="height:74%"></span><span
+                                        style="height:62%"></span><span style="height:58%"></span><span
+                                        style="height:68%"></span><span style="height:76%"></span><span
+                                        style="height:84%"></span><span style="height:69%"></span><span
+                                        style="height:60%"></span><span style="height:74%"></span><span
+                                        style="height:78%"></span><span style="height:82%"></span><span
+                                        style="height:70%"></span></div>
+                            </div>
+                        </div>
+                        <div class="panel">
+                            <div class="panel-header">
+                                <div class="panel-title"><span class="status-dot ok"></span><span>Bandwidth</span></div>
+                            </div>
+                            <div class="panel-body">
+                                <div class="small-graph"><span style="height:28%"></span><span
+                                        style="height:34%"></span><span style="height:42%"></span><span
+                                        style="height:38%"></span><span style="height:54%"></span><span
+                                        style="height:46%"></span><span style="height:59%"></span><span
+                                        style="height:44%"></span><span style="height:52%"></span><span
+                                        style="height:63%"></span><span style="height:72%"></span><span
+                                        style="height:58%"></span><span style="height:66%"></span><span
+                                        style="height:48%"></span><span style="height:57%"></span><span
+                                        style="height:69%"></span><span style="height:61%"></span><span
+                                        style="height:55%"></span></div>
+                            </div>
+                        </div>
+                        <div class="panel">
+                            <div class="panel-header">
+                                <div class="panel-title"><span class="status-dot warn"></span><span>CPU Load</span>
+                                </div>
+                            </div>
+                            <div class="panel-body">
+                                <div class="small-graph"><span style="height:40%"></span><span
+                                        style="height:44%"></span><span style="height:39%"></span><span
+                                        style="height:48%"></span><span style="height:52%"></span><span
+                                        style="height:61%"></span><span style="height:58%"></span><span
+                                        style="height:65%"></span><span style="height:70%"></span><span
+                                        style="height:62%"></span><span style="height:54%"></span><span
+                                        style="height:50%"></span><span style="height:56%"></span><span
+                                        style="height:64%"></span><span style="height:68%"></span><span
+                                        style="height:72%"></span><span style="height:63%"></span><span
+                                        style="height:59%"></span></div>
+                            </div>
+                        </div>
+                        <div class="panel">
+                            <div class="panel-header">
+                                <div class="panel-title"><span class="status-dot ok"></span><span>VPN Health</span>
+                                </div>
+                            </div>
+                            <div class="panel-body">
+                                <div class="small-graph"><span style="height:92%"></span><span
+                                        style="height:90%"></span><span style="height:93%"></span><span
+                                        style="height:94%"></span><span style="height:91%"></span><span
+                                        style="height:88%"></span><span style="height:92%"></span><span
+                                        style="height:95%"></span><span style="height:93%"></span><span
+                                        style="height:92%"></span><span style="height:90%"></span><span
+                                        style="height:89%"></span><span style="height:94%"></span><span
+                                        style="height:95%"></span><span style="height:96%"></span><span
+                                        style="height:92%"></span><span style="height:91%"></span><span
+                                        style="height:94%"></span></div>
+                            </div>
+                        </div>
+                    </section>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="https://unpkg.com/three@0.179.1/build/three.min.js"></script>
+    <script src="https://unpkg.com/globe.gl@2.41.4/dist/globe.gl.min.js"></script>
+    <script>
+        (() => {
+            const viewCopy = {
+                operations: {
+                    title: 'Operations',
+                    subtitle: 'Site A (N4LDR): two KiwiSDR backends and eight RTL-SDRs.\nSite B (WD4VA): one KiwiSDR at 10.123.73.61 and eight RTL-SDRs.'
+                },
+                spectrum: {
+                    title: 'Spectrum Dashboard',
+                    subtitle: 'Band cards and activity meters for the combined N4LDR and WD4VA radio wall.'
+                },
+                map: {
+                    title: 'Live RF Activity Map',
+                    subtitle: 'Preview of RF paths, decode activity, and site-to-site context across VLAN 73.'
+                },
+                receivers: {
+                    title: 'Receiver Inventory',
+                    subtitle: 'Three Kiwi backends and sixteen RTL-SDRs staged for future live control wiring.'
+                },
+                adsb: {
+                    title: 'ADS-B / Airband',
+                    subtitle: 'Aircraft and VHF monitoring view for N4LDR plus the WD4VA remote feed.'
+                },
+                setup: {
+                    title: 'Site Setup',
+                    subtitle: 'Draft topology for VLAN 73, backend wiring, and future RTL-SDR SBC control.'
+                }
+            };
+
+            const viewButtons = document.querySelectorAll('[data-view]');
+            const viewSections = document.querySelectorAll('[data-view-section]');
+            const viewTitle = document.getElementById('view-title');
+            const viewSubtitle = document.getElementById('view-subtitle');
+            const liveStatus = document.getElementById('noc-live-status');
+            const lastRefresh = document.getElementById('noc-last-refresh');
+            const selectedSitePill = document.getElementById('noc-selected-site');
+            const siteGateways = document.getElementById('site-gateways');
+            const siteKiwis = document.getElementById('site-kiwis');
+            const siteRtls = document.getElementById('site-rtls');
+            const siteActiveRx = document.getElementById('site-active-rx');
+            const totalActiveRx = document.getElementById('noc-total-active-rx');
+            const decodeBuckets = document.getElementById('noc-decode-buckets');
+            const autoKiwis = document.getElementById('noc-auto-kiwis');
+            const startupMode = document.getElementById('noc-startup-mode');
+            const rfMapToggle = document.getElementById('rf-map-toggle');
+            const rfMapFit = document.getElementById('rf-map-fit');
+            const rfMapCount = document.getElementById('rf-map-count');
+            const rfMapUpdated = document.getElementById('rf-map-updated');
+            const rfMapEl = document.getElementById('rf-leaflet-map');
+            const rfGlobeEl = document.getElementById('rf-globe-map');
+            const RF_GLOBE_IMAGE_URL = 'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg';
+            const RF_GLOBE_BUMP_URL = 'https://unpkg.com/three-globe/example/img/earth-topology.png';
+            const modeColors = {
+                FT8: '#27d5ff',
+                FT4: '#9a7cff',
+                WSPR: '#35c96f',
+                SSB: '#f0b72f',
+                VOICE: '#f0b72f'
+            };
+            const siteState = {
+                active: 'n4ldr',
+                sites: {
+                    n4ldr: {
+                        label: 'Site A (N4LDR)',
+                        gateways: 1,
+                        rtls: 8,
+                        kiwis: ['10.13.73.235:8073', '10.13.73.236:8073']
+                    },
+                    wd4va: {
+                        label: 'Site B (WD4VA)',
+                        gateways: 1,
+                        rtls: 8,
+                        kiwis: ['10.123.73.61:8073']
+                    }
+                },
+                health: {},
+                charts: {},
+                system: {},
+                config: {},
+                settings: {},
+                headless: {},
+                decodes: [],
+                latestDecodeId: 0,
+                mapMode: '2d'
+            };
+            let rfLeafletMap = null;
+            let rfSiteLayer = null;
+            let rfDecodeLayer = null;
+            let rfPathLayer = null;
+            let rfGlobe = null;
+
+            const statusClass = (state) => {
+                const normalized = String(state || '').toLowerCase();
+                if (normalized === 'healthy' || normalized === 'quiet' || normalized === 'online' || normalized === 'auto' || normalized === 'semi' || normalized === 'starting') return 'ok';
+                if (normalized === 'idle' || normalized === 'unknown' || normalized === 'manual' || normalized === 'scan' || normalized === 'parked' || normalized === 'auto queued') return 'warn';
+                return 'bad';
+            };
+
+            const setPill = (el, text, state = 'ok') => {
+                if (!el) return;
+                el.className = `pill ${statusClass(state)}`;
+                el.textContent = text;
+            };
+
+            const getJson = async (url, timeoutMs = 3500) => {
+                const controller = new AbortController();
+                const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+                try {
+                    const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    return await response.json();
+                } finally {
+                    window.clearTimeout(timeout);
+                }
+            };
+
+            const kiwiUrl = (path, kiwiKey) => `${path}?kiwi_key=${encodeURIComponent(kiwiKey)}`;
+
+            const gridToLatLon = (grid) => {
+                const text = String(grid || '').trim().toUpperCase();
+                if (!/^[A-R]{2}[0-9]{2}([A-X]{2})?/.test(text)) return null;
+                let lon = (text.charCodeAt(0) - 65) * 20 - 180;
+                let lat = (text.charCodeAt(1) - 65) * 10 - 90;
+                lon += Number(text[2]) * 2;
+                lat += Number(text[3]);
+                if (text.length >= 6) {
+                    lon += (text.charCodeAt(4) - 65) * (5 / 60);
+                    lat += (text.charCodeAt(5) - 65) * (2.5 / 60);
+                    lon += 2.5 / 60;
+                    lat += 1.25 / 60;
+                } else {
+                    lon += 1;
+                    lat += 0.5;
+                }
+                return { lat, lon };
+            };
+
+            const coordsFromEntry = (entry) => {
+                const lat = Number(entry && entry.latitude);
+                const lon = Number(entry && entry.longitude);
+                if (Number.isFinite(lat) && Number.isFinite(lon)) return { lat, lon };
+                return gridToLatLon(entry && entry.grid);
+            };
+
+            const modeColor = (mode) => modeColors[String(mode || '').toUpperCase()] || '#2f8cff';
+
+            const makeSiteIcon = (label) => {
+                if (!window.L) return null;
+                return L.divIcon({
+                    className: '',
+                    html: `<div class="rf-site-marker" title="${label}"></div>`,
+                    iconSize: [24, 24],
+                    iconAnchor: [12, 12]
+                });
+            };
+
+            const makeDecodeIcon = (mode) => {
+                if (!window.L) return null;
+                const color = modeColor(mode);
+                return L.divIcon({
+                    className: '',
+                    html: `<div class="rf-decode-marker" style="background:${color};box-shadow:0 0 16px ${color}"></div>`,
+                    iconSize: [14, 14],
+                    iconAnchor: [7, 7]
+                });
+            };
+
+            const kiwiKeyFromEntry = (entry) => {
+                const host = String(entry && entry.host || '').trim();
+                const port = Number(entry && entry.port || 8073) || 8073;
+                return host ? `${host}:${port}` : '';
+            };
+
+            const discoveredSiteAEntries = (config) => {
+                const discovered = Array.isArray(config && config.discovered_kiwis) ? config.discovered_kiwis : [];
+                const myKiwiEntries = discovered.filter((entry) => String(entry && entry.known_source || '').toLowerCase().includes('my.kiwisdr.com'));
+                const n4ldrEntries = myKiwiEntries.filter((entry) => {
+                    const text = [entry.name, entry.loc, entry.grid, entry.host].map((value) => String(value || '').toLowerCase()).join(' ');
+                    return text.includes('n4ldr') || text.includes('luray') || text.includes('fm08so');
+                });
+                const selectedEntries = n4ldrEntries.length ? n4ldrEntries : myKiwiEntries;
+                const seen = new Set();
+                return selectedEntries
+                    .slice()
+                    .sort((a, b) => Number(a.known_order || 999) - Number(b.known_order || 999))
+                    .filter((entry) => {
+                        const key = kiwiKeyFromEntry(entry);
+                        if (!key || seen.has(key)) return false;
+                        seen.add(key);
+                        return true;
+                    });
+            };
+
+            const updateSiteAKiwiCards = (entries) => {
+                const cards = document.querySelectorAll('[data-site-a-kiwi-card]');
+                cards.forEach((card, index) => {
+                    const entry = entries[index];
+                    if (!entry) return;
+                    const key = kiwiKeyFromEntry(entry);
+                    if (!key) return;
+                    const title = card.querySelector('.backend-name strong');
+                    const subtitle = card.querySelector('.backend-name span');
+                    const status = card.querySelector('[data-kiwi-status]');
+                    const mode = card.querySelector('[data-kiwi-mode]');
+                    const startup = card.querySelector('[data-kiwi-startup]');
+                    const live = card.querySelector('[data-kiwi-live]');
+                    const decodes = card.querySelector('[data-kiwi-decodes]');
+                    if (title) title.textContent = `Kiwi ${index + 1} Backend`;
+                    if (subtitle) subtitle.textContent = `Site A (N4LDR) / ${key} / VLAN 73`;
+                    if (status) status.dataset.kiwiStatus = key;
+                    if (mode) mode.dataset.kiwiMode = key;
+                    if (startup) startup.dataset.kiwiStartup = key;
+                    if (live) live.dataset.kiwiLive = key;
+                    if (decodes) decodes.dataset.kiwiDecodes = key;
+                });
+            };
+
+            const updateSiteAKiwisFromConfig = (config) => {
+                const entries = discoveredSiteAEntries(config);
+                if (!entries.length) return;
+                siteState.sites.n4ldr.kiwis = entries.map(kiwiKeyFromEntry).filter(Boolean);
+                siteState.sites.n4ldr.discoverySource = String(config && config.discovery_source || 'my.kiwisdr.com');
+                updateSiteAKiwiCards(entries);
+            };
+
+            const siteMapEntries = () => {
+                const config = siteState.config || {};
+                const discovered = Array.isArray(config.discovered_kiwis) ? config.discovered_kiwis : [];
+                const configured = Array.isArray(config.kiwisdrs) ? config.kiwisdrs : [];
+                const siteAEntries = discoveredSiteAEntries(config);
+                const siteBEntry = discovered.find((entry) => String(entry && entry.host || '') === '10.123.73.61')
+                    || configured.find((entry) => String(entry && entry.host || '') === '10.123.73.61');
+                const centroid = (entries, fallback) => {
+                    const coords = entries.map(coordsFromEntry).filter(Boolean);
+                    if (!coords.length) return fallback;
+                    return {
+                        lat: coords.reduce((sum, item) => sum + item.lat, 0) / coords.length,
+                        lon: coords.reduce((sum, item) => sum + item.lon, 0) / coords.length
+                    };
+                };
+                return [
+                    {
+                        key: 'n4ldr',
+                        label: 'Site A (N4LDR)',
+                        coords: centroid(siteAEntries, { lat: 38.595, lon: -78.432 }),
+                        count: siteAEntries.length || siteState.sites.n4ldr.kiwis.length,
+                        color: '#27d5ff'
+                    },
+                    {
+                        key: 'wd4va',
+                        label: 'Site B (WD4VA)',
+                        coords: coordsFromEntry(siteBEntry) || { lat: 38.376061, lon: -78.728794 },
+                        count: 1,
+                        color: '#35c96f'
+                    }
+                ];
+            };
+
+            const coordsFromDecode = (decode) => {
+                const lat = Number(decode && (decode.latitude ?? decode.lat));
+                const lon = Number(decode && (decode.longitude ?? decode.lon ?? decode.lng));
+                if (Number.isFinite(lat) && Number.isFinite(lon)) return { lat, lon };
+                return gridToLatLon(decode && (decode.grid || decode.dx_grid || decode.maidenhead || decode.locator));
+            };
+
+            const decodeLabel = (decode) => {
+                const call = String(decode && (decode.callsign || decode.call || decode.from || 'Decode')).trim();
+                const band = String(decode && decode.band || '').trim();
+                const mode = String(decode && decode.mode || '').trim();
+                const snr = decode && decode.snr !== undefined ? ` / ${decode.snr} dB` : '';
+                return [call, band, mode].filter(Boolean).join(' / ') + snr;
+            };
+
+            const mergeDecodeItems = (payload) => {
+                if (!payload || !Array.isArray(payload.items)) return;
+                siteState.latestDecodeId = Math.max(Number(siteState.latestDecodeId || 0), Number(payload.latest || 0));
+                const existing = new Set(siteState.decodes.map((item) => Number(item && item.id || 0)).filter(Boolean));
+                payload.items.forEach((item) => {
+                    const id = Number(item && item.id || 0);
+                    if (id && existing.has(id)) return;
+                    if (id) existing.add(id);
+                    siteState.decodes.push(item);
+                });
+                siteState.decodes = siteState.decodes.slice(-120);
+            };
+
+            const initRfLeafletMap = () => {
+                if (rfLeafletMap || !window.L || !rfMapEl) return;
+                rfLeafletMap = L.map(rfMapEl, {
+                    zoomControl: true,
+                    attributionControl: true,
+                    keyboard: false
+                }).setView([38.49, -78.58], 9);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                    maxZoom: 13
+                }).addTo(rfLeafletMap);
+                rfPathLayer = L.layerGroup().addTo(rfLeafletMap);
+                rfSiteLayer = L.layerGroup().addTo(rfLeafletMap);
+                rfDecodeLayer = L.layerGroup().addTo(rfLeafletMap);
+            };
+
+            const initRfGlobe = () => {
+                if (rfGlobe || !window.Globe || !rfGlobeEl) return rfGlobe;
+                rfGlobe = Globe()(rfGlobeEl)
+                    .globeImageUrl(RF_GLOBE_IMAGE_URL)
+                    .bumpImageUrl(RF_GLOBE_BUMP_URL)
+                    .backgroundColor('rgba(0,0,0,0)')
+                    .showAtmosphere(true)
+                    .showGraticules(true)
+                    .pointLat('lat')
+                    .pointLng('lon')
+                    .pointColor('color')
+                    .pointRadius('radius')
+                    .pointAltitude('altitude')
+                    .pointLabel('label')
+                    .arcStartLat('startLat')
+                    .arcStartLng('startLon')
+                    .arcEndLat('endLat')
+                    .arcEndLng('endLon')
+                    .arcColor('color')
+                    .arcDashLength(0.35)
+                    .arcDashGap(0.18)
+                    .arcDashAnimateTime(2600);
+                const controls = typeof rfGlobe.controls === 'function' ? rfGlobe.controls() : null;
+                if (controls) {
+                    controls.autoRotate = true;
+                    controls.autoRotateSpeed = 0.25;
+                    controls.enablePan = false;
+                }
+                rfGlobe.pointOfView({ lat: 38.5, lng: -78.6, altitude: 1.8 }, 0);
+                return rfGlobe;
+            };
+
+            const fitRfMap = () => {
+                if (!rfLeafletMap || !window.L) return;
+                const bounds = [];
+                siteMapEntries().forEach((site) => bounds.push([site.coords.lat, site.coords.lon]));
+                siteState.decodes.map(coordsFromDecode).filter(Boolean).slice(-40).forEach((coords) => bounds.push([coords.lat, coords.lon]));
+                if (bounds.length) rfLeafletMap.fitBounds(bounds, { padding: [28, 28], maxZoom: 9 });
+            };
+
+            const renderRfMap = () => {
+                initRfLeafletMap();
+                const sites = siteMapEntries();
+                const decodePoints = siteState.decodes
+                    .map((decode) => ({ decode, coords: coordsFromDecode(decode) }))
+                    .filter((item) => item.coords)
+                    .slice(-60);
+                if (rfSiteLayer) rfSiteLayer.clearLayers();
+                if (rfDecodeLayer) rfDecodeLayer.clearLayers();
+                if (rfPathLayer) rfPathLayer.clearLayers();
+                if (rfLeafletMap && window.L) {
+                    sites.forEach((site) => {
+                        L.marker([site.coords.lat, site.coords.lon], { icon: makeSiteIcon(site.label) })
+                            .bindPopup(`<div class="rf-map-popup">${site.label}<br>${site.count} Kiwi backend${site.count === 1 ? '' : 's'}</div>`)
+                            .addTo(rfSiteLayer);
+                    });
+                    if (sites.length >= 2) {
+                        L.polyline(sites.map((site) => [site.coords.lat, site.coords.lon]), {
+                            color: '#27d5ff',
+                            weight: 3,
+                            opacity: 0.72,
+                            dashArray: '8 8'
+                        }).addTo(rfPathLayer);
+                    }
+                    decodePoints.forEach(({ decode, coords }) => {
+                        const mode = String(decode && decode.mode || '').toUpperCase();
+                        L.marker([coords.lat, coords.lon], { icon: makeDecodeIcon(mode) })
+                            .bindPopup(`<div class="rf-map-popup">${decodeLabel(decode)}</div>`)
+                            .addTo(rfDecodeLayer);
+                    });
+                    requestAnimationFrame(() => rfLeafletMap.invalidateSize());
+                }
+                if (siteState.mapMode === '3d') {
+                    const globe = initRfGlobe();
+                    if (globe) {
+                        const points = sites.map((site) => ({
+                            lat: site.coords.lat,
+                            lon: site.coords.lon,
+                            color: site.color,
+                            radius: 0.36,
+                            altitude: 0.04,
+                            label: `${site.label}: ${site.count} Kiwi backend${site.count === 1 ? '' : 's'}`
+                        })).concat(decodePoints.map(({ decode, coords }) => ({
+                            lat: coords.lat,
+                            lon: coords.lon,
+                            color: modeColor(decode && decode.mode),
+                            radius: 0.18,
+                            altitude: 0.02,
+                            label: decodeLabel(decode)
+                        })));
+                        const arcs = sites.length >= 2 ? [{
+                            startLat: sites[0].coords.lat,
+                            startLon: sites[0].coords.lon,
+                            endLat: sites[1].coords.lat,
+                            endLon: sites[1].coords.lon,
+                            color: ['rgba(39,213,255,0.35)', 'rgba(53,201,111,0.72)']
+                        }] : [];
+                        globe.pointsData(points).arcsData(arcs);
+                        requestAnimationFrame(() => globe.width(rfGlobeEl.clientWidth).height(rfGlobeEl.clientHeight));
+                    }
+                }
+                if (rfMapCount) rfMapCount.textContent = `${decodePoints.length} live decode${decodePoints.length === 1 ? '' : 's'}`;
+                if (rfMapUpdated) rfMapUpdated.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+            };
+
+            const setRfMapMode = (mode) => {
+                siteState.mapMode = mode === '3d' ? '3d' : '2d';
+                const is3d = siteState.mapMode === '3d';
+                if (rfMapEl) rfMapEl.hidden = is3d;
+                if (rfGlobeEl) rfGlobeEl.hidden = !is3d;
+                if (rfMapToggle) {
+                    rfMapToggle.textContent = is3d ? '2D Map' : '3D Globe';
+                    rfMapToggle.setAttribute('aria-pressed', String(is3d));
+                }
+                renderRfMap();
+                if (!is3d) requestAnimationFrame(() => { if (rfLeafletMap) rfLeafletMap.invalidateSize(); });
+            };
+
+            const savedModeForKiwi = (kiwiKey) => {
+                const settings = siteState.settings || {};
+                const kiwiModes = settings.kiwiModes || {};
+                const profiles = settings.kiwiProfiles || {};
+                return String(kiwiModes[kiwiKey] || (profiles[kiwiKey] && profiles[kiwiKey].receiversMode) || settings.receiversMode || 'auto').toLowerCase();
+            };
+
+            const modeLabel = (mode) => {
+                const normalized = String(mode || '').toLowerCase();
+                if (normalized === 'auto') return 'Auto: fixed + roaming restore';
+                if (normalized === 'semi') return 'Semi: fixed restore only';
+                if (normalized === 'manual') return 'Manual: parked by saved config';
+                if (normalized === 'scan') return 'Scan: reserved for receiver scan';
+                return 'Saved mode unknown';
+            };
+
+            const setText = (selector, text) => {
+                document.querySelectorAll(selector).forEach((el) => { el.textContent = text; });
+            };
+
+            const channelsFromHealth = (health) => Object.values((health && health.channels) || {})
+                .filter((channel) => channel && typeof channel === 'object')
+                .sort((a, b) => Number(a.rx || 0) - Number(b.rx || 0));
+
+            const renderKiwiSlots = (kiwiKey, health) => {
+                const statusEl = document.querySelector(`[data-kiwi-status="${kiwiKey}"]`);
+                const card = statusEl ? statusEl.closest('.backend-card') : null;
+                const grid = card ? card.querySelector('.slot-grid') : null;
+                if (!grid) return;
+                const channels = channelsFromHealth(health);
+                if (!channels.length) return;
+                grid.innerHTML = channels.slice(0, 8).map((channel) => {
+                    const rx = Number.isFinite(Number(channel.rx)) ? `RX${Number(channel.rx)}` : 'RX';
+                    const band = String(channel.band || '').trim() || 'Idle';
+                    const mode = String(channel.mode || '').trim();
+                    const active = channel.active || channel.visible_on_kiwi;
+                    const label = [band, mode].filter(Boolean).join(' ');
+                    return `<div class="slot"><span>${rx}</span><strong>${active ? label : `${label || 'Idle'}`}</strong></div>`;
+                }).join('');
+            };
+
+            const updateKiwiLiveDetails = (kiwiKey, health, chart, system) => {
+                const mode = savedModeForKiwi(kiwiKey);
+                const activeReceivers = Number(health && health.active_receivers || 0);
+                const channels = channelsFromHealth(health);
+                const visibleChannels = channels.filter((channel) => channel.active || channel.visible_on_kiwi).length;
+                const bucketCount = Array.isArray(chart && chart.buckets) ? chart.buckets.length : 0;
+                const reachable = Boolean(system && system.kiwi && system.kiwi.reachable);
+                const startupText = (mode === 'manual' || mode === 'scan')
+                    ? 'Parked'
+                    : (!reachable && activeReceivers === 0 ? 'Auto queued' : 'Auto-start');
+                setText(`[data-kiwi-mode="${kiwiKey}"]`, modeLabel(mode));
+                setText(`[data-kiwi-live="${kiwiKey}"]`, `${activeReceivers} active / ${visibleChannels} visible / ${channels.length} configured channels / Kiwi HTTP ${reachable ? 'reachable' : 'not reachable'}`);
+                document.querySelectorAll(`[data-kiwi-startup="${kiwiKey}"]`).forEach((el) => setPill(el, startupText, startupText));
+                document.querySelectorAll(`[data-kiwi-decodes="${kiwiKey}"]`).forEach((el) => setPill(el, `${bucketCount} buckets`, bucketCount > 0 ? 'ok' : 'idle'));
+            };
+
+            const summarizeSite = (siteKey) => {
+                const site = siteState.sites[siteKey] || siteState.sites.n4ldr;
+                const healthRows = site.kiwis.map((key) => siteState.health[key]).filter(Boolean);
+                const activeReceivers = healthRows.reduce((sum, health) => sum + Number(health.active_receivers || 0), 0);
+                const chartBuckets = site.kiwis.reduce((sum, key) => {
+                    const chart = siteState.charts[key];
+                    return sum + (Array.isArray(chart && chart.buckets) ? chart.buckets.length : 0);
+                }, 0);
+                return { site, activeReceivers, chartBuckets, healthRows };
+            };
+
+            const applySiteFilter = (siteKey) => {
+                siteState.active = siteKey;
+                const summary = summarizeSite(siteKey);
+                document.querySelectorAll('[data-site-scope]').forEach((el) => {
+                    const scope = String(el.dataset.siteScope || 'all');
+                    el.hidden = scope !== 'all' && scope !== siteKey;
+                });
+                siteGateways.textContent = String(summary.site.gateways);
+                siteKiwis.textContent = String(summary.site.kiwis.length);
+                siteRtls.textContent = String(summary.site.rtls);
+                siteActiveRx.textContent = String(summary.activeReceivers);
+                selectedSitePill.textContent = summary.site.label;
+            };
+
+            const refreshLiveKiwiActivity = async () => {
+                const [config, settings, headless, decodes] = await Promise.all([
+                    getJson('/config', 6000).catch(() => siteState.config || {}),
+                    getJson('/automation/settings').catch(() => siteState.settings || {}),
+                    getJson('/admin/headless/status').catch(() => siteState.headless || {}),
+                    getJson(`/decodes?since=${encodeURIComponent(siteState.latestDecodeId || 0)}`).catch(() => ({ items: [], latest: siteState.latestDecodeId || 0 }))
+                ]);
+                siteState.config = config || {};
+                siteState.settings = settings || {};
+                siteState.headless = headless || {};
+                updateSiteAKiwisFromConfig(siteState.config);
+                mergeDecodeItems(decodes);
+                const kiwiKeys = Object.values(siteState.sites).flatMap((site) => site.kiwis);
+                const results = await Promise.all(kiwiKeys.map(async (kiwiKey) => {
+                    const [health, chart, system] = await Promise.all([
+                        getJson(kiwiUrl('/health/rx', kiwiKey)).catch((error) => ({ error: error.message, overall: 'offline', active_receivers: 0 })),
+                        getJson(kiwiUrl('/decodes/chart', kiwiKey)).catch(() => ({ buckets: [] })),
+                        getJson(kiwiUrl('/system/info', kiwiKey), 5000).catch(() => ({ kiwi: { reachable: false } }))
+                    ]);
+                    return { kiwiKey, health, chart, system };
+                }));
+
+                results.forEach(({ kiwiKey, health, chart, system }) => {
+                    siteState.health[kiwiKey] = health;
+                    siteState.charts[kiwiKey] = chart;
+                    siteState.system[kiwiKey] = system;
+                    const reachable = Boolean(system && system.kiwi && system.kiwi.reachable);
+                    const activeReceivers = Number(health && health.active_receivers || 0);
+                    const statusText = health.error ? 'Offline' : (!reachable && activeReceivers === 0 ? 'Unreachable' : String(health.overall || 'unknown'));
+                    document.querySelectorAll(`[data-kiwi-status="${kiwiKey}"]`).forEach((el) => setPill(el, statusText, statusText));
+                    renderKiwiSlots(kiwiKey, health);
+                    updateKiwiLiveDetails(kiwiKey, health, chart, system);
+                });
+
+                const allActiveReceivers = results.reduce((sum, item) => sum + Number(item.health.active_receivers || 0), 0);
+                const allDecodeBuckets = results.reduce((sum, item) => sum + (Array.isArray(item.chart.buckets) ? item.chart.buckets.length : 0), 0);
+                const autoRunningKiwis = kiwiKeys.filter((kiwiKey) => !['manual', 'scan'].includes(savedModeForKiwi(kiwiKey))).length;
+                totalActiveRx.textContent = String(allActiveReceivers);
+                decodeBuckets.textContent = String(allDecodeBuckets);
+                autoKiwis.textContent = String(autoRunningKiwis);
+                setPill(startupMode, headless.thread_running ? 'Headless Auto Loop' : 'Startup Loop Offline', headless.thread_running ? 'ok' : 'bad');
+                setPill(liveStatus, allActiveReceivers > 0 ? `${allActiveReceivers} Active RX` : 'Kiwis Idle', allActiveReceivers > 0 ? 'ok' : 'idle');
+                lastRefresh.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                renderRfMap();
+                applySiteFilter(siteState.active);
+            };
+
+            const setView = (viewName) => {
+                const copy = viewCopy[viewName] || viewCopy.operations;
+                viewButtons.forEach((button) => {
+                    const isActive = button.dataset.view === viewName;
+                    button.classList.toggle('is-active', isActive);
+                    button.setAttribute('aria-pressed', String(isActive));
+                });
+                viewSections.forEach((section) => {
+                    section.hidden = section.dataset.viewSection !== viewName;
+                });
+                viewTitle.textContent = copy.title;
+                viewSubtitle.textContent = copy.subtitle;
+                if (viewName === 'map') {
+                    requestAnimationFrame(() => {
+                        renderRfMap();
+                        if (rfLeafletMap) rfLeafletMap.invalidateSize();
+                    });
+                }
+            };
+
+            viewButtons.forEach((button) => {
+                button.addEventListener('click', () => setView(button.dataset.view || 'operations'));
+            });
+
+            const siteTabs = document.querySelectorAll('.site-tab');
+            siteTabs.forEach((tab) => {
+                tab.addEventListener('click', () => {
+                    siteTabs.forEach((item) => item.classList.remove('is-active'));
+                    tab.classList.add('is-active');
+                    applySiteFilter(tab.dataset.site || 'n4ldr');
+                });
+            });
+
+            if (rfMapToggle) {
+                rfMapToggle.addEventListener('click', () => setRfMapMode(siteState.mapMode === '3d' ? '2d' : '3d'));
+            }
+            if (rfMapFit) {
+                rfMapFit.addEventListener('click', () => fitRfMap());
+            }
+            window.addEventListener('resize', () => {
+                if (rfLeafletMap) rfLeafletMap.invalidateSize();
+                if (rfGlobe && rfGlobeEl && !rfGlobeEl.hidden) rfGlobe.width(rfGlobeEl.clientWidth).height(rfGlobeEl.clientHeight);
+            });
+
+            const form = document.getElementById('sdr-form');
+            const list = document.getElementById('device-list');
+            let nextDevice = 17;
+
+            form.addEventListener('submit', (event) => {
+                event.preventDefault();
+                const data = new FormData(form);
+                const name = String(data.get('name') || `RTL-SDR ${nextDevice}`);
+                const site = String(data.get('site') || 'Site A (N4LDR)');
+                const backend = String(data.get('backend') || 'Kiwi 1');
+                const role = String(data.get('role') || 'HF Helper');
+                const vlan = String(data.get('vlan') || '73');
+                const card = document.createElement('article');
+                card.className = 'device-card';
+                card.innerHTML = `<div class="device-icon">R${nextDevice}</div><div class="device-name"><strong></strong><span class="device-subtitle"></span></div><span class="pill ok">Staged</span>`;
+                card.querySelector('strong').textContent = name;
+                card.querySelector('.device-subtitle').textContent = `${site} / ${backend} / VLAN ${vlan} / ${role}`;
+                list.prepend(card);
+                nextDevice += 1;
+            });
+
+            setView('operations');
+            applySiteFilter('n4ldr');
+            refreshLiveKiwiActivity();
+            window.setInterval(refreshLiveKiwiActivity, 15000);
+        })();
+    </script>
+</body>
+
+</html>

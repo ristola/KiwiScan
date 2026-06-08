@@ -165,6 +165,65 @@ def test_pro_dashboard_serves_receiver_scan_and_net_monitor_without_utility_moni
     assert 'applyRuntime: !!draft.enabled,' in manual_input_section
 
 
+def test_shackmate_noc_preview_serves_new_dashboard_without_replacing_pro() -> None:
+    client = _make_ui_client()
+
+    response = client.get("/shackmate-noc")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store, no-cache, must-revalidate, max-age=0"
+    assert "ShackMate" in response.text
+    assert "Operations Center - Bridged (VLAN 73) - N4LDR &amp; WD4VA for SDR Receivers." in response.text
+    assert "Kiwi 1 Backend" in response.text
+    assert "Kiwi 2 Backend" in response.text
+    assert "Original Kiwi Setup" in response.text
+    assert 'href="/pro"' in response.text
+    assert 'id="noc-startup-mode"' in response.text
+    assert 'id="noc-auto-kiwis"' in response.text
+    assert 'data-kiwi-mode="10.13.73.235:8073"' in response.text
+    assert 'data-kiwi-mode="10.13.73.236:8073"' in response.text
+    assert 'data-kiwi-live="10.13.73.235:8073"' in response.text
+    assert 'data-kiwi-live="10.13.73.236:8073"' in response.text
+    assert "WD4VA Kiwi Backend" in response.text
+    assert "10.123.73.61" in response.text
+    assert "VLAN 73" in response.text
+    assert "Site A (N4LDR)" in response.text
+    assert "Site B (WD4VA)" in response.text
+    assert "Add RTL-SDR" in response.text
+    assert "Add Preview Device" in response.text
+    assert 'data-view="operations"' in response.text
+    assert 'data-view-section="receivers"' in response.text
+    assert "setView('operations')" in response.text
+    assert 'data-site="n4ldr"' in response.text
+    assert 'data-site="wd4va"' in response.text
+    assert 'data-site-scope="n4ldr"' in response.text
+    assert 'data-site-scope="wd4va"' in response.text
+    assert "refreshLiveKiwiActivity" in response.text
+    assert "leaflet@1.9.4" in response.text
+    assert "globe.gl@2.41.4" in response.text
+    assert 'id="rf-leaflet-map"' in response.text
+    assert 'id="rf-globe-map"' in response.text
+    assert 'id="rf-map-toggle"' in response.text
+    assert "initRfLeafletMap" in response.text
+    assert "initRfGlobe" in response.text
+    assert "renderRfMap" in response.text
+    assert "getJson(`/decodes?since=" in response.text
+    assert "getJson('/config', 6000)" in response.text
+    assert "discoveredSiteAEntries" in response.text
+    assert "updateSiteAKiwisFromConfig" in response.text
+    assert "known_source" in response.text
+    assert "my.kiwisdr.com" in response.text
+    assert "kiwiUrl('/health/rx', kiwiKey)" in response.text
+    assert "kiwiUrl('/decodes/chart', kiwiKey)" in response.text
+    assert "kiwiUrl('/system/info', kiwiKey)" in response.text
+    assert "Kiwi HTTP" in response.text
+    assert "Auto queued" in response.text
+    assert "applySiteFilter(tab.dataset.site || 'n4ldr')" in response.text
+    assert 'id="sdr-form"' in response.text
+    assert 'id="device-list"' in response.text
+    assert 'id="receiver-scan"' not in response.text
+
+
 def test_prod_minimal_pro_template_keeps_receiver_scan_and_net_monitor_without_utility_monitor() -> None:
     html = Path("/Users/imacpro/Development/KiwiScan/prod_minimal/src/kiwi_scan/static/pro.html").read_text(encoding="utf-8")
     _assert_dashboard_core(html)

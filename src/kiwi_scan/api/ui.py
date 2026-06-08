@@ -73,3 +73,19 @@ def pro_index() -> HTMLResponse:
         media_type="text/html",
         headers=_HTML_NO_CACHE_HEADERS,
     )
+
+
+@router.get("/shackmate-noc", response_class=HTMLResponse)
+def shackmate_noc_index() -> HTMLResponse:
+    idx = _static_dir() / "shackmate-noc.html"
+    if idx.exists():
+        return HTMLResponse(
+            content=idx.read_text(encoding="utf-8"),
+            media_type="text/html",
+            headers=_HTML_NO_CACHE_HEADERS,
+        )
+    return HTMLResponse(
+        content="<html><body><h1>Shackmate NOC UI not found</h1></body></html>",
+        media_type="text/html",
+        headers=_HTML_NO_CACHE_HEADERS,
+    )
