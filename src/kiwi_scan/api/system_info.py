@@ -208,6 +208,7 @@ def _build_kiwi_status_snapshot(status: dict[str, Any]) -> dict[str, object]:
         "uptime_seconds": _safe_int(status.get("uptime")),
         "date": status.get("date"),
         "offline": status.get("offline"),
+        "cpu_pct": _safe_int(status.get("cpu")),
     }
 
 
@@ -622,6 +623,18 @@ def make_router(*, mgr: object, receiver_mgr: object | None = None) -> APIRouter
             "container": _build_container_payload(),
             "kiwi": _build_kiwi_payload(mgr, receiver_mgr=receiver_mgr, kiwi_key=kiwi_key),
         }
+
+    @router.get("/system/kiwi_status")
+    def get_kiwi_status(kiwi_key: str = Query(...)) -> Dict[str, object]:
+        """Fetch per-kiwi status (cpu_pct, snr, users, etc.) by parsing kiwi_key as host:port directly."""
+        try:
+            host_part, port_part = kiwi_key.rsplit(":", 1)
+            host_part = host_part.strip()
+            port_val = int(port_part.strip())
+        except Exception:
+            return {"error": "invalid kiwi_key format, expected host:port"}
+        status = read_kiwi_status(host_part, port_val, timeout_s=3.0) or {}
+        return _build_kiwi_status_snapshot(status)
 
     @router.get("/system/audio_stream")
     def get_system_audio_stream(
