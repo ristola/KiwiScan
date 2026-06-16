@@ -7147,7 +7147,7 @@
                 { id:'A0', serial:'00001090', label:'ADS-B 1090',         detail:'SN 00001090 · 10.13.73.190',      freq:'1090 MHz',    type:'adsb',         host:'10.13.73.190' },
                 { id:'A1', serial:'00144390', label:'Open',               detail:'SN 00144390 · 10.13.73.202',      freq:'',            type:'open',         tcpDevice:'tcp://10.13.73.202:7373' },
                 { id:'A2', serial:'20000897', label:'Open',               detail:'SN 20000897 · 10.13.73.192',      freq:'2m',          type:'monitor',      activeLabel:'Repeater Monitoring', tcpDevice:'tcp://10.13.73.192:7373' },
-                { id:'A3', serial:'00000978', label:'Open',               detail:'SN 00000978 · 10.13.73.193',      freq:'162 MHz',     type:'noaa',         tcpDevice:'tcp://10.13.73.193:7373' },
+                { id:'A3', serial:'00000978', label:'Open',               detail:'SN 00000978 · 10.13.73.193',      freq:'',            type:'open',         tcpDevice:'tcp://10.13.73.193:7373' },
                 { id:'A4', serial:'00000433', label:'Acurite 433',        detail:'SN 00000433 · 10.13.73.194',      freq:'433.920 MHz', type:'decode',       tcpDevice:'tcp://10.13.73.194:7373' },
                 { id:'A5', serial:'00162400', label:'Open',               detail:'SN 00162400 · 10.13.73.195',      freq:'',            type:'open',         tcpDevice:'tcp://10.13.73.195:7373' },
                 { id:'A6', serial:'00000315', label:'TPMS',               detail:'SN 00000315 · 10.13.73.196',      freq:'314.9 MHz',   type:'decode',       tcpDevice:'tcp://10.13.73.196:7373' },
@@ -7267,9 +7267,8 @@
                 SDR_A.forEach(s => {
                     const sid = s.id.toLowerCase();
                     // Active-state checks take priority over type-based defaults
-                    if (window._vhfActiveSdrId === sid)   { _sdrSetStat(s.id, 'active · VHF', 'ok'); return; }
-                    if (window._vhfAssignedSdrId === sid)  { _sdrSetStat(s.id, 'VHF Digital · offline', 'warn'); return; }
-                    if (_noaaId === sid)                    { _sdrSetStat(s.id, 'active · 162 MHz', 'ok'); return; }
+                    if (window._vhfActiveSdrId === sid) { _sdrSetStat(s.id, 'active · VHF', 'ok'); return; }
+                    if (_noaaId === sid)                 { _sdrSetStat(s.id, 'active · 162 MHz', 'ok'); return; }
                     if      (s.type === 'adsb')    _sdrSetStat(s.id, 'active · ' + s.freq, 'ok');
                     else if (s.type === 'decode')  _sdrSetStat(s.id, (s.tcpDevice ? 'rtl_tcp · ' : 'decoding · ') + s.freq, 'ok');
                     else if (s.type === 'local')   _sdrSetStat(s.id, 'local · ' + s.freq, 'warn');
@@ -9486,8 +9485,7 @@
                 } catch (err) { alert('VHF Digital start failed: ' + err.message); return; }
 
                 // Update SDR card to active state
-                window._vhfActiveSdrId   = sdr.id.toLowerCase();
-                window._vhfAssignedSdrId = sdr.id.toLowerCase();
+                window._vhfActiveSdrId = sdr.id.toLowerCase();
                 const _vcardLbl = document.querySelector('#sdr-card-' + sdr.id.toLowerCase() + ' .sdr-rx-label');
                 const _vcardStat = document.getElementById('sdr-stat-' + sdr.id.toLowerCase());
                 const _vcardEl   = document.getElementById('sdr-card-' + sdr.id.toLowerCase());
@@ -9573,8 +9571,13 @@
                         if (_vre)  _vre.className = _vre.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-mute';
                         const _csbtn = document.getElementById('sdr-stop-' + sid);
                         if (_csbtn) _csbtn._stopFn = null;
-                        window._vhfActiveSdrId   = null;
-                        window._vhfAssignedSdrId = null;
+                        window._vhfActiveSdrId = null;
+                        // Clear server assignment so card is Open/Available on next refresh
+                        fetch(KIWISCAN_BASE + '/api/noc/assignments', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ 'vhf-digital': null }),
+                        }).catch(() => {});
                     }
                     _vhfPanel = null;
                 };
@@ -9706,26 +9709,19 @@
                     }
                     if (!sdrId) return;
 
-                    // Always mark this SDR as assigned so the card shows VHF Digital even when offline
-                    window._vhfAssignedSdrId = sdrId;
                     if (cfg.container_url) _vhfContainerUrl = cfg.container_url;
+
+                    // Only restore if VHF container is actually running
+                    const stResp = await fetch(_VHF_API + '/status');
+                    if (!stResp.ok) return;
+                    const st = await stResp.json().catch(() => ({}));
+                    if (!st.running) return;
+
+                    window._vhfActiveSdrId = sdrId;
 
                     const _vrl = document.querySelector('#sdr-card-' + sdrId + ' .sdr-rx-label');
                     const _vrs = document.getElementById('sdr-stat-' + sdrId);
                     const _vre = document.getElementById('sdr-card-' + sdrId);
-
-                    // Check if container is running
-                    const stResp = await fetch(_VHF_API + '/status');
-                    const st = stResp.ok ? (await stResp.json().catch(() => ({}))) : {};
-                    if (!st.running) {
-                        // Assigned but not running — show warn state so user knows it's configured
-                        if (_vrl) _vrl.textContent = 'VHF Digital';
-                        if (_vrs) { _vrs.textContent = 'assigned · offline'; _vrs.className = 'sdr-rx-stat warn'; }
-                        if (_vre) _vre.className = _vre.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-warn';
-                        return;
-                    }
-
-                    window._vhfActiveSdrId = sdrId;
                     if (_vrl)  _vrl.textContent  = 'VHF Digital';
                     if (_vrs)  { _vrs.textContent = 'active · VHF'; _vrs.className = 'sdr-rx-stat ok'; }
                     if (_vre)  _vre.className = _vre.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-ok';
