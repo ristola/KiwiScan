@@ -7109,7 +7109,7 @@
                 { id:'A0', serial:'00001090', label:'ADS-B 1090',         detail:'SN 00001090 · 10.13.73.190',      freq:'1090 MHz',    type:'adsb',         host:'10.13.73.190' },
                 { id:'A1', serial:'00144390', label:'Open',               detail:'SN 00144390 · 10.13.73.202',      freq:'',            type:'open',         tcpDevice:'tcp://10.13.73.202:7373' },
                 { id:'A2', serial:'20000897', label:'Open',               detail:'SN 20000897 · 10.13.73.192',      freq:'2m',          type:'monitor',      activeLabel:'Repeater Monitoring', tcpDevice:'tcp://10.13.73.192:7373' },
-                { id:'A3', serial:'00000978', label:'NOAA Weather',        detail:'SN 00000978 · 10.13.73.193',      freq:'162 MHz',     type:'noaa',         activeLabel:'NOAA Weather', tcpDevice:'tcp://10.13.73.193:7373' },
+                { id:'A3', serial:'00000978', label:'Open',               detail:'SN 00000978 · 10.13.73.193',      freq:'162 MHz',     type:'noaa',         tcpDevice:'tcp://10.13.73.193:7373' },
                 { id:'A4', serial:'00000433', label:'Acurite 433',        detail:'SN 00000433 · 10.13.73.194',      freq:'433.920 MHz', type:'decode',       tcpDevice:'tcp://10.13.73.194:7373' },
                 { id:'A5', serial:'00162400', label:'Open',               detail:'SN 00162400 · 10.13.73.195',      freq:'',            type:'open',         tcpDevice:'tcp://10.13.73.195:7373' },
                 { id:'A6', serial:'00000315', label:'TPMS',               detail:'SN 00000315 · 10.13.73.196',      freq:'314.9 MHz',   type:'decode',       tcpDevice:'tcp://10.13.73.196:7373' },
@@ -7194,6 +7194,11 @@
                 if (card) card.className = card.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-' + cls;
             };
 
+            const _sdrSetLabel = (id, text) => {
+                const el = document.querySelector('#sdr-card-' + id.toLowerCase() + ' .sdr-rx-label');
+                if (el) el.textContent = text;
+            };
+
             const _sdrUpdateOwrx = async () => {
                 try {
                     const resp = await fetch(OWRX_STATUS_URL, { cache:'no-store', signal: AbortSignal.timeout(5000) });
@@ -7227,10 +7232,10 @@
                     else if (s.type === 'decode')  _sdrSetStat(s.id, (s.tcpDevice ? 'rtl_tcp · ' : 'decoding · ') + s.freq, 'ok');
                     else if (s.type === 'local')   _sdrSetStat(s.id, 'local · ' + s.freq, 'warn');
                     else if (s.type === 'owrx')    _sdrSetStat(s.id, 'checking…', 'mute');
-                    else if (s.type === 'monitor')     { if (_active.has(s.id.toLowerCase())) _sdrSetStat(s.id, 'active' + (s.freq ? ' · ' + s.freq : ''), 'ok'); else _sdrSetStat(s.id, 'available', 'mute'); }
-                    else if (s.type === 'noaa')        { if (_active.has(s.id.toLowerCase())) _sdrSetStat(s.id, 'active · ' + (s.freq || '162 MHz'), 'ok'); else _sdrSetStat(s.id, 'available', 'mute'); }
-                    else if (s.type === 'vhf-digital') { if (window._vhfActiveSdrId === s.id.toLowerCase()) _sdrSetStat(s.id, 'active · VHF', 'ok'); else _sdrSetStat(s.id, 'available', 'mute'); }
-                    else if (s.type === 'open')        { if (_active.has(s.id.toLowerCase())) _sdrSetStat(s.id, 'active', 'ok'); else _sdrSetStat(s.id, 'available', 'mute'); }
+                    else if (s.type === 'monitor')     { if (_active.has(s.id.toLowerCase())) _sdrSetStat(s.id, 'active' + (s.freq ? ' · ' + s.freq : ''), 'ok'); else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
+                    else if (s.type === 'noaa')        { if (_active.has(s.id.toLowerCase())) _sdrSetStat(s.id, 'active · ' + (s.freq || '162 MHz'), 'ok'); else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
+                    else if (s.type === 'vhf-digital') { if (window._vhfActiveSdrId === s.id.toLowerCase()) _sdrSetStat(s.id, 'active · VHF', 'ok'); else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
+                    else if (s.type === 'open')        { if (_active.has(s.id.toLowerCase())) _sdrSetStat(s.id, 'active', 'ok'); else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
                 });
                 const aCount = SDR_A.filter(s => s.type !== 'pend').length;
                 const bCount = SDR_B.filter(s => s.type !== 'pend').length;
@@ -8342,7 +8347,7 @@
                 const data = await resp.json();
                 if (!resp.ok) { alert('Error: ' + (data.detail || resp.status)); return; }
                 _startMonitorPanel(_activeSdr, enabledChannels);
-                _saveMonitorSession();
+                await _saveMonitorSession();
             } catch (err) {
                 alert('Could not reach KiwiScan API: ' + err.message);
             }
@@ -8425,6 +8430,7 @@
                 _cur = { controller, btn };
                 btn.classList.add('is-playing');
                 const ac = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+                ac.resume().catch(() => {});   // unlock suspended context (browser autoplay policy)
                 let nextTime = 0;
                 let headerSkipped = false;
                 let headerBuf = new Uint8Array(0);
@@ -8471,7 +8477,6 @@
         let _noaaSdr = null;
         let _noaaAlerts = [];
         const _dismissedIds = new Set();  // alert IDs reviewed this session — never re-added
-        const _NOAA_PERSIST_KEY = 'noc-noaa-session-v1';
         const _NOAA_CONFIG_KEY  = 'noc-noaa-config-v1';
 
         const _saveNoaaConfig = () => {
@@ -8510,10 +8515,22 @@
         document.getElementById('noaa-icecast-url')?.addEventListener('input',  _saveNoaaConfig);
 
         const _saveNoaaSession = () => {
-            if (!_noaaSdr) return;
-            try { localStorage.setItem(_NOAA_PERSIST_KEY, JSON.stringify({ sdrId:_noaaSdr.id, device:_noaaSdr.tcpDevice||_noaaSdr.device })); } catch (_) {}
+            if (!_noaaSdr) return Promise.resolve();
+            return fetch(KIWISCAN_BASE + '/api/noc/assignments', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    'noaa-monitor': { sdrId: _noaaSdr.id, device: _noaaSdr.tcpDevice || _noaaSdr.device },
+                }),
+            }).catch(() => {});
         };
-        const _clearNoaaSession = () => { try { localStorage.removeItem(_NOAA_PERSIST_KEY); } catch (_) {} };
+        const _clearNoaaSession = () => {
+            fetch(KIWISCAN_BASE + '/api/noc/assignments', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 'noaa-monitor': null }),
+            }).catch(() => {});
+        };
 
         const _launchNoaaMonitor = async () => {
             const enabledChannels = NOAA_WX.filter(c => c.enabled).map(c => c.freq_hz);
@@ -8536,7 +8553,7 @@
                 if (!resp.ok) { alert('Error: ' + (data.detail || resp.status)); return; }
                 _noaaSdr = _activeSdr;
                 _startNoaaPanel(_noaaSdr);
-                _saveNoaaSession();
+                await _saveNoaaSession();
             } catch (err) {
                 alert('Could not reach KiwiScan API: ' + err.message);
             }
@@ -8572,11 +8589,25 @@
             if (sbPanelEl) sbPanelEl.hidden = currentView !== 'receivers';
             if (fullEl)    fullEl.hidden    = currentView !== 'operations';
 
-            // Update A5 card
+            // Update launched device card
             const cardLabelEl = document.querySelector('#sdr-card-' + sdr.id.toLowerCase() + ' .sdr-rx-label');
             const cardStatEl  = document.getElementById('sdr-stat-' + sdr.id.toLowerCase());
             const cardEl      = document.getElementById('sdr-card-' + sdr.id.toLowerCase());
-            if (cardLabelEl) cardLabelEl.textContent = sdr.activeLabel || sdr.label || 'NOAA Weather';
+            if (cardLabelEl) cardLabelEl.textContent = 'NOAA Weather';
+            // Clear any other card that was previously active for NOAA
+            window.SDR_A.forEach(s => {
+                if (s.id.toLowerCase() === sdr.id.toLowerCase()) return;
+                const otherStat = document.getElementById('sdr-stat-' + s.id.toLowerCase());
+                if (otherStat && otherStat.textContent.includes('162 MHz')) {
+                    const otherLbl  = document.querySelector('#sdr-card-' + s.id.toLowerCase() + ' .sdr-rx-label');
+                    const otherCard = document.getElementById('sdr-card-' + s.id.toLowerCase());
+                    if (otherLbl)  otherLbl.textContent = s.label;
+                    otherStat.textContent = 'Available';
+                    otherStat.className   = 'sdr-rx-stat mute';
+                    if (otherCard) otherCard.className = otherCard.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-mute';
+                    if (window._monitorActiveSdrId instanceof Set) window._monitorActiveSdrId.delete(s.id.toLowerCase());
+                }
+            });
             if (cardStatEl)  { cardStatEl.textContent = 'active · 162 MHz'; cardStatEl.className = 'sdr-rx-stat ok'; }
             if (cardEl)      cardEl.className = cardEl.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-ok';
             if (!(window._monitorActiveSdrId instanceof Set)) window._monitorActiveSdrId = new Set();
@@ -8599,7 +8630,7 @@
                 const st  = document.getElementById('sdr-stat-' + sdr.id.toLowerCase());
                 const ce  = document.getElementById('sdr-card-' + sdr.id.toLowerCase());
                 if (lbl) lbl.textContent = sdr.label;
-                if (st)  { st.textContent = 'available'; st.className = 'sdr-rx-stat mute'; }
+                if (st)  { st.textContent = 'Available'; st.className = 'sdr-rx-stat mute'; }
                 if (ce)  ce.className = ce.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-mute';
                 if (window._monitorActiveSdrId instanceof Set) window._monitorActiveSdrId.delete(sdr.id.toLowerCase());
                 const _nb = document.getElementById('sdr-stop-' + sdr.id.toLowerCase());
@@ -8955,17 +8986,30 @@
                 const resp = await fetch(KIWISCAN_BASE + '/api/noaa-monitor/status');
                 if (!resp.ok) return;
                 const st = await resp.json();
+
+                // Load saved assignment from server config
+                let saved = null;
+                try {
+                    const aResp = await fetch(KIWISCAN_BASE + '/api/noc/assignments');
+                    if (aResp.ok) saved = ((await aResp.json()) || {})['noaa-monitor'] || null;
+                } catch (_) {}
+
                 if (st.running) {
-                    const sdrDef = _allSdrs.find(s => s.type === 'noaa') || { id:'A3', label:'NOAA Weather', tcpDevice:'tcp://10.13.73.193:7373', type:'noaa' };
+                    let sdrDef = saved?.sdrId ? _allSdrs.find(s => s.id === saved.sdrId) : null;
+                    const hadExplicitAssignment = !!sdrDef;
+                    sdrDef = sdrDef || _allSdrs.find(s => s.type === 'noaa') || { id:'A3', label:'Open', tcpDevice:'tcp://10.13.73.193:7373', type:'noaa' };
                     _noaaSdr = Object.assign({}, sdrDef);
                     _startNoaaPanel(_noaaSdr);
                     if (st.alerts?.length) { _noaaAlerts = st.alerts; _renderNoaaAlerts(); }
-                    _saveNoaaSession();
+                    // Only write back the assignment when we have an explicit sdrId — avoid
+                    // clobbering a user's explicit assignment with the type-based fallback.
+                    if (hadExplicitAssignment) _saveNoaaSession();
                     return;
                 }
-                const saved = JSON.parse(localStorage.getItem(_NOAA_PERSIST_KEY) || 'null');
+
+                // Server session gone — check server assignment for auto-restart
                 if (!saved?.sdrId) return;
-                const sdrDef = _allSdrs.find(s => s.id === saved.sdrId) || { id:saved.sdrId, label:'Open', activeLabel:'NOAA Weather Monitor', tcpDevice:'tcp://10.13.73.193:7373', type:'noaa' };
+                const sdrDef = _allSdrs.find(s => s.id === saved.sdrId) || { id:saved.sdrId, label:'Open', tcpDevice:'tcp://10.13.73.193:7373', type:'noaa' };
                 _noaaSdr = Object.assign({}, sdrDef);
                 const startResp = await fetch(KIWISCAN_BASE + '/api/noaa-monitor/start', {
                     method: 'POST',
@@ -9040,7 +9084,7 @@
                 const statEl  = document.getElementById('sdr-stat-' + sdr.id.toLowerCase());
                 const cardEl  = document.getElementById('sdr-card-' + sdr.id.toLowerCase());
                 if (labelEl) labelEl.textContent = sdr.label;
-                if (statEl)  { statEl.textContent = 'available'; statEl.className = 'sdr-rx-stat mute'; }
+                if (statEl)  { statEl.textContent = 'Available'; statEl.className = 'sdr-rx-stat mute'; }
                 if (cardEl)  cardEl.className = cardEl.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-mute';
                 if (window._monitorActiveSdrId instanceof Set) window._monitorActiveSdrId.delete(sdr.id.toLowerCase());
                 const _rb = document.getElementById('sdr-stop-' + sdr.id.toLowerCase());
@@ -9185,22 +9229,28 @@
         };
 
         // On page load, restore panel if a monitor session is already running
-        const _PERSIST_KEY = 'noc-monitor-session-v1';
-
         const _saveMonitorSession = () => {
-            if (!_activeSdr) return;
-            try {
-                localStorage.setItem(_PERSIST_KEY, JSON.stringify({
-                    sdrId:    _activeSdr.id,
-                    device:   _activeSdr.tcpDevice || _activeSdr.device,
-                    mode:     _activeMode,
-                    channels: _activeChannels,
-                }));
-            } catch (_) {}
+            if (!_activeSdr) return Promise.resolve();
+            return fetch(KIWISCAN_BASE + '/api/noc/assignments', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    'repeater-monitor': {
+                        sdrId:   _activeSdr.id,
+                        device:  _activeSdr.tcpDevice || _activeSdr.device,
+                        mode:    _activeMode,
+                        channels: _activeChannels,
+                    },
+                }),
+            }).catch(() => {});
         };
 
         const _clearMonitorSession = () => {
-            try { localStorage.removeItem(_PERSIST_KEY); } catch (_) {}
+            fetch(KIWISCAN_BASE + '/api/noc/assignments', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 'repeater-monitor': null }),
+            }).catch(() => {});
         };
 
         const _initMonitor = async () => {
@@ -9209,15 +9259,18 @@
                 if (!resp.ok) return;
                 const st = await resp.json();
 
+                // Load saved assignment from server config
+                let saved = null;
+                try {
+                    const aResp = await fetch(KIWISCAN_BASE + '/api/noc/assignments');
+                    if (aResp.ok) saved = ((await aResp.json()) || {})['repeater-monitor'] || null;
+                } catch (_) {}
+
                 if (st.running && st.channels?.length) {
                     // Server session still active — restore panel
-                    // Try matching by tcpDevice, then fall back to saved sdrId in localStorage
-                    // (device string format from server may differ from tcpDevice, e.g. after IP change)
+                    // Try matching by tcpDevice, then fall back to saved sdrId in server assignment
                     let sdrDef = _allSdrs.find(s => s.tcpDevice === st.device);
-                    if (!sdrDef) {
-                        const _lsSaved = JSON.parse(localStorage.getItem(_PERSIST_KEY) || 'null');
-                        if (_lsSaved?.sdrId) sdrDef = _allSdrs.find(s => s.id === _lsSaved.sdrId);
-                    }
+                    if (!sdrDef && saved?.sdrId) sdrDef = _allSdrs.find(s => s.id === saved.sdrId);
                     sdrDef = sdrDef || { id: '??', label: st.device, tcpDevice: st.device };
                     _activeSdr = Object.assign({}, _sdrById(sdrDef.id) || {}, sdrDef);
                     _startMonitorPanel(_activeSdr, st.channels);
@@ -9226,14 +9279,13 @@
                     return;
                 }
 
-                // Server session gone — check localStorage for auto-restart
-                const saved = JSON.parse(localStorage.getItem(_PERSIST_KEY) || 'null');
+                // Server session gone — check server assignment for auto-restart
                 if (!saved?.device || !saved?.channels?.length) return;
 
                 const sdrDef = _allSdrs.find(s => s.id === saved.sdrId) || { id: saved.sdrId || '??', label: saved.device, tcpDevice: saved.device };
                 // Don't restore onto an SDR that no longer supports monitoring (e.g. repurposed to vhf-digital).
                 if (sdrDef.type && !['monitor', 'open'].includes(sdrDef.type)) { _clearMonitorSession(); return; }
-                _activeSdr   = Object.assign({}, _sdrById(sdrDef.id) || {}, sdrDef);
+                _activeSdr      = Object.assign({}, _sdrById(sdrDef.id) || {}, sdrDef);
                 _activeChannels = saved.channels;
                 _activeMode     = saved.mode || 'repeater-monitor';
 
@@ -9258,7 +9310,6 @@
 
         // ── VHF Digital Monitor ──────────────────────────────────────────────
         (() => {
-            const _VHF_CONFIG_KEY = 'noc-vhf-config-v1';
 
             // Default channel definitions (mirrors docker/vhf-digital/service.py)
             const VHF_CHANNELS = [
@@ -9286,20 +9337,27 @@
 
             // ── Persistence ──────────────────────────────────────────────────
             const _saveVhfConfig = () => {
-                try {
-                    localStorage.setItem(_VHF_CONFIG_KEY, JSON.stringify({
-                        channels:     _vhfChannels,
-                        containerUrl: _vhfContainerUrl,
-                    }));
-                } catch (_) {}
+                return fetch(KIWISCAN_BASE + '/api/noc/assignments', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        'vhf-digital': {
+                            sdrId:        window._vhfActiveSdrId || null,
+                            channels:     _vhfChannels,
+                            containerUrl: _vhfContainerUrl,
+                        },
+                    }),
+                }).catch(() => {});
             };
 
-            (() => {
+            // Restore VHF config from server assignment on load
+            (async () => {
                 try {
-                    const saved = JSON.parse(localStorage.getItem(_VHF_CONFIG_KEY) || 'null');
+                    const aResp = await fetch(KIWISCAN_BASE + '/api/noc/assignments');
+                    if (!aResp.ok) return;
+                    const saved = ((await aResp.json()) || {})['vhf-digital'] || null;
                     if (saved?.channels?.length) _vhfChannels = saved.channels;
-                    if (saved?.containerUrl && saved.containerUrl !== 'http://10.13.73.192:4025')
-                        _vhfContainerUrl = saved.containerUrl;
+                    if (saved?.containerUrl)     _vhfContainerUrl = saved.containerUrl;
                 } catch (_) {}
             })();
 
@@ -9393,6 +9451,7 @@
                 if (_vcardEl)   _vcardEl.className = _vcardEl.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-ok';
 
                 _startVhfPanel(enabled);
+                await _saveVhfConfig();  // persist sdrId now that window._vhfActiveSdrId is set
             };
 
             // ── Live panel ───────────────────────────────────────────────────
@@ -9465,7 +9524,7 @@
                         const _vre = document.getElementById('sdr-card-' + sid);
                         const _sdrDef = [...(window.SDR_A||[]), ...(window.SDR_B||[])].find(s => s.id.toLowerCase() === sid);
                         if (_vrl)  _vrl.textContent  = _sdrDef?.label || sid.toUpperCase();
-                        if (_vrs)  { _vrs.textContent = 'available'; _vrs.className = 'sdr-rx-stat mute'; }
+                        if (_vrs)  { _vrs.textContent = 'Available'; _vrs.className = 'sdr-rx-stat mute'; }
                         if (_vre)  _vre.className = _vre.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-mute';
                         const _csbtn = document.getElementById('sdr-stop-' + sid);
                         if (_csbtn) _csbtn._stopFn = null;
@@ -9584,27 +9643,46 @@
             window._renderVhfChannels = _renderVhfChannels;
 
             // Restore session on page load — read from server config (persists across restarts/browsers)
-            (() => {
-                Promise.all([
-                    fetch(_VHF_API + '/config').then(r => r.ok ? r.json() : null).catch(() => null),
-                    fetch(_VHF_API + '/status').then(r => r.ok ? r.json() : null).catch(() => null),
-                ]).then(([cfg, st]) => {
-                    if (!cfg || !st?.running || !st.channels?.length) return;
-                    _vhfContainerUrl = cfg.container_url || _vhfContainerUrl;
-                    if (cfg.sdr_id) window._vhfActiveSdrId = cfg.sdr_id;
-                    const enabled = st.channels.filter(c => c.enabled !== false);
-                    if (!enabled.length) return;
-                    if (window._vhfActiveSdrId) {
-                        const sid = window._vhfActiveSdrId;
-                        const _vrl = document.querySelector('#sdr-card-' + sid + ' .sdr-rx-label');
-                        const _vrs = document.getElementById('sdr-stat-' + sid);
-                        const _vre = document.getElementById('sdr-card-' + sid);
-                        if (_vrl)  _vrl.textContent = 'VHF Digital';
-                        if (_vrs)  { _vrs.textContent = 'active · VHF'; _vrs.className = 'sdr-rx-stat ok'; }
-                        if (_vre)  _vre.className = _vre.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-ok';
+            (async () => {
+                try {
+                    // Need to know which SDR was assigned (from vhf_digital.json, falling back to noc assignments)
+                    const cfgResp = await fetch(_VHF_API + '/config');
+                    if (!cfgResp.ok) return;
+                    const cfg = await cfgResp.json();
+
+                    // Resolve sdrId: server vhf config is primary, noc assignments is fallback
+                    let sdrId = cfg.sdr_id || null;
+                    if (!sdrId) {
+                        try {
+                            const aResp = await fetch(KIWISCAN_BASE + '/api/noc/assignments');
+                            if (aResp.ok) sdrId = ((await aResp.json())['vhf-digital'] || {}).sdrId || null;
+                        } catch (_) {}
                     }
-                    _startVhfPanel(enabled);
-                });
+                    if (!sdrId) return;
+
+                    // Only restore if VHF container is actually running (503 = unreachable = not running)
+                    const stResp = await fetch(_VHF_API + '/status');
+                    if (!stResp.ok) return;
+                    const st = await stResp.json();
+                    if (!st.running) return;
+
+                    if (cfg.container_url) _vhfContainerUrl = cfg.container_url;
+                    window._vhfActiveSdrId = sdrId;
+
+                    // Update the SDR card
+                    const _vrl = document.querySelector('#sdr-card-' + sdrId + ' .sdr-rx-label');
+                    const _vrs = document.getElementById('sdr-stat-' + sdrId);
+                    const _vre = document.getElementById('sdr-card-' + sdrId);
+                    if (_vrl)  _vrl.textContent  = 'VHF Digital';
+                    if (_vrs)  { _vrs.textContent = 'active · VHF'; _vrs.className = 'sdr-rx-stat ok'; }
+                    if (_vre)  _vre.className = _vre.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-ok';
+
+                    // Use running channels from container; fall back to saved enabled channels
+                    const channels = (Array.isArray(st.channels) && st.channels.length)
+                        ? st.channels.filter(c => c.enabled !== false)
+                        : _vhfChannels.filter(c => c.enabled !== false);
+                    if (channels.length) _startVhfPanel(channels);
+                } catch (_) {}
             })();
         })();
     })();
@@ -9627,7 +9705,7 @@
         #sdr-test-modal {
             display: flex; flex-direction: column;
             width: min(1080px, 96vw);
-            max-height: 88vh;
+            height: min(88vh, 760px);
             border: 1px solid var(--line-strong);
             border-radius: 10px;
             background: var(--panel);

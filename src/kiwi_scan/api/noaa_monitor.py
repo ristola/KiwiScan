@@ -379,11 +379,27 @@ class _IQHub:
 
     # ── Internal: SAME decoder ──────────────────────────────────────────────
 
+    async def _drain_keep_alive(self, q: asyncio.Queue) -> None:
+        """Drain the keep-alive queue so it never fills and evicts itself.
+
+        Runs as a background task when multimon-ng is unavailable, keeping
+        self._subs non-empty so the IQ hub maintains the rtl_tcp connection.
+        """
+        try:
+            while True:
+                try:
+                    await asyncio.wait_for(q.get(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    pass
+        except asyncio.CancelledError:
+            pass
+
     async def _start_same_decoder(self) -> None:
         """Start multimon-ng subprocess for server-side SAME/EAS detection.
 
         Feeds 48 kHz mono int16 PCM from the primary WX channel.
-        Skips silently if multimon-ng is not installed on the host.
+        Falls back to a drain-only keep-alive queue when multimon-ng is not
+        installed so the IQ hub stays connected at startup without browser clients.
         """
         try:
             self._same_proc = await asyncio.create_subprocess_exec(
@@ -400,8 +416,11 @@ class _IQHub:
             asyncio.create_task(self._read_same_output())
             logger.info("SAME decoder started (multimon-ng) on %d Hz", _SAME_CHANNEL_HZ)
         except FileNotFoundError:
-            logger.debug("multimon-ng not found — server-side SAME decoding disabled")
+            logger.info("multimon-ng not found — adding keep-alive queue so IQ hub stays connected")
             self._same_proc = None
+            keep_q: asyncio.Queue = asyncio.Queue(maxsize=2)
+            self._subs.setdefault(_SAME_CHANNEL_HZ, []).append(keep_q)
+            asyncio.create_task(self._drain_keep_alive(keep_q))
 
     async def _feed_same(self, q: asyncio.Queue) -> None:
         """Pump FM-demodulated PCM from the primary WX channel into multimon-ng stdin."""
@@ -495,9 +514,8 @@ class _IQHub:
                         return bytes([c]) + v.to_bytes(4, "big")
 
                     writer.write(
-                        _cmd(0x03, 1) +               # SET_GAIN_MODE: manual (avoid AGC saturation)
-                        _cmd(0x04, 0) +               # SET_TUNER_GAIN: 0 dB — NOAA is a strong
-                        _cmd(0x08, 0) +               # SET_RTL_AGC: off — local signal, low gain
+                        _cmd(0x03, 0) +               # SET_GAIN_MODE: auto (AGC)
+                        _cmd(0x08, 1) +               # SET_RTL_AGC: on
                         _cmd(0x02, _CAPTURE_RATE) +   # SET_SAMPLE_RATE: 960 kHz
                         _cmd(0x01, _NOAA_CENTER_HZ)   # SET_FREQUENCY: centre of all 7 WX
                     )
