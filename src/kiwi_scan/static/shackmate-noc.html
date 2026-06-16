@@ -7268,8 +7268,9 @@
                 SDR_A.forEach(s => {
                     const sid = s.id.toLowerCase();
                     // Active-state checks take priority over type-based defaults
-                    if (window._vhfActiveSdrId === sid) { _sdrSetStat(s.id, 'active · VHF', 'ok'); return; }
-                    if (_noaaId === sid)                 { _sdrSetStat(s.id, 'active · 162 MHz', 'ok'); return; }
+                    if (window._vhfActiveSdrId === sid)   { _sdrSetStat(s.id, 'active · VHF', 'ok'); return; }
+                    if (window._vhfAssignedSdrId === sid)  { _sdrSetLabel(s.id, 'VHF Digital'); _sdrSetStat(s.id, 'offline', 'warn'); return; }
+                    if (_noaaId === sid)                    { _sdrSetStat(s.id, 'active · 162 MHz', 'ok'); return; }
                     if      (s.type === 'adsb')    _sdrSetStat(s.id, 'active · ' + s.freq, 'ok');
                     else if (s.type === 'decode')  _sdrSetStat(s.id, (s.tcpDevice ? 'rtl_tcp · ' : 'decoding · ') + s.freq, 'ok');
                     else if (s.type === 'local')   _sdrSetStat(s.id, 'local · ' + s.freq, 'warn');
@@ -9486,7 +9487,8 @@
                 } catch (err) { alert('VHF Digital start failed: ' + err.message); return; }
 
                 // Update SDR card to active state
-                window._vhfActiveSdrId = sdr.id.toLowerCase();
+                window._vhfActiveSdrId   = sdr.id.toLowerCase();
+                window._vhfAssignedSdrId = sdr.id.toLowerCase();
                 const _vcardLbl = document.querySelector('#sdr-card-' + sdr.id.toLowerCase() + ' .sdr-rx-label');
                 const _vcardStat = document.getElementById('sdr-stat-' + sdr.id.toLowerCase());
                 const _vcardEl   = document.getElementById('sdr-card-' + sdr.id.toLowerCase());
@@ -9572,7 +9574,8 @@
                         if (_vre)  _vre.className = _vre.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-mute';
                         const _csbtn = document.getElementById('sdr-stop-' + sid);
                         if (_csbtn) _csbtn._stopFn = null;
-                        window._vhfActiveSdrId = null;
+                        window._vhfActiveSdrId   = null;
+                        window._vhfAssignedSdrId = null;
                         // Clear server assignment so card is Open/Available on next refresh
                         fetch(KIWISCAN_BASE + '/api/noc/assignments', {
                             method: 'POST',
@@ -9692,46 +9695,87 @@
             // Expose hooks for the SDR modal
             window._renderVhfChannels = _renderVhfChannels;
 
-            // Restore session on page load — read from server config (persists across restarts/browsers)
+            // Restore session on page load — always reads server config so assignments survive hard refresh
             (async () => {
                 try {
-                    // Need to know which SDR was assigned (from vhf_digital.json, falling back to noc assignments)
+                    // sdrId priority: vhf_digital.json → noc assignments
                     const cfgResp = await fetch(_VHF_API + '/config');
                     if (!cfgResp.ok) return;
                     const cfg = await cfgResp.json();
 
-                    // Resolve sdrId: server vhf config is primary, noc assignments is fallback
                     let sdrId = cfg.sdr_id || null;
-                    if (!sdrId) {
-                        try {
-                            const aResp = await fetch(KIWISCAN_BASE + '/api/noc/assignments');
-                            if (aResp.ok) sdrId = ((await aResp.json())['vhf-digital'] || {}).sdrId || null;
-                        } catch (_) {}
-                    }
+                    let savedChannels = null;
+                    try {
+                        const aResp = await fetch(KIWISCAN_BASE + '/api/noc/assignments');
+                        if (aResp.ok) {
+                            const noc = ((await aResp.json())['vhf-digital'] || {});
+                            if (!sdrId && noc.sdrId) sdrId = noc.sdrId;
+                            if (Array.isArray(noc.channels) && noc.channels.length) savedChannels = noc.channels;
+                        }
+                    } catch (_) {}
                     if (!sdrId) return;
 
                     if (cfg.container_url) _vhfContainerUrl = cfg.container_url;
 
-                    // Only restore if VHF container is actually running
-                    const stResp = await fetch(_VHF_API + '/status');
-                    if (!stResp.ok) return;
-                    const st = await stResp.json().catch(() => ({}));
-                    if (!st.running) return;
-
-                    window._vhfActiveSdrId = sdrId;
+                    // Mark as assigned — _sdrSetStaticStatus uses this to keep the label even when idle
+                    window._vhfAssignedSdrId = sdrId;
 
                     const _vrl = document.querySelector('#sdr-card-' + sdrId + ' .sdr-rx-label');
                     const _vrs = document.getElementById('sdr-stat-' + sdrId);
                     const _vre = document.getElementById('sdr-card-' + sdrId);
-                    if (_vrl)  _vrl.textContent  = 'VHF Digital';
-                    if (_vrs)  { _vrs.textContent = 'active · VHF'; _vrs.className = 'sdr-rx-stat ok'; }
-                    if (_vre)  _vre.className = _vre.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-ok';
+                    if (_vrl) _vrl.textContent = 'VHF Digital';
 
-                    // Use running channels from container; fall back to saved enabled channels
-                    const channels = (Array.isArray(st.channels) && st.channels.length)
-                        ? st.channels.filter(c => c.enabled !== false)
-                        : _vhfChannels.filter(c => c.enabled !== false);
-                    if (channels.length) _startVhfPanel(channels);
+                    // Check if container is already running
+                    let st = {};
+                    try {
+                        const stResp = await fetch(_VHF_API + '/status');
+                        if (stResp.ok) st = await stResp.json().catch(() => ({}));
+                    } catch (_) {}
+
+                    if (!st.running) {
+                        // Not running — try to auto-start with saved params
+                        const sdrDef = (window.SDR_A || []).find(s => s.id.toLowerCase() === sdrId);
+                        const tcpDev = sdrDef?.tcpDevice || '';
+                        const m = tcpDev.match(/\/\/([^:]+):(\d+)/);
+                        const rtlHost = m ? m[1] : '127.0.0.1';
+                        const rtlPort = m ? parseInt(m[2], 10) : 7374;
+                        const enabled = (savedChannels || _vhfChannels).filter(c => c.enabled !== false);
+                        if (enabled.length) {
+                            try {
+                                const startResp = await fetch(_VHF_API + '/start', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        container_url: _vhfContainerUrl,
+                                        sdr_id:        sdrId,
+                                        rtl_host:      rtlHost,
+                                        rtl_port:      rtlPort,
+                                        center_hz:     144950000,
+                                        sample_rate:   2400000,
+                                        channels:      enabled,
+                                    }),
+                                });
+                                if (startResp.ok) {
+                                    const st2 = await fetch(_VHF_API + '/status');
+                                    if (st2.ok) st = await st2.json().catch(() => ({}));
+                                }
+                            } catch (_) {}
+                        }
+                    }
+
+                    if (st.running) {
+                        window._vhfActiveSdrId = sdrId;
+                        if (_vrs) { _vrs.textContent = 'active · VHF'; _vrs.className = 'sdr-rx-stat ok'; }
+                        if (_vre) _vre.className = _vre.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-ok';
+                        const channels = (Array.isArray(st.channels) && st.channels.length)
+                            ? st.channels.filter(c => c.enabled !== false)
+                            : (savedChannels || _vhfChannels).filter(c => c.enabled !== false);
+                        if (channels.length) _startVhfPanel(channels);
+                    } else {
+                        // Container unreachable — show as offline but keep the assignment visible
+                        if (_vrs) { _vrs.textContent = 'offline'; _vrs.className = 'sdr-rx-stat warn'; }
+                        if (_vre) _vre.className = _vre.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-warn';
+                    }
                 } catch (_) {}
             })();
         })();
