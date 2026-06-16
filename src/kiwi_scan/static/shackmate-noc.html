@@ -9626,7 +9626,7 @@
         /* ── modal shell ─────────────────────────────────────────────────── */
         #sdr-test-modal {
             display: flex; flex-direction: column;
-            width: min(860px, 96vw);
+            width: min(1080px, 96vw);
             max-height: 88vh;
             border: 1px solid var(--line-strong);
             border-radius: 10px;
@@ -9699,6 +9699,45 @@
             transition: width 0.4s ease;
         }
 
+        /* ── main content wrapper (sidebar + results) ────────────────────── */
+        #sdr-test-main {
+            display: flex; flex-direction: row; flex: 1 1 0; overflow: hidden;
+        }
+
+        /* ── checklist sidebar ───────────────────────────────────────────── */
+        #sdr-test-checklist {
+            width: 182px; flex-shrink: 0;
+            border-right: 1px solid var(--line);
+            background: var(--panel-2);
+            overflow-y: auto; padding: 0.85rem 0.7rem;
+            display: flex; flex-direction: column; gap: 0.12rem;
+        }
+        .sdr-cl-title {
+            font-size: 0.62rem; font-weight: 900; letter-spacing: 0.12em;
+            text-transform: uppercase; color: var(--muted-2);
+            padding-bottom: 0.45rem; border-bottom: 1px solid var(--line);
+            margin-bottom: 0.35rem;
+        }
+        .sdr-cl-item {
+            display: flex; align-items: flex-start; gap: 0.45rem;
+            padding: 0.28rem 0.4rem; border-radius: 5px;
+            color: var(--muted); cursor: default;
+            transition: background 0.15s, color 0.2s;
+        }
+        .sdr-cl-item.is-active { background: rgba(47,140,255,0.08); color: var(--fg); }
+        .sdr-cl-item.is-done   { color: var(--green); }
+        .sdr-cl-item.is-skip   { color: var(--muted-2); }
+        .sdr-cl-chk {
+            flex-shrink: 0; width: 1rem; height: 1rem; margin-top: 0.08rem;
+            display: inline-flex; align-items: center; justify-content: center;
+            border: 1.5px solid currentColor; border-radius: 3px;
+            font-size: 0.6rem; font-weight: 900;
+        }
+        .sdr-cl-item.is-done   .sdr-cl-chk { background: var(--green); border-color: var(--green); color: #081016; }
+        .sdr-cl-item.is-active .sdr-cl-chk { border-color: var(--blue); color: var(--blue); animation: sdr-pulse 1.4s ease-in-out infinite; }
+        .sdr-cl-name { font-size: 0.72rem; line-height: 1.3; }
+        .sdr-cl-sub  { font-size: 0.61rem; color: var(--muted-2); display: block; margin-top: 0.07rem; }
+
         /* ── scrollable body ─────────────────────────────────────────────── */
         #sdr-test-body {
             flex: 1 1 0; overflow-y: auto; padding: 0.85rem 1rem;
@@ -9707,6 +9746,17 @@
         #sdr-test-body::-webkit-scrollbar { width: 6px; }
         #sdr-test-body::-webkit-scrollbar-track { background: transparent; }
         #sdr-test-body::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 3px; }
+
+        /* ── signal comparison chart ─────────────────────────────────────── */
+        .sdr-sig-row { display:flex; align-items:center; gap:0.5rem; padding:0.16rem 0; }
+        .sdr-sig-port  { width:2.4rem; color:var(--muted-2); font-size:0.68rem; text-align:right; flex-shrink:0; font-family:monospace; }
+        .sdr-sig-name  { width:8.5rem; font-size:0.71rem; color:var(--fg); flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .sdr-sig-track { flex:1; height:0.6rem; background:rgba(255,255,255,0.05); border-radius:2px; overflow:hidden; }
+        .sdr-sig-bar   { height:100%; border-radius:2px; transition:width 0.55s ease; }
+        .sdr-sig-val   { width:5.5rem; text-align:right; font-family:monospace; font-size:0.7rem; color:var(--muted); flex-shrink:0; }
+        .sdr-sig-tag   { width:3rem; font-size:0.6rem; font-weight:900; letter-spacing:0.05em; padding:0.05rem 0.3rem; border-radius:3px; text-align:center; flex-shrink:0; }
+        .sdr-sig-tag.best  { background:rgba(53,201,111,0.15); color:#9df5bf; }
+        .sdr-sig-tag.worst { background:rgba(244,93,103,0.12); color:#ff9aa1; }
 
         /* ── section labels ──────────────────────────────────────────────── */
         .sdr-ts-phase {
@@ -9812,10 +9862,43 @@
                 <div id="sdr-test-status-line">Ready — press Run to start</div>
                 <div id="sdr-test-prog-track"><div id="sdr-test-prog-fill"></div></div>
             </div>
-            <!-- Scrollable results area -->
-            <div id="sdr-test-body">
-                <div id="sdr-ts-placeholder" style="color:var(--muted-2);font-size:0.8rem;padding:2rem 0;text-align:center">
-                    Automated test suite — RF/Tuner · USB/Data Path · IQ Quality · Network/Service · System
+            <!-- Main: checklist sidebar + scrollable results -->
+            <div id="sdr-test-main">
+                <div id="sdr-test-checklist">
+                    <div class="sdr-cl-title">Test Plan</div>
+                    <div class="sdr-cl-item" id="sdr-cl-net">
+                        <span class="sdr-cl-chk"></span>
+                        <span class="sdr-cl-name">Network Probe<span class="sdr-cl-sub">TCP · 12 SDRs</span></span>
+                    </div>
+                    <div class="sdr-cl-item" id="sdr-cl-discovery">
+                        <span class="sdr-cl-chk"></span>
+                        <span class="sdr-cl-name">Discovery<span class="sdr-cl-sub">USB enumeration</span></span>
+                    </div>
+                    <div class="sdr-cl-item" id="sdr-cl-pll">
+                        <span class="sdr-cl-chk"></span>
+                        <span class="sdr-cl-name">PLL / Tuner<span class="sdr-cl-sub">open &amp; lock</span></span>
+                    </div>
+                    <div class="sdr-cl-item" id="sdr-cl-overflow">
+                        <span class="sdr-cl-chk"></span>
+                        <span class="sdr-cl-name">Overflow Test<span class="sdr-cl-sub">2 MSPS</span></span>
+                    </div>
+                    <div class="sdr-cl-item" id="sdr-cl-iq">
+                        <span class="sdr-cl-chk"></span>
+                        <span class="sdr-cl-name">IQ Quality<span class="sdr-cl-sub">sat · dead · DC</span></span>
+                    </div>
+                    <div class="sdr-cl-item" id="sdr-cl-eeprom">
+                        <span class="sdr-cl-chk"></span>
+                        <span class="sdr-cl-name">EEPROM Verify<span class="sdr-cl-sub">serial match</span></span>
+                    </div>
+                    <div class="sdr-cl-item" id="sdr-cl-signal">
+                        <span class="sdr-cl-chk"></span>
+                        <span class="sdr-cl-name">Signal Strength<span class="sdr-cl-sub">dBFS · excl. ADS-B</span></span>
+                    </div>
+                </div>
+                <div id="sdr-test-body">
+                    <div id="sdr-ts-placeholder" style="color:var(--muted-2);font-size:0.8rem;padding:2rem 0;text-align:center">
+                        Automated test suite — RF/Tuner · USB/Data Path · IQ Quality · Network/Service · System
+                    </div>
                 </div>
             </div>
             <!-- Footer -->
@@ -9836,13 +9919,20 @@
         const _sdrTest = (() => {
             let _es       = null;   // EventSource
             let _state    = 'idle'; // 'idle' | 'running' | 'done'
-            let _results  = {};     // serial → { pll, overflow, iq, eeprom }
+            let _results  = {};     // serial → { pll, overflow, iq, eeprom, signal }
             let _netRes   = [];     // network probe results
             let _sysRes   = [];     // system test results
             let _devices  = [];     // discovered device list
+            let _signals  = {};     // serial → { dbfs, pass, detail }
             let _pass = 0, _fail = 0, _skip = 0;
             let _devTotal = 0, _devDone = 0;
+            let _netResultCount = 0;
+            const _NET_TOTAL = 12;
+            const _ADS_B_SERIAL = '00001090'; // port 1 — excluded from signal comparison
             let _exportData = null;
+            // Checklist
+            const _CL_IDS = ['net','discovery','pll','overflow','iq','eeprom','signal'];
+            let _clDone = {};
 
             // ── DOM refs ──────────────────────────────────────────────────
             const $overlay   = document.getElementById('sdr-test-overlay');
@@ -9880,6 +9970,34 @@
                 $status.textContent = msg;
             };
 
+            // ── checklist helpers ─────────────────────────────────────────
+            const _checkItem = (id) => {
+                if (_clDone[id]) return;
+                _clDone[id] = true;
+                const el = document.getElementById('sdr-cl-' + id);
+                if (!el) return;
+                el.classList.remove('is-active');
+                el.classList.add('is-done');
+                const chk = el.querySelector('.sdr-cl-chk');
+                if (chk) chk.textContent = '✓';
+            };
+
+            const _activeItem = (id) => {
+                if (!id || _clDone[id]) return;
+                _CL_IDS.forEach(cid => {
+                    const el = document.getElementById('sdr-cl-' + cid);
+                    if (el && cid !== id) el.classList.remove('is-active');
+                });
+                const el = document.getElementById('sdr-cl-' + id);
+                if (el) el.classList.add('is-active');
+            };
+
+            const _tryCheckTest = (testKey) => {
+                if (_clDone[testKey] || !_devTotal) return;
+                const done = Object.values(_results).filter(r => r[testKey] !== undefined).length;
+                if (done >= _devTotal) _checkItem(testKey);
+            };
+
             const _resetUI = () => {
                 $body.innerHTML = '';
                 $devTbody = null;
@@ -9890,9 +10008,17 @@
                 $stopBtn.disabled  = false;
                 $runBtn.disabled   = true;
                 $exportBtn.disabled = true;
-                _pass = _fail = _skip = _devTotal = _devDone = 0;
+                _pass = _fail = _skip = _devTotal = _devDone = _netResultCount = 0;
                 _results = {}; _netRes = []; _sysRes = []; _devices = [];
-                _exportData = null;
+                _signals = {}; _exportData = null;
+                _clDone = {};
+                _CL_IDS.forEach(id => {
+                    const el = document.getElementById('sdr-cl-' + id);
+                    if (!el) return;
+                    el.classList.remove('is-done', 'is-active', 'is-skip');
+                    const chk = el.querySelector('.sdr-cl-chk');
+                    if (chk) chk.textContent = '';
+                });
             };
 
             const _getOrCreateSection = (id, label) => {
@@ -9919,7 +10045,7 @@
                         network:   'Network / Service (TCP probe)',
                         system:    'System',
                         discovery: 'Device Discovery',
-                        devices:   'Device Tests — RF/Tuner · USB/Data Path · IQ Quality · EEPROM',
+                        devices:   'Device Tests — RF/Tuner · USB/Data Path · IQ Quality · EEPROM · Signal',
                     };
                     _setProgress(
                         ev.id === 'network'   ?  5 :
@@ -9928,6 +10054,10 @@
                         30,
                         labels[ev.id] || ev.label
                     );
+                    if (ev.id === 'network')   _activeItem('net');
+                    if (ev.id === 'system')    _activeItem('net'); // network already done
+                    if (ev.id === 'discovery') _activeItem('discovery');
+                    if (ev.id === 'devices')   _activeItem('pll');
                     break;
                 }
 
@@ -9945,7 +10075,10 @@
                         '</span>' +
                         '<span class="sdr-ts-row-ms">' + ms + '</span>';
                     sec.appendChild(row);
-                    _setProgress(10, 'Network probe: ' + ev.ip);
+                    _netResultCount++;
+                    _setProgress(5 + Math.round((_netResultCount / _NET_TOTAL) * 8),
+                        'Network probe ' + _netResultCount + '/' + _NET_TOTAL + ': ' + ev.ip);
+                    if (_netResultCount >= _NET_TOTAL) _checkItem('net');
                     break;
                 }
 
@@ -9972,7 +10105,8 @@
                         '<span class="sdr-ts-row-label">Found <strong>' + _devTotal + '</strong> RTL-SDR device' +
                         (_devTotal !== 1 ? 's' : '') + '</span>';
                     sec.appendChild(row);
-                    if (_devTotal > 0) _buildDevTable();
+                    _checkItem('discovery');
+                    if (_devTotal > 0) { _buildDevTable(); _activeItem('pll'); }
                     _setProgress(30, 'Discovered ' + _devTotal + ' device(s) — starting device tests…');
                     break;
                 }
@@ -9988,6 +10122,10 @@
                 case 'test_start': {
                     _ensureResult(ev.serial);
                     _setCellState(ev.serial, ev.test, 'run');
+                    // Highlight the matching checklist item
+                    const _testClMap = { pll:'pll', overflow:'overflow', iq:'iq', eeprom:'eeprom', signal:'signal' };
+                    const clId = _testClMap[ev.test];
+                    if (clId && !_clDone[clId]) _activeItem(clId);
                     break;
                 }
 
@@ -9996,9 +10134,15 @@
                     const st = ev.pass === true ? 'pass' : ev.pass === false ? 'fail' : 'skip';
                     _results[ev.serial][ev.test] = { pass: ev.pass, detail: ev.detail || '', meta: ev.meta || {} };
                     _setCellState(ev.serial, ev.test, st);
-                    // Update tooltip / title on cell
                     const cell = document.getElementById('sdr-tc-' + ev.serial + '-' + ev.test);
                     if (cell && ev.detail) cell.title = ev.detail;
+                    // Signal strength
+                    if (ev.test === 'signal') {
+                        const dbfs = ev.meta && ev.meta.dbfs != null ? ev.meta.dbfs : null;
+                        _signals[ev.serial] = { dbfs, pass: ev.pass, detail: ev.detail || '' };
+                        _updateSigCell(ev.serial, ev.pass, dbfs);
+                    }
+                    _tryCheckTest(ev.test);
                     break;
                 }
 
@@ -10033,6 +10177,9 @@
                     $runBtn.textContent = '↺ Re-run';
                     $exportBtn.disabled = false;
                     _updateSummary();
+                    // Check off any remaining items
+                    _CL_IDS.forEach(id => { if (!_clDone[id]) _checkItem(id); });
+                    if (Object.keys(_signals).length > 0) _buildSignalChart();
                     _buildExportData();
                     if (_es) { _es.close(); _es = null; }
                     break;
@@ -10054,7 +10201,7 @@
             // ── build device table ────────────────────────────────────────
             const _buildDevTable = () => {
                 const sec = _getOrCreateSection('devices',
-                    'Device Tests — RF/Tuner · USB/Data Path · IQ Quality · EEPROM');
+                    'Device Tests — RF/Tuner · USB/Data Path · IQ Quality · EEPROM · Signal');
                 const wrap = document.createElement('div');
                 wrap.className = 'sdr-ts-table-wrap';
                 const tbl = document.createElement('table');
@@ -10065,21 +10212,22 @@
                     <th title="Sample overflow at 2 MSPS">OVFL</th>
                     <th title="IQ quality — saturation / dead / DC">IQ</th>
                     <th title="EEPROM serial verify">EE</th>
+                    <th title="Received signal level in dBFS">Signal</th>
                     <th>Status</th>
                 </tr></thead>`;
                 $devTbody = document.createElement('tbody');
 
-                // Build one row per discovered device
-                // Map serial → port number from the network targets baked into the page
                 const _portMap = {};
                 if (window._sdrTestNetTargets) {
-                    window._sdrTestNetTargets.forEach(t => { _portMap[t.serial] = t.port_num; });
+                    window._sdrTestNetTargets.forEach(t => { _portMap[t.serial] = t; });
                 }
 
                 _devices.forEach(dev => {
-                    const sn     = dev.serial;
-                    const port   = _portMap[sn] ? 'P' + _portMap[sn] : '—';
-                    const model  = (dev.model || '').replace('RTL2832U OEM', 'R820T').trim();
+                    const sn      = dev.serial;
+                    const target  = _portMap[sn] || {};
+                    const port    = target.port_num ? 'P' + target.port_num : '—';
+                    const model   = (dev.model || '').replace('RTL2832U OEM', 'R820T').trim();
+                    const isAdsB  = sn === _ADS_B_SERIAL;
                     _results[sn] = {};
 
                     const tr = document.createElement('tr');
@@ -10091,6 +10239,7 @@
                         <td><span id="sdr-tc-${sn}-overflow">${_icon('pend')}</span></td>
                         <td><span id="sdr-tc-${sn}-iq"      >${_icon('pend')}</span></td>
                         <td><span id="sdr-tc-${sn}-eeprom"  >${_icon('pend')}</span></td>
+                        <td id="sdr-tc-sig-${sn}">${isAdsB ? '<span style="color:var(--muted-2);font-size:0.7rem" title="ADS-B — signal test not applicable">n/a</span>' : '<span id="sdr-tc-' + sn + '-signal">' + _icon('pend') + '</span> <span id="sdr-tc-sigval-' + sn + '" style="font-family:monospace;font-size:0.67rem;color:var(--muted-2)"></span>'}</td>
                         <td id="sdr-tc-status-${sn}">${_pill('pend')}</td>`;
                     $devTbody.appendChild(tr);
                 });
@@ -10098,7 +10247,6 @@
                 tbl.appendChild($devTbody);
                 wrap.appendChild(tbl);
                 sec.appendChild(wrap);
-                $devTable = tbl;
             };
 
             const _ensureResult = (sn) => {
@@ -10121,6 +10269,74 @@
                         return `<span style="color:${colors[i]};font-weight:900">${p}</span>`;
                     }).join('<span style="color:var(--muted-2)"> &middot; </span>')
                     : '';
+            };
+
+            // ── signal column value update ───────────────────────────────
+            const _updateSigCell = (sn, pass, dbfs) => {
+                const valEl = document.getElementById('sdr-tc-sigval-' + sn);
+                if (!valEl) return;
+                if (dbfs != null) {
+                    valEl.style.color = pass ? 'var(--fg)' : 'var(--red)';
+                    valEl.textContent = dbfs.toFixed(1) + 'dB';
+                } else {
+                    valEl.style.color = pass === false ? 'var(--red)' : 'var(--muted-2)';
+                    valEl.textContent = pass === false ? 'err' : '';
+                }
+            };
+
+            // ── signal comparison chart ───────────────────────────────────
+            const _buildSignalChart = () => {
+                const _portMap = {};
+                if (window._sdrTestNetTargets) {
+                    window._sdrTestNetTargets.forEach(t => { _portMap[t.serial] = t; });
+                }
+
+                // Exclude ADS-B and entries without dBFS values
+                const entries = Object.entries(_signals)
+                    .filter(([sn, s]) => sn !== _ADS_B_SERIAL && s.dbfs != null)
+                    .sort((a, b) => b[1].dbfs - a[1].dbfs);
+
+                if (!entries.length) return;
+
+                const maxDbfs = entries[0][1].dbfs;
+                const minDbfs = entries[entries.length - 1][1].dbfs;
+                const dbRange = Math.max(1, maxDbfs - minDbfs);
+
+                const sec = _getOrCreateSection('signal-chart', 'Signal Strength Comparison — excl. ADS-B (P1)');
+                const existing = document.getElementById('sdr-sig-chart-wrap');
+                if (existing) existing.remove();
+
+                const wrap = document.createElement('div');
+                wrap.id = 'sdr-sig-chart-wrap';
+
+                entries.forEach(([sn, sig], idx) => {
+                    const target  = _portMap[sn] || {};
+                    const portStr = target.port_num ? 'P' + target.port_num : sn.slice(-4);
+                    const label   = target.label || sn;
+                    const isFirst = idx === 0;
+                    const isLast  = idx === entries.length - 1;
+                    // Bar width: 8% minimum so even the worst is visible
+                    const pct = Math.max(8, Math.round(((sig.dbfs - minDbfs) / dbRange) * 100));
+                    // Green → yellow → red by rank
+                    const hue = Math.round(120 * (1 - idx / Math.max(1, entries.length - 1)));
+                    const barColor = `hsl(${hue},65%,50%)`;
+
+                    const row = document.createElement('div');
+                    row.className = 'sdr-sig-row';
+                    row.innerHTML =
+                        `<span class="sdr-sig-port">${_esc(portStr)}</span>` +
+                        `<span class="sdr-sig-name" title="${_esc(label)}">${_esc(label)}</span>` +
+                        `<span class="sdr-sig-track"><span class="sdr-sig-bar" style="width:${pct}%;background:${barColor}"></span></span>` +
+                        `<span class="sdr-sig-val">${sig.dbfs.toFixed(1)} dBFS</span>` +
+                        (isFirst
+                            ? '<span class="sdr-sig-tag best">BEST</span>'
+                            : isLast
+                                ? '<span class="sdr-sig-tag worst">WORST</span>'
+                                : '<span class="sdr-sig-tag"></span>');
+                    wrap.appendChild(row);
+                });
+
+                sec.appendChild(wrap);
             };
 
             const _buildExportData = () => {
