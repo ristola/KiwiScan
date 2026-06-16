@@ -755,8 +755,21 @@ def noaa_status() -> dict:
 
 @router.post("/api/noaa-monitor/start")
 async def noaa_start(req: NoaaStartRequest) -> dict:
-    global _start_time, _active_channels
+    global _start_time, _active_channels, _RTL_TCP_HOST, NOAA_RTL_TCP_PORT
     _active_channels = list(req.channels)
+
+    # Use the device from the request so the IQ hub follows whichever SDR card
+    # the user assigned in the NOC dashboard (e.g. A2 at .192 vs A3 at .193).
+    if req.device:
+        m = re.match(r'(?:tcp://)?([^:]+):(\d+)', req.device)
+        if m:
+            new_host = m.group(1)
+            new_port = int(m.group(2))
+            if new_host != _RTL_TCP_HOST or new_port != NOAA_RTL_TCP_PORT:
+                _RTL_TCP_HOST = new_host
+                NOAA_RTL_TCP_PORT = new_port
+                await _iq_hub.stop()   # force reconnect on the new host
+                logger.info("NOAA: IQ hub switching to %s:%d", _RTL_TCP_HOST, NOAA_RTL_TCP_PORT)
 
     loop = asyncio.get_running_loop()
     rtltcp_ok = await loop.run_in_executor(None, _ensure_rtl_tcp_running)

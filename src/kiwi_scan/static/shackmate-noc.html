@@ -2403,6 +2403,20 @@
             height: 100%;
             min-height: 24rem;
         }
+        .rf-vhf-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.84rem;
+            color: var(--muted);
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            pointer-events: none;
+            z-index: 1000;
+            background: rgba(8,16,22,0.65);
+        }
 
         .rf-map-outer-toolbar {
             display: flex;
@@ -3908,6 +3922,7 @@
                                 <div class="rf-map-legend" id="rf-map-legend" aria-label="RF map mode filters"></div>
                                 <div id="rf-leaflet-map" class="rf-map-view" role="application" aria-label="2D RF activity map"></div>
                                 <div id="rf-globe-map" class="rf-map-view" aria-label="3D RF activity globe" hidden></div>
+                                <div id="rf-vhf-overlay" class="rf-vhf-overlay" hidden></div>
                             </div>
                             <div class="rf-map-outer-footer">
                                 <span id="rf-map-count">0 spots</span>
@@ -4721,14 +4736,27 @@
             const fitRfMap = () => {
                 if (!rfLeafletMap || !window.L) return;
                 const bounds = [];
-                siteMapEntries().forEach((site) => bounds.push([site.coords.lat, site.coords.lon]));
+                const _fitSites = (siteState.active && siteState.active !== 'all')
+                    ? siteMapEntries().filter(s => s.key === siteState.active)
+                    : siteMapEntries();
+                _fitSites.forEach((site) => bounds.push([site.coords.lat, site.coords.lon]));
                 filterRfMapDecodes(siteState.decodes).map(coordsFromDecode).filter(Boolean).forEach((coords) => bounds.push([coords.lat, coords.lon]));
                 if (bounds.length) rfLeafletMap.fitBounds(bounds, { padding: [28, 28], maxZoom: 9 });
             };
 
+            const _rfVhfOverlay = document.getElementById('rf-vhf-overlay');
+            const _setVhfOverlay = (msg) => {
+                if (!_rfVhfOverlay) return;
+                if (msg) { _rfVhfOverlay.textContent = msg; _rfVhfOverlay.hidden = false; }
+                else      { _rfVhfOverlay.hidden = true; }
+            };
+
             const renderRfMap = () => {
                 initRfLeafletMap();
-                const sites = siteMapEntries();
+                const allSites = siteMapEntries();
+                const sites = (siteState.active && siteState.active !== 'all')
+                    ? allSites.filter(s => s.key === siteState.active)
+                    : allSites;
                 let decodePoints;
                 if (rfMapDataMode === 'hf') {
                     const filteredDecodes = filterRfMapDecodes(siteState.decodes);
@@ -4887,9 +4915,18 @@
                                 rfAprsLastSeenAt = newestAt;
                             }
                         }
+                        _setVhfOverlay(null);
+                        renderRfMap();
+                    } else {
+                        rfVhfDecodes = [];
+                        _setVhfOverlay('VHF Digital offline');
                         renderRfMap();
                     }
-                } catch (_) {}
+                } catch (_) {
+                    rfVhfDecodes = [];
+                    _setVhfOverlay('VHF Digital offline');
+                    renderRfMap();
+                }
             };
 
             const switchRfMapDataMode = (mode) => {
@@ -4909,6 +4946,7 @@
                     rfVhfFetchTimer = setInterval(fetchVhfDecodes, 5000);
                 } else {
                     rfVhfDecodes = [];
+                    _setVhfOverlay(null);
                     renderRfMap();
                     updateRfBandFilterButtons();
                 }
@@ -7224,18 +7262,22 @@
             if (!(window._monitorActiveSdrId instanceof Set)) window._monitorActiveSdrId = new Set();
 
             const _sdrSetStaticStatus = () => {
-                const _active = window._monitorActiveSdrId;
+                const _active    = window._monitorActiveSdrId;
+                const _noaaId    = window._noaaActiveSdrId || '';
                 SDR_A.forEach(s => {
-                    // VHF Digital active — override any type-based logic
-                    if (window._vhfActiveSdrId === s.id.toLowerCase()) { _sdrSetStat(s.id, 'active · VHF', 'ok'); return; }
+                    const sid = s.id.toLowerCase();
+                    // Active-state checks take priority over type-based defaults
+                    if (window._vhfActiveSdrId === sid)   { _sdrSetStat(s.id, 'active · VHF', 'ok'); return; }
+                    if (window._vhfAssignedSdrId === sid)  { _sdrSetStat(s.id, 'VHF Digital · offline', 'warn'); return; }
+                    if (_noaaId === sid)                    { _sdrSetStat(s.id, 'active · 162 MHz', 'ok'); return; }
                     if      (s.type === 'adsb')    _sdrSetStat(s.id, 'active · ' + s.freq, 'ok');
                     else if (s.type === 'decode')  _sdrSetStat(s.id, (s.tcpDevice ? 'rtl_tcp · ' : 'decoding · ') + s.freq, 'ok');
                     else if (s.type === 'local')   _sdrSetStat(s.id, 'local · ' + s.freq, 'warn');
                     else if (s.type === 'owrx')    _sdrSetStat(s.id, 'checking…', 'mute');
-                    else if (s.type === 'monitor')     { if (_active.has(s.id.toLowerCase())) _sdrSetStat(s.id, 'active' + (s.freq ? ' · ' + s.freq : ''), 'ok'); else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
-                    else if (s.type === 'noaa')        { if (_active.has(s.id.toLowerCase())) _sdrSetStat(s.id, 'active · ' + (s.freq || '162 MHz'), 'ok'); else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
-                    else if (s.type === 'vhf-digital') { if (window._vhfActiveSdrId === s.id.toLowerCase()) _sdrSetStat(s.id, 'active · VHF', 'ok'); else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
-                    else if (s.type === 'open')        { if (_active.has(s.id.toLowerCase())) _sdrSetStat(s.id, 'active', 'ok'); else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
+                    else if (s.type === 'monitor')     { if (_active.has(sid)) _sdrSetStat(s.id, 'active' + (s.freq ? ' · ' + s.freq : ''), 'ok'); else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
+                    else if (s.type === 'noaa')        { if (_active.has(sid)) _sdrSetStat(s.id, 'active · ' + (s.freq || '162 MHz'), 'ok'); else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
+                    else if (s.type === 'vhf-digital') { if (window._vhfActiveSdrId === sid) _sdrSetStat(s.id, 'active · VHF', 'ok'); else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
+                    else if (s.type === 'open')        { if (_active.has(sid)) _sdrSetStat(s.id, 'active', 'ok'); else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
                 });
                 const aCount = SDR_A.filter(s => s.type !== 'pend').length;
                 const bCount = SDR_B.filter(s => s.type !== 'pend').length;
@@ -8612,6 +8654,7 @@
             if (cardEl)      cardEl.className = cardEl.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-ok';
             if (!(window._monitorActiveSdrId instanceof Set)) window._monitorActiveSdrId = new Set();
             window._monitorActiveSdrId.add(sdr.id.toLowerCase());
+            window._noaaActiveSdrId = sdr.id.toLowerCase();
 
             // Title + stop
             const _stopNoaa = async () => {
@@ -8633,6 +8676,7 @@
                 if (st)  { st.textContent = 'Available'; st.className = 'sdr-rx-stat mute'; }
                 if (ce)  ce.className = ce.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-mute';
                 if (window._monitorActiveSdrId instanceof Set) window._monitorActiveSdrId.delete(sdr.id.toLowerCase());
+                if (window._noaaActiveSdrId === sdr.id.toLowerCase()) window._noaaActiveSdrId = null;
                 const _nb = document.getElementById('sdr-stop-' + sdr.id.toLowerCase());
                 if (_nb) _nb._stopFn = null;
                 _noaaSdr = null;
@@ -9442,7 +9486,8 @@
                 } catch (err) { alert('VHF Digital start failed: ' + err.message); return; }
 
                 // Update SDR card to active state
-                window._vhfActiveSdrId = sdr.id.toLowerCase();
+                window._vhfActiveSdrId   = sdr.id.toLowerCase();
+                window._vhfAssignedSdrId = sdr.id.toLowerCase();
                 const _vcardLbl = document.querySelector('#sdr-card-' + sdr.id.toLowerCase() + ' .sdr-rx-label');
                 const _vcardStat = document.getElementById('sdr-stat-' + sdr.id.toLowerCase());
                 const _vcardEl   = document.getElementById('sdr-card-' + sdr.id.toLowerCase());
@@ -9528,7 +9573,8 @@
                         if (_vre)  _vre.className = _vre.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-mute';
                         const _csbtn = document.getElementById('sdr-stop-' + sid);
                         if (_csbtn) _csbtn._stopFn = null;
-                        window._vhfActiveSdrId = null;
+                        window._vhfActiveSdrId   = null;
+                        window._vhfAssignedSdrId = null;
                     }
                     _vhfPanel = null;
                 };
@@ -9660,19 +9706,26 @@
                     }
                     if (!sdrId) return;
 
-                    // Only restore if VHF container is actually running (503 = unreachable = not running)
-                    const stResp = await fetch(_VHF_API + '/status');
-                    if (!stResp.ok) return;
-                    const st = await stResp.json();
-                    if (!st.running) return;
-
+                    // Always mark this SDR as assigned so the card shows VHF Digital even when offline
+                    window._vhfAssignedSdrId = sdrId;
                     if (cfg.container_url) _vhfContainerUrl = cfg.container_url;
-                    window._vhfActiveSdrId = sdrId;
 
-                    // Update the SDR card
                     const _vrl = document.querySelector('#sdr-card-' + sdrId + ' .sdr-rx-label');
                     const _vrs = document.getElementById('sdr-stat-' + sdrId);
                     const _vre = document.getElementById('sdr-card-' + sdrId);
+
+                    // Check if container is running
+                    const stResp = await fetch(_VHF_API + '/status');
+                    const st = stResp.ok ? (await stResp.json().catch(() => ({}))) : {};
+                    if (!st.running) {
+                        // Assigned but not running — show warn state so user knows it's configured
+                        if (_vrl) _vrl.textContent = 'VHF Digital';
+                        if (_vrs) { _vrs.textContent = 'assigned · offline'; _vrs.className = 'sdr-rx-stat warn'; }
+                        if (_vre) _vre.className = _vre.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-warn';
+                        return;
+                    }
+
+                    window._vhfActiveSdrId = sdrId;
                     if (_vrl)  _vrl.textContent  = 'VHF Digital';
                     if (_vrs)  { _vrs.textContent = 'active · VHF'; _vrs.className = 'sdr-rx-stat ok'; }
                     if (_vre)  _vre.className = _vre.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-ok';
