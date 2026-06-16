@@ -64,6 +64,10 @@ from .auto_set_loop import AutoSetLoop
 from .smart_scheduler import SmartScheduler
 from .api.smart_scheduler import make_router as make_smart_scheduler_router
 from .targeted_service_registry import TargetedServiceRegistry
+from .api.rtl_monitor import router as rtl_monitor_router
+from .api.noaa_monitor import router as noaa_monitor_router
+from .api.vhf_digital import router as vhf_digital_router
+from .api.sdr_test import router as sdr_test_router
 
 # Configure logging to output to console (stderr) with timestamps
 logging.basicConfig(
@@ -773,6 +777,11 @@ app.include_router(
         get_loop=lambda: loop,
     )
 )
+app.include_router(rtl_monitor_router)
+app.include_router(noaa_monitor_router)
+app.include_router(vhf_digital_router)
+app.include_router(sdr_test_router)
+
 register_lifecycle(
     app,
     mgr=mgr,

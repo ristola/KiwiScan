@@ -28,6 +28,10 @@ services:
       KIWISCAN_MISMATCH_AUTOKICK_COOLDOWN_S: "60"
       KIWISCAN_RESET_ALL_ON_RECONCILE: "0"
       KIWISCAN_RESET_ALL_ON_BAND_CHANGE: "1"
+      # NOAA Weather Monitor — sigmon-2 Docker TCP API + alert file server
+      NOAA_DOCKER_HOST: "10.13.73.195"
+      NOAA_DOCKER_PORT: "2375"
+      NOAA_ALERT_URL: "http://10.13.73.195:8180"
     logging:
       driver: json-file
       options:

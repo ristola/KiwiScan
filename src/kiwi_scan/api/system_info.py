@@ -6,8 +6,11 @@ import os
 import platform
 import shutil
 import socket
+import subprocess
+import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -161,7 +164,7 @@ def _fetch_kiwi_users(host: str, port: int) -> list[dict[str, Any]]:
     for path in ("/users?json=1", "/users?admin=1", "/users"):
         try:
             req = urllib.request.Request(f"http://{host}:{int(port)}{path}", method="GET")
-            with urllib.request.urlopen(req, timeout=0.5) as resp:
+            with urllib.request.urlopen(req, timeout=2.0) as resp:
                 payload = json.loads(resp.read().decode("utf-8", errors="ignore"))
             if isinstance(payload, list):
                 return [row for row in payload if isinstance(row, dict)]
@@ -614,6 +617,34 @@ def _build_kiwi_payload(mgr: object, receiver_mgr: object | None = None, *, kiwi
     return out
 
 
+def _find_kick_script() -> Path | None:
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        candidate = parent / "tools" / "kiwi_admin_kick.py"
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _read_admin_password() -> str:
+    search_roots = [Path("/opt/kiwiscan")]
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        search_roots.append(parent)
+        if (parent / "pyproject.toml").exists():
+            break
+    for root in search_roots:
+        candidate = root / "outputs" / "automation_settings.json"
+        try:
+            data = json.loads(candidate.read_text())
+            val = str(data.get("kiwi_admin_password") or "").strip()
+            if val:
+                return val
+        except Exception:
+            continue
+    return ""
+
+
 def make_router(*, mgr: object, receiver_mgr: object | None = None) -> APIRouter:
     router = APIRouter()
 
@@ -635,6 +666,88 @@ def make_router(*, mgr: object, receiver_mgr: object | None = None) -> APIRouter
             return {"error": "invalid kiwi_key format, expected host:port"}
         status = read_kiwi_status(host_part, port_val, timeout_s=3.0) or {}
         return _build_kiwi_status_snapshot(status)
+
+    @router.get("/system/kiwi_users")
+    def get_kiwi_users(kiwi_key: str = Query(...)) -> Dict[str, object]:
+        """Return live users on a KiWi SDR, flagging managed (KiwiScan) vs public connections."""
+        try:
+            host_part, port_part = kiwi_key.rsplit(":", 1)
+            host_part = host_part.strip()
+            port_val = int(port_part.strip())
+        except Exception:
+            return {"error": "invalid kiwi_key format, expected host:port", "users": []}
+        rows = _fetch_kiwi_users(host_part, port_val)
+        users = []
+        for row in rows:
+            label = urllib.parse.unquote(str(row.get("n") or "")).strip()
+            freq_raw = _safe_float(row.get("f"))
+            conn_s = _parse_elapsed_seconds(row.get("t"))
+            # Require a non-empty name or a non-zero frequency — empty KiwiSDR slots
+            # have n="" and f=0, and f=0 is not in (None, "") so the old any() check
+            # incorrectly treated those as active.
+            is_occupied = bool(label) or (freq_raw is not None and freq_raw > 0)
+            if not is_occupied:
+                continue
+            label_upper = label.upper()
+            is_managed = bool(label and (
+                label_upper.startswith("AUTO_")
+                or label_upper.startswith("FIXED_")
+                or label_upper.startswith("ROAM")
+                or label_upper.startswith("MANUAL_")
+                or label_upper.startswith("MAN_")
+                or label_upper.startswith("HOLD_")
+                or label_upper.startswith("SKIP_")
+            ))
+            users.append({
+                "rx": _safe_int(row.get("i")),
+                "name": label or None,
+                "freq_khz": round(freq_raw / 1000.0, 3) if freq_raw is not None else None,
+                "mode": str(row.get("m") or "").strip().upper() or None,
+                "location": urllib.parse.unquote(str(row.get("g") or "")).strip() or None,
+                "ip": str(row.get("a") or "").strip() or None,
+                "connected_seconds": conn_s,
+                "is_managed": is_managed,
+            })
+        return {"users": users}
+
+    @router.post("/system/kiwi_kick")
+    def post_kiwi_kick(
+        kiwi_key: str = Query(...),
+        rx: int = Query(..., ge=0, le=7),
+    ) -> Dict[str, object]:
+        """Kick a specific rx channel on a KiWi SDR using the admin WebSocket."""
+        try:
+            host_part, port_part = kiwi_key.rsplit(":", 1)
+            host_part = host_part.strip()
+            port_val = int(port_part.strip())
+        except Exception:
+            return {"ok": False, "error": "invalid kiwi_key format"}
+        script = _find_kick_script()
+        if script is None:
+            return {"ok": False, "error": "kick script not found"}
+        password = _read_admin_password()
+        cmd = [
+            sys.executable, str(script),
+            "--host", host_part,
+            "--port", str(port_val),
+            "--kick", str(rx),
+            "--user", "KiwiScanNOCKick",
+            "--take-admin",
+        ]
+        if password:
+            cmd.extend(["--password", password])
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=12.0, check=False)
+            return {
+                "ok": result.returncode == 0,
+                "returncode": result.returncode,
+                "stdout": (result.stdout or "").strip()[-500:],
+                "stderr": (result.stderr or "").strip()[-500:],
+            }
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "error": "kick command timed out"}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
 
     @router.get("/system/audio_stream")
     def get_system_audio_stream(
@@ -706,5 +819,15 @@ def make_router(*, mgr: object, receiver_mgr: object | None = None) -> APIRouter
     @router.post("/system/audio_stream/stop")
     def stop_system_audio_stream(stream_id: str = Query(..., min_length=1)) -> Dict[str, object]:
         return {"stopped": bool(stop_kiwi_audio_stream(stream_id))}
+
+    @router.get("/system/adsb_aircraft")
+    def get_adsb_aircraft(url: str = Query(...)) -> Dict[str, object]:
+        """Proxy an aircraft.json URL to avoid browser CORS restrictions."""
+        try:
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=4.0) as resp:
+                return json.loads(resp.read().decode("utf-8", errors="ignore"))
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
 
     return router
