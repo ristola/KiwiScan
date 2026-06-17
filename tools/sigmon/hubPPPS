@@ -1,0 +1,465 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# hubPPPS Version: 20260617-006
+# Changes from 005:
+#  - PORT_LABELS: stripped function labels (VHF Digital, Repeater Mon, TPMS,
+#    Acurite 433, ADS-B 1090, Open) — hubPPPS owns hardware, not function assignments.
+#    Dashboard SDR_SERIAL_META / noc_assignments.json is the source of truth for functions.
+#  - PORT_LABELS Port 2 serial corrected: 00000978 → 00000006 (live scan value)
+#  - SERIAL_TO_SERVICE: labels removed, IPs only
+#  - Fixed KeyError in perform_action for K-ports (was referencing m['label'])
+
+import argparse
+import subprocess
+import os
+import json
+import re
+import time
+from datetime import datetime
+
+UHUBCTL     = "/usr/sbin/uhubctl"
+SCRIPT_PATH = "/opt/bin/hubPPPS"
+
+# Static metadata for the 10 outer hub power ports.
+# Carries hardware identity (device type + stable VLAN IP) only.
+# Function assignments (VHF Digital, Repeater Mon, etc.) live in the dashboard.
+PORT_LABELS = {
+    "1":  {"serial": "(hub)",    "ip": "—",            "label": "Kerberossdr (×4 SDR)"},
+    "2":  {"serial": "00000006", "ip": "10.13.73.202", "label": "NooElec UAT"},
+    "3":  {"serial": "20000145", "ip": "10.13.73.197", "label": "RTL-SDR"},
+    "4":  {"serial": "00000315", "ip": "10.13.73.196", "label": "RTL-SDR"},
+    "5":  {"serial": "00000005", "ip": "10.13.73.195", "label": "RTL-SDR"},
+    "6":  {"serial": "00000433", "ip": "10.13.73.194", "label": "RTL-SDR"},
+    "7":  {"serial": "00000978", "ip": "10.13.73.193", "label": "RTL-SDR"},
+    "8":  {"serial": "20000897", "ip": "10.13.73.192", "label": "RTL-SDR"},
+    "9":  {"serial": "00144390", "ip": "10.13.73.191", "label": "RTL-SDR"},
+    "10": {"serial": "00001090", "ip": "10.13.73.190", "label": "RTL-SDR", "rtl_tcp": False},
+}
+
+# Kerberossdr individual SDR channels — controllable independently via K1-K4.
+# Hub 3-1.1.4 LP 2-5 are the 4 SDR ports (LP 1, 6, 7 unused/internal).
+KERB_HUB = "3-1.1.4"
+KERB_SDR_LP = {"2", "3", "4", "5"}  # only these LPs have SDRs
+KERB_PORT_MAPPING = {
+    "K1": {"hub_id": KERB_HUB, "logical_port": "2"},
+    "K2": {"hub_id": KERB_HUB, "logical_port": "3"},
+    "K3": {"hub_id": KERB_HUB, "logical_port": "4"},
+    "K4": {"hub_id": KERB_HUB, "logical_port": "5"},
+}
+
+# IP assignments by Kerberossdr serial — LP order inside the hub varies.
+# Labels removed; function assignment belongs to the dashboard.
+SERIAL_TO_SERVICE = {
+    "10000001": {"ip": "10.13.73.198"},
+    "10000002": {"ip": "10.13.73.199"},
+    "10000003": {"ip": "10.13.73.200"},
+    "10000004": {"ip": "10.13.73.201"},
+}
+
+
+def create_udev_rule():
+    udev_rule_file = "/etc/udev/rules.d/99-usb-script.rules"
+    if not os.path.exists(udev_rule_file):
+        rule_content = (
+            'SUBSYSTEMS=="usb", ATTRS{idVendor}=="0bda", ATTRS{idProduct}=="2838", '
+            'MODE="0666", RUN+="{}"'.format(SCRIPT_PATH)
+        )
+        with open(udev_rule_file, "w") as f:
+            f.write(rule_content)
+        subprocess.run(["sudo", "udevadm", "control", "--reload-rules"], check=True)
+        subprocess.run(["sudo", "systemctl", "restart", "systemd-udevd"], check=True)
+
+
+class CustomHelpFormatter(argparse.HelpFormatter):
+    def _format_action_invocation(self, action):
+        if action.dest == "action":
+            return action.dest
+        return super()._format_action_invocation(action)
+
+
+def get_port_mapping():
+    """Physical port → (hub_id, logical_port) for the 10 power-switchable outer hub ports.
+
+    Hub topology (3-1.1 is the top-level managed hub):
+      3-1.1 LP 4 → Kerberossdr (hub 3-1.1.4, 4 internal SDRs via K1-K4)   ← Port 1
+      3-1.1 LP 3 → NooElec UAT                                              ← Port 2
+      3-1.1 LP 2 → SN 20000145                                              ← Port 3
+      3-1.1 LP 1 → sub-hub 3-1.1.1
+        3-1.1.1 LP 4 → SN 00000315                                          ← Port 4
+        3-1.1.1 LP 3 → SN 00000005                                          ← Port 5
+        3-1.1.1 LP 2 → SN 00000433                                          ← Port 6
+        3-1.1.1 LP 1 → sub-hub 3-1.1.1.1
+          3-1.1.1.1 LP 4 → SN 00000978 (.193)                               ← Port 7
+          3-1.1.1.1 LP 3 → SN 20000897 (.192)                               ← Port 8
+          3-1.1.1.1 LP 2 → SN 00144390 (.191)                               ← Port 9
+          3-1.1.1.1 LP 1 → SN 00001090 (.190)                               ← Port 10
+    """
+    return {
+        "1":  {"hub_id": "3-1.1",     "logical_port": "4"},
+        "2":  {"hub_id": "3-1.1",     "logical_port": "3"},
+        "3":  {"hub_id": "3-1.1",     "logical_port": "2"},
+        "4":  {"hub_id": "3-1.1.1",   "logical_port": "4"},
+        "5":  {"hub_id": "3-1.1.1",   "logical_port": "3"},
+        "6":  {"hub_id": "3-1.1.1",   "logical_port": "2"},
+        "7":  {"hub_id": "3-1.1.1.1", "logical_port": "4"},
+        "8":  {"hub_id": "3-1.1.1.1", "logical_port": "3"},
+        "9":  {"hub_id": "3-1.1.1.1", "logical_port": "2"},
+        "10": {"hub_id": "3-1.1.1.1", "logical_port": "1"},
+    }
+
+
+def parse_ports(port_arg):
+    """Parse port argument into a list of port identifiers (str or K1-K4).
+
+    Supported formats:
+      '6'       single numeric port
+      '1-4'     numeric range
+      'K2'      single Kerberossdr channel
+      'K1-K4'   Kerberossdr channel range
+      '1,K2,3'  comma-separated mix
+      'all'     all outer ports 1-10
+    """
+    port_mapping = get_port_mapping()
+    max_port = len(port_mapping)
+    if port_arg.lower() == "all":
+        return [str(p) for p in range(1, max_port + 1)]
+    ports = []
+    for segment in port_arg.split(","):
+        seg = segment.strip().upper()
+        m = re.match(r'^(K\d+)-(K\d+)$', seg)
+        if m:
+            start = int(m.group(1)[1:])
+            end   = int(m.group(2)[1:])
+            for n in range(start, end + 1):
+                k = "K{}".format(n)
+                if k not in KERB_PORT_MAPPING:
+                    raise ValueError("Invalid Kerberossdr port '{}'. Valid: K1-K4.".format(k))
+                ports.append(k)
+        elif seg.startswith("K"):
+            if seg not in KERB_PORT_MAPPING:
+                raise ValueError("Invalid Kerberossdr port '{}'. Valid: K1-K4.".format(seg))
+            ports.append(seg)
+        elif "-" in seg:
+            start, end = map(int, seg.split("-", 1))
+            ports.extend([str(p) for p in range(start, end + 1)])
+        else:
+            ports.append(str(int(seg)))
+    invalid = [p for p in ports if not p.startswith("K") and p not in port_mapping]
+    if invalid:
+        raise ValueError("Port(s) out of range: {}. Valid: 1-{} or K1-K4.".format(invalid, max_port))
+    return ports
+
+
+def perform_action(ports, action):
+    port_mapping = get_port_mapping()
+    for port in ports:
+        if port.upper().startswith("K"):
+            key = port.upper()
+            if key not in KERB_PORT_MAPPING:
+                print("Error: invalid Kerberossdr port '{}'.".format(port))
+                continue
+            m            = KERB_PORT_MAPPING[key]
+            hub_id       = m["hub_id"]
+            logical_port = m["logical_port"]
+            print("Action '{}' on {} (hub {} LP {}) ...".format(
+                action, key, hub_id, logical_port), flush=True)
+        else:
+            if port not in port_mapping:
+                print("Error: port {} not in valid range (1-{}).".format(port, len(port_mapping)))
+                continue
+            hub_id       = port_mapping[port]["hub_id"]
+            logical_port = port_mapping[port]["logical_port"]
+            label        = PORT_LABELS.get(port, {}).get("label", "")
+            print("Action '{}' on port {} ({} — hub {} LP {}) ...".format(
+                action, port, label, hub_id, logical_port), flush=True)
+        try:
+            subprocess.run(
+                ["sudo", UHUBCTL, "-l", hub_id, "-p", logical_port, "-a", action],
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            print("Failed: {}".format(e))
+        except FileNotFoundError:
+            print("Error: uhubctl not found at {}.".format(UHUBCTL))
+
+
+def _scan_all_ports():
+    """Run uhubctl and return every port as a list of dicts."""
+    excluded_hubs = {"1", "3", "4", "4-1", "4-1.1", "4-1.1.1", "4-1.1.1.1", "5", "6"}
+    try:
+        result = subprocess.run(["sudo", UHUBCTL], capture_output=True, text=True, check=True)
+    except subprocess.CalledProcessError:
+        return []
+
+    ports          = []
+    current_hub_id = None
+
+    for line in result.stdout.splitlines():
+        if "Current status for hub" in line:
+            words          = line.split()
+            current_hub_id = words[4]
+            if current_hub_id in excluded_hubs:
+                current_hub_id = None
+        elif "Port" in line and current_hub_id:
+            parts = line.strip().split()
+            if len(parts) < 3:
+                continue
+            lp        = parts[1].rstrip(":")
+            connected = "connect" in parts
+            serial = device = ""
+            if connected and len(parts) >= 6:
+                raw = " ".join(parts[5:])
+                raw = re.sub(r'\[[\da-fA-F]{4}:[\da-fA-F]{4}', '', raw)
+                raw = raw.replace("]", "")
+                for token in ("enable", "connect"):
+                    raw = raw.replace(token, "")
+                ws = raw.split()
+                if ws and ws[-1].isdigit():
+                    serial = ws[-1]
+                    device = " ".join(ws[:-1]).strip()
+                else:
+                    serial = ""
+                    device = " ".join(ws).strip()
+            ports.append({
+                "hub_id":       current_hub_id,
+                "logical_port": lp,
+                "connected":    connected,
+                "serial":       serial,
+                "device":       device,
+            })
+    return ports
+
+
+def _build_label(port_num):
+    """Build display label: 'Type (IP)' or 'Type' if no IP assigned."""
+    meta = PORT_LABELS.get(str(port_num), {})
+    lbl  = meta.get("label", "")
+    ip   = meta.get("ip", "—")
+    return "{} ({})".format(lbl, ip) if ip and ip != "—" else lbl
+
+
+def list_devices(as_json=False):
+    """Print a table of every hub port. Kerberossdr (Port 1) shows K1-K4 indented."""
+    port_mapping = get_port_mapping()
+    reverse = {
+        (m["hub_id"], m["logical_port"]): pnum
+        for pnum, m in port_mapping.items()
+    }
+
+    all_ports = _scan_all_ports()
+    kerb_lp_to_key = {v["logical_port"]: k for k, v in KERB_PORT_MAPPING.items()}
+    kerb_children  = [p for p in all_ports
+                      if p["hub_id"] == KERB_HUB and p["logical_port"] in KERB_SDR_LP]
+    other_ports    = [p for p in all_ports if p["hub_id"] != KERB_HUB]
+
+    rows = []
+    for p in other_ports:
+        phys = reverse.get((p["hub_id"], p["logical_port"]), "--")
+        rows.append({
+            "port":   phys,
+            "hub":    p["hub_id"],
+            "lp":     p["logical_port"],
+            "serial": p["serial"] if p["connected"] else "—",
+            "device": p["device"] if p["connected"] else "—",
+            "status": "connected" if p["connected"] else "empty",
+        })
+
+    def _sort_key(r):
+        try:
+            return (0, int(r["port"]))
+        except (ValueError, TypeError):
+            return (1, r["hub"] + r["lp"])
+
+    rows.sort(key=_sort_key)
+
+    if as_json:
+        for r in rows:
+            meta = PORT_LABELS.get(r["port"], {})
+            r["label"]    = meta.get("label", "")
+            r["ip"]       = meta.get("ip", "—")
+            r["sn_label"] = meta.get("serial", "")
+            if r["port"] == "1":
+                r["kerb_channels"] = [
+                    {
+                        "port":   kerb_lp_to_key.get(p["logical_port"], ""),
+                        "hub":    p["hub_id"],
+                        "lp":     p["logical_port"],
+                        "serial": p["serial"],
+                        "device": p["device"],
+                        "ip":     SERIAL_TO_SERVICE.get(p["serial"], {}).get("ip", "—"),
+                        "status": "connected" if p["connected"] else "empty",
+                    }
+                    for p in sorted(kerb_children, key=lambda x: x["logical_port"])
+                    if p["connected"] and p["logical_port"] in KERB_SDR_LP
+                ]
+        print(json.dumps(rows, indent=4))
+        with open("/tmp/hub_devices.json", "w") as f:
+            json.dump(rows, f, indent=4)
+        print("Exported to /tmp/hub_devices.json")
+        return
+
+    mapped   = [r for r in rows if r["port"] != "--"]
+    unmapped = [r for r in rows if r["port"] == "--" and r["status"] == "connected"]
+
+    sep = "-" * 78
+    hdr = "{:>4}  {:<13}  {:>2}  {:>10}  {:<30}  {}"
+    fmt = "{:>4}  {:<13}  {:>2}  {:>10}  {:<30}  {}"
+    print(sep)
+    print(hdr.format("PORT", "HUB", "LP", "SERIAL", "HARDWARE", "STATUS"))
+    print(sep)
+    for r in mapped:
+        label = _build_label(r["port"])
+        print(fmt.format(r["port"], r["hub"], r["lp"], r["serial"], label, r["status"]))
+        if r["port"] == "1" and r["status"] == "connected":
+            for kp in sorted(kerb_children, key=lambda x: x["logical_port"]):
+                kkey  = kerb_lp_to_key.get(kp["logical_port"], "?")
+                kser  = kp["serial"] if kp["connected"] else "—"
+                kip   = SERIAL_TO_SERVICE.get(kser, {}).get("ip", "—")
+                klabel = "  ↳ RTL-SDR ({})".format(kip) if kip != "—" else "  ↳ RTL-SDR"
+                kstat = "connected" if kp["connected"] else "empty"
+                print(fmt.format(kkey, KERB_HUB, kp["logical_port"], kser, klabel, kstat))
+    print(sep)
+    connected     = sum(1 for r in mapped if r["status"] == "connected")
+    total_devices = connected + sum(1 for p in kerb_children if p["connected"])
+    print("  {}/{} ports occupied  ({} total SDR devices)".format(
+        connected, len(mapped), total_devices))
+    print("  Use K1-K4 to control individual Kerberossdr channels independently.")
+    unmapped_dongles = [r for r in unmapped if r["serial"]]
+    if unmapped_dongles:
+        print("\n  Unmapped connected devices:")
+        for r in unmapped_dongles:
+            print("    hub {} LP {}  {}  SN: {}".format(r["hub"], r["lp"], r["device"], r["serial"]))
+
+
+def get_hub_info():
+    """JSON scan keyed by physical port number — used by -v verbose mode."""
+    port_mapping = get_port_mapping()
+    reverse = {
+        (m["hub_id"], m["logical_port"]): pnum
+        for pnum, m in port_mapping.items()
+    }
+    hub_info = {}
+    for p in _scan_all_ports():
+        if not p["connected"]:
+            continue
+        phys = reverse.get((p["hub_id"], p["logical_port"]))
+        if phys:
+            hub_info["Port: {}".format(phys)] = {
+                "Device": p["device"],
+                "Serial": p["serial"],
+            }
+    return dict(sorted(hub_info.items(), key=lambda x: int(x[0].split()[-1])))
+
+
+def sync_services():
+    """Create and enable an rtl-tcp systemd service for every port that has an IP
+    assigned in PORT_LABELS (outer ports) or SERIAL_TO_SERVICE (Kerberossdr channels)
+    but no existing service file yet.
+
+    Service files are named rtl-tcp-{serial}.service so they are unambiguously tied
+    to the hardware, regardless of how many sdrX legacy services already exist.
+    """
+    import glob
+
+    SERVICE_DIR = "/etc/systemd/system"
+    PORT        = 7373
+    TEMPLATE = (
+        "[Unit]\n"
+        "Description=RTL-TCP {serial} @ {ip}:{port}\n"
+        "After=network-online.target\n"
+        "Wants=network-online.target\n\n"
+        "[Service]\n"
+        "ExecStart=/usr/local/bin/rtl_tcp -a {ip} -p {port} -d {serial} -s 2048000\n"
+        "Restart=always\n"
+        "RestartSec=5\n\n"
+        "[Install]\n"
+        "WantedBy=multi-user.target\n"
+    )
+
+    # Build the set of targets: {serial: ip} for every SDR with a real IP
+    targets = {}
+    for meta in PORT_LABELS.values():
+        sn = meta.get("serial", "")
+        ip = meta.get("ip", "")
+        if sn and ip and ip != "—" and not sn.startswith("(") and meta.get("rtl_tcp", True):
+            targets[sn] = ip
+    for sn, svc in SERIAL_TO_SERVICE.items():
+        ip = svc.get("ip", "")
+        if ip and ip != "—":
+            targets[sn] = ip
+
+    # Find serials already covered by ANY existing service file
+    covered = set()
+    for path in glob.glob(SERVICE_DIR + "/rtl-tcp*.service"):
+        content = open(path).read()
+        m = re.search(r"-d\s+(\S+)", content)
+        if m:
+            covered.add(m.group(1))
+
+    created = []
+    for sn, ip in sorted(targets.items(), key=lambda x: x[1]):
+        if sn in covered:
+            print("  skip  SN {}  {} — service already exists".format(sn, ip))
+            continue
+        name    = "rtl-tcp-{}.service".format(sn)
+        content = TEMPLATE.format(serial=sn, ip=ip, port=PORT)
+        path    = SERVICE_DIR + "/" + name
+        with open(path, "w") as f:
+            f.write(content)
+        print("  create  {} @ {}:{}".format(name, ip, PORT))
+        created.append(name)
+
+    if not created:
+        print("  All SDRs with IPs already have service files.")
+        return
+
+    subprocess.run(["sudo", "systemctl", "daemon-reload"], check=True)
+    for name in created:
+        subprocess.run(["sudo", "systemctl", "enable", "--now", name], check=True)
+        print("  enabled + started  {}".format(name))
+
+
+def main(port_arg=None, action=None, verbose=False, show_list=False):
+    with open("/tmp/usb_script.log", "a") as log_file:
+        log_file.write("USB script called at {}\n".format(datetime.now()))
+    if show_list or (not port_arg and not action):
+        list_devices()
+    else:
+        try:
+            ports = parse_ports(port_arg)
+        except ValueError as e:
+            print("Error: {}".format(e))
+            return
+        perform_action(ports, action)
+        if verbose:
+            print("\nWaiting for USB re-enumeration ...", flush=True)
+            time.sleep(3)
+            print()
+            list_devices()
+    create_udev_rule()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description=(
+            "USB Hub Power Control — sigmon SDR hub manager\n"
+            "  Ports 1-10 : outer hub power ports (controls entire device/sub-hub)\n"
+            "  K1-K4      : individual Kerberossdr SDR channels (hub 3-1.1.4 LP 2-5)\n"
+            "  all        : all outer ports 1-10"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("ports",  nargs="?", help="Port(s): '6', '1-4', '1,3,K2', 'K1-K4', 'all'", default=None)
+    parser.add_argument("action", nargs="?", choices=["on", "off", "cycle", "toggle"], help="Action", default=None)
+    parser.add_argument("-v",     action="store_true", help="Print device table after action")
+    parser.add_argument("--list", dest="show_list", action="store_true", help="Show device table")
+    parser.add_argument("--json", dest="as_json",   action="store_true", help="Output as JSON")
+    parser.add_argument("--sync-services", dest="sync_svc", action="store_true",
+                        help="Create rtl-tcp systemd services for SDRs with an IP in PORT_LABELS")
+    args = parser.parse_args()
+    if args.sync_svc:
+        sync_services()
+    elif args.as_json:
+        list_devices(as_json=True)
+    else:
+        main(args.ports, args.action, args.v, args.show_list)

@@ -3142,7 +3142,8 @@
         .sdr-rx-card.is-bad  { border-color:rgba(230,70,70,0.25); }
         .sdr-rx-card.is-pend { opacity:0.42; }
         .sdr-rx-id { font-size:0.63rem; font-weight:700; letter-spacing:0.05em; color:var(--muted-2); }
-        .sdr-rx-label { font-size:0.88rem; font-weight:700; line-height:1.22; color:var(--fg); margin:0.18rem 0 auto; }
+        .sdr-rx-serial { font-size:0.67rem; color:var(--muted); font-family:var(--mono,monospace); letter-spacing:0.03em; margin-top:0.1rem; }
+        .sdr-rx-label { font-size:0.88rem; font-weight:700; line-height:1.22; color:var(--fg); margin:0.12rem 0 auto; }
         .sdr-rx-detail { font-size:0.62rem; color:var(--muted-2); margin-top:0.18rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .sdr-rx-footer { display:flex; align-items:center; justify-content:space-between; margin-top:0.28rem; }
         .sdr-rx-stat { font-size:0.67rem; font-weight:600; }
@@ -6170,6 +6171,7 @@
                 }
                 if (viewName === 'receivers') {
                     refreshSdrArray();
+                    _fetchSdrDevices();
                 }
             };
 
@@ -7141,24 +7143,102 @@
 
             // ── SDR Array cards ────────────────────────────────────────────
 
-            // Serial numbers are the stable identity for each SDR dongle.
-            // IPs and ports are assigned per-serial so adding new dongles
-            // never displaces an existing service.
+            // Per-serial stable metadata: type, freq, label, optional host.
+            // IPs come live from hubPPPS /devices; this table only holds what
+            // hubPPPS doesn't know (SDR function, mode type, target frequency).
+            const SDR_SERIAL_META = {
+                '00001090': { type:'adsb',    freq:'1090 MHz',   label:'ADS-B 1090',      host:'10.13.73.190' },
+                '00144390': { type:'open',    freq:'',           label:'Open'              },
+                '20000897': { type:'monitor', freq:'2m',         label:'Open',             activeLabel:'Repeater Monitoring' },
+                '00000978': { type:'open',    freq:'',           label:'Open',             activeLabel:'VHF Digital'         },
+                '00000433': { type:'decode',  freq:'433.920 MHz',label:'Acurite 433'       },
+                '00000005': { type:'open',    freq:'',           label:'Open'              },
+                '00000315': { type:'decode',  freq:'314.9 MHz',  label:'TPMS'              },
+                '20000145': { type:'open',    freq:'',           label:'Open'              },
+                '10000001': { type:'open',    freq:'',           label:'Open'              },
+                '10000002': { type:'open',    freq:'',           label:'Open'              },
+                '10000003': { type:'open',    freq:'',           label:'Open'              },
+                '10000004': { type:'open',    freq:'',           label:'Open'              },
+            };
+
+            // Build one SDR_A entry from a hubPPPS device object.
+            // Reuses the existing A-ID for a given serial so monitor assignments
+            // (_vhfAssignedSdrId, _monitorActiveSdrId) stay valid across re-renders.
+            const _sdrFromDevice = (dev, idx) => {
+                const sn   = dev.serial || '';
+                const meta = SDR_SERIAL_META[sn] || {};
+                const ip   = (dev.ip && dev.ip !== '—') ? dev.ip : null;
+                const existing = sn ? window.SDR_A.find(s => s.serial === sn) : null;
+                return {
+                    id:          existing ? existing.id : ('A' + idx),
+                    serial:      sn,
+                    label:       meta.label || 'Open',
+                    freq:        meta.freq  || '',
+                    type:        meta.type  || 'open',
+                    activeLabel: meta.activeLabel,
+                    host:        meta.host  || undefined,
+                    tcpDevice:   (!meta.host && ip) ? 'tcp://' + ip + ':7373' : undefined,
+                };
+            };
+
+            // Fallback static list — order MUST match _fetchSdrDevices() output:
+            // Kerberossdr K1-K4 first (hub 3-1.1.4 LP 2-5), then ports 2-10.
+            // Keeping the same order means A-IDs are stable before and after the fetch.
             window.SDR_A = [
-                { id:'A0', serial:'00001090', label:'ADS-B 1090',         detail:'SN 00001090 · 10.13.73.190',      freq:'1090 MHz',    type:'adsb',         host:'10.13.73.190' },
-                { id:'A1', serial:'00144390', label:'Open',               detail:'SN 00144390 · 10.13.73.202',      freq:'',            type:'open',         tcpDevice:'tcp://10.13.73.202:7373' },
-                { id:'A2', serial:'20000897', label:'Open',               detail:'SN 20000897 · 10.13.73.192',      freq:'2m',          type:'monitor',      activeLabel:'Repeater Monitoring', tcpDevice:'tcp://10.13.73.192:7373' },
-                { id:'A3', serial:'00000978', label:'Open',               detail:'SN 00000978 · 10.13.73.193',      freq:'',            type:'open',         tcpDevice:'tcp://10.13.73.193:7373' },
-                { id:'A4', serial:'00000433', label:'Acurite 433',        detail:'SN 00000433 · 10.13.73.194',      freq:'433.920 MHz', type:'decode',       tcpDevice:'tcp://10.13.73.194:7373' },
-                { id:'A5', serial:'00162400', label:'Open',               detail:'SN 00162400 · 10.13.73.195',      freq:'',            type:'open',         tcpDevice:'tcp://10.13.73.195:7373' },
-                { id:'A6', serial:'00000315', label:'TPMS',               detail:'SN 00000315 · 10.13.73.196',      freq:'314.9 MHz',   type:'decode',       tcpDevice:'tcp://10.13.73.196:7373' },
-                { id:'A7',  serial:'20000145', label:'Open',               detail:'SN 20000145 · 10.13.73.197',      freq:'',            type:'open',         tcpDevice:'tcp://10.13.73.197:7373' },
-                { id:'A8',  serial:'10000001', label:'Open',               detail:'SN 10000001 · 10.13.73.198',      freq:'',            type:'open',         tcpDevice:'tcp://10.13.73.198:7373' },
-                { id:'A9',  serial:'10000002', label:'Open',               detail:'SN 10000002 · 10.13.73.199',      freq:'',            type:'open',         tcpDevice:'tcp://10.13.73.199:7373' },
-                { id:'A10', serial:'10000003', label:'Open',               detail:'SN 10000003 · 10.13.73.200',      freq:'',            type:'open',         tcpDevice:'tcp://10.13.73.200:7373' },
-                { id:'A11', serial:'10000004', label:'Open',               detail:'SN 10000004 · 10.13.73.201',      freq:'',            type:'open',         tcpDevice:'tcp://10.13.73.201:7373' },
+                { id:'A0',  serial:'10000004', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.201:7373' },
+                { id:'A1',  serial:'10000003', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.200:7373' },
+                { id:'A2',  serial:'10000002', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.199:7373' },
+                { id:'A3',  serial:'10000001', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.198:7373' },
+                { id:'A4',  serial:'00000006', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.202:7373' },
+                { id:'A5',  serial:'20000145', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.197:7373' },
+                { id:'A6',  serial:'00000315', label:'TPMS',        freq:'314.9 MHz',   type:'decode',  tcpDevice:'tcp://10.13.73.196:7373' },
+                { id:'A7',  serial:'00000005', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.195:7373' },
+                { id:'A8',  serial:'00000433', label:'Acurite 433', freq:'433.920 MHz', type:'decode',  tcpDevice:'tcp://10.13.73.194:7373' },
+                { id:'A9',  serial:'00000978', label:'Open',        freq:'',            type:'open',    activeLabel:'VHF Digital',          tcpDevice:'tcp://10.13.73.193:7373' },
+                { id:'A10', serial:'20000897', label:'Open',        freq:'2m',          type:'monitor', activeLabel:'Repeater Monitoring',  tcpDevice:'tcp://10.13.73.192:7373' },
+                { id:'A11', serial:'00144390', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.191:7373' },
+                { id:'A12', serial:'00001090', label:'ADS-B 1090',  freq:'1090 MHz',    type:'adsb',    host:'10.13.73.190' },
             ];
             const SDR_A = window.SDR_A;
+
+            // Fetch live SDR list from sdr-test-agent /devices (hubPPPS JSON).
+            // Flattens Kerberossdr sub-channels into the top-level array.
+            const _fetchSdrDevices = async () => {
+                try {
+                    const r = await fetch('http://10.13.73.185:7380/devices',
+                        { cache:'no-store', signal: AbortSignal.timeout(8000) });
+                    if (!r.ok) throw new Error('HTTP ' + r.status);
+                    const ports = await r.json();
+
+                    const entries = [];
+                    for (const dev of ports) {
+                        if (dev.status !== 'connected') continue;
+                        // Kerberossdr hub port — expand sub-channels
+                        if (dev.port === '1' && Array.isArray(dev.kerb_channels)) {
+                            for (const kch of dev.kerb_channels) {
+                                if (kch.status !== 'connected') continue;
+                                entries.push(kch);
+                            }
+                        } else if (dev.serial) {
+                            entries.push(dev);
+                        }
+                    }
+
+                    // Re-assign A-IDs in port order and rebuild SDR_A in place
+                    const built = entries.map((dev, i) => _sdrFromDevice(dev, i));
+                    window.SDR_A.length = 0;
+                    built.forEach(s => window.SDR_A.push(s));
+
+                    // Re-render grids with the live list
+                    _sdrRenderGrid(SDR_A, 'sdr-grid-a');
+                    refreshSdrArray();
+                    const ca = document.getElementById('sdr-a-count');
+                    if (ca) ca.textContent = SDR_A.length + ' devices';
+                } catch (e) {
+                    // Silently keep the fallback static list
+                    console.warn('[SDR] /devices fetch failed, using static list:', e.message);
+                }
+            };
 
             // Patch ADS-B panel URLs from the SDR array so the host is defined in one place.
             (function _initAdsbPanel() {
@@ -7207,6 +7287,7 @@
                 const _idLine = sdr.id + (_ip ? '<span style="font-weight:500;opacity:0.7"> · ' + _ip + '</span>' : '');
                 card.innerHTML =
                     '<div class="sdr-rx-id">' + _idLine + '</div>' +
+                    (sdr.serial ? '<div class="sdr-rx-serial">SN ' + sdr.serial + '</div>' : '') +
                     '<div class="sdr-rx-label">' + sdr.label + '</div>' +
                     '<div class="sdr-rx-footer">' +
                         '<div class="sdr-rx-stat mute" id="sdr-stat-' + sdr.id.toLowerCase() + '">' +
@@ -7261,23 +7342,29 @@
 
             // Set of SDR IDs currently in use by any monitor (repeater, NOAA, etc.)
             if (!(window._monitorActiveSdrId instanceof Set)) window._monitorActiveSdrId = new Set();
+            // Registry of card-level stop functions — survives grid re-renders that replace DOM buttons
+            if (!window._sdrStopFns) window._sdrStopFns = {};
 
             const _sdrSetStaticStatus = () => {
                 const _active    = window._monitorActiveSdrId;
-                const _noaaId    = window._noaaActiveSdrId || '';
+                const _noaaId    = (window._noaaActiveSdrId    || '').toLowerCase();
+                const _rptId     = (window._repeaterActiveSdrId || '').toLowerCase();
                 SDR_A.forEach(s => {
                     const sid = s.id.toLowerCase();
-                    // Active-state checks take priority over type-based defaults
-                    if (window._vhfActiveSdrId === sid)   { _sdrSetStat(s.id, 'active · VHF', 'ok'); return; }
-                    if (window._vhfAssignedSdrId === sid)  { _sdrSetLabel(s.id, 'VHF Digital'); _sdrSetStat(s.id, 'offline', 'warn'); return; }
-                    if (_noaaId === sid)                    { _sdrSetStat(s.id, 'active · 162 MHz', 'ok'); return; }
+                    // Active-state checks take priority over type-based defaults.
+                    // Use the function's own name — never s.activeLabel, which reflects the
+                    // previous static assignment and will be wrong after reassignment.
+                    if (window._vhfActiveSdrId === sid)    { _sdrSetLabel(s.id, 'VHF Digital');          _sdrSetStat(s.id, 'active · VHF', 'ok'); return; }
+                    if (window._vhfAssignedSdrId === sid)  { _sdrSetLabel(s.id, 'VHF Digital');          _sdrSetStat(s.id, 'offline', 'warn'); return; }
+                    if (_noaaId && _noaaId === sid)        { _sdrSetLabel(s.id, 'NOAA Weather');          _sdrSetStat(s.id, 'active · 162 MHz', 'ok'); return; }
+                    if (_rptId  && _rptId  === sid)        { _sdrSetLabel(s.id, 'Repeater Monitoring');   _sdrSetStat(s.id, 'active', 'ok'); return; }
                     if      (s.type === 'adsb')    _sdrSetStat(s.id, 'active · ' + s.freq, 'ok');
                     else if (s.type === 'decode')  _sdrSetStat(s.id, (s.tcpDevice ? 'rtl_tcp · ' : 'decoding · ') + s.freq, 'ok');
                     else if (s.type === 'local')   _sdrSetStat(s.id, 'local · ' + s.freq, 'warn');
                     else if (s.type === 'owrx')    _sdrSetStat(s.id, 'checking…', 'mute');
-                    else if (s.type === 'monitor')     { if (_active.has(sid)) _sdrSetStat(s.id, 'active' + (s.freq ? ' · ' + s.freq : ''), 'ok'); else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
-                    else if (s.type === 'noaa')        { if (_active.has(sid)) _sdrSetStat(s.id, 'active · ' + (s.freq || '162 MHz'), 'ok'); else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
-                    else if (s.type === 'vhf-digital') { if (window._vhfActiveSdrId === sid) _sdrSetStat(s.id, 'active · VHF', 'ok'); else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
+                    else if (s.type === 'monitor')     { if (_active.has(sid)) { _sdrSetLabel(s.id, s.activeLabel || s.label); _sdrSetStat(s.id, 'active' + (s.freq ? ' · ' + s.freq : ''), 'ok'); } else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
+                    else if (s.type === 'noaa')        { if (_active.has(sid)) { _sdrSetLabel(s.id, s.activeLabel || 'NOAA Wx'); _sdrSetStat(s.id, 'active · ' + (s.freq || '162 MHz'), 'ok'); } else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
+                    else if (s.type === 'vhf-digital') { if (window._vhfActiveSdrId === sid) { _sdrSetLabel(s.id, s.activeLabel || 'VHF Digital'); _sdrSetStat(s.id, 'active · VHF', 'ok'); } else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
                     else if (s.type === 'open')        { if (_active.has(sid)) _sdrSetStat(s.id, 'active', 'ok'); else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
                 });
                 const aCount = SDR_A.filter(s => s.type !== 'pend').length;
@@ -7305,6 +7392,8 @@
             _sdrRenderGrid(SDR_A, 'sdr-grid-a');
             _sdrRenderGrid(SDR_B, 'sdr-grid-b');
             refreshSdrArray();
+            // Fetch live SDR list from sigmon; re-renders grid when complete
+            _fetchSdrDevices();
 
             // ── Fault Summary ──────────────────────────────────────────────
 
@@ -8112,9 +8201,9 @@
         let _monPanel = null;
         let _editingIdx = null;
 
-        // Flat lookup table: id → SDR definition
-        const _allSdrs = [...SDR_A, ...SDR_B];
-        const _sdrById = id => _allSdrs.find(s => s.id === id);
+        // Live lookup — always reads current window.SDR_A so post-fetch updates are visible
+        const _allSdrs = () => [...(window.SDR_A||[]), ...(window.SDR_B||[])];
+        const _sdrById = id => _allSdrs().find(s => s.id === id);
 
         // Make SDR cards clickable
         const _wireCards = () => {
@@ -8122,7 +8211,7 @@
                 card.style.cursor = 'pointer';
                 card.addEventListener('click', (e) => {
                     const stopBtn = e.target.closest('.sdr-stop-btn');
-                    if (stopBtn) { if (typeof stopBtn._stopFn === 'function') stopBtn._stopFn(); return; }
+                    if (stopBtn) { const _sid = stopBtn.id.replace('sdr-stop-',''); const fn = stopBtn._stopFn || window._sdrStopFns?.[_sid]; if (typeof fn === 'function') fn(); return; }
                     const id = card.id.replace('sdr-card-', '').toUpperCase();
                     const def = _sdrById(id) || {};
                     const label = def.label || card.querySelector('.sdr-rx-label')?.textContent || id;
@@ -8680,12 +8769,14 @@
                 if (window._noaaActiveSdrId === sdr.id.toLowerCase()) window._noaaActiveSdrId = null;
                 const _nb = document.getElementById('sdr-stop-' + sdr.id.toLowerCase());
                 if (_nb) _nb._stopFn = null;
+                delete window._sdrStopFns[sdr.id.toLowerCase()];
                 _noaaSdr = null;
                 _clearNoaaSession();
             };
 
             const _noaaStopBtn = document.getElementById('sdr-stop-' + sdr.id.toLowerCase());
             if (_noaaStopBtn) _noaaStopBtn._stopFn = _stopNoaa;
+            window._sdrStopFns[sdr.id.toLowerCase()] = _stopNoaa;
 
             [{ titleId:'noaa-mon-title', stopId:'noaa-mon-stop-btn' },
              { titleId:'sb-noaa-title',  stopId:'sb-noaa-stop-btn' }].forEach(({ titleId, stopId }) => {
@@ -9040,9 +9131,11 @@
                 } catch (_) {}
 
                 if (st.running) {
-                    let sdrDef = saved?.sdrId ? _allSdrs.find(s => s.id === saved.sdrId) : null;
+                    // Match by device (tcpDevice) first — stable across SDR_A reorderings
+                    let sdrDef = saved?.device ? _allSdrs().find(s => s.tcpDevice === saved.device) : null;
+                    if (!sdrDef && saved?.sdrId) sdrDef = _allSdrs().find(s => s.id === saved.sdrId);
                     const hadExplicitAssignment = !!sdrDef;
-                    sdrDef = sdrDef || _allSdrs.find(s => s.type === 'noaa') || { id:'A3', label:'Open', tcpDevice:'tcp://10.13.73.193:7373', type:'noaa' };
+                    sdrDef = sdrDef || _allSdrs().find(s => s.type === 'noaa') || { id:'A3', label:'Open', tcpDevice:'tcp://10.13.73.193:7373', type:'noaa' };
                     _noaaSdr = Object.assign({}, sdrDef);
                     _startNoaaPanel(_noaaSdr);
                     if (st.alerts?.length) { _noaaAlerts = st.alerts; _renderNoaaAlerts(); }
@@ -9053,8 +9146,10 @@
                 }
 
                 // Server session gone — check server assignment for auto-restart
-                if (!saved?.sdrId) return;
-                const sdrDef = _allSdrs.find(s => s.id === saved.sdrId) || { id:saved.sdrId, label:'Open', tcpDevice:'tcp://10.13.73.193:7373', type:'noaa' };
+                if (!saved?.device && !saved?.sdrId) return;
+                let sdrDef = saved.device ? _allSdrs().find(s => s.tcpDevice === saved.device) : null;
+                if (!sdrDef && saved.sdrId) sdrDef = _allSdrs().find(s => s.id === saved.sdrId);
+                sdrDef = sdrDef || { id: saved.sdrId || '??', label:'Open', tcpDevice: saved.device || 'tcp://10.13.73.193:7373', type:'noaa' };
                 _noaaSdr = Object.assign({}, sdrDef);
                 const startResp = await fetch(KIWISCAN_BASE + '/api/noaa-monitor/start', {
                     method: 'POST',
@@ -9108,6 +9203,7 @@
             if (_cardEl)      _cardEl.className = _cardEl.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-ok';
             if (!(window._monitorActiveSdrId instanceof Set)) window._monitorActiveSdrId = new Set();
             window._monitorActiveSdrId.add(sdr.id.toLowerCase());
+            window._repeaterActiveSdrId = sdr.id.toLowerCase();
 
             // Title + stop button wiring — clone to clear any prior listeners
             const _stopMonitor = async () => {
@@ -9132,8 +9228,10 @@
                 if (statEl)  { statEl.textContent = 'Available'; statEl.className = 'sdr-rx-stat mute'; }
                 if (cardEl)  cardEl.className = cardEl.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-mute';
                 if (window._monitorActiveSdrId instanceof Set) window._monitorActiveSdrId.delete(sdr.id.toLowerCase());
+                if (window._repeaterActiveSdrId === sdr.id.toLowerCase()) window._repeaterActiveSdrId = null;
                 const _rb = document.getElementById('sdr-stop-' + sdr.id.toLowerCase());
                 if (_rb) _rb._stopFn = null;
+                delete window._sdrStopFns[sdr.id.toLowerCase()];
                 _activeSdr = null;
                 _clearMonitorSession();
                 _monPanel = null;
@@ -9141,6 +9239,7 @@
 
             const _rptStopBtn = document.getElementById('sdr-stop-' + sdr.id.toLowerCase());
             if (_rptStopBtn) _rptStopBtn._stopFn = _stopMonitor;
+            window._sdrStopFns[sdr.id.toLowerCase()] = _stopMonitor;
 
             ['sb-rpt-device', 'rpt-mon-device'].forEach(id => {
                 const el = document.getElementById(id);
@@ -9314,8 +9413,8 @@
                 if (st.running && st.channels?.length) {
                     // Server session still active — restore panel
                     // Try matching by tcpDevice, then fall back to saved sdrId in server assignment
-                    let sdrDef = _allSdrs.find(s => s.tcpDevice === st.device);
-                    if (!sdrDef && saved?.sdrId) sdrDef = _allSdrs.find(s => s.id === saved.sdrId);
+                    let sdrDef = _allSdrs().find(s => s.tcpDevice === st.device);
+                    if (!sdrDef && saved?.sdrId) sdrDef = _allSdrs().find(s => s.id === saved.sdrId);
                     sdrDef = sdrDef || { id: '??', label: st.device, tcpDevice: st.device };
                     _activeSdr = Object.assign({}, _sdrById(sdrDef.id) || {}, sdrDef);
                     _startMonitorPanel(_activeSdr, st.channels);
@@ -9327,7 +9426,9 @@
                 // Server session gone — check server assignment for auto-restart
                 if (!saved?.device || !saved?.channels?.length) return;
 
-                const sdrDef = _allSdrs.find(s => s.id === saved.sdrId) || { id: saved.sdrId || '??', label: saved.device, tcpDevice: saved.device };
+                let sdrDef = _allSdrs().find(s => s.tcpDevice === saved.device);
+                if (!sdrDef && saved.sdrId) sdrDef = _allSdrs().find(s => s.id === saved.sdrId);
+                sdrDef = sdrDef || { id: saved.sdrId || '??', label: saved.device, tcpDevice: saved.device };
                 // Don't restore onto an SDR that no longer supports monitoring (e.g. repurposed to vhf-digital).
                 if (sdrDef.type && !['monitor', 'open'].includes(sdrDef.type)) { _clearMonitorSession(); return; }
                 _activeSdr      = Object.assign({}, _sdrById(sdrDef.id) || {}, sdrDef);
@@ -9358,16 +9459,16 @@
 
             // Default channel definitions (mirrors docker/vhf-digital/service.py)
             const VHF_CHANNELS = [
-                { freq_hz:144174000, label:'FT8',               mode:'FT8',    enabled:true  },
-                { freq_hz:144170000, label:'FT4',               mode:'FT4',    enabled:true  },
+                { freq_hz:144174000, label:'FT8',               mode:'FT8',    enabled:false },
+                { freq_hz:144170000, label:'FT4',               mode:'FT4',    enabled:false },
                 { freq_hz:144390000, label:'APRS',              mode:'APRS',   enabled:true  },
-                { freq_hz:144490500, label:'WSPR',              mode:'WSPR',   enabled:true  },
+                { freq_hz:144490500, label:'WSPR',              mode:'WSPR',   enabled:false },
                 { freq_hz:145010000, label:'Packet',            mode:'Packet', enabled:false },
                 { freq_hz:145030000, label:'Packet',            mode:'Packet', enabled:false },
                 { freq_hz:145050000, label:'Packet',            mode:'Packet', enabled:false },
                 { freq_hz:145070000, label:'Packet',            mode:'Packet', enabled:false },
                 { freq_hz:145090000, label:'Packet',            mode:'Packet', enabled:false },
-                { freq_hz:145130000, label:'Packet Massanutten',mode:'Packet', enabled:true  },
+                { freq_hz:145130000, label:'Packet Massanutten',mode:'Packet', enabled:false },
                 { freq_hz:145570000, label:'Packet Page Co',    mode:'Packet', enabled:false },
                 { freq_hz:145690000, label:'Packet WV',         mode:'Packet', enabled:false },
                 { freq_hz:145730000, label:'Packet VDEN',       mode:'Packet', enabled:false },
@@ -9382,12 +9483,17 @@
 
             // ── Persistence ──────────────────────────────────────────────────
             const _saveVhfConfig = () => {
+                // Save device (tcpDevice) alongside sdrId so restore can match by IP:port
+                // even if A-IDs shift after _fetchSdrDevices() rebuilds SDR_A.
+                const _aid = (window._vhfActiveSdrId || '').toLowerCase();
+                const _def = _allSdrs().find(s => s.id.toLowerCase() === _aid);
                 return fetch(KIWISCAN_BASE + '/api/noc/assignments', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         'vhf-digital': {
-                            sdrId:        window._vhfActiveSdrId || null,
+                            sdrId:        _aid || null,
+                            device:       _def?.tcpDevice || null,
                             channels:     _vhfChannels,
                             containerUrl: _vhfContainerUrl,
                         },
@@ -9574,6 +9680,7 @@
                         if (_vre)  _vre.className = _vre.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-mute';
                         const _csbtn = document.getElementById('sdr-stop-' + sid);
                         if (_csbtn) _csbtn._stopFn = null;
+                        delete window._sdrStopFns[sid];
                         window._vhfActiveSdrId   = null;
                         window._vhfAssignedSdrId = null;
                         // Clear server assignment so card is Open/Available on next refresh
@@ -9594,6 +9701,7 @@
                 if (window._vhfActiveSdrId) {
                     const _cardStopBtn = document.getElementById('sdr-stop-' + window._vhfActiveSdrId);
                     if (_cardStopBtn) _cardStopBtn._stopFn = _stopVhf;
+                    window._sdrStopFns[window._vhfActiveSdrId] = _stopVhf;
                 }
 
                 document.getElementById('vhf-mon-clear-btn')?.addEventListener('click', async () => {
@@ -9703,6 +9811,7 @@
                     if (!cfgResp.ok) return;
                     const cfg = await cfgResp.json();
 
+                    let savedDevice = null;
                     let sdrId = cfg.sdr_id || null;
                     let savedChannels = null;
                     try {
@@ -9710,10 +9819,17 @@
                         if (aResp.ok) {
                             const noc = ((await aResp.json())['vhf-digital'] || {});
                             if (!sdrId && noc.sdrId) sdrId = noc.sdrId;
+                            if (noc.device)  savedDevice = noc.device;
                             if (Array.isArray(noc.channels) && noc.channels.length) savedChannels = noc.channels;
                         }
                     } catch (_) {}
-                    if (!sdrId) return;
+
+                    // Resolve SDR by tcpDevice (stable across SDR_A reorderings) → fall back to sdrId
+                    let sdrDef = savedDevice ? _allSdrs().find(s => s.tcpDevice === savedDevice) : null;
+                    if (!sdrDef && sdrId)    sdrDef = _allSdrs().find(s => s.id.toLowerCase() === sdrId);
+                    if (!sdrDef && !sdrId)   return;
+                    // Use the resolved ID so stale saved IDs don't poison the assignment
+                    sdrId = sdrDef ? sdrDef.id.toLowerCase() : sdrId;
 
                     if (cfg.container_url) _vhfContainerUrl = cfg.container_url;
 
@@ -9723,7 +9839,7 @@
                     const _vrl = document.querySelector('#sdr-card-' + sdrId + ' .sdr-rx-label');
                     const _vrs = document.getElementById('sdr-stat-' + sdrId);
                     const _vre = document.getElementById('sdr-card-' + sdrId);
-                    if (_vrl) _vrl.textContent = 'VHF Digital';
+                    if (_vrl) _vrl.textContent = sdrDef?.activeLabel || 'VHF Digital';
 
                     // Check if container is already running
                     let st = {};
@@ -9734,8 +9850,7 @@
 
                     if (!st.running) {
                         // Not running — try to auto-start with saved params
-                        const sdrDef = (window.SDR_A || []).find(s => s.id.toLowerCase() === sdrId);
-                        const tcpDev = sdrDef?.tcpDevice || '';
+                        const tcpDev = sdrDef?.tcpDevice || savedDevice || '';
                         const m = tcpDev.match(/\/\/([^:]+):(\d+)/);
                         const rtlHost = m ? m[1] : '127.0.0.1';
                         const rtlPort = m ? parseInt(m[2], 10) : 7374;

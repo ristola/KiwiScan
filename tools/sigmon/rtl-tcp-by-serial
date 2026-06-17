@@ -1,0 +1,27 @@
+#!/bin/bash
+# rtl-tcp-by-serial — launch rtl_tcp using a stable serial number.
+# Workaround for rtl_tcp treating small all-numeric serials as device
+# indices instead of serial strings (librtlsdr strtol ambiguity).
+#
+# Usage: rtl-tcp-by-serial SERIAL BIND_IP [PORT] [SAMPLE_RATE]
+
+SERIAL="$1"
+IP="$2"
+PORT="${3:-7373}"
+SRATE="${4:-2048000}"
+
+if [ -z "$SERIAL" ] || [ -z "$IP" ]; then
+    echo "Usage: $0 SERIAL BIND_IP [PORT] [SAMPLE_RATE]" >&2
+    exit 1
+fi
+
+# Find the device index matching this serial (rtl_test -t exits quickly)
+IDX=$(rtl_test -t 2>&1 | awk -v sn="$SERIAL" '$0 ~ "SN: "sn"$" { gsub(":","",$1); print $1; exit }')
+
+if [ -z "$IDX" ]; then
+    echo "rtl-tcp-by-serial: device with SN ${SERIAL} not found" >&2
+    exit 1
+fi
+
+echo "rtl-tcp-by-serial: SN ${SERIAL} = device index ${IDX}, binding ${IP}:${PORT}"
+exec /usr/local/bin/rtl_tcp -a "$IP" -p "$PORT" -d "$IDX" -s "$SRATE"
