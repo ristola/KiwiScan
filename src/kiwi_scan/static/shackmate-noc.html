@@ -1088,17 +1088,20 @@
             color:var(--fg);
         }
         @keyframes aprs-burst {
-            0%   { opacity:1; transform:scale(1.5);
-                   box-shadow:0 0 0 4px color-mix(in srgb,#20b8a0,transparent 50%); }
-            100% { opacity:0.28; transform:scale(1); box-shadow:none; }
+            0%   { opacity:1; transform:scale(1.8);
+                   box-shadow:0 0 0 3px color-mix(in srgb,#20b8a0,transparent 40%); }
+            100% { opacity:0.35; transform:scale(1); box-shadow:none; }
         }
-        #aprs-rx-flash {
-            display:none; width:7px; height:7px; border-radius:50%;
-            background:#20b8a0; opacity:0.28; flex-shrink:0;
-            align-self:center; margin-left:0.15rem;
+        /* Live-rx dot embedded in the APRS button via ::after */
+        .rf-map-mode-btn[data-rfmode="aprs"]::after {
+            content:''; display:inline-block;
+            width:6px; height:6px; border-radius:50%;
+            background:#20b8a0; opacity:0;
+            margin-left:5px; vertical-align:middle;
+            transition:opacity 0.25s;
         }
-        #aprs-rx-flash.is-visible { display:block; }
-        #aprs-rx-flash.is-burst  { animation:aprs-burst 0.8s ease-out forwards; }
+        .rf-map-mode-btn[data-rfmode="aprs"].is-active::after { opacity:0.35; }
+        .rf-map-mode-btn[data-rfmode="aprs"].is-burst::after  { animation:aprs-burst 0.8s ease-out forwards; }
 
         /* Backend cards keep their grid track (column slot) when filtered.
            Height is collapsed to 0 so the hidden card cannot inflate the row height. */
@@ -3934,7 +3937,6 @@
                                     <button class="rf-map-mode-btn is-active" data-rfmode="hf" type="button">HF</button>
                                     <button class="rf-map-mode-btn" data-rfmode="vhf" type="button">VHF/UHF</button>
                                     <button class="rf-map-mode-btn" data-rfmode="aprs" type="button">APRS</button>
-                                    <span id="aprs-rx-flash" aria-hidden="true"></span>
                                 </div>
                             </div>
                             <span class="rf-map-header-stats" id="rf-header-stats">--</span>
@@ -4455,6 +4457,41 @@
                 });
             };
 
+            // Parse APRS symbol table/code from a raw APRS message string.
+            // Handles uncompressed positions (!, =, @, /) by regex-matching the
+            // standard DDMMssN T DDDMMssW S pattern.  Falls back to digipeater (#)
+            // for compressed/MicE formats we don't attempt to decode here.
+            const _APRS_SYM_RE = /\d{4}\.\d{2}[NS]([\x21-\x7e])\d{5}\.\d{2}[EW]([\x21-\x7e])/;
+            const parseAprsSymbol = (message) => {
+                const colonIdx = message.indexOf(':');
+                const info = colonIdx >= 0 ? message.slice(colonIdx + 1) : message;
+                const m = _APRS_SYM_RE.exec(info);
+                return m ? { table: m[1], code: m[2] } : { table: '/', code: '#' };
+            };
+
+            // Build a Leaflet divIcon using the aprs.fi 24-px symbol sprite.
+            // Primary table '/' uses sprite-0, alternate '\' uses sprite-1.
+            const _APRS_SPRITE = [
+                'https://aprs.fi/graphics/aprs-symbol-24-0.png',
+                'https://aprs.fi/graphics/aprs-symbol-24-1.png',
+            ];
+            const makeAprsIcon = (decode) => {
+                if (!window.L) return null;
+                const sym = parseAprsSymbol(String(decode && decode.message || ''));
+                const spriteIdx = sym.table === '/' ? 0 : 1;
+                const charIdx = Math.max(0, sym.code.charCodeAt(0) - 33);
+                const col = charIdx % 16;
+                const row = Math.floor(charIdx / 16);
+                const bx = -(col * 24), by = -(row * 24);
+                return L.divIcon({
+                    className: '',
+                    html: `<img src="${_APRS_SPRITE[spriteIdx]}" style="width:24px;height:24px;object-fit:none;object-position:${bx}px ${by}px" alt="" draggable="false">`,
+                    iconSize: [24, 24],
+                    iconAnchor: [12, 12],
+                    popupAnchor: [0, -14],
+                });
+            };
+
             const kiwiKeyFromEntry = (entry) => {
                 const host = String(entry && entry.host || '').trim();
                 const port = Number(entry && entry.port || 8073) || 8073;
@@ -4843,7 +4880,8 @@
                     }
                     decodePoints.forEach(({ decode, coords }) => {
                         const mode = String(decode && decode.mode || '').toUpperCase();
-                        const marker = L.marker([coords.lat, coords.lon], { icon: makeDecodeIcon(mode) })
+                        const icon = mode === 'APRS' ? makeAprsIcon(decode) : makeDecodeIcon(mode);
+                        const marker = L.marker([coords.lat, coords.lon], { icon })
                             .bindPopup(`<div class="rf-map-popup">${decodeLabel(decode)}</div>`);
                         marker.on('mouseover', () => marker.openPopup());
                         marker.on('mouseout', () => marker.closePopup());
@@ -4941,11 +4979,11 @@
             };
 
             const triggerAprsFlash = () => {
-                const el = document.getElementById('aprs-rx-flash');
-                if (!el) return;
-                el.classList.remove('is-burst');
-                void el.offsetWidth; // force reflow to restart animation
-                el.classList.add('is-burst');
+                const btn = document.querySelector('.rf-map-mode-btn[data-rfmode="aprs"]');
+                if (!btn) return;
+                btn.classList.remove('is-burst');
+                void btn.offsetWidth; // force reflow to restart animation
+                btn.classList.add('is-burst');
             };
 
             const fetchVhfDecodes = async () => {
@@ -4982,12 +5020,8 @@
                 rfMapDataMode = mode;
                 document.querySelectorAll('.rf-map-mode-btn').forEach((btn) => {
                     btn.classList.toggle('is-active', btn.dataset.rfmode === mode);
+                    if (btn.dataset.rfmode === 'aprs' && mode !== 'aprs') btn.classList.remove('is-burst');
                 });
-                const flashEl = document.getElementById('aprs-rx-flash');
-                if (flashEl) {
-                    flashEl.classList.toggle('is-visible', mode === 'aprs');
-                    if (mode !== 'aprs') flashEl.classList.remove('is-burst');
-                }
                 rfAprsLastSeenAt = '';
                 if (rfVhfFetchTimer) { clearInterval(rfVhfFetchTimer); rfVhfFetchTimer = null; }
                 if (mode !== 'hf') {
