@@ -3621,6 +3621,41 @@
                     <!-- ── Setup ── -->
                     <section class="panel" data-view-section="setup" hidden>
                         <div class="panel-header">
+                            <div class="panel-title"><span class="status-dot ok" id="station-id-dot"></span><span>Station Identity</span></div>
+                        </div>
+                        <div class="panel-body">
+                            <form class="add-form-card" id="station-id-form" autocomplete="off">
+                                <div class="add-form">
+                                    <div class="field">
+                                        <label>Callsign</label>
+                                        <input id="si-callsign" type="text" placeholder="N4LDR" maxlength="12" style="text-transform:uppercase" />
+                                    </div>
+                                    <div class="field">
+                                        <label>Maidenhead Grid Square</label>
+                                        <div style="display:flex;gap:0.4rem">
+                                            <input id="si-gridsq" type="text" placeholder="FM18lv" maxlength="8" style="text-transform:uppercase;flex:1" />
+                                            <button class="wide-btn" type="button" id="si-grid-from-gps" style="width:auto;padding:0 0.75rem;white-space:nowrap">GPS</button>
+                                        </div>
+                                    </div>
+                                    <div class="field">
+                                        <label>Latitude</label>
+                                        <div style="display:flex;gap:0.4rem">
+                                            <input id="si-lat" type="text" placeholder="38.5082" style="flex:1" />
+                                            <button class="wide-btn" type="button" id="si-latlon-from-grid" style="width:auto;padding:0 0.75rem;white-space:nowrap" title="Calculate from grid square">Grid→</button>
+                                        </div>
+                                    </div>
+                                    <div class="field">
+                                        <label>Longitude</label>
+                                        <input id="si-lon" type="text" placeholder="-78.7178" />
+                                    </div>
+                                    <button class="wide-btn" type="submit" id="si-save-btn">Save Station Identity</button>
+                                    <span id="si-save-msg" style="display:none;color:var(--ok);font-size:0.75rem;text-align:center">Saved</span>
+                                </div>
+                            </form>
+                        </div>
+                    </section>
+                    <section class="panel" data-view-section="setup" hidden>
+                        <div class="panel-header">
                             <div class="panel-title"><span class="status-dot ok"></span><span>Configure</span></div>
                         </div>
                         <div class="panel-body link-lines">
@@ -10718,6 +10753,133 @@
         // Wire the "Test SDRs" button
         const _openBtn = document.getElementById('sdr-test-open-btn');
         if (_openBtn) _openBtn.addEventListener('click', () => _sdrTest.open());
+    })();
+
+    // ── Station Identity ─────────────────────────────────────────────────────
+    (() => {
+        const LS_KEY = 'sm_station_identity';
+
+        // Maidenhead grid ↔ lat/lon helpers
+        function _gridToLatLon(grid) {
+            const g = grid.toUpperCase().trim();
+            if (g.length < 4) return null;
+            const lon = (g.charCodeAt(0) - 65) * 20 - 180 + (parseInt(g[2]) * 2);
+            const lat = (g.charCodeAt(1) - 65) * 10 - 90  + (parseInt(g[3]) * 1);
+            if (g.length >= 6) {
+                return {
+                    lat: lat + (g.charCodeAt(5) - 65) / 24 + 0.0208,
+                    lon: lon + (g.charCodeAt(4) - 65) / 12 + 0.0417,
+                };
+            }
+            return { lat: lat + 0.5, lon: lon + 1.0 };
+        }
+
+        function _latLonToGrid(lat, lon) {
+            lon += 180; lat += 90;
+            const f = String.fromCharCode;
+            const A = f(65 + Math.floor(lon / 20));
+            const B = f(65 + Math.floor(lat / 10));
+            const C = String(Math.floor((lon % 20) / 2));
+            const D = String(Math.floor(lat % 10));
+            const E = f(65 + Math.floor((lon % 2) * 12));
+            const F = f(65 + Math.floor((lat % 1) * 24));
+            return (A + B + C + D + E + F).toLowerCase().replace(/^(..)(..)(..)$/, (_, a, b, c) => a.toUpperCase() + b + c);
+        }
+
+        const elCall  = document.getElementById('si-callsign');
+        const elGrid  = document.getElementById('si-gridsq');
+        const elLat   = document.getElementById('si-lat');
+        const elLon   = document.getElementById('si-lon');
+        const elForm  = document.getElementById('station-id-form');
+        const elMsg   = document.getElementById('si-save-msg');
+        const elDot   = document.getElementById('station-id-dot');
+        const elGps   = document.getElementById('si-grid-from-gps');
+        const elCalc  = document.getElementById('si-latlon-from-grid');
+
+        if (!elForm) return;
+
+        function _load() {
+            try {
+                const d = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+                if (elCall) elCall.value = d.callsign || '';
+                if (elGrid) elGrid.value = d.gridsq   || '';
+                if (elLat)  elLat.value  = d.lat != null ? d.lat : '';
+                if (elLon)  elLon.value  = d.lon != null ? d.lon : '';
+                _updateDot(d.callsign);
+            } catch (_) {}
+        }
+
+        function _save(e) {
+            e && e.preventDefault();
+            const d = {
+                callsign: elCall.value.trim().toUpperCase(),
+                gridsq:   elGrid.value.trim().toUpperCase(),
+                lat:      elLat.value.trim()  !== '' ? parseFloat(elLat.value)  : null,
+                lon:      elLon.value.trim()  !== '' ? parseFloat(elLon.value) : null,
+            };
+            localStorage.setItem(LS_KEY, JSON.stringify(d));
+            window._stationIdentity = d;
+            _updateDot(d.callsign);
+            if (elMsg) { elMsg.style.display = 'block'; setTimeout(() => { elMsg.style.display = 'none'; }, 2000); }
+        }
+
+        function _updateDot(callsign) {
+            if (!elDot) return;
+            elDot.className = 'status-dot ' + (callsign ? 'ok' : 'warn');
+        }
+
+        // Grid → Lat/Lon
+        if (elCalc) {
+            elCalc.addEventListener('click', () => {
+                const pos = _gridToLatLon(elGrid.value);
+                if (!pos) return;
+                elLat.value = pos.lat.toFixed(5);
+                elLon.value = pos.lon.toFixed(5);
+            });
+        }
+
+        // Auto-update grid when lat/lon both filled
+        function _maybeGrid() {
+            const lat = parseFloat(elLat.value), lon = parseFloat(elLon.value);
+            if (!isNaN(lat) && !isNaN(lon) && elGrid.value.trim() === '') {
+                elGrid.value = _latLonToGrid(lat, lon);
+            }
+        }
+        if (elLat) elLat.addEventListener('blur', _maybeGrid);
+        if (elLon) elLon.addEventListener('blur', _maybeGrid);
+
+        // GPS from KiWi
+        if (elGps) {
+            elGps.addEventListener('click', async () => {
+                elGps.textContent = '…';
+                try {
+                    const r = await fetch('/api/system-info');
+                    const j = await r.json();
+                    const lat = j?.kiwi_gps?.lat ?? j?.lat;
+                    const lon = j?.kiwi_gps?.lon ?? j?.lon;
+                    if (lat != null && lon != null) {
+                        elLat.value = parseFloat(lat).toFixed(5);
+                        elLon.value = parseFloat(lon).toFixed(5);
+                        elGrid.value = _latLonToGrid(lat, lon);
+                    } else {
+                        elGps.textContent = 'No GPS';
+                        setTimeout(() => { elGps.textContent = 'GPS'; }, 2000);
+                        return;
+                    }
+                } catch (_) {
+                    elGps.textContent = 'Err';
+                    setTimeout(() => { elGps.textContent = 'GPS'; }, 2000);
+                    return;
+                }
+                elGps.textContent = 'GPS';
+            });
+        }
+
+        elForm.addEventListener('submit', _save);
+        _load();
+        window._stationIdentity = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+        window._gridToLatLon = _gridToLatLon;
+        window._latLonToGrid = _latLonToGrid;
     })();
     </script>
 </body>
