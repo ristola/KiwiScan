@@ -4777,8 +4777,20 @@
                     ? siteMapEntries().filter(s => s.key === siteState.active)
                     : siteMapEntries();
                 _fitSites.forEach((site) => bounds.push([site.coords.lat, site.coords.lon]));
-                filterRfMapDecodes(siteState.decodes).map(coordsFromDecode).filter(Boolean).forEach((coords) => bounds.push([coords.lat, coords.lon]));
-                if (bounds.length) rfLeafletMap.fitBounds(bounds, { padding: [28, 28], maxZoom: 9 });
+                if (rfMapDataMode === 'hf') {
+                    filterRfMapDecodes(siteState.decodes).map(coordsFromDecode).filter(Boolean).forEach((coords) => bounds.push([coords.lat, coords.lon]));
+                } else {
+                    const modeTest = rfMapDataMode === 'aprs'
+                        ? (f) => String(f.mode || '').toUpperCase() === 'APRS'
+                        : (f) => ['FT8', 'FT4', 'WSPR'].includes(String(f.mode || '').toUpperCase());
+                    rfVhfDecodes
+                        .filter((f) => f && modeTest(f))
+                        .map(coordsFromVhfFrame)
+                        .filter(Boolean)
+                        .forEach((coords) => bounds.push([coords.lat, coords.lon]));
+                }
+                const maxZ = rfMapDataMode === 'aprs' ? 11 : 9;
+                if (bounds.length) rfLeafletMap.fitBounds(bounds, { padding: [28, 28], maxZoom: maxZ });
             };
 
             const _rfVhfOverlay = document.getElementById('rf-vhf-overlay');
@@ -4979,7 +4991,7 @@
                 rfAprsLastSeenAt = '';
                 if (rfVhfFetchTimer) { clearInterval(rfVhfFetchTimer); rfVhfFetchTimer = null; }
                 if (mode !== 'hf') {
-                    fetchVhfDecodes();
+                    fetchVhfDecodes().then(() => setTimeout(() => fitRfMap(), 80));
                     rfVhfFetchTimer = setInterval(fetchVhfDecodes, 5000);
                 } else {
                     rfVhfDecodes = [];
