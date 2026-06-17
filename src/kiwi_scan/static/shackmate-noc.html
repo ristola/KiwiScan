@@ -4469,23 +4469,40 @@
                 return m ? { table: m[1], code: m[2] } : { table: '/', code: '#' };
             };
 
-            // Build a Leaflet divIcon using the aprs.fi 24-px symbol sprite.
-            // Primary table '/' uses sprite-0, alternate '\' uses sprite-1.
-            const _APRS_SPRITE = [
-                'https://aprs.fi/graphics/aprs-symbol-24-0.png',
-                'https://aprs.fi/graphics/aprs-symbol-24-1.png',
-            ];
+            // Inline SVG APRS symbols for the most common symbol codes.
+            // Falls back to a styled character badge for anything not listed.
+            const _APRS_SVG = {
+                // Digipeater (#) — blue diamond with centre dot
+                '#': '<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polygon points="12,1 23,12 12,23 1,12" fill="#2563eb" stroke="#1e40af" stroke-width="1.5"/><circle cx="12" cy="12" r="4.5" fill="white"/><circle cx="12" cy="12" r="2" fill="#2563eb"/></svg>',
+                // House / home QTH (-)
+                '-': '<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polygon points="1,12 12,2 23,12" fill="#16a34a" stroke="#15803d" stroke-width="1.2"/><rect x="3" y="11" width="18" height="11" fill="#16a34a" stroke="#15803d" stroke-width="1.2"/><rect x="9" y="15" width="6" height="7" fill="white"/></svg>',
+                // Car / vehicle (>)
+                '>': '<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="10" width="20" height="8" rx="2" fill="#d97706" stroke="#b45309" stroke-width="1"/><rect x="5" y="7" width="14" height="4" rx="1" fill="#d97706" stroke="#b45309" stroke-width="1"/><circle cx="7" cy="19" r="2.5" fill="#1f2937"/><circle cx="17" cy="19" r="2.5" fill="#1f2937"/></svg>',
+                // Person / human ([)
+                '[': '<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="5" r="4" fill="#2563eb" stroke="#1e40af" stroke-width="1"/><line x1="12" y1="9" x2="12" y2="18" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round"/><line x1="6" y1="13" x2="18" y2="13" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round"/><line x1="12" y1="18" x2="7" y2="24" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round"/><line x1="12" y1="18" x2="17" y2="24" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round"/></svg>',
+                // Weather station (_)
+                '_': '<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="11" fill="#7c3aed" stroke="#5b21b6" stroke-width="1.5"/><line x1="12" y1="2" x2="12" y2="7" stroke="white" stroke-width="2" stroke-linecap="round"/><line x1="22" y1="12" x2="17" y2="12" stroke="white" stroke-width="2" stroke-linecap="round"/><line x1="2" y1="12" x2="7" y2="12" stroke="white" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="22" x2="12" y2="17" stroke="white" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="3" fill="white"/></svg>',
+                // Van (v)
+                'v': '<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="9" width="22" height="9" rx="2" fill="#0891b2" stroke="#0e7490" stroke-width="1"/><rect x="3" y="6" width="18" height="4" rx="1" fill="#0891b2" stroke="#0e7490" stroke-width="1"/><rect x="5" y="7" width="7" height="3" rx="1" fill="#bae6fd"/><circle cx="6" cy="19" r="2.5" fill="#1f2937"/><circle cx="18" cy="19" r="2.5" fill="#1f2937"/></svg>',
+                // Truck (k)
+                'k': '<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="10" width="22" height="8" rx="2" fill="#92400e" stroke="#78350f" stroke-width="1"/><rect x="4" y="6" width="16" height="5" rx="1" fill="#92400e" stroke="#78350f" stroke-width="1"/><rect x="5" y="7" width="7" height="3" rx="1" fill="#fde68a"/><circle cx="6" cy="19" r="2.5" fill="#1f2937"/><circle cx="18" cy="19" r="2.5" fill="#1f2937"/></svg>',
+                // Igate / internet gateway (&)
+                '&': '<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="11" fill="#0f766e" stroke="#0d5c52" stroke-width="1.5"/><text x="12" y="17" font-size="13" font-weight="900" fill="white" text-anchor="middle" font-family="sans-serif">I</text></svg>',
+                // Fill-in digipeater / relay (R in alt table, also common)
+                'R': '<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polygon points="12,1 23,12 12,23 1,12" fill="#0891b2" stroke="#0e7490" stroke-width="1.5"/><circle cx="12" cy="12" r="4.5" fill="white"/><circle cx="12" cy="12" r="2" fill="#0891b2"/></svg>',
+            };
+
             const makeAprsIcon = (decode) => {
                 if (!window.L) return null;
                 const sym = parseAprsSymbol(String(decode && decode.message || ''));
-                const spriteIdx = sym.table === '/' ? 0 : 1;
-                const charIdx = Math.max(0, sym.code.charCodeAt(0) - 33);
-                const col = charIdx % 16;
-                const row = Math.floor(charIdx / 16);
-                const bx = -(col * 24), by = -(row * 24);
+                const svg = _APRS_SVG[sym.code];
+                const html = svg || (() => {
+                    const bg = sym.table === '/' ? '#2563eb' : '#7c3aed';
+                    return `<div style="width:22px;height:22px;border-radius:3px;background:${bg};border:1.5px solid rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;color:white;font:700 11px/1 monospace">${sym.code}</div>`;
+                })();
                 return L.divIcon({
                     className: '',
-                    html: `<img src="${_APRS_SPRITE[spriteIdx]}" style="width:24px;height:24px;object-fit:none;object-position:${bx}px ${by}px" alt="" draggable="false">`,
+                    html,
                     iconSize: [24, 24],
                     iconAnchor: [12, 12],
                     popupAnchor: [0, -14],
