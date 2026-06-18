@@ -7361,19 +7361,18 @@
             // IPs come live from hubPPPS /devices; this table only holds what
             // hubPPPS doesn't know (SDR function, mode type, target frequency).
             const SDR_SERIAL_META = {
-                '00001090': { type:'adsb',   freq:'1090 MHz',      label:'ADS-B 1090',    host:'10.13.73.190' },
-                '00144390': { type:'decode', freq:'144.390 MHz',   label:'VHF / APRS',    defaultMode:'repeater-monitor' },
-                '20000897': { type:'decode', freq:'144 MHz',       label:'VHF Digital',   defaultMode:'vhf-digital'      },
-                '00000978': { type:'owrx',   freq:'',              label:'SDR-3 General'  },
-                '00000433': { type:'decode', freq:'433.920 MHz',   label:'Acurite 433',   defaultMode:'repeater-monitor' },
-                '00000005': { type:'decode', freq:'162 MHz',       label:'NOAA WX',       defaultMode:'noaa-monitor'     },
-                '00000315': { type:'decode', freq:'314.9 MHz',     label:'TPMS',          defaultMode:'tpms'             },
-                '20000145': { type:'owrx',   freq:'',              label:'SDR-7 Spare'    },
-                '10000001': { type:'open',   freq:'',              label:'KerberosSDR K4' },
-                '10000002': { type:'open',   freq:'',              label:'KerberosSDR K3' },
-                '10000003': { type:'open',   freq:'',              label:'KerberosSDR K2' },
-                '10000004': { type:'open',   freq:'',              label:'KerberosSDR K1' },
-                '00000006': { type:'open',   freq:'',              label:'Open'           },
+                '00001090': { type:'adsb',    freq:'1090 MHz',    label:'ADS-B 1090',  host:'10.13.73.190'                       },
+                '00144390': { type:'open',    freq:'',            label:'Open'                                                   },
+                '20000897': { type:'monitor', freq:'2m',          label:'Open',        activeLabel:'Repeater Monitoring'          },
+                '00000978': { type:'open',    freq:'',            label:'Open',        activeLabel:'VHF Digital'                  },
+                '00000433': { type:'decode',  freq:'433.920 MHz', label:'Acurite 433'                                            },
+                '00000005': { type:'open',    freq:'',            label:'Open'                                                   },
+                '00000315': { type:'decode',  freq:'314.9 MHz',   label:'TPMS'                                                   },
+                '20000145': { type:'open',    freq:'',            label:'Open'                                                   },
+                '10000001': { type:'open',    freq:'',            label:'Open'                                                   },
+                '10000002': { type:'open',    freq:'',            label:'Open'                                                   },
+                '10000003': { type:'open',    freq:'',            label:'Open'                                                   },
+                '10000004': { type:'open',    freq:'',            label:'Open'                                                   },
             };
 
             // Build one SDR_A entry from a hubPPPS device object.
@@ -7400,60 +7399,54 @@
             // Kerberossdr K1-K4 first (hub 3-1.1.4 LP 2-5), then ports 2-10.
             // Keeping the same order means A-IDs are stable before and after the fetch.
             window.SDR_A = [
-                // KerberosSDR K1–K4 (hub, IPs .198–.202)
-                { id:'A0',  serial:'10000004', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.201:7373' },
-                { id:'A1',  serial:'10000003', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.200:7373' },
-                { id:'A2',  serial:'10000002', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.199:7373' },
-                { id:'A3',  serial:'10000001', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.198:7373' },
-                { id:'A4',  serial:'00000006', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.202:7373' },
-                // Standalone RTL-SDRs — label stays "Open" until a function is actively launched
-                { id:'A5',  serial:'00001090', label:'ADS-B 1090', freq:'1090 MHz', type:'adsb', host:'10.13.73.190' },
-                { id:'A6',  serial:'00144390', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.191:7373' },
-                { id:'A7',  serial:'20000897', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.192:7373' },
-                { id:'A8',  serial:'00000978', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.193:7373' },
-                { id:'A9',  serial:'00000433', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.194:7373' },
-                { id:'A10', serial:'00000005', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.195:7373' },
-                { id:'A11', serial:'00000315', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.196:7373' },
-                { id:'A12', serial:'20000145', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.197:7373' },
+                { id:'A0',  serial:'10000004', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.201:7373' },
+                { id:'A1',  serial:'10000003', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.200:7373' },
+                { id:'A2',  serial:'10000002', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.199:7373' },
+                { id:'A3',  serial:'10000001', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.198:7373' },
+                { id:'A4',  serial:'00000006', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.202:7373' },
+                { id:'A5',  serial:'20000145', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.197:7373' },
+                { id:'A6',  serial:'00000315', label:'TPMS',        freq:'314.9 MHz',   type:'decode',  tcpDevice:'tcp://10.13.73.196:7373' },
+                { id:'A7',  serial:'00000005', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.195:7373' },
+                { id:'A8',  serial:'00000433', label:'Acurite 433', freq:'433.920 MHz', type:'decode',  tcpDevice:'tcp://10.13.73.194:7373' },
+                { id:'A9',  serial:'00000978', label:'Open',        freq:'',            type:'open',    activeLabel:'VHF Digital',          tcpDevice:'tcp://10.13.73.193:7373' },
+                { id:'A10', serial:'20000897', label:'Open',        freq:'2m',          type:'monitor', activeLabel:'Repeater Monitoring',  tcpDevice:'tcp://10.13.73.192:7373' },
+                { id:'A11', serial:'00144390', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.191:7373' },
+                { id:'A12', serial:'00001090', label:'ADS-B 1090',  freq:'1090 MHz',    type:'adsb',    host:'10.13.73.190' },
             ];
             const SDR_A = window.SDR_A;
 
-            // Fetch live SDR list from sdr.php?json=1 on sigmon.
-            // Matches by serial to keep stable A-IDs; Kerberossdr entries (not in sdr.php) are kept from static list.
+            // Fetch live SDR list from sdr-test-agent /devices (hubPPPS JSON).
+            // Flattens Kerberossdr sub-channels into the top-level array.
             const _fetchSdrDevices = async () => {
                 try {
-                    const r = await fetch('http://10.13.73.185/sdr.php?json=1',
+                    const r = await fetch('http://10.13.73.185:7380/devices',
                         { cache:'no-store', signal: AbortSignal.timeout(8000) });
                     if (!r.ok) throw new Error('HTTP ' + r.status);
-                    const data = await r.json();
-                    const live = Array.isArray(data.sdrs) ? data.sdrs : [];
+                    const ports = await r.json();
 
-                    // Update matching SDR_A entries in place (by serial), add new ones.
-                    // Kerberossdr entries (no serial match in live data) are kept unchanged.
-                    const seenSerials = new Set();
-                    live.forEach(dev => {
-                        seenSerials.add(dev.serial);
-                        const existing = window.SDR_A.find(s => s.serial === dev.serial);
-                        if (existing) {
-                            // Update live metadata only — never overwrite label/type so cards
-                            // stay "Open / Available" until a function is actively launched
-                            existing.tcpDevice = dev.tcpDevice || existing.tcpDevice;
-                            existing.host      = dev.host || existing.host;
-                            existing.svcStatus = dev.status;
-                            existing.clients   = dev.clients || 0;
-                            if (dev.adsb) existing.adsb = dev.adsb;
+                    const entries = [];
+                    for (const dev of ports) {
+                        if (dev.status !== 'connected') continue;
+                        if (dev.port === '1' && Array.isArray(dev.kerb_channels)) {
+                            for (const kch of dev.kerb_channels) {
+                                if (kch.status !== 'connected') continue;
+                                entries.push(kch);
+                            }
+                        } else if (dev.serial) {
+                            entries.push(dev);
                         }
-                        // Ignore serials not in the static list — no phantom cards added
-                    });
+                    }
 
-                    // Re-render grids with the updated list
+                    const built = entries.map((dev, i) => _sdrFromDevice(dev, i));
+                    window.SDR_A.length = 0;
+                    built.forEach(s => window.SDR_A.push(s));
+
                     _sdrRenderGrid(SDR_A, 'sdr-grid-a');
                     refreshSdrArray();
                     const ca = document.getElementById('sdr-a-count');
                     if (ca) ca.textContent = SDR_A.length + ' devices';
                 } catch (e) {
-                    // Silently keep the fallback static list
-                    console.warn('[SDR] sdr.php fetch failed, using static list:', e.message);
+                    console.warn('[SDR] /devices fetch failed, using static list:', e.message);
                 }
             };
 
@@ -7498,7 +7491,7 @@
                 const card = document.createElement('div');
                 card.className = 'sdr-rx-card' + (sdr.type === 'pend' ? ' is-pend' : '');
                 card.id = 'sdr-card-' + sdr.id.toLowerCase();
-                const canStop = sdr.type !== 'pend' && sdr.type !== 'adsb';
+                const canStop = ['monitor','noaa','open'].includes(sdr.type);
                 if (canStop) card.classList.add('can-stop');
                 const _ip = _sdrIp(sdr);
                 const _idLine = sdr.id + (_ip ? '<span style="font-weight:500;opacity:0.7"> · ' + _ip + '</span>' : '');
@@ -8530,12 +8523,10 @@
             titleEl.textContent = sdr.id + ' · ' + sdr.label;
             badgeEl.textContent = 'Available';
             _renderChannelList();
-            // Pre-select mode: use SDR_SERIAL_META defaultMode → fall back to type check → repeater-monitor
-            const _serialDefault = (SDR_SERIAL_META[_activeSdr.serial] || {}).defaultMode;
-            const defaultMode = _serialDefault
-                              || (_activeSdr.type === 'noaa'        ? 'noaa-monitor'
-                              :   _activeSdr.type === 'vhf-digital' ? 'vhf-digital'
-                              :   'repeater-monitor');
+            // Pre-select mode based on SDR type
+            const defaultMode = _activeSdr.type === 'noaa'        ? 'noaa-monitor'
+                              : _activeSdr.type === 'vhf-digital'  ? 'vhf-digital'
+                              : 'repeater-monitor';
             _selectMode(defaultMode);
             modal.hidden = false;
         };
