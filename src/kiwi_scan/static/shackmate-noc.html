@@ -7362,11 +7362,11 @@
             // hubPPPS doesn't know (SDR function, mode type, target frequency).
             const SDR_SERIAL_META = {
                 '00001090': { type:'adsb',   freq:'1090 MHz',      label:'ADS-B 1090',    host:'10.13.73.190' },
-                '00144390': { type:'local',  freq:'144.390 MHz',   label:'VHF / APRS'     },
+                '00144390': { type:'decode', freq:'144.390 MHz',   label:'VHF / APRS'     },
                 '20000897': { type:'decode', freq:'144 MHz',       label:'VHF Digital'    },
                 '00000978': { type:'owrx',   freq:'',              label:'SDR-3 General'  },
                 '00000433': { type:'decode', freq:'433.920 MHz',   label:'Acurite 433'    },
-                '00162400': { type:'local',  freq:'162 MHz',       label:'NOAA WX'        },
+                '00000005': { type:'decode', freq:'162 MHz',       label:'NOAA WX'        },
                 '00000315': { type:'decode', freq:'314.9 MHz',     label:'TPMS'           },
                 '20000145': { type:'owrx',   freq:'',              label:'SDR-7 Spare'    },
                 '10000001': { type:'open',   freq:'',              label:'KerberosSDR K4' },
@@ -7408,11 +7408,11 @@
                 { id:'A4',  serial:'00000006', label:'Open',           freq:'',          type:'open',   tcpDevice:'tcp://10.13.73.202:7373' },
                 // Standalone RTL-SDRs — labels/types overwritten by sdr.php?json=1 fetch (matched by serial)
                 { id:'A5',  serial:'00001090', label:'ADS-B 1090',     freq:'1090 MHz',  type:'adsb',   host:'10.13.73.190' },
-                { id:'A6',  serial:'00144390', label:'VHF / APRS',     freq:'144.390 MHz', type:'local', tcpDevice:'tcp://10.13.73.191:7373' },
+                { id:'A6',  serial:'00144390', label:'VHF / APRS',     freq:'144.390 MHz', type:'decode', tcpDevice:'tcp://10.13.73.191:7373' },
                 { id:'A7',  serial:'20000897', label:'VHF Digital',    freq:'144 MHz',   type:'decode', tcpDevice:'tcp://10.13.73.192:7373' },
                 { id:'A8',  serial:'00000978', label:'SDR-3 General',  freq:'',          type:'owrx',   tcpDevice:'tcp://10.13.73.193:7373' },
                 { id:'A9',  serial:'00000433', label:'Acurite 433',    freq:'433.920 MHz', type:'decode', tcpDevice:'tcp://10.13.73.194:7373' },
-                { id:'A10', serial:'00162400', label:'NOAA WX',        freq:'162 MHz',   type:'local',  tcpDevice:'tcp://10.13.73.195:7373' },
+                { id:'A10', serial:'00000005', label:'NOAA WX',        freq:'162 MHz',   type:'decode', tcpDevice:'tcp://10.13.73.195:7373' },
                 { id:'A11', serial:'00000315', label:'TPMS',           freq:'314.9 MHz', type:'decode', tcpDevice:'tcp://10.13.73.196:7373' },
                 { id:'A12', serial:'20000145', label:'SDR-7 Spare',    freq:'',          type:'owrx',   tcpDevice:'tcp://10.13.73.197:7373' },
             ];
