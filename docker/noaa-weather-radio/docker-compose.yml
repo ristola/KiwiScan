@@ -1,0 +1,68 @@
+# Deploy this on sigmon-2 (10.13.73.195)
+# sigmon-2 must have Docker TCP API enabled (see README below)
+#
+# Setup steps on sigmon-2:
+#   1. Enable Docker TCP API — add to /etc/docker/daemon.json:
+#        { "hosts": ["unix:///var/run/docker.sock", "tcp://10.13.73.195:2375"] }
+#      Then: sudo systemctl restart docker
+#
+#   2. Build the image on sigmon-2:
+#        docker build -t n4ldr/noaa-weather-radio:latest .
+#
+#   3. Start services:
+#        docker compose up -d
+#
+# KiwiScan (Mac) then controls kiwiscan-noaa-wr via Docker TCP on port 2375
+# and reads alert files from the noaa-files HTTP server on port 8180.
+
+services:
+  noaa-weather-radio:
+    image: n4ldr/noaa-weather-radio:latest
+    container_name: kiwiscan-noaa-wr
+    restart: unless-stopped
+    # Host network so the container reaches rtl_tcp at localhost:7373
+    network_mode: host
+    environment:
+      RTL_TCP_HOST: "127.0.0.1"
+      RTL_TCP_PORT: "7373"
+      RTL_GAIN: "38"
+      RTL_PPM: "0"
+      EAS_ENABLED: "1"
+      RECORD_ALERTS: "1"
+      EAS_OUTPUT_DIR: "/opt/noaa_wr/eas_messages"
+      # All 7 WX channels enabled — KiwiScan can selectively enable/disable on start
+      CH_1_ENABLED: "1"
+      CH_1_NAME: "WX2"
+      CH_2_ENABLED: "1"
+      CH_2_NAME: "WX4"
+      CH_3_ENABLED: "1"
+      CH_3_NAME: "WX5"
+      CH_4_ENABLED: "1"
+      CH_4_NAME: "WX3"
+      CH_5_ENABLED: "1"
+      CH_5_NAME: "WX6"
+      CH_6_ENABLED: "1"
+      CH_6_NAME: "WX7"
+      CH_7_ENABLED: "1"
+      CH_7_NAME: "WX1"
+      # Optional Icecast streaming — uncomment and set your Icecast server
+      # CH_1_ICECAST_ENABLED: "1"
+      # CH_1_ICECAST: "icecast://source:hackme@10.13.73.20:8000/noaa_wx2"
+    volumes:
+      - noaa-alerts:/opt/noaa_wr/eas_messages
+
+  # Lightweight HTTP file server — lets KiwiScan (and the browser) fetch
+  # EAS alert .txt and .wav files over HTTP on port 8180
+  noaa-files:
+    image: python:3.11-slim
+    container_name: kiwiscan-noaa-files
+    restart: unless-stopped
+    command: python -m http.server 80 --directory /data
+    ports:
+      - "8180:80"
+    volumes:
+      - noaa-alerts:/data:ro
+
+volumes:
+  noaa-alerts:
+    name: kiwiscan-noaa-alerts

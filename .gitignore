@@ -40,5 +40,11 @@ _backups/
 /tools/fix_*.py
 /tools/patch_*.py
 
-# Local secrets
-/config/kiwi_secrets.json
+# Local secrets and runtime config (host IPs, assignments, device maps)
+/config/
+
+# Claude AI local memory/settings
+/.claude/
+
+# Docker __pycache__ inside service dirs
+docker/**/__pycache__/

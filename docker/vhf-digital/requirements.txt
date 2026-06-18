@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+websockets
+numpy>=1.26.4
+scipy
+httpx

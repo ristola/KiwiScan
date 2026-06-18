@@ -1,0 +1,103 @@
+# sigmon-2 (10.13.73.185) — 8 RTL-SDR rtl_tcp services
+# Each dongle gets its own dedicated IP on VLAN 73 via macvlan.
+# All device selection uses SERIAL NUMBER, not device index.
+#
+# One-time network setup on sigmon-2 (run once, survives reboots):
+#   docker network create -d macvlan \
+#     --subnet=10.13.73.0/24 \
+#     --gateway=10.13.73.1 \
+#     --ip-range=10.13.73.192/29 \
+#     -o parent=eth0 \
+#     sigmon-sdr-net
+#   (replace eth0 with your actual interface — check with: ip link show)
+#
+# Verify / reprogram SDR serials before first run:
+#   rtl_test -l          — list all connected dongles and their current serials
+#   rtl_eeprom -d 0 -s 00000978    — set serial on device index 0 (unplug/replug after)
+#
+# Add new dongles:
+#   1. Run rtl_test -l to find the new serial
+#   2. Add a new service block below with the correct serial and next available IP
+#   3. docker compose up -d --no-recreate   (starts only the new service)
+#
+# Start all:
+#   docker compose up -d
+
+networks:
+  sigmon-sdr-net:
+    external: true
+
+services:
+  # A3 — Open SDR
+  rtl-tcp-sn-00000978:
+    image: ghcr.io/sdr-enthusiasts/docker-rtlsdr:latest
+    container_name: rtl-tcp-sn-00000978
+    restart: unless-stopped
+    devices:
+      - /dev/bus/usb
+    networks:
+      sigmon-sdr-net:
+        ipv4_address: 10.13.73.193
+    command: rtl_tcp -a 0.0.0.0 -p 7373 -d 00000978
+
+  # A4 — Acurite 433 MHz
+  rtl-tcp-sn-00000433:
+    image: ghcr.io/sdr-enthusiasts/docker-rtlsdr:latest
+    container_name: rtl-tcp-sn-00000433
+    restart: unless-stopped
+    devices:
+      - /dev/bus/usb
+    networks:
+      sigmon-sdr-net:
+        ipv4_address: 10.13.73.194
+    command: rtl_tcp -a 0.0.0.0 -p 7373 -d 00000433
+
+  # A5 — NOAA Weather Radio
+  rtl-tcp-sn-00162400:
+    image: ghcr.io/sdr-enthusiasts/docker-rtlsdr:latest
+    container_name: rtl-tcp-sn-00162400
+    restart: unless-stopped
+    devices:
+      - /dev/bus/usb
+    networks:
+      sigmon-sdr-net:
+        ipv4_address: 10.13.73.195
+    command: rtl_tcp -a 0.0.0.0 -p 7373 -d 00162400
+
+  # A6 — TPMS 314.9 MHz
+  rtl-tcp-sn-00000315:
+    image: ghcr.io/sdr-enthusiasts/docker-rtlsdr:latest
+    container_name: rtl-tcp-sn-00000315
+    restart: unless-stopped
+    devices:
+      - /dev/bus/usb
+    networks:
+      sigmon-sdr-net:
+        ipv4_address: 10.13.73.196
+    command: rtl_tcp -a 0.0.0.0 -p 7373 -d 00000315
+
+  # A7 — Open SDR
+  rtl-tcp-sn-20000145:
+    image: ghcr.io/sdr-enthusiasts/docker-rtlsdr:latest
+    container_name: rtl-tcp-sn-20000145
+    restart: unless-stopped
+    devices:
+      - /dev/bus/usb
+    networks:
+      sigmon-sdr-net:
+        ipv4_address: 10.13.73.197
+    command: rtl_tcp -a 0.0.0.0 -p 7373 -d 20000145
+
+  # ── New dongles go below ───────────────────────────────────────────────────
+  # Template — copy, set the real serial, and assign the next free IP:
+  #
+  # rtl-tcp-sn-XXXXXXXX:
+  #   image: ghcr.io/sdr-enthusiasts/docker-rtlsdr:latest
+  #   container_name: rtl-tcp-sn-XXXXXXXX
+  #   restart: unless-stopped
+  #   devices:
+  #     - /dev/bus/usb
+  #   networks:
+  #     sigmon-sdr-net:
+  #       ipv4_address: 10.13.73.198   # next available IP
+  #   command: rtl_tcp -a 0.0.0.0 -p 7373 -d XXXXXXXX

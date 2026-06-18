@@ -1,0 +1,49 @@
+# Sigmon SBC — RTL-SDR services
+# Host: 10.13.73.192  (two dongles, two rtl_tcp instances on different ports)
+#
+# IMPORTANT: device selection uses SERIAL NUMBER, not device index.
+# This means adding or reordering USB dongles never breaks an existing service.
+# rtl-sdr >= 0.6 accepts a serial string for the -d flag directly.
+#
+# Setup on Sigmon SBC:
+#   1. Verify your dongle serials:
+#        rtl_test -l
+#      Expected output example:
+#        Found 2 device(s):
+#          0:  ..., SN: 20000897
+#          1:  ..., SN: 00144390
+#
+#   2. If serials are wrong, reprogram them (one dongle at a time):
+#        rtl_eeprom -d 0 -s 20000897
+#        rtl_eeprom -d 1 -s 00144390
+#      Then unplug/replug the dongle.
+#
+#   3. Start:
+#        docker compose up -d
+#
+# ADS-B note (separate host 10.13.73.190):
+#   dump1090-fa must also bind by serial so it always gets SN 00001090:
+#     dump1090-fa --device-index 00001090 --net [other flags]
+#   If running via FlightAware's package, set in /etc/default/dump1090-fa:
+#     RECEIVER_OPTIONS="--device-serial 00001090"
+
+services:
+  rtl-tcp-repeater-mon:
+    image: ghcr.io/sdr-enthusiasts/docker-rtlsdr:latest
+    container_name: rtl-tcp-sn-20000897
+    restart: unless-stopped
+    devices:
+      - /dev/bus/usb
+    network_mode: host
+    # Binds to serial 20000897 → A2 Repeater Monitoring (port 7373)
+    command: rtl_tcp -a 0.0.0.0 -p 7373 -d 20000897
+
+  rtl-tcp-vhf-digital:
+    image: ghcr.io/sdr-enthusiasts/docker-rtlsdr:latest
+    container_name: rtl-tcp-sn-00144390
+    restart: unless-stopped
+    devices:
+      - /dev/bus/usb
+    network_mode: host
+    # Binds to serial 00144390 → A1 VHF Digital @ 10.13.73.202:7373
+    command: rtl_tcp -a 10.13.73.202 -p 7373 -d 00144390

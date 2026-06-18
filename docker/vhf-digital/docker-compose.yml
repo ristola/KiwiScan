@@ -1,0 +1,28 @@
+# Deploy on sigmon SBC alongside the rtl_tcp containers.
+# Host tools (direwolf, sox) are bind-mounted from the sigmon Ubuntu OS.
+#
+# Build:  docker build -t n4ldr/vhf-digital:latest .
+# Start:  docker compose up -d
+
+services:
+  vhf-digital:
+    image: n4ldr/vhf-digital:latest
+    container_name: kiwiscan-vhf-digital
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      RTL_TCP_HOST: "10.13.73.192"
+      RTL_TCP_PORT: "7373"
+      CENTER_HZ: "144350000"
+      SAMPLE_RATE: "2400000"
+      GAIN_DB: "auto"
+      SERVICE_PORT: "4025"
+    volumes:
+      - vhf-decodes:/opt/vhf-digital/decodes
+      # direwolf, sox, jt9, wsprd are all installed inside the image via apt (wsjtx + direwolf).
+      # No host bind-mounts needed for binaries — those would pull in Ubuntu libs incompatible
+      # with the Debian Bookworm container.
+
+volumes:
+  vhf-decodes:
+    name: kiwiscan-vhf-decodes
