@@ -151,7 +151,7 @@ app.add_middleware(
 
 
 @app.get("/")
-def root() -> dict:
+async def root() -> dict:
     return {
         "service":   "NOAA WX EAS API",
         "endpoints": ["/status", "/alerts", "/alerts/{id}/audio", "/ws/alerts"],
@@ -159,7 +159,7 @@ def root() -> dict:
 
 
 @app.get("/status")
-def get_status() -> dict:
+async def get_status() -> dict:
     return {
         "ok":         True,
         "uptime_sec": round(time.time() - _start_time),
@@ -170,13 +170,13 @@ def get_status() -> dict:
 
 
 @app.get("/alerts")
-def get_alerts(limit: int = 50) -> list:
+async def get_alerts(limit: int = 50) -> list:
     limit = min(limit, MAX_ALERTS)
     return list(reversed(_alerts[-limit:]))
 
 
 @app.get("/alerts/{alert_id}/audio")
-def get_alert_audio(alert_id: str) -> FileResponse:
+async def get_alert_audio(alert_id: str) -> FileResponse:
     if not re.fullmatch(r"[\w\-]+", alert_id):
         raise HTTPException(400, "Invalid alert ID")
     wav = DATA_DIR / f"{alert_id}.wav"
