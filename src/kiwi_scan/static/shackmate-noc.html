@@ -7400,21 +7400,21 @@
             // Kerberossdr K1-K4 first (hub 3-1.1.4 LP 2-5), then ports 2-10.
             // Keeping the same order means A-IDs are stable before and after the fetch.
             window.SDR_A = [
-                // KerberosSDR K1–K4 (hub, IPs .198–.202 — not in sdr.php, kept static)
-                { id:'A0',  serial:'10000004', label:'KerberosSDR K1', freq:'',          type:'open',   tcpDevice:'tcp://10.13.73.201:7373' },
-                { id:'A1',  serial:'10000003', label:'KerberosSDR K2', freq:'',          type:'open',   tcpDevice:'tcp://10.13.73.200:7373' },
-                { id:'A2',  serial:'10000002', label:'KerberosSDR K3', freq:'',          type:'open',   tcpDevice:'tcp://10.13.73.199:7373' },
-                { id:'A3',  serial:'10000001', label:'KerberosSDR K4', freq:'',          type:'open',   tcpDevice:'tcp://10.13.73.198:7373' },
-                { id:'A4',  serial:'00000006', label:'Open',           freq:'',          type:'open',   tcpDevice:'tcp://10.13.73.202:7373' },
-                // Standalone RTL-SDRs — labels/types overwritten by sdr.php?json=1 fetch (matched by serial)
-                { id:'A5',  serial:'00001090', label:'ADS-B 1090',     freq:'1090 MHz',  type:'adsb',   host:'10.13.73.190' },
-                { id:'A6',  serial:'00144390', label:'VHF / APRS',     freq:'144.390 MHz', type:'decode', tcpDevice:'tcp://10.13.73.191:7373' },
-                { id:'A7',  serial:'20000897', label:'VHF Digital',    freq:'144 MHz',   type:'decode', tcpDevice:'tcp://10.13.73.192:7373' },
-                { id:'A8',  serial:'00000978', label:'SDR-3 General',  freq:'',          type:'owrx',   tcpDevice:'tcp://10.13.73.193:7373' },
-                { id:'A9',  serial:'00000433', label:'Acurite 433',    freq:'433.920 MHz', type:'decode', tcpDevice:'tcp://10.13.73.194:7373' },
-                { id:'A10', serial:'00000005', label:'NOAA WX',        freq:'162 MHz',   type:'decode', tcpDevice:'tcp://10.13.73.195:7373' },
-                { id:'A11', serial:'00000315', label:'TPMS',           freq:'314.9 MHz', type:'decode', tcpDevice:'tcp://10.13.73.196:7373' },
-                { id:'A12', serial:'20000145', label:'SDR-7 Spare',    freq:'',          type:'owrx',   tcpDevice:'tcp://10.13.73.197:7373' },
+                // KerberosSDR K1–K4 (hub, IPs .198–.202)
+                { id:'A0',  serial:'10000004', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.201:7373' },
+                { id:'A1',  serial:'10000003', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.200:7373' },
+                { id:'A2',  serial:'10000002', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.199:7373' },
+                { id:'A3',  serial:'10000001', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.198:7373' },
+                { id:'A4',  serial:'00000006', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.202:7373' },
+                // Standalone RTL-SDRs — label stays "Open" until a function is actively launched
+                { id:'A5',  serial:'00001090', label:'ADS-B 1090', freq:'1090 MHz', type:'adsb', host:'10.13.73.190' },
+                { id:'A6',  serial:'00144390', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.191:7373' },
+                { id:'A7',  serial:'20000897', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.192:7373' },
+                { id:'A8',  serial:'00000978', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.193:7373' },
+                { id:'A9',  serial:'00000433', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.194:7373' },
+                { id:'A10', serial:'00000005', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.195:7373' },
+                { id:'A11', serial:'00000315', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.196:7373' },
+                { id:'A12', serial:'20000145', label:'Open', freq:'', type:'open', tcpDevice:'tcp://10.13.73.197:7373' },
             ];
             const SDR_A = window.SDR_A;
 
@@ -7435,30 +7435,15 @@
                         seenSerials.add(dev.serial);
                         const existing = window.SDR_A.find(s => s.serial === dev.serial);
                         if (existing) {
-                            // Update live fields; preserve stable id and assignment tracking fields
-                            existing.label      = dev.label;
-                            existing.type       = dev.type;
-                            existing.freq       = dev.freq || existing.freq || '';
-                            existing.tcpDevice  = dev.tcpDevice || existing.tcpDevice;
-                            existing.host       = dev.host || existing.host;
-                            existing.svcStatus  = dev.status;
-                            existing.clients    = dev.clients || 0;
+                            // Update live metadata only — never overwrite label/type so cards
+                            // stay "Open / Available" until a function is actively launched
+                            existing.tcpDevice = dev.tcpDevice || existing.tcpDevice;
+                            existing.host      = dev.host || existing.host;
+                            existing.svcStatus = dev.status;
+                            existing.clients   = dev.clients || 0;
                             if (dev.adsb) existing.adsb = dev.adsb;
-                        } else {
-                            // New SDR not in static list — add with next available A-ID
-                            const nextId = 'A' + window.SDR_A.length;
-                            window.SDR_A.push({
-                                id:        nextId,
-                                serial:    dev.serial,
-                                label:     dev.label,
-                                type:      dev.type,
-                                freq:      dev.freq || '',
-                                tcpDevice: dev.tcpDevice,
-                                host:      dev.host,
-                                svcStatus: dev.status,
-                                clients:   dev.clients || 0,
-                            });
                         }
+                        // Ignore serials not in the static list — no phantom cards added
                     });
 
                     // Re-render grids with the updated list
@@ -7513,7 +7498,7 @@
                 const card = document.createElement('div');
                 card.className = 'sdr-rx-card' + (sdr.type === 'pend' ? ' is-pend' : '');
                 card.id = 'sdr-card-' + sdr.id.toLowerCase();
-                const canStop = ['monitor','noaa','open'].includes(sdr.type);
+                const canStop = sdr.type !== 'pend' && sdr.type !== 'adsb';
                 if (canStop) card.classList.add('can-stop');
                 const _ip = _sdrIp(sdr);
                 const _idLine = sdr.id + (_ip ? '<span style="font-weight:500;opacity:0.7"> · ' + _ip + '</span>' : '');
