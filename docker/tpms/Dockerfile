@@ -1,14 +1,13 @@
 FROM python:3.11-slim
 
-# rtl_433 decodes TPMS and 200+ other ISM-band sensor protocols via rtl_tcp
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        rtl-433 \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update -o APT::Update::Post-Invoke="" \
+    && apt-get install -y --no-install-recommends rtl-433 \
+    && rm -rf /var/lib/apt/lists/* || true
 
 WORKDIR /opt/tpms
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --progress-bar off -r requirements.txt
 
 COPY service.py .
 
