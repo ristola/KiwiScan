@@ -1380,6 +1380,9 @@
         }
         .dm-band-filter-row { padding: 0.45rem 0.65rem; }
         .dm-band-filter-row:empty { display: none; }
+        .dm-range-pills { display: flex; gap: 0.35rem; align-items: center; flex-shrink: 0; }
+        .dm-range-sep { width: 1px; height: 1.1rem; background: var(--line); margin: 0 0.25rem; flex-shrink: 0; }
+        #dm-range-vhf.active { background: rgba(47,140,255,0.15); border-color: rgba(80,160,255,0.65); color: rgba(100,175,255,1); }
         .dm-band-pills { display: flex; gap: 0.35rem; flex-wrap: wrap; }
         .dm-band-pills:empty + .dm-filters { border-top: none; }
         .dm-mode-pills { display: flex; gap: 0.35rem; }
@@ -2632,6 +2635,12 @@
             background: var(--cyan);
         }
 
+        /* Leaflet divIcon default styles produce a white box + border — kill them */
+        .leaflet-div-icon {
+            background: transparent !important;
+            border: none !important;
+        }
+
         .rf-map-popup {
             color: #0b1220;
             font-weight: 700;
@@ -3239,9 +3248,10 @@
         .vhf-ch-row  { display:grid; grid-template-columns:1.2rem 4.5rem 1fr 3.5rem; align-items:center; gap:0.4rem; padding:0.25rem 0.4rem; background:var(--panel-2); border-radius:5px; border:1px solid var(--line); }
         .vhf-ch-row.is-disabled { opacity:0.45; }
         .vhf-mode-badge { font-size:0.58rem; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; padding:0.1rem 0.35rem; border-radius:3px; white-space:nowrap; }
-        .vhf-mode-ft8  { background:rgba(47,140,255,0.15); color:var(--blue); }
-        .vhf-mode-ft4  { background:rgba(39,213,255,0.15); color:var(--cyan); }
-        .vhf-mode-wspr { background:rgba(154,124,255,0.15); color:var(--violet); }
+        .vhf-mode-ft8  { background:rgba(47,140,255,0.18); color:rgba(80,160,255,1); }
+        .vhf-mode-ft4  { background:rgba(50,200,80,0.18); color:rgba(50,200,80,1); }
+        .vhf-mode-wspr { background:rgba(140,80,255,0.18); color:rgba(170,100,255,1); }
+        .vhf-cnt-num   { color: rgba(255,255,255,0.92); font-weight:700; }
         .vhf-mode-aprs { background:rgba(32,184,160,0.15); color:var(--ok); }
         .vhf-mode-pkt  { background:rgba(240,183,47,0.15); color:var(--yellow); }
         /* Live decode feed */
@@ -4092,6 +4102,12 @@
                         </div>
                         <div id="dm-body">
                             <div class="dm-filters dm-band-filter-row">
+                                <div class="dm-range-pills">
+                                    <button class="rf-filter-chip active" id="dm-range-all" type="button">All</button>
+                                    <button class="rf-filter-chip" id="dm-range-hf" type="button">HF</button>
+                                    <button class="rf-filter-chip" id="dm-range-vhf" type="button">VHF</button>
+                                </div>
+                                <div class="dm-range-sep"></div>
                                 <div id="dm-band-pills" class="dm-band-pills"></div>
                             </div>
                             <div class="dm-filters">
@@ -4371,6 +4387,7 @@
             let rfSiteLayer = null;
             let rfDecodeLayer = null;
             let rfPathLayer = null;
+            let rfQthLayer = null;
             let rfGlobe = null;
             let rfMapSelectedBand = 'ALL';
             let rfMapSelectedModes = new Set(['FT8', 'FT4', 'WSPR', 'SSB']);
@@ -4457,6 +4474,13 @@
                 });
             };
 
+            const makeQthIcon = () => {
+                if (!window.L) return null;
+                // APRS primary table '-' = house/home, ASCII 45 → idx 12, col 12, row 0
+                const html = `<div style="width:21px;height:21px;position:relative;display:inline-block;background:url(/static/aprs/symbols-primary.png) no-repeat -252px 0px;image-rendering:pixelated;filter:drop-shadow(0 0 4px rgba(255,210,0,1)) drop-shadow(0 0 2px rgba(0,0,0,0.9))"></div>`;
+                return L.divIcon({ className: '', html, iconSize: [21, 21], iconAnchor: [10, 21], popupAnchor: [0, -12] });
+            };
+
             // Parse APRS symbol table/code from a raw APRS message string.
             // Handles uncompressed positions (!, =, @, /) by regex-matching the
             // standard DDMMssN T DDDMMssW S pattern.  Falls back to digipeater (#)
@@ -4469,43 +4493,33 @@
                 return m ? { table: m[1], code: m[2] } : { table: '/', code: '#' };
             };
 
-            // Inline SVG APRS symbols for the most common symbol codes.
-            // Falls back to a styled character badge for anything not listed.
-            const _APRS_SVG = {
-                // Digipeater (#) — blue diamond with centre dot
-                '#': '<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polygon points="12,1 23,12 12,23 1,12" fill="#2563eb" stroke="#1e40af" stroke-width="1.5"/><circle cx="12" cy="12" r="4.5" fill="white"/><circle cx="12" cy="12" r="2" fill="#2563eb"/></svg>',
-                // House / home QTH (-)
-                '-': '<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polygon points="1,12 12,2 23,12" fill="#16a34a" stroke="#15803d" stroke-width="1.2"/><rect x="3" y="11" width="18" height="11" fill="#16a34a" stroke="#15803d" stroke-width="1.2"/><rect x="9" y="15" width="6" height="7" fill="white"/></svg>',
-                // Car / vehicle (>)
-                '>': '<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="10" width="20" height="8" rx="2" fill="#d97706" stroke="#b45309" stroke-width="1"/><rect x="5" y="7" width="14" height="4" rx="1" fill="#d97706" stroke="#b45309" stroke-width="1"/><circle cx="7" cy="19" r="2.5" fill="#1f2937"/><circle cx="17" cy="19" r="2.5" fill="#1f2937"/></svg>',
-                // Person / human ([)
-                '[': '<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="5" r="4" fill="#2563eb" stroke="#1e40af" stroke-width="1"/><line x1="12" y1="9" x2="12" y2="18" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round"/><line x1="6" y1="13" x2="18" y2="13" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round"/><line x1="12" y1="18" x2="7" y2="24" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round"/><line x1="12" y1="18" x2="17" y2="24" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round"/></svg>',
-                // Weather station (_)
-                '_': '<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="11" fill="#7c3aed" stroke="#5b21b6" stroke-width="1.5"/><line x1="12" y1="2" x2="12" y2="7" stroke="white" stroke-width="2" stroke-linecap="round"/><line x1="22" y1="12" x2="17" y2="12" stroke="white" stroke-width="2" stroke-linecap="round"/><line x1="2" y1="12" x2="7" y2="12" stroke="white" stroke-width="2" stroke-linecap="round"/><line x1="12" y1="22" x2="12" y2="17" stroke="white" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="3" fill="white"/></svg>',
-                // Van (v)
-                'v': '<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="9" width="22" height="9" rx="2" fill="#0891b2" stroke="#0e7490" stroke-width="1"/><rect x="3" y="6" width="18" height="4" rx="1" fill="#0891b2" stroke="#0e7490" stroke-width="1"/><rect x="5" y="7" width="7" height="3" rx="1" fill="#bae6fd"/><circle cx="6" cy="19" r="2.5" fill="#1f2937"/><circle cx="18" cy="19" r="2.5" fill="#1f2937"/></svg>',
-                // Truck (k)
-                'k': '<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="10" width="22" height="8" rx="2" fill="#92400e" stroke="#78350f" stroke-width="1"/><rect x="4" y="6" width="16" height="5" rx="1" fill="#92400e" stroke="#78350f" stroke-width="1"/><rect x="5" y="7" width="7" height="3" rx="1" fill="#fde68a"/><circle cx="6" cy="19" r="2.5" fill="#1f2937"/><circle cx="18" cy="19" r="2.5" fill="#1f2937"/></svg>',
-                // Igate / internet gateway (&)
-                '&': '<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="11" fill="#0f766e" stroke="#0d5c52" stroke-width="1.5"/><text x="12" y="17" font-size="13" font-weight="900" fill="white" text-anchor="middle" font-family="sans-serif">I</text></svg>',
-                // Fill-in digipeater / relay (R in alt table, also common)
-                'R': '<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polygon points="12,1 23,12 12,23 1,12" fill="#0891b2" stroke="#0e7490" stroke-width="1.5"/><circle cx="12" cy="12" r="4.5" fill="white"/><circle cx="12" cy="12" r="2" fill="#0891b2"/></svg>',
-            };
-
+            // APRS symbol sprites from WA8LMF UIview symbol set.
+            // Sprite grid: 16 cols × 6 rows, each cell 21×21px (337×127px total).
+            // Primary table ('/'): /aprs/symbols-primary.png
+            // Alternate table ('\'): /aprs/symbols-alternate.png
+            // Overlay table (A-Z, 0-9): alternate sprite + overlay char drawn on top.
             const makeAprsIcon = (decode) => {
                 if (!window.L) return null;
                 const sym = parseAprsSymbol(String(decode && decode.message || ''));
-                const svg = _APRS_SVG[sym.code];
-                const html = svg || (() => {
-                    const bg = sym.table === '/' ? '#2563eb' : '#7c3aed';
-                    return `<div style="width:22px;height:22px;border-radius:3px;background:${bg};border:1.5px solid rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;color:white;font:700 11px/1 monospace">${sym.code}</div>`;
-                })();
+                const idx = sym.code.charCodeAt(0) - 33;
+                const col = idx % 16;
+                const row = Math.floor(idx / 16);
+                const bgX = col * 21;
+                const bgY = row * 21;
+                const isOverlay = /^[A-Z0-9]$/.test(sym.table);
+                const useAlt = sym.table === '\\' || isOverlay;
+                const sprite = useAlt ? '/static/aprs/symbols-alternate.png' : '/static/aprs/symbols-primary.png';
+                const baseStyle = `width:21px;height:21px;position:relative;display:inline-block;background:url(${sprite}) no-repeat -${bgX}px -${bgY}px;image-rendering:pixelated;`;
+                const overlaySpan = isOverlay
+                    ? `<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:700 9px/1 monospace;color:#fff;text-shadow:0 0 2px #000,0 0 2px #000,0 0 2px #000">${sym.table}</span>`
+                    : '';
+                const html = `<div style="${baseStyle}">${overlaySpan}</div>`;
                 return L.divIcon({
                     className: '',
                     html,
-                    iconSize: [24, 24],
-                    iconAnchor: [12, 12],
-                    popupAnchor: [0, -14],
+                    iconSize: [21, 21],
+                    iconAnchor: [10, 10],
+                    popupAnchor: [0, -12],
                 });
             };
 
@@ -4658,6 +4672,7 @@
                 rfPathLayer = L.layerGroup().addTo(rfLeafletMap);
                 rfSiteLayer = L.layerGroup().addTo(rfLeafletMap);
                 rfDecodeLayer = L.layerGroup().addTo(rfLeafletMap);
+                rfQthLayer = L.layerGroup().addTo(rfLeafletMap);
             };
 
             const initRfGlobe = () => {
@@ -4879,6 +4894,7 @@
                 if (rfSiteLayer) rfSiteLayer.clearLayers();
                 if (rfDecodeLayer) rfDecodeLayer.clearLayers();
                 if (rfPathLayer) rfPathLayer.clearLayers();
+                if (rfQthLayer) rfQthLayer.clearLayers();
                 if (rfLeafletMap && window.L) {
                     sites.forEach((site) => {
                         const marker = L.marker([site.coords.lat, site.coords.lon], { icon: makeSiteIcon(site.label) })
@@ -4904,6 +4920,19 @@
                         marker.on('mouseout', () => marker.closePopup());
                         marker.addTo(rfDecodeLayer);
                     });
+                    // QTH marker from Station Identity
+                    const _si = window._stationIdentity || {};
+                    const _qthLat = parseFloat(_si.lat);
+                    const _qthLon = parseFloat(_si.lon);
+                    if (!isNaN(_qthLat) && !isNaN(_qthLon) && rfQthLayer) {
+                        const _qthLabel = _si.callsign ? `${_si.callsign} (QTH)` : 'My QTH';
+                        const _qthSub = _si.gridsq ? `<br>${_si.gridsq}` : '';
+                        const _qthM = L.marker([_qthLat, _qthLon], { icon: makeQthIcon(), zIndexOffset: 1000 })
+                            .bindPopup(`<div class="rf-map-popup">${_qthLabel}${_qthSub}</div>`);
+                        _qthM.on('mouseover', () => _qthM.openPopup());
+                        _qthM.on('mouseout', () => _qthM.closePopup());
+                        _qthM.addTo(rfQthLayer);
+                    }
                     requestAnimationFrame(() => rfLeafletMap.invalidateSize());
                 }
                 if (siteState.mapMode === '3d') {
@@ -5554,6 +5583,13 @@
                 updateStatCards();
             };
 
+            // Keep the activity chart bars sliding in real-time even when no new fetches arrive.
+            setInterval(() => {
+                if (document.querySelector('.nav-btn.is-active')?.dataset.view === 'operations') {
+                    updateActivityChart();
+                }
+            }, 10000);
+
             // Run on load and then every 30s independently of the main refresh cycle
             runNetworkPing();
             setInterval(runNetworkPing, 30000);
@@ -5917,6 +5953,7 @@
             const dmState = {
                 modesOn: new Set(['WSPR', 'FT4', 'FT8']),
                 band: 'ALL',
+                freqRange: 'ALL',   // 'ALL' | 'HF' | 'VHF'
                 cqOnly: true,
                 dxOnly: false,
                 uniqueCall: true,
@@ -5943,6 +5980,48 @@
                 const opts = { hour: '2-digit', minute: '2-digit', second: '2-digit' };
                 if (nocTimeUtc) return d.toLocaleTimeString('en-GB', { ...opts, timeZone: 'UTC' });
                 return d.toLocaleTimeString([], opts);
+            };
+
+            const _normalizeVhfDecode = (d) => {
+                // Parse SNR from jt9 line: "HHMMSS SNR DT FREQ ~ MSG..."
+                const parts = (d.message || '').trim().split(/\s+/);
+                let snr = null;
+                if (parts.length >= 2 && /^\d{6}$/.test(parts[0]) && !isNaN(parts[1])) {
+                    snr = parseInt(parts[1], 10);
+                }
+                // Last Maidenhead grid in message (ignore RR73)
+                const gridMatch = (d.message || '').match(/\b([A-R]{2}\d{2}(?:[A-Xa-x]{2})?)\b/g);
+                let grid = null;
+                if (gridMatch) {
+                    const g = gridMatch[gridMatch.length - 1].toUpperCase();
+                    if (g !== 'RR73' && g !== 'RR00') grid = g;
+                }
+                // Haversine distance to QTH
+                let dist_mi = null;
+                const _si = window._stationIdentity || {};
+                const _qLat = parseFloat(_si.lat), _qLon = parseFloat(_si.lon);
+                if (d.lat && d.lon && !isNaN(_qLat) && !isNaN(_qLon)) {
+                    const R = 3958.8;
+                    const φ1 = _qLat * Math.PI / 180, φ2 = d.lat * Math.PI / 180;
+                    const Δφ = (d.lat - _qLat) * Math.PI / 180;
+                    const Δλ = (d.lon - _qLon) * Math.PI / 180;
+                    const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+                    dist_mi = Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+                }
+                const recvMs = d.received_at ? Date.parse(d.received_at) : 0;
+                return {
+                    id: d.id,
+                    mode: (d.mode || '').toUpperCase(),
+                    band: '2m',
+                    frequency_mhz: d.freq_hz ? d.freq_hz / 1e6 : null,
+                    callsign: d.callsign || '',
+                    message: d.message || '',
+                    snr, grid, dist_mi,
+                    lat: d.lat, lon: d.lon,
+                    epoch_ts: recvMs ? recvMs / 1000 : null,
+                    ts: recvMs ? recvMs / 1000 : null,
+                    _isVhf: true,
+                };
             };
 
             const renderDmBandPills = (availableBands) => {
@@ -5976,17 +6055,26 @@
                     ? null
                     : new Set(Object.values(KIWI_DEFS).filter((def) => def.site === opsChartSite).map((def) => def.key));
 
+                // Build combined HF + optional VHF row pool
+                const _vhfNorm = (dmState.freqRange !== 'HF')
+                    ? rfVhfDecodes.map(_normalizeVhfDecode)
+                    : [];
+                const _allDecodes = [
+                    ...(dmState.freqRange !== 'VHF' ? siteState.decodes : []),
+                    ..._vhfNorm,
+                ];
+
                 // Filter decodes
                 const _modesPresent = new Set();
-                let rows = siteState.decodes.filter((d) => {
+                let rows = _allDecodes.filter((d) => {
                     if (!d) return false;
                     // Clear filter
                     if (dmState.cleared) {
                         const dts = d.epoch_ts ? Number(d.epoch_ts) * 1000 : (d.ts ? Number(d.ts) * 1000 : 0);
                         if (dts < dmState.cleared) return false;
                     }
-                    // Site/kiwi filter
-                    if (_dmKiwiKeys && !_dmKiwiKeys.has(d.kiwi_key)) return false;
+                    // Site/kiwi filter (HF only; VHF decodes skip this)
+                    if (!d._isVhf && _dmKiwiKeys && !_dmKiwiKeys.has(d.kiwi_key)) return false;
                     // Track which modes are present (before mode filter)
                     const mode = String(d.mode || '').toUpperCase();
                     if (mode) _modesPresent.add(mode);
@@ -5994,7 +6082,12 @@
                     if (!dmState.modesOn.has(mode)) return false;
                     // CQ only — WSPR beacons are never CQ format, so skip this filter for WSPR
                     if (dmState.cqOnly && mode !== 'WSPR') {
-                        const msg = String(d.message || '').trim().toUpperCase();
+                        let msg = String(d.message || '').trim().toUpperCase();
+                        // VHF jt9 lines: "HHMMSS SNR DT FREQ ~ MSG" — strip header before CQ check
+                        if (d._isVhf) {
+                            const si = msg.search(/ [~+] /);
+                            if (si >= 0) msg = msg.slice(si + 3).trim();
+                        }
                         if (!msg.startsWith('CQ')) return false;
                     }
                     // DX only (> 500 mi) — FT4/FT8 only
@@ -6007,9 +6100,10 @@
                     btn.classList.toggle('dm-has-decodes', _modesPresent.has(btn.dataset.dmMode));
                 });
 
-                // Collect available bands from mode-filtered rows, render pills, then apply band filter
+                // Collect available HF bands from mode-filtered rows, render pills, then apply band filter
                 const _dmBandsPresent = new Set();
                 rows.forEach((d) => {
+                    if (d._isVhf) return;  // VHF decodes don't get HF band pills
                     const band = String(d.band || '').trim().toLowerCase();
                     if (band && RF_BAND_OPTIONS.includes(band)) _dmBandsPresent.add(band);
                 });
@@ -6129,6 +6223,23 @@
                 if (dxCb) { dxCb.checked = dmState.dxOnly; dxCb.addEventListener('change', () => { dmState.dxOnly = dxCb.checked; renderDecodeMessages(); }); }
                 if (uniqCb) { uniqCb.checked = dmState.uniqueCall; uniqCb.addEventListener('change', () => { dmState.uniqueCall = uniqCb.checked; renderDecodeMessages(); }); }
 
+                // HF / VHF / All range buttons
+                const _rangeIds = { 'dm-range-all': 'ALL', 'dm-range-hf': 'HF', 'dm-range-vhf': 'VHF' };
+                Object.entries(_rangeIds).forEach(([id, val]) => {
+                    const btn = document.getElementById(id);
+                    if (!btn) return;
+                    btn.classList.toggle('active', dmState.freqRange === val);
+                    btn.addEventListener('click', () => {
+                        dmState.freqRange = val;
+                        dmState.band = 'ALL';   // reset HF band pill when switching range
+                        Object.keys(_rangeIds).forEach((rid) => {
+                            const b = document.getElementById(rid);
+                            if (b) b.classList.toggle('active', rid === id);
+                        });
+                        renderDecodeMessages();
+                    });
+                });
+
                 // Clear button
                 const clearBtn = document.getElementById('dm-clear-btn');
                 if (clearBtn) {
@@ -6170,7 +6281,7 @@
                 const counts = new Array(36).fill(0);
                 decodes.forEach((decode) => {
                     if (!decode) return;
-                    const ts = Number(decode.ts || decode.received_at || 0) * 1000;
+                    const ts = Number(decode.epoch_ts || decode.ts || 0) * 1000;
                     if (!ts) return;
                     const idx = 35 - Math.floor((now - ts) / windowMs);
                     if (idx >= 0 && idx < 36) counts[idx]++;
@@ -6240,6 +6351,10 @@
                 });
                 viewTitle.textContent = copy.title;
                 viewSubtitle.textContent = copy.subtitle;
+                if (viewName === 'operations') {
+                    updateActivityChart();
+                    updateProtocolMix();
+                }
                 if (viewName === 'map') {
                     // Resume VHF/APRS polling if those modes are active
                     if (rfMapDataMode !== 'hf' && !rfVhfFetchTimer) {
@@ -6376,7 +6491,7 @@
                 const now = Date.now();
                 // Use 15s window to match the /decodes/chart bucket size
                 const recent = siteState.decodes.filter((d) => {
-                    const ts = Number(d && (d.ts || d.received_at) || 0) * 1000;
+                    const ts = Number(d && (d.epoch_ts || d.ts) || 0) * 1000;
                     return ts && (now - ts) < 15000;
                 });
                 const kiwiRx = {};
@@ -8195,11 +8310,11 @@
             <!-- Per-mode decode counts -->
             <div class="vhf-count-strip" id="vhf-count-strip">
                 <span style="font-size:0.63rem;color:var(--muted-2)">Decodes:</span>
-                <span class="pill vhf-mode-ft8"  id="vhf-cnt-FT8">FT8 0</span>
-                <span class="pill vhf-mode-ft4"  id="vhf-cnt-FT4">FT4 0</span>
-                <span class="pill vhf-mode-wspr" id="vhf-cnt-WSPR">WSPR 0</span>
-                <span class="pill vhf-mode-aprs" id="vhf-cnt-APRS">APRS 0</span>
-                <span class="pill vhf-mode-pkt"  id="vhf-cnt-Packet">Packet 0</span>
+                <span class="pill vhf-mode-ft8"  id="vhf-cnt-FT8">FT8 <b class="vhf-cnt-num">0</b></span>
+                <span class="pill vhf-mode-ft4"  id="vhf-cnt-FT4">FT4 <b class="vhf-cnt-num">0</b></span>
+                <span class="pill vhf-mode-wspr" id="vhf-cnt-WSPR">WSPR <b class="vhf-cnt-num">0</b></span>
+                <span class="pill vhf-mode-aprs" id="vhf-cnt-APRS">APRS <b class="vhf-cnt-num">0</b></span>
+                <span class="pill vhf-mode-pkt"  id="vhf-cnt-Packet">Packet <b class="vhf-cnt-num">0</b></span>
             </div>
             <!-- Decode feed -->
             <div class="panel-body" style="padding:0">
@@ -9808,7 +9923,7 @@
                     document.getElementById('vhf-decode-list').innerHTML = '';
                     ['FT8','FT4','WSPR','APRS','Packet'].forEach(m => {
                         const el = document.getElementById('vhf-cnt-' + m);
-                        if (el) el.textContent = m + ' 0';
+                        if (el) el.innerHTML = m + ' <b class="vhf-cnt-num">0</b>';
                     });
                 });
 
@@ -9838,7 +9953,7 @@
                 ['FT8','FT4','WSPR','APRS','Packet'].forEach(m => {
                     const n   = counts[m] || 0;
                     const el  = document.getElementById('vhf-cnt-' + m);
-                    if (el) el.textContent = m + ' ' + n;
+                    if (el) el.innerHTML = m + ' <b class="vhf-cnt-num">' + n + '</b>';
                 });
 
                 // Sidebar count summary
@@ -9846,7 +9961,7 @@
                 if (sbCounts) {
                     sbCounts.innerHTML = Object.entries(counts)
                         .filter(([, n]) => n > 0)
-                        .map(([m, n]) => `<span class="pill vhf-mode-badge ${_MODE_CSS[m]||''}">${m} ${n}</span>`)
+                        .map(([m, n]) => `<span class="pill vhf-mode-badge ${_MODE_CSS[m]||''}">${m} <b class="vhf-cnt-num">${n}</b></span>`)
                         .join('');
                 }
 

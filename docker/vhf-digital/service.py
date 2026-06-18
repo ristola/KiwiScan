@@ -21,6 +21,7 @@ import logging
 import math
 import os
 import re
+import shutil
 import struct
 import subprocess
 import tempfile
@@ -256,6 +257,27 @@ _DW_POS_RE = re.compile(
 # Direwolf channel prefix on frame lines: "[0]" "[0 L]" "[0 H]" etc.
 _DW_PREFIX = re.compile(r"^\[[^\]]+\]\s*")
 
+# Maidenhead grid square in FT8/FT4/WSPR decode lines (4 or 6 chars).
+# RR73 also matches [A-R]{2}\d{2} but is never a real grid — exclude it.
+_GRID_RE    = re.compile(r'\b([A-R]{2}\d{2}(?:[a-x]{2})?)\b', re.IGNORECASE)
+_NON_GRID   = frozenset({'RR73'})
+
+
+def _grid_to_latlon(grid: str) -> tuple:
+    """Return (lat, lon) centre of a 4- or 6-char Maidenhead grid, or (None, None)."""
+    g = grid.upper()
+    if len(g) < 4 or not g[:2].isalpha() or not g[2:4].isdigit():
+        return None, None
+    try:
+        lon = (ord(g[0]) - 65) * 20 - 180 + int(g[2]) * 2 + 1.0
+        lat = (ord(g[1]) - 65) * 10 - 90  + int(g[3]) * 1 + 0.5
+        if len(g) >= 6 and g[4:6].isalpha():
+            lon += (ord(g[4].lower()) - 97) * (2 / 24) + (1 / 24)
+            lat += (ord(g[5].lower()) - 97) * (1 / 24) + (1 / 48)
+        return round(lat, 4), round(lon, 4)
+    except Exception:
+        return None, None
+
 
 class DirewolfDecoder:
     def __init__(self, freq_hz: int, label: str, mode: str, store: DecodeStore):
@@ -283,8 +305,9 @@ class DirewolfDecoder:
             try:
                 self._proc.stdin.write(pcm)
                 self._proc.stdin.flush()
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.error("direwolf stdin broken (%s): %s", self.label, exc)
+                self._proc = None
 
     def _read_loop(self) -> None:
         # Keep state across lines so compressed/MicE frames can use the
@@ -297,7 +320,10 @@ class DirewolfDecoder:
             if not line:
                 break
             text = line.decode("utf-8", errors="replace").strip()
-            if not text or text.startswith("#"):
+            if not text:
+                continue
+            logger.info("direwolf[%s]: %s", self.label, text)
+            if text.startswith("#"):
                 continue
 
             # Strip Direwolf channel prefix "[0] " / "[0 L] " / "[0 H]" etc.
@@ -434,6 +460,8 @@ class WindowedDecoder:
                 threading.Thread(target=self._decode, args=(audio,), daemon=True).start()
 
     def _decode(self, audio: np.ndarray) -> None:
+        rms = float(np.sqrt(np.mean(audio ** 2))) if len(audio) else 0.0
+        logger.info("DECODE %s  samples=%d  rms=%.4f", self.mode, len(audio), rms)
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             path = f.name
         try:
@@ -449,45 +477,63 @@ class WindowedDecoder:
                 pass
 
     def _run_jt9(self, wav_path: str) -> None:
-        flag = "--ft8" if self.mode == MODE_FT8 else "--ft4"
+        flag   = "--ft8" if self.mode == MODE_FT8 else "--ft4"
+        tmpdir = tempfile.mkdtemp(prefix="jt9_")
         try:
             r = subprocess.run(
-                ["jt9", flag, "--decode", "-f", "1500", wav_path],
+                ["jt9", flag, "-f", "1500", "-t", tmpdir, "-a", tmpdir, wav_path],
                 capture_output=True, text=True, timeout=30,
             )
+            logger.info("jt9 %s rc=%d stdout=%r", self.mode, r.returncode, r.stdout[:300])
+            if r.stderr.strip():
+                logger.info("jt9 stderr: %s", r.stderr.strip()[:200])
             self._ingest(r.stdout.splitlines())
         except FileNotFoundError:
             logger.warning("jt9 not found — %s decode unavailable", self.mode)
         except subprocess.TimeoutExpired:
-            logger.debug("jt9 timed out for %s", self.mode)
+            logger.warning("jt9 timed out for %s", self.mode)
         except Exception as exc:
-            logger.debug("jt9 error: %s", exc)
+            logger.warning("jt9 error: %s", exc)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
     def _run_wsprd(self, wav_path: str) -> None:
         freq_mhz = f"{self.freq_hz / 1e6:.4f}"
+        tmpdir   = tempfile.mkdtemp(prefix="wsprd_")
         try:
             r = subprocess.run(
-                ["wsprd", "-f", freq_mhz, wav_path],
+                ["wsprd", "-f", freq_mhz, "-a", tmpdir, wav_path],
                 capture_output=True, text=True, timeout=60,
             )
+            logger.info("wsprd rc=%d stdout=%r", r.returncode, r.stdout[:300])
             self._ingest(r.stdout.splitlines())
         except FileNotFoundError:
             logger.warning("wsprd not found — WSPR decode unavailable")
         except subprocess.TimeoutExpired:
-            logger.debug("wsprd timed out")
+            logger.warning("wsprd timed out")
         except Exception as exc:
-            logger.debug("wsprd error: %s", exc)
+            logger.warning("wsprd error: %s", exc)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
     def _ingest(self, lines: list[str]) -> None:
         for line in lines:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
+            # Skip jt9/wsprd internal status lines — not actual signal decodes.
+            if line.startswith("<") or line.startswith("EOF") or line.startswith("wsprd"):
+                continue
             parts    = line.split()
             callsign = next(
                 (p for p in parts if len(p) >= 3 and p[0].isalpha() and any(c.isdigit() for c in p)),
                 None,
             )
+            # Extract Maidenhead grid → lat/lon (FT8/FT4/WSPR messages carry the grid).
+            lat, lon = None, None
+            gm = _GRID_RE.search(line)
+            if gm and gm.group(1).upper() not in _NON_GRID:
+                lat, lon = _grid_to_latlon(gm.group(1))
             self._store.add({
                 "id":          f"{self.freq_hz}_{time.time():.3f}",
                 "mode":        self.mode,
@@ -495,8 +541,8 @@ class WindowedDecoder:
                 "label":       self.label,
                 "callsign":    callsign,
                 "message":     line,
-                "lat":         None,
-                "lon":         None,
+                "lat":         lat,
+                "lon":         lon,
                 "received_at": datetime.now(timezone.utc).isoformat(),
             })
 
@@ -526,21 +572,56 @@ class VhfDigitalMonitor:
         self._sdr        = None
         self._start_ts   = 0.0
 
-        fs = sample_rate
-        # FM path  : 2.4 MHz → 48 kHz  (÷50)  LPF 12.5 kHz
-        self._sos_fm   = _lpf_sos(12_500, fs)
-        # APRS audio bandpass: 300 Hz – 3 kHz isolates Bell 202 tones (1200 / 2200 Hz)
+        # FM path  : 2.4 MHz → 48 kHz  (÷50)  LPF 12.5 kHz (8th-order Butterworth IIR)
+        self._sos_fm         = _lpf_sos(12_500, sample_rate)
+        # APRS audio BPF: 300 Hz – 3 kHz isolates Bell 202 tones (1200 / 2200 Hz)
         self._sos_aprs_audio = _bpf_sos(300, 3_000, APRS_RATE)
-        # USB path : 2.4 MHz → 240 kHz (÷10)  LPF 3 kHz, then → 12 kHz (÷20)
-        self._sos_usb1 = _lpf_sos(3_000, fs)
-        self._sos_usb2 = _lpf_sos(3_000, fs / 10)
+        # Decimation ratios (integer, exact)
+        self._fm_decim  = sample_rate // APRS_RATE   # 2 400 000 / 48 000 = 50
+        self._usb_decim = sample_rate // AUDIO_RATE  # 2 400 000 / 12 000 = 200
+
+        # Short anti-aliasing FIR filters for upfirdn (windowed modes only).
+        nyq = sample_rate / 2.0
+        self._h_usb = sp_signal.firwin(51, 6_000  / nyq).astype(np.float32)
+
+        # Separate channels by path for batch processing.
+        self._windowed_chs = [c for c in self.channels if c.get("mode") in WINDOWED_MODES]
+        self._fm_chs       = [c for c in self.channels if c.get("mode") in FM_MODES]
+
+        # Precompute batch mixing matrices for windowed modes (shape: (N_channels, BLOCK_SIZE)).
+        # Phase continuity across blocks via accumulators avoids per-block trig and prevents
+        # the ~2.27 phase glitches per FT4 symbol that cut decode rate by ~90%.
+        block_n = np.arange(BLOCK_SIZE, dtype=np.float32)
+
+        def _make_mv(freq_hz: int) -> tuple:
+            theta = (-2.0 * math.pi * (freq_hz - center_hz) / sample_rate * block_n).astype(np.float32)
+            return np.cos(theta), np.sin(theta)
+
+        def _block_step(offset: float) -> np.complex64:
+            return np.exp(
+                np.complex128(-2j * math.pi * offset / sample_rate * BLOCK_SIZE)
+            ).astype(np.complex64)
+
+        if self._windowed_chs:
+            wr, wi = zip(*[_make_mv(c["freq_hz"]) for c in self._windowed_chs])
+            self._mix_re_usb: np.ndarray = np.stack(wr)
+            self._mix_im_usb: np.ndarray = np.stack(wi)
+        else:
+            self._mix_re_usb = self._mix_im_usb = np.empty((0, BLOCK_SIZE), np.float32)
+
+        self._phase_accs_usb: list = [np.complex64(1.0)] * len(self._windowed_chs)
+        self._block_steps_usb: list = [
+            _block_step(float(c["freq_hz"] - center_hz)) for c in self._windowed_chs
+        ]
 
     async def start(self) -> None:
         try:
             self._sdr = _RtlTcpClient(hostname=self.rtl_host, port=self.rtl_port)
             self._sdr.sample_rate = self.sample_rate
             self._sdr.center_freq  = self.center_hz
-            self._sdr.gain         = "auto"
+            gain_env = os.getenv("GAIN_DB", "auto")
+            self._sdr.gain = "auto" if gain_env.lower() == "auto" else float(gain_env)
+            logger.info("RTL-SDR gain: %s dB", gain_env)
         except Exception as exc:
             self.error = str(exc)
             logger.error("RTL-SDR connect failed: %s", exc)
@@ -578,13 +659,23 @@ class VhfDigitalMonitor:
     def _iq_loop(self) -> None:
         logger.info("IQ loop started — center %.3f MHz, %d channels",
                     self.center_hz / 1e6, len(self.channels))
+
+        # Build a direct freq_hz → decoder map to avoid O(N²) search per block.
+        dec_map: dict[int, DirewolfDecoder | WindowedDecoder] = {}
+        for d in self._decoders:
+            dec_map[d.freq_hz] = d
+
         blocks = 0
         while self._running:
             try:
-                # rtl_tcp streams interleaved uint8 I/Q pairs; convert to complex64
+                # rtl_tcp streams interleaved uint8 I/Q pairs.
                 raw = self._sdr.read_bytes(BLOCK_SIZE * 2)
                 buf = np.frombuffer(raw, dtype=np.uint8).astype(np.float32)
-                iq  = (buf[0::2] - 127.5 + 1j * (buf[1::2] - 127.5)).astype(np.complex64)
+                buf -= 127.5
+                buf *= (1.0 / 127.5)   # normalize to [-1, 1] so audio fed to jt9/wsprd/direwolf stays in range
+                # Contiguous float32 I and Q — avoids strided access in the mix below.
+                iq_re = np.ascontiguousarray(buf[0::2])
+                iq_im = np.ascontiguousarray(buf[1::2])
                 blocks += 1
             except Exception as exc:
                 logger.error("IQ read error after %d blocks: %s", blocks, exc)
@@ -592,28 +683,48 @@ class VhfDigitalMonitor:
                 break
 
             try:
-                for ch in self.channels:
-                    offset = ch["freq_hz"] - self.center_hz
-                    mode   = ch.get("mode", "")
+                # ── Windowed modes (FT8 / FT4 / WSPR): batch mix + decimate ──────
+                if self._windowed_chs:
+                    # Base rotation components (phase-0 reference, reset each block).
+                    A_w = self._mix_re_usb * iq_re - self._mix_im_usb * iq_im  # Re(mv_0·iq)
+                    B_w = self._mix_re_usb * iq_im + self._mix_im_usb * iq_re  # Im(mv_0·iq)
+                    # Per-channel continuous phase scalars (avoid recreating arrays each block)
+                    p_re = np.fromiter((p.real for p in self._phase_accs_usb), np.float32,
+                                       count=len(self._phase_accs_usb)).reshape(-1, 1)
+                    p_im = np.fromiter((p.imag for p in self._phase_accs_usb), np.float32,
+                                       count=len(self._phase_accs_usb)).reshape(-1, 1)
+                    # Re(phase·mv_0·iq) = p_re·A - p_im·B  → continuous USB audio
+                    mixed_r_w = p_re * A_w - p_im * B_w
+                    audio_w = sp_signal.upfirdn(self._h_usb, mixed_r_w, 1, self._usb_decim, axis=1)
+                    for i, ch in enumerate(self._windowed_chs):
+                        d = dec_map.get(ch["freq_hz"])
+                        if d:
+                            d.feed(audio_w[i].astype(np.float32))
+                    # Advance phase accumulators; renormalise every 512 blocks to prevent drift
+                    for i, step in enumerate(self._block_steps_usb):
+                        self._phase_accs_usb[i] *= step
+                        if blocks & 0x1FF == 0:
+                            self._phase_accs_usb[i] /= abs(self._phase_accs_usb[i])
 
-                    if mode in FM_MODES:
-                        mixed = _mix(iq, offset, self.sample_rate)
-                        dec_c = _decimate_complex(mixed, 50, self._sos_fm)
-                        audio = _fm_demod(dec_c)
-                        audio = sp_signal.sosfilt(self._sos_aprs_audio, audio)
-                        pcm   = _float_to_pcm16(audio)
-                        for dec in self._decoders:
-                            if isinstance(dec, DirewolfDecoder) and dec.freq_hz == ch["freq_hz"]:
-                                dec.feed(pcm)
+                # ── FM modes (APRS / Packet): per-channel mix + IIR decimate ────
+                if self._fm_chs:
+                    iq_c = (iq_re + 1j * iq_im).astype(np.complex64)
+                    for ch in self._fm_chs:
+                        offset = ch["freq_hz"] - self.center_hz
+                        mixed  = _mix(iq_c, offset, self.sample_rate)
+                        dec_c  = _decimate_complex(mixed, self._fm_decim, self._sos_fm)
+                        audio  = _fm_demod(dec_c)
+                        audio  = sp_signal.sosfilt(self._sos_aprs_audio, audio)
+                        audio *= 0.25  # scale to direwolf's recommended ~50 audio level
+                        if blocks % 100 == 0:
+                            rms_fm = float(np.sqrt(np.mean(audio ** 2)))
+                            logger.info("APRS audio rms=%.5f  ch=%.3f MHz",
+                                        rms_fm, ch["freq_hz"] / 1e6)
+                        pcm = _float_to_pcm16(audio)
+                        d = dec_map.get(ch["freq_hz"])
+                        if d:
+                            d.feed(pcm)
 
-                    elif mode in WINDOWED_MODES:
-                        mixed  = _mix(iq, offset, self.sample_rate)
-                        stage1 = _decimate_complex(mixed, 10, self._sos_usb1)
-                        stage2 = _decimate_complex(stage1, 20, self._sos_usb2)
-                        audio  = _usb_demod(stage2)
-                        for dec in self._decoders:
-                            if isinstance(dec, WindowedDecoder) and dec.freq_hz == ch["freq_hz"]:
-                                dec.feed(audio)
             except Exception as exc:
                 logger.error("IQ processing error after %d blocks: %s", blocks, exc, exc_info=True)
                 self.error = str(exc)
