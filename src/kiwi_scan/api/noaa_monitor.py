@@ -26,7 +26,7 @@ Environment variables
 ─────────────────────
   NOAA_DOCKER_HOST    sigmon-2 IP (default 10.13.73.195)
   NOAA_DOCKER_PORT    Docker TCP API port (default 2375)
-  NOAA_ALERT_URL      Base URL of the sigmon-2 alert file server
+  NOAA_ALERT_URL      Base URL of the noaa-eas-api container (default http://10.13.73.195:4027)
   NOAA_RTL_TCP_PORT   rtl_tcp port on sigmon-2 (default 7373)
   NOAA_SDR_SERIAL     RTL-SDR serial number (default 00162400)
   NOAA_SAME_CHANNEL   WX channel Hz to monitor for SAME (default 162475000 = WX3)
@@ -65,7 +65,7 @@ DOCKER_IMAGE      = "n4ldr/noaa-weather-radio:latest"
 
 DOCKER_HOST       = os.environ.get("NOAA_DOCKER_HOST", "10.13.73.195")
 DOCKER_PORT       = int(os.environ.get("NOAA_DOCKER_PORT", "2375"))
-ALERT_URL         = os.environ.get("NOAA_ALERT_URL", "http://10.13.73.195:8180").rstrip("/")
+ALERT_URL         = os.environ.get("NOAA_ALERT_URL", "http://10.13.73.195:4027").rstrip("/")
 NOAA_RTL_TCP_PORT = int(os.environ.get("NOAA_RTL_TCP_PORT", "7373"))
 NOAA_SDR_SERIAL   = os.environ.get("NOAA_SDR_SERIAL", "00162400")
 # RTL-TCP host the IQ hub actually connects to for IQ samples.
@@ -609,41 +609,24 @@ def _parse_same(text: str) -> dict:
 
 
 def _list_alerts(limit: int = 50) -> list:
-    """Merge server-side SAME ring buffer with sigmon-2 HTTP file server alerts.
+    """Merge server-side SAME ring buffer with EAS API alerts (JSON).
 
-    Alerts whose IDs are in _dismissed_ids (reviewed by the operator) are excluded.
+    Fetches from ALERT_URL/alerts (the noaa-eas-api container at port 4027).
+    Alerts in _dismissed_ids are excluded from both sources.
     """
     combined: list[dict] = [
         e for e in _recent_eas[-limit:] if e.get("id") not in _dismissed_ids
     ]
+    seen_ids = {e["id"] for e in combined if e.get("id")}
     try:
-        with urllib.request.urlopen(ALERT_URL + "/", timeout=5) as resp:
-            html = resp.read().decode("utf-8", errors="ignore")
-        fnames = sorted(set(re.findall(r'href="(EAS_[^"]+\.txt)"', html)), reverse=True)[:limit]
-        for fname in fnames:
-            try:
-                with urllib.request.urlopen(ALERT_URL + "/" + fname, timeout=5) as r:
-                    content = r.read().decode("utf-8", errors="ignore")
-                alert_id = fname.replace(".txt", "")
-                if alert_id in _dismissed_ids:
-                    continue
-                has_audio = False
-                try:
-                    req = urllib.request.Request(
-                        ALERT_URL + "/" + alert_id + ".wav", method="HEAD"
-                    )
-                    urllib.request.urlopen(req, timeout=3)
-                    has_audio = True
-                except Exception:
-                    pass
-                entry = {
-                    "id": alert_id, "filename": fname, "has_audio": has_audio,
-                    "raw": content.strip(), "received_at": datetime.utcnow().isoformat(),
-                }
-                entry.update(_parse_same(content))
-                combined.append(entry)
-            except Exception:
-                pass
+        with urllib.request.urlopen(f"{ALERT_URL}/alerts?limit={limit}", timeout=5) as resp:
+            remote: list = json.loads(resp.read().decode("utf-8", errors="ignore"))
+        for entry in remote:
+            alert_id = entry.get("id")
+            if not alert_id or alert_id in _dismissed_ids or alert_id in seen_ids:
+                continue
+            seen_ids.add(alert_id)
+            combined.append(entry)
     except Exception as exc:
         logger.debug("noaa alert list fetch: %s", exc)
     return combined[:limit]
@@ -905,10 +888,10 @@ def noaa_clear_log() -> dict:
 
 @router.get("/api/noaa-monitor/alerts/{alert_id}/audio")
 async def noaa_alert_audio(alert_id: str) -> StreamingResponse:
-    """Proxy an EAS alert WAV from sigmon-2's file server to the browser."""
+    """Proxy an EAS alert WAV from the noaa-eas-api container."""
     if not re.fullmatch(r"[\w\-]+", alert_id):
         raise HTTPException(400, "Invalid alert ID")
-    wav_url = f"{ALERT_URL}/{alert_id}.wav"
+    wav_url = f"{ALERT_URL}/alerts/{alert_id}/audio"
     try:
         remote = urllib.request.urlopen(wav_url, timeout=10)
     except Exception:
