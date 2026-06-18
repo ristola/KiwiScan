@@ -8023,6 +8023,10 @@
                             <span class="mode-opt-name">VHF Digital</span>
                             <span class="mode-opt-desc">FT8 &middot; FT4 &middot; WSPR &middot; APRS &middot; Packet &middot; live decode feed</span>
                         </button>
+                        <button class="mode-opt" data-mode="tpms" type="button">
+                            <span class="mode-opt-name">TPMS</span>
+                            <span class="mode-opt-desc">315 MHz / 433.92 MHz &middot; tire pressure &middot; temperature &middot; rtl_433</span>
+                        </button>
                     </div>
                 </div>
 
@@ -8097,6 +8101,28 @@
                     <div>
                         <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:var(--muted);margin-bottom:0.4rem">IQ Scan Channels</div>
                         <div class="vhf-ch-list" id="vhf-channel-list"><!-- rendered by JS --></div>
+                    </div>
+                </div>
+
+                <!-- Config: TPMS -->
+                <div class="sdr-config-panel" id="cfg-tpms" hidden>
+                    <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:var(--muted);margin-bottom:0.2rem">Configuration</div>
+                    <div class="sdr-config-row">
+                        <span class="sdr-config-label">Frequencies</span>
+                        <input class="sdr-config-val" type="text" value="315M, 433.92M" readonly style="max-width:14rem">
+                        <span style="font-size:0.68rem;color:var(--muted-2)">315 MHz (US) · 433.92 MHz (EU/Asia)</span>
+                    </div>
+                    <div class="sdr-config-row">
+                        <span class="sdr-config-label">Threshold</span>
+                        <input class="sdr-config-val" type="text" value="30 PSI" readonly style="max-width:6rem">
+                        <span style="font-size:0.68rem;color:var(--muted-2)">alarm below this pressure</span>
+                    </div>
+                    <div class="sdr-config-row">
+                        <span class="sdr-config-label">Container URL</span>
+                        <input class="sdr-config-val" id="tpms-container-url" type="text" placeholder="http://10.13.73.185:4026" style="max-width:22rem">
+                    </div>
+                    <div style="font-size:0.72rem;color:var(--muted);margin-top:0.5rem;line-height:1.6">
+                        Decodes TPMS broadcasts from vehicles passing within range. Sensor IDs, pressure, and temperature are logged live.
                     </div>
                 </div>
 
@@ -8328,6 +8354,47 @@
         </section>
     </div>
 
+    <!-- ── TPMS monitor panels (hidden pool) ──────────────────────────── -->
+    <div id="tpms-monitor-panels" hidden>
+        <!-- Compact sidebar card -->
+        <section class="panel" id="tpms-mon-sidebar" data-view-section="receivers" hidden>
+            <div class="panel-header" style="flex-direction:column;align-items:flex-start;gap:0.35rem">
+                <div style="display:flex;align-items:center;width:100%;min-width:0">
+                    <div class="panel-title" style="min-width:0;overflow:hidden;flex:1">
+                        <span class="status-dot ok" id="sb-tpms-dot" style="flex-shrink:0"></span>
+                        <span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">TPMS Monitor</span>
+                    </div>
+                    <button class="pill" id="sb-tpms-stop-btn" type="button" style="cursor:pointer;color:var(--fault);font-size:0.63rem;flex-shrink:0">Stop</button>
+                </div>
+                <div id="sb-tpms-summary" style="font-size:0.68rem;color:var(--muted-2)">Awaiting sensors…</div>
+            </div>
+            <div class="panel-body link-lines" style="padding:0" id="sb-tpms-grid"></div>
+        </section>
+
+        <!-- Full operations panel -->
+        <section class="panel" id="tpms-monitor-panel" data-view-section="operations" style="grid-column:1/-1" hidden>
+            <div class="panel-header">
+                <div class="panel-title">
+                    <span class="status-dot ok" id="tpms-mon-dot"></span>
+                    <span>TPMS · Tire Pressure Monitor</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:0.5rem">
+                    <span class="pill" id="tpms-mon-uptime">--</span>
+                    <button class="pill" id="tpms-mon-clear-btn" type="button" style="cursor:pointer;color:var(--muted-2)">Clear</button>
+                    <button class="pill" id="tpms-mon-stop-btn" type="button" style="cursor:pointer;color:var(--fault)">Stop</button>
+                </div>
+            </div>
+            <!-- Sensor table -->
+            <div class="panel-body" style="padding:0">
+                <div style="background:var(--panel-2);font-size:0.63rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:var(--muted-2);padding:0.4rem 0.75rem;display:grid;grid-template-columns:6rem 6rem 5rem 5rem 5rem 1fr;gap:0.5rem;align-items:center">
+                    <span>Time</span><span>Sensor ID</span><span>Pressure</span><span>Temp</span><span>Status</span><span>Model</span>
+                </div>
+                <div id="tpms-sensor-list" style="max-height:420px;overflow-y:auto"></div>
+                <div id="tpms-empty-msg" style="padding:2rem;text-align:center;color:var(--muted-2);font-size:0.8rem">No TPMS sensors decoded yet. Drive a vehicle near the antenna.</div>
+            </div>
+        </section>
+    </div>
+
     <!-- ── EAS Alert detail modal ─────────────────────────────────────── -->
     <div id="eas-alert-modal" class="sdr-modal-overlay" hidden>
         <div class="sdr-modal" role="dialog" style="width:min(520px,96vw)">
@@ -8521,7 +8588,7 @@
             document.querySelectorAll('.mode-opt').forEach(btn => {
                 btn.classList.toggle('is-selected', btn.dataset.mode === mode);
             });
-            ['repeater-monitor','openwebrx','spectrum','record','noaa-monitor','vhf-digital'].forEach(m => {
+            ['repeater-monitor','openwebrx','spectrum','record','noaa-monitor','vhf-digital','tpms'].forEach(m => {
                 const el = document.getElementById('cfg-' + m);
                 if (el) el.hidden = (m !== mode);
             });
@@ -8667,6 +8734,8 @@
                 await _launchNoaaMonitor();
             } else if (_activeMode === 'vhf-digital') {
                 if (window._launchVhfDigital) await window._launchVhfDigital(_activeSdr);
+            } else if (_activeMode === 'tpms') {
+                if (window._launchTpms) await window._launchTpms(_activeSdr);
             }
             closeSdrModal();
         });
@@ -10108,6 +10177,190 @@
                 } catch (_) {}
             })();
         })();
+    })();
+    </script>
+
+    <script>
+    // ── TPMS Monitor ───────────────────────────────────────────────────────
+    (() => {
+        const KIWISCAN_BASE = '';
+        const _TPMS_API = KIWISCAN_BASE + '/api/tpms';
+
+        let _tpmsPanel     = null;
+        let _tpmsPollTimer = null;
+        let _tpmsActiveSdrId = null;
+
+        const _fmtUptime = (s) => {
+            if (s < 60)   return s + 's';
+            if (s < 3600) return Math.floor(s / 60) + 'm ' + (s % 60) + 's';
+            return Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm';
+        };
+
+        window._launchTpms = async (sdr) => {
+            const urlFromInput = document.getElementById('tpms-container-url')?.value.trim();
+            let containerUrl = urlFromInput || 'http://10.13.73.185:4026';
+
+            let rtlHost = '10.13.73.196', rtlPort = 7373;
+            const tcpDev = sdr?.device || sdr?.tcpDevice || '';
+            const tcpMatch = tcpDev.match(/\/\/([^:]+):(\d+)/);
+            if (tcpMatch) { rtlHost = tcpMatch[1]; rtlPort = parseInt(tcpMatch[2], 10); }
+
+            try {
+                const resp = await fetch(_TPMS_API + '/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        container_url: containerUrl,
+                        sdr_id:        sdr?.id?.toLowerCase(),
+                        rtl_host:      rtlHost,
+                        rtl_port:      rtlPort,
+                        freqs:         ['315M','433.92M'],
+                    }),
+                });
+                const data = await resp.json();
+                if (!resp.ok) { alert('TPMS: ' + (data.detail || resp.status)); return; }
+            } catch (err) { alert('TPMS start failed: ' + err.message); return; }
+
+            _tpmsActiveSdrId = sdr?.id?.toLowerCase();
+            const _cl = document.querySelector('#sdr-card-' + _tpmsActiveSdrId + ' .sdr-rx-label');
+            const _cs = document.getElementById('sdr-stat-' + _tpmsActiveSdrId);
+            const _ce = document.getElementById('sdr-card-' + _tpmsActiveSdrId);
+            if (_cl)  _cl.textContent = 'TPMS';
+            if (_cs)  { _cs.textContent = 'active · TPMS'; _cs.className = 'sdr-rx-stat ok'; }
+            if (_ce)  _ce.className = _ce.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-ok';
+
+            _startTpmsPanel();
+        };
+
+        const _startTpmsPanel = () => {
+            const activeViewBtn = document.querySelector('.nav-btn.is-active');
+            const currentView   = activeViewBtn?.dataset.view || 'operations';
+
+            _tpmsPanel = document.getElementById('tpms-monitor-panel');
+            const sbEl   = document.getElementById('tpms-mon-sidebar');
+            const holder = document.getElementById('tpms-monitor-panels');
+
+            // Insert sidebar and full panel into live layout
+            const vhfSb = document.getElementById('vhf-mon-sidebar');
+            const vhfSbInLayout = vhfSb && !vhfSb.closest('#vhf-monitor-panels');
+            const afterSb = vhfSbInLayout ? vhfSb : document.getElementById('sidebar-rx-protomix');
+            if (afterSb && sbEl && sbEl.parentElement === holder) afterSb.after(sbEl);
+
+            if (_tpmsPanel && _tpmsPanel.parentElement === holder) {
+                const _vhfFull = document.getElementById('vhf-monitor-panel');
+                const _vhfInLayout = _vhfFull && !_vhfFull.closest('#vhf-monitor-panels');
+                if (_vhfInLayout) {
+                    _vhfFull.after(_tpmsPanel);
+                } else {
+                    const _dmSec = document.getElementById('dm-section');
+                    if (_dmSec) _dmSec.after(_tpmsPanel);
+                }
+            }
+
+            if (sbEl)      sbEl.hidden      = currentView !== 'receivers';
+            if (_tpmsPanel) _tpmsPanel.hidden = currentView !== 'operations';
+
+            const _stopTpms = async () => {
+                if (_tpmsPollTimer) { clearInterval(_tpmsPollTimer); _tpmsPollTimer = null; }
+                try { await fetch(_TPMS_API + '/stop', { method: 'POST' }); } catch (_) {}
+                const h  = document.getElementById('tpms-monitor-panels');
+                const fp = document.getElementById('tpms-monitor-panel');
+                const sp = document.getElementById('tpms-mon-sidebar');
+                if (h) {
+                    if (fp) { fp.hidden = true; h.appendChild(fp); }
+                    if (sp) { sp.hidden = true; h.appendChild(sp); }
+                }
+                if (_tpmsActiveSdrId) {
+                    const sid = _tpmsActiveSdrId;
+                    const _vrl = document.querySelector('#sdr-card-' + sid + ' .sdr-rx-label');
+                    const _vrs = document.getElementById('sdr-stat-' + sid);
+                    const _vre = document.getElementById('sdr-card-' + sid);
+                    const _sdrDef = [...(window.SDR_A||[]), ...(window.SDR_B||[])].find(s => s.id.toLowerCase() === sid);
+                    if (_vrl) _vrl.textContent = _sdrDef?.label || sid.toUpperCase();
+                    if (_vrs) { _vrs.textContent = 'Available'; _vrs.className = 'sdr-rx-stat mute'; }
+                    if (_vre) _vre.className = _vre.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-mute';
+                    _tpmsActiveSdrId = null;
+                }
+                _tpmsPanel = null;
+            };
+
+            ['sb-tpms-stop-btn','tpms-mon-stop-btn'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) { const f = el.cloneNode(true); el.replaceWith(f); f.addEventListener('click', _stopTpms); }
+            });
+
+            document.getElementById('tpms-mon-clear-btn')?.addEventListener('click', async () => {
+                try { await fetch(_TPMS_API + '/detections', { method: 'DELETE' }); } catch (_) {}
+                document.getElementById('tpms-sensor-list').innerHTML = '';
+                document.getElementById('tpms-empty-msg').hidden = false;
+            });
+
+            const _seenTpmsTs = {};
+            const _renderSensors = (detections) => {
+                const list = document.getElementById('tpms-sensor-list');
+                const emptyMsg = document.getElementById('tpms-empty-msg');
+                if (!list) return;
+                if (!detections || !detections.length) return;
+                emptyMsg.hidden = true;
+
+                // Re-render sensor table: latest reading per sensor ID
+                const byId = {};
+                detections.forEach(d => {
+                    const key = d.id || d.sensor_id || d.Id || '?';
+                    if (!byId[key] || (d.ts || 0) > (byId[key].ts || 0)) byId[key] = d;
+                });
+
+                list.innerHTML = '';
+                Object.values(byId).sort((a,b) => (b.ts||0) - (a.ts||0)).forEach(d => {
+                    const sid  = d.id || d.sensor_id || d.Id || '?';
+                    const psi  = d.pressure_psi != null ? d.pressure_psi.toFixed(1) + ' PSI' : '—';
+                    const temp = d.temperature_f != null ? d.temperature_f.toFixed(0) + '°F' : '—';
+                    const ts   = d.ts ? new Date(d.ts * 1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '—';
+                    const low  = d.pressure_psi != null && d.pressure_psi < 30;
+                    const row  = document.createElement('div');
+                    row.style.cssText = 'display:grid;grid-template-columns:6rem 6rem 5rem 5rem 5rem 1fr;gap:0.5rem;align-items:center;padding:0.35rem 0.75rem;border-bottom:1px solid var(--line);font-size:0.78rem';
+                    row.innerHTML =
+                        '<span style="font-family:var(--mono);color:var(--muted-2)">' + ts + '</span>'
+                        + '<span style="font-family:var(--mono);font-weight:600">' + sid + '</span>'
+                        + '<span style="font-weight:700;color:' + (low ? 'var(--fault)' : 'var(--ok)') + '">' + psi + '</span>'
+                        + '<span>' + temp + '</span>'
+                        + '<span class="pill" style="font-size:0.63rem;color:' + (low ? 'var(--fault)' : 'var(--muted)') + '">' + (low ? 'LOW' : 'OK') + '</span>'
+                        + '<span style="color:var(--muted-2);font-size:0.72rem">' + (d.model || '—') + '</span>';
+                    list.appendChild(row);
+                });
+
+                // Sidebar summary
+                const sbGrid = document.getElementById('sb-tpms-grid');
+                const sbSummary = document.getElementById('sb-tpms-summary');
+                if (sbSummary) {
+                    const total = Object.keys(byId).length;
+                    const lowCnt = Object.values(byId).filter(d => d.pressure_psi != null && d.pressure_psi < 30).length;
+                    sbSummary.textContent = total + ' sensor' + (total !== 1 ? 's' : '') + (lowCnt ? ' · ' + lowCnt + ' LOW' : '');
+                    sbSummary.style.color = lowCnt ? 'var(--fault)' : 'var(--muted-2)';
+                }
+            };
+
+            const _pollTpms = async () => {
+                try {
+                    const [stResp, dcResp] = await Promise.all([
+                        fetch(_TPMS_API + '/status'),
+                        fetch(_TPMS_API + '/detections?limit=200'),
+                    ]);
+                    if (stResp.ok) {
+                        const st = await stResp.json();
+                        const dot  = document.getElementById('tpms-mon-dot');
+                        const sdot = document.getElementById('sb-tpms-dot');
+                        const uptimeEl = document.getElementById('tpms-mon-uptime');
+                        if (dot)  dot.className  = 'status-dot ' + (st.running ? 'ok' : 'warn');
+                        if (sdot) sdot.className = 'status-dot ' + (st.running ? 'ok' : 'warn');
+                        if (uptimeEl && st.uptime_sec != null) uptimeEl.textContent = _fmtUptime(st.uptime_sec);
+                    }
+                    if (dcResp.ok) _renderSensors(await dcResp.json());
+                } catch (_) {}
+            };
+            _pollTpms();
+            _tpmsPollTimer = setInterval(_pollTpms, 5000);
+        };
     })();
     </script>
 

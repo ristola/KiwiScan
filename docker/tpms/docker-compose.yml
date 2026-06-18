@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  tpms:
+    image: n4ldr/kiwiscan-tpms:latest
+    container_name: kiwiscan-tpms
+    restart: unless-stopped
+    ports:
+      - "4026:4026"
+    volumes:
+      - tpms-data:/opt/tpms/data
+    environment:
+      RTL_TCP_HOST: "10.13.73.196"
+      RTL_TCP_PORT: "7373"
+      TPMS_FREQS:   "315M,433.92M"
+      SERVICE_PORT: "4026"
+      LOW_PRESSURE_PSI: "30.0"
+
+volumes:
+  tpms-data:
