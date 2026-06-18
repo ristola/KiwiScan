@@ -1,5 +1,12 @@
 FROM python:3.11-slim
 
+# Disable numpy/scipy/OpenBLAS threading — armv7l hits OS thread limits otherwise
+ENV OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    NUMEXPR_NUM_THREADS=1 \
+    OPENBLAS_CORETYPE=ARMV7
+
 # System deps: rtl-sdr (for pyrtlsdr), ffmpeg (audio encoding), multimon-ng (SAME/EAS decode)
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && \

@@ -1,26 +1,28 @@
-# Deploy this on sigmon-2 (10.13.73.195)
-# sigmon-2 must have Docker TCP API enabled (see README below)
+# Deploy on sigmon-2 (10.13.73.195)
 #
 # Setup steps on sigmon-2:
 #   1. Enable Docker TCP API — add to /etc/docker/daemon.json:
 #        { "hosts": ["unix:///var/run/docker.sock", "tcp://10.13.73.195:2375"] }
 #      Then: sudo systemctl restart docker
 #
-#   2. Build the image on sigmon-2:
+#   2. Build both images on sigmon-2:
 #        docker build -t n4ldr/noaa-weather-radio:latest .
+#        docker build -t n4ldr/noaa-eas-api:latest ./api
 #
-#   3. Start services:
+#   3. Start:
 #        docker compose up -d
 #
-# KiwiScan (Mac) then controls kiwiscan-noaa-wr via Docker TCP on port 2375
-# and reads alert files from the noaa-files HTTP server on port 8180.
+# Consumers reach the EAS API at http://10.13.73.195:4027
+#   GET  /alerts          — recent EAS alerts (JSON)
+#   GET  /status          — uptime, client count
+#   WS   /ws/alerts       — real-time push per alert
+#   GET  /alerts/{id}/audio — WAV playback
 
 services:
   noaa-weather-radio:
     image: n4ldr/noaa-weather-radio:latest
     container_name: kiwiscan-noaa-wr
     restart: unless-stopped
-    # Host network so the container reaches rtl_tcp at localhost:7373
     network_mode: host
     environment:
       RTL_TCP_HOST: "127.0.0.1"
@@ -30,7 +32,6 @@ services:
       EAS_ENABLED: "1"
       RECORD_ALERTS: "1"
       EAS_OUTPUT_DIR: "/opt/noaa_wr/eas_messages"
-      # All 7 WX channels enabled — KiwiScan can selectively enable/disable on start
       CH_1_ENABLED: "1"
       CH_1_NAME: "WX2"
       CH_2_ENABLED: "1"
@@ -45,21 +46,19 @@ services:
       CH_6_NAME: "WX7"
       CH_7_ENABLED: "1"
       CH_7_NAME: "WX1"
-      # Optional Icecast streaming — uncomment and set your Icecast server
-      # CH_1_ICECAST_ENABLED: "1"
-      # CH_1_ICECAST: "icecast://source:hackme@10.13.73.20:8000/noaa_wx2"
     volumes:
       - noaa-alerts:/opt/noaa_wr/eas_messages
 
-  # Lightweight HTTP file server — lets KiwiScan (and the browser) fetch
-  # EAS alert .txt and .wav files over HTTP on port 8180
-  noaa-files:
-    image: python:3.11-slim
-    container_name: kiwiscan-noaa-files
+  noaa-eas-api:
+    image: n4ldr/noaa-eas-api:latest
+    container_name: kiwiscan-noaa-api
     restart: unless-stopped
-    command: python -m http.server 80 --directory /data
     ports:
-      - "8180:80"
+      - "4027:4027"
+    environment:
+      EAS_DIR: "/data"
+      MAX_ALERTS: "200"
+      POLL_SEC: "3"
     volumes:
       - noaa-alerts:/data:ro
 
