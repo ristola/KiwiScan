@@ -65,7 +65,7 @@ DOCKER_IMAGE      = "n4ldr/noaa-weather-radio:latest"
 
 DOCKER_HOST       = os.environ.get("NOAA_DOCKER_HOST", "10.13.73.195")
 DOCKER_PORT       = int(os.environ.get("NOAA_DOCKER_PORT", "2375"))
-ALERT_URL         = os.environ.get("NOAA_ALERT_URL", "http://10.13.73.195:4027").rstrip("/")
+ALERT_URL         = os.environ.get("NOAA_ALERT_URL", "http://10.13.73.185:4027").rstrip("/")
 NOAA_RTL_TCP_PORT = int(os.environ.get("NOAA_RTL_TCP_PORT", "7373"))
 NOAA_SDR_SERIAL   = os.environ.get("NOAA_SDR_SERIAL", "00162400")
 # RTL-TCP host the IQ hub actually connects to for IQ samples.

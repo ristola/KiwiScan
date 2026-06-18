@@ -54,7 +54,7 @@ services:
     container_name: kiwiscan-noaa-api
     restart: unless-stopped
     ports:
-      - "4027:4027"
+      - "10.13.73.185:4027:4027"
     environment:
       EAS_DIR: "/data"
       MAX_ALERTS: "200"
