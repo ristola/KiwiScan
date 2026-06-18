@@ -7362,12 +7362,12 @@
             // hubPPPS doesn't know (SDR function, mode type, target frequency).
             const SDR_SERIAL_META = {
                 '00001090': { type:'adsb',   freq:'1090 MHz',      label:'ADS-B 1090',    host:'10.13.73.190' },
-                '00144390': { type:'decode', freq:'144.390 MHz',   label:'VHF / APRS'     },
-                '20000897': { type:'decode', freq:'144 MHz',       label:'VHF Digital'    },
+                '00144390': { type:'decode', freq:'144.390 MHz',   label:'VHF / APRS',    defaultMode:'repeater-monitor' },
+                '20000897': { type:'decode', freq:'144 MHz',       label:'VHF Digital',   defaultMode:'vhf-digital'      },
                 '00000978': { type:'owrx',   freq:'',              label:'SDR-3 General'  },
-                '00000433': { type:'decode', freq:'433.920 MHz',   label:'Acurite 433'    },
-                '00000005': { type:'decode', freq:'162 MHz',       label:'NOAA WX'        },
-                '00000315': { type:'decode', freq:'314.9 MHz',     label:'TPMS'           },
+                '00000433': { type:'decode', freq:'433.920 MHz',   label:'Acurite 433',   defaultMode:'repeater-monitor' },
+                '00000005': { type:'decode', freq:'162 MHz',       label:'NOAA WX',       defaultMode:'noaa-monitor'     },
+                '00000315': { type:'decode', freq:'314.9 MHz',     label:'TPMS',          defaultMode:'tpms'             },
                 '20000145': { type:'owrx',   freq:'',              label:'SDR-7 Spare'    },
                 '10000001': { type:'open',   freq:'',              label:'KerberosSDR K4' },
                 '10000002': { type:'open',   freq:'',              label:'KerberosSDR K3' },
@@ -8545,10 +8545,12 @@
             titleEl.textContent = sdr.id + ' · ' + sdr.label;
             badgeEl.textContent = 'Available';
             _renderChannelList();
-            // Pre-select mode based on SDR type
-            const defaultMode = _activeSdr.type === 'noaa' ? 'noaa-monitor'
-                              : _activeSdr.type === 'vhf-digital' ? 'vhf-digital'
-                              : 'repeater-monitor';
+            // Pre-select mode: use SDR_SERIAL_META defaultMode → fall back to type check → repeater-monitor
+            const _serialDefault = (SDR_SERIAL_META[_activeSdr.serial] || {}).defaultMode;
+            const defaultMode = _serialDefault
+                              || (_activeSdr.type === 'noaa'        ? 'noaa-monitor'
+                              :   _activeSdr.type === 'vhf-digital' ? 'vhf-digital'
+                              :   'repeater-monitor');
             _selectMode(defaultMode);
             modal.hidden = false;
         };
