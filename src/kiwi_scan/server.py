@@ -70,6 +70,8 @@ from .api.vhf_digital import router as vhf_digital_router
 from .api.tpms import router as tpms_router
 from .api.sdr_test import router as sdr_test_router
 from .api.noc import router as noc_router
+from .api.sdr_assignments import router as sdr_assignments_router
+from .api.acurite433 import router as acurite433_router
 
 # Configure logging to output to console (stderr) with timestamps
 logging.basicConfig(
@@ -785,6 +787,8 @@ app.include_router(vhf_digital_router)
 app.include_router(tpms_router)
 app.include_router(sdr_test_router)
 app.include_router(noc_router)
+app.include_router(sdr_assignments_router)
+app.include_router(acurite433_router)
 
 register_lifecycle(
     app,

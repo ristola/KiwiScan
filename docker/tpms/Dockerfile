@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 RUN apt-get update -o APT::Update::Post-Invoke="" \
     && apt-get install -y --no-install-recommends rtl-433 \
-    && rm -rf /var/lib/apt/lists/* || true
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/tpms
 

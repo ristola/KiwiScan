@@ -72,7 +72,7 @@ NOAA_SDR_SERIAL   = os.environ.get("NOAA_SDR_SERIAL", "00162400")
 # May differ from DOCKER_HOST when using a pre-existing system rtl_tcp instance.
 # SN 00000978 at .193 is OpenWebRX SDR-3 (NOAA WX profile, always running).
 # SN 00162400 at .195 is the KiwiScan-managed container (hardware failed 2026-06).
-_RTL_TCP_HOST = os.environ.get("NOAA_RTL_TCP_IQ_HOST", "10.13.73.193")
+_RTL_TCP_HOST = os.environ.get("NOAA_RTL_TCP_IQ_HOST", "10.13.73.195")
 
 WX_CHANNELS = [162_400_000, 162_425_000, 162_450_000, 162_475_000,
                162_500_000, 162_525_000, 162_550_000]
@@ -162,12 +162,13 @@ def _ensure_rtl_tcp_running() -> bool:
     """Ensure rtl_tcp is available for IQ capture.
 
     Priority:
-      1. If _RTL_TCP_HOST:port is already reachable (system-level rtl_tcp such
-         as the OpenWebRX SDR-3 instance at 10.13.73.193), use it directly —
-         no Docker container needed.
+      1. If _RTL_TCP_HOST:port is already reachable, use it directly.
       2. Fall back to creating/starting the kiwiscan-noaa-rtltcp Docker container
          via the sigmon-2 Docker TCP API (DOCKER_HOST:DOCKER_PORT).
+         On success, _RTL_TCP_HOST is updated to DOCKER_HOST so the IQ hub
+         connects to the container rather than whatever stale address was set.
     """
+    global _RTL_TCP_HOST
     if _rtl_tcp_reachable():
         logger.debug("rtl_tcp reachable at %s:%d — using pre-existing instance",
                      _RTL_TCP_HOST, NOAA_RTL_TCP_PORT)
@@ -176,6 +177,7 @@ def _ensure_rtl_tcp_running() -> bool:
     try:
         s, d = _docker("GET", f"/containers/{RTLTCP_CONTAINER}/json", timeout=5)
         if s == 200 and isinstance(d, dict) and d.get("State", {}).get("Running"):
+            _RTL_TCP_HOST = DOCKER_HOST
             return True
         _docker("DELETE", f"/containers/{RTLTCP_CONTAINER}?force=true", timeout=5)
     except Exception:
@@ -218,6 +220,7 @@ def _ensure_rtl_tcp_running() -> bool:
         if s in (200, 201):
             _docker("POST", f"/containers/{d['Id']}/start")
             time.sleep(5)
+            _RTL_TCP_HOST = DOCKER_HOST
             logger.info("rtl_tcp started on sigmon-2 SN %s port %d @ %d kHz",
                         NOAA_SDR_SERIAL, NOAA_RTL_TCP_PORT, _CAPTURE_RATE // 1000)
             return True

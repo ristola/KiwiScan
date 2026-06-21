@@ -17,6 +17,7 @@ import json
 import os
 import re
 import time
+import urllib.request
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -48,6 +49,18 @@ _SAME_EVENT_NAMES: dict[str, str] = {
     "RMT": "Required Monthly Test",       "RWT": "Required Weekly Test",
     "NPT": "National Periodic Test",
     "ADR": "Administrative Message",      "EAT": "Emergency Action Termination",
+}
+
+# SAME 3-digit state FIPS → NWS 2-letter state code
+_FIPS_STATE: dict[str, str] = {
+    "001":"AL","002":"AK","004":"AZ","005":"AR","006":"CA","008":"CO","009":"CT",
+    "010":"DE","011":"DC","012":"FL","013":"GA","015":"HI","016":"ID","017":"IL",
+    "018":"IN","019":"IA","020":"KS","021":"KY","022":"LA","023":"ME","024":"MD",
+    "025":"MA","026":"MI","027":"MN","028":"MS","029":"MO","030":"MT","031":"NE",
+    "032":"NV","033":"NH","034":"NJ","035":"NM","036":"NY","037":"NC","038":"ND",
+    "039":"OH","040":"OK","041":"OR","042":"PA","044":"RI","045":"SC","046":"SD",
+    "047":"TN","048":"TX","049":"UT","050":"VT","051":"VA","053":"WA","054":"WV",
+    "055":"WI","056":"WY","072":"PR","078":"VI",
 }
 
 
@@ -89,6 +102,72 @@ def _load_file(path: Path) -> dict | None:
         return entry
     except Exception:
         return None
+
+
+def _nws_fetch(event_name: str, same_areas: list[str]) -> dict:
+    """Blocking NWS API lookup — run in a thread executor."""
+    if not same_areas or not event_name:
+        return {}
+    # Derive unique state abbreviations from SAME FIPS codes (format PSSCCC)
+    states: set[str] = set()
+    for code in same_areas:
+        if len(code) == 6:
+            fips3 = "0" + code[1:3]  # chars 1-2 are 2-digit state FIPS, zero-pad to 3
+            st = _FIPS_STATE.get(fips3)
+            if st:
+                states.add(st)
+    if not states:
+        return {}
+
+    area_param = ",".join(sorted(states))
+    url = (
+        "https://api.weather.gov/alerts/active"
+        f"?area={area_param}&event={urllib.request.quote(event_name)}"
+    )
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "noaa-eas-api/1.0"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+    except Exception:
+        return {}
+
+    same_set = set(same_areas)
+    for feature in data.get("features", []):
+        props = feature.get("properties", {})
+        nws_same = set(props.get("geocode", {}).get("SAME", []))
+        if nws_same & same_set:  # at least one overlapping FIPS code
+            return {
+                "nws_headline":    props.get("headline", ""),
+                "nws_description": props.get("description", ""),
+                "nws_instruction": props.get("instruction", ""),
+                "nws_area_desc":   props.get("areaDesc", ""),
+                "nws_id":          props.get("id", ""),
+            }
+    return {}
+
+
+async def _nws_enrich(entry: dict) -> None:
+    """Fetch NWS full text in a thread, update the entry, push update to WS clients."""
+    loop = asyncio.get_event_loop()
+    nws  = await loop.run_in_executor(
+        None, _nws_fetch, entry.get("event_name", ""), entry.get("areas", [])
+    )
+    if not nws:
+        return
+    entry.update(nws)
+    # Push an update frame so connected dashboards get the text without reconnecting
+    dead = []
+    msg  = json.dumps({"type": "alert_update", "id": entry["id"], "nws": nws})
+    for ws in list(_ws_clients):
+        try:
+            await ws.send_text(msg)
+        except Exception:
+            dead.append(ws)
+    for ws in dead:
+        try:
+            _ws_clients.remove(ws)
+        except ValueError:
+            pass
 
 
 async def _push_to_clients(alert: dict) -> None:
@@ -133,6 +212,8 @@ async def _watcher() -> None:
             if len(_alerts) > MAX_ALERTS:
                 _alerts.pop(0)
             await _push_to_clients(entry)
+            # Enrich with NWS full text in background — doesn't block the watcher
+            asyncio.create_task(_nws_enrich(entry))
 
 
 @asynccontextmanager

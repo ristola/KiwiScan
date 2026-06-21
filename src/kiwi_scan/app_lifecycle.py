@@ -249,6 +249,18 @@ def register_lifecycle(
             except Exception:
                 logger.exception("SmartScheduler failed to start")
 
+        async def _restore_sdr_assignments() -> None:
+            await asyncio.sleep(3)
+            try:
+                from .api.sdr_assignments import restore_all_assignments
+                results = await restore_all_assignments()
+                if results:
+                    logger.info("SDR assignment restore complete: %s", results)
+            except Exception:
+                logger.exception("SDR assignment restore failed")
+
+        asyncio.create_task(_restore_sdr_assignments())
+
     async def _shutdown() -> None:
         try:
             mgr.stop()  # type: ignore[attr-defined]
