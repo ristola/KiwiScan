@@ -3166,12 +3166,28 @@
         .sdr-stop-btn { display:none; font-size:0.59rem; font-weight:700; padding:0.08rem 0.38rem; border-radius:3px; border:1px solid rgba(230,70,70,0.35); color:var(--fault); background:rgba(230,70,70,0.07); cursor:pointer; letter-spacing:0.02em; transition:background 120ms; line-height:1.6; }
         .sdr-stop-btn:hover { background:rgba(230,70,70,0.2); }
         .sdr-rx-card.is-ok.can-stop .sdr-stop-btn { display:inline-flex; align-items:center; }
+        /* ── SDR Guard assignment indicators ────────────────────────── */
+        .sdr-rx-card.guard-locked { border-color:rgba(243,166,54,0.40); }
+        .sdr-rx-card.guard-active  { border-color:rgba(32,184,160,0.45); }
+        .sdr-guard-lock-badge { font-size:0.68rem; line-height:1; cursor:pointer; flex-shrink:0; }
+        .sdr-guard-footer { display:flex; align-items:center; gap:0.3rem; border-top:1px solid rgba(255,255,255,0.07); margin-top:0.22rem; padding-top:0.18rem; }
+        .sdr-guard-peer { font-size:0.58rem; color:var(--ok); font-family:var(--mono,monospace); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .sdr-guard-assign-btn { font-size:0.57rem; font-weight:700; padding:0.05rem 0.32rem; border-radius:3px; border:1px solid rgba(255,255,255,0.11); color:var(--muted); background:transparent; cursor:pointer; letter-spacing:0.01em; line-height:1.6; }
+        .sdr-guard-assign-btn:hover { border-color:rgba(243,166,54,0.5); color:var(--warn); }
+        /* ── SDR Guard assignment mini-modal ─────────────────────────── */
+        .sdr-assign-modal { width:min(360px,96vw); }
         /* ── ADS-B ─────────────────────────────────────────────────── */
         .adsb-tabs { display:flex; gap:0; border-bottom:1px solid var(--line); padding:0 0.85rem; }
         .adsb-tab { background:none; border:none; border-bottom:2px solid transparent; color:var(--muted); font-size:0.78rem; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; padding:0.5rem 0.85rem; cursor:pointer; margin-bottom:-1px; transition:color 0.15s; }
         .adsb-tab.is-active { color:var(--blue); border-bottom-color:var(--blue); }
         .adsb-tab-pane[hidden] { display:none !important; }
         .adsb-viewer-bar { display:flex; align-items:center; gap:0.35rem; padding:0.5rem 0.85rem; border-bottom:1px solid var(--line); background:var(--panel-2); }
+        /* ── WX Gauges ─────────────────────────────────────────────────────── */
+        .wx-gauge-row { display:flex; flex-wrap:wrap; gap:1rem; padding:1.1rem 1rem; justify-content:center; background:var(--bg-a); }
+        .wx-gauge-card { display:flex; flex-direction:column; align-items:center; gap:0.35rem; min-width:110px; }
+        .wx-gauge-label { font-size:0.68rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted-2); }
+        .wx-gauge-val { font-size:0.8rem; font-weight:700; color:var(--fg); text-align:center; }
+        .wx-gauge-sub { font-size:0.65rem; color:var(--muted-2); text-align:center; margin-top:-0.1rem; }
         .adsb-viewer-label { font-size:0.68rem; font-weight:700; letter-spacing:0.07em; text-transform:uppercase; color:var(--muted-2); margin-right:0.2rem; flex-shrink:0; }
         .adsb-viewer-btn { background:none; border:1px solid var(--line); border-radius:4px; color:var(--muted); font-size:0.71rem; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; padding:0.22rem 0.65rem; cursor:pointer; transition:color 0.15s, border-color 0.15s; white-space:nowrap; }
         .adsb-viewer-btn:hover { color:var(--fg); border-color:var(--muted); }
@@ -3361,6 +3377,9 @@
                 </button>
                 <button class="nav-btn" type="button" title="Fault Summary" data-view="faults" aria-pressed="false">
                     <svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 2.5L2 15h14L9 2.5z"/><line x1="9" y1="8" x2="9" y2="11.5" stroke-width="1.7"/><circle cx="9" cy="13.5" r="0.75" fill="currentColor" stroke="none"/></svg>
+                </button>
+                <button class="nav-btn" type="button" title="433 WX" data-view="wx433" aria-pressed="false">
+                    <svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="14" r="2.4" fill="currentColor" stroke="currentColor" stroke-width="1"/><path d="M7.5 11.8V5a1.5 1.5 0 0 1 3 0v6.8"/><line x1="10.5" y1="7" x2="13" y2="7" stroke-width="1.2"/><line x1="10.5" y1="9.5" x2="12" y2="9.5" stroke-width="1.2"/></svg>
                 </button>
             </nav>
             <div class="rail-tools">
@@ -3622,12 +3641,12 @@
                     </section>
                     <section class="panel" data-view-section="webrx" hidden>
                         <div class="panel-header">
-                            <div class="panel-title"><span class="status-dot ok"></span><span>SDR Receivers</span></div>
+                            <div class="panel-title"><span class="status-dot ok"></span><span>SDR Pool</span></div>
                         </div>
                         <div class="panel-body link-lines">
-                            <div class="link-row"><span class="status-dot ok"></span><strong>SDR-2</strong><span>VHF/UHF · .192</span></div>
-                            <div class="link-row"><span class="status-dot ok"></span><strong>SDR-3</strong><span>Public Safety · .193</span></div>
-                            <div class="link-row"><span class="status-dot ok"></span><strong>SDR-7</strong><span>UHF/SHF · .197</span></div>
+                            <div class="link-row"><span class="status-dot ok"></span><strong>Pool</strong><span id="owrx-sb-pool">12 SDRs</span></div>
+                            <div class="link-row"><span class="status-dot ok"></span><strong>Free</strong><span id="owrx-sb-free">--</span></div>
+                            <div class="link-row"><span class="status-dot ok"></span><strong>In Use</strong><span id="owrx-sb-inuse">--</span></div>
                         </div>
                     </section>
 
@@ -4033,20 +4052,23 @@
                             </div>
                             <div style="display:flex;align-items:center;gap:0.45rem;flex-shrink:0">
                                 <span class="pill" id="owrx-chip-users" style="min-width:2.5rem;text-align:center">--</span>
-                                <span class="pill" style="color:var(--muted);font-size:0.68rem" id="owrx-chip-sdrs">3 SDRs</span>
+                                <span class="pill" style="color:var(--muted);font-size:0.68rem" id="owrx-chip-sdrs">--</span>
                             </div>
                         </div>
                         <div class="panel-body" style="padding:0">
-                            <div class="adsb-viewer-bar">
+                            <div id="owrx-sdr-bar" class="adsb-viewer-bar" style="flex-wrap:wrap">
                                 <span class="adsb-viewer-label">SDR</span>
-                                <button class="adsb-viewer-btn is-active" type="button" data-owrx-src="http://10.13.73.185:8073/" data-owrx-label="SDR-2 VHF/UHF">SDR-2 &nbsp;VHF/UHF</button>
-                                <button class="adsb-viewer-btn" type="button" data-owrx-src="http://10.13.73.185:8073/" data-owrx-label="SDR-3 Public Safety">SDR-3 &nbsp;Public Safety</button>
-                                <button class="adsb-viewer-btn" type="button" data-owrx-src="http://10.13.73.185:8073/" data-owrx-label="SDR-7 UHF/SHF">SDR-7 &nbsp;UHF/SHF</button>
+                                <!-- buttons injected by _buildOwrxButtons() from SDR_A -->
                                 <a href="http://10.13.73.185:8073/" target="_blank" class="adsb-viewer-btn" style="text-decoration:none;margin-left:auto" title="Open in new tab">
                                     <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:0.25rem"><path d="M6 2H2v10h10V8"/><path d="M9 2h3v3"/><line x1="7.5" y1="6.5" x2="12" y2="2"/></svg>New Tab
                                 </a>
                             </div>
-                            <iframe id="owrx-iframe" src="http://10.13.73.185:8073/" style="width:100%;height:600px;border:none;display:block;" allow="autoplay; microphone" title="OpenWebRX"></iframe>
+                            <div id="owrx-launch-overlay" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;height:200px;background:var(--bg-b);color:var(--muted-2)">
+                                <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.4"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>
+                                <button type="button" onclick="(function(){var o=document.getElementById('owrx-launch-overlay');var f=document.getElementById('owrx-iframe');if(o)o.style.display='none';if(f){f.src='http://10.13.73.185:8073/';f.style.display='block';}})()" style="background:var(--accent);color:#fff;border:none;padding:0.5rem 1.4rem;border-radius:6px;font-size:0.82rem;font-weight:700;cursor:pointer;letter-spacing:0.04em">Launch OpenWebRX</button>
+                                <span style="font-size:0.68rem">Click to connect — SDR audio starts immediately</span>
+                            </div>
+                            <iframe id="owrx-iframe" src="" style="width:100%;height:600px;border:none;display:none;" allow="autoplay; microphone" title="OpenWebRX"></iframe>
                         </div>
                     </section>
 
@@ -4303,7 +4325,7 @@
                 },
                 webrx: {
                     title: 'OpenWebRX',
-                    subtitle: 'sigmon-2 RTL-SDR web receiver — SDR-2 (HF), SDR-3 (General), SDR-7 (Spare) · 10.13.73.185:8073'
+                    subtitle: 'sigmon-2 OpenWebRX · all RTL-SDRs available — select receiver inside the UI · 10.13.73.185:8073'
                 },
                 setup: {
                     title: 'Site Setup',
@@ -4316,6 +4338,10 @@
                 faults: {
                     title: 'Fault Summary',
                     subtitle: 'Active faults, warnings, and health reasons across all managed KiWi receivers.'
+                },
+                wx433: {
+                    title: '433 MHz Weather Sensors',
+                    subtitle: 'Acurite 433 MHz wireless sensor feed via rtl_433 on sigmon (10.13.73.185).'
                 }
             };
 
@@ -4868,7 +4894,13 @@
                         ? (f) => String(f.mode || '').toUpperCase() === 'APRS'
                         : (f) => ['FT8', 'FT4', 'WSPR'].includes(String(f.mode || '').toUpperCase());
                     rfVhfDecodes
-                        .filter((f) => f && modeTest(f))
+                        .filter((f) => {
+                            if (!f || !modeTest(f)) return false;
+                            if (rfMapSelectedAgeMs === null) return true;
+                            const ts = f.received_at ? Date.parse(f.received_at)
+                                     : f.epoch_ts    ? Number(f.epoch_ts) * 1000 : 0;
+                            return ts > 0 && (Date.now() - ts) <= rfMapSelectedAgeMs;
+                        })
                         .map(coordsFromVhfFrame)
                         .filter(Boolean)
                         .forEach((coords) => bounds.push([coords.lat, coords.lon]));
@@ -4901,7 +4933,13 @@
                         ? (f) => String(f.mode || '').toUpperCase() === 'APRS'
                         : (f) => ['FT8', 'FT4', 'WSPR'].includes(String(f.mode || '').toUpperCase());
                     decodePoints = rfVhfDecodes
-                        .filter((f) => f && modeTest(f))
+                        .filter((f) => {
+                            if (!f || !modeTest(f)) return false;
+                            if (rfMapSelectedAgeMs === null) return true;
+                            const ts = f.received_at ? Date.parse(f.received_at)
+                                     : f.epoch_ts    ? Number(f.epoch_ts) * 1000 : 0;
+                            return ts > 0 && (Date.now() - ts) <= rfMapSelectedAgeMs;
+                        })
                         .map((frame) => ({ decode: frame, coords: coordsFromVhfFrame(frame) }))
                         .filter((item) => item.coords);
                 }
@@ -6386,6 +6424,9 @@
                 }
                 if (viewName === 'sysinfo') refreshSysInfo();
                 if (viewName === 'faults') renderFaultSummary();
+                if (viewName === 'wx433') {
+                    if (window._launchAcurite433) window._launchAcurite433();
+                }
                 if (viewName === 'adsb') {
                     refreshAdsb();
                     if (!_adsbInterval) _adsbInterval = setInterval(refreshAdsb, 6000);
@@ -6397,6 +6438,11 @@
                     if (!_owrxInterval) _owrxInterval = setInterval(refreshOwrx, 15000);
                 } else {
                     if (_owrxInterval) { clearInterval(_owrxInterval); _owrxInterval = null; }
+                    // Reset iframe so returning to webrx view requires a manual click to reconnect
+                    const _owrxF = document.getElementById('owrx-iframe');
+                    const _owrxO = document.getElementById('owrx-launch-overlay');
+                    if (_owrxF && _owrxF.src) { _owrxF.src = ''; _owrxF.style.display = 'none'; }
+                    if (_owrxO) _owrxO.style.display = 'flex';
                 }
                 if (viewName === 'receivers') {
                     refreshSdrArray();
@@ -7362,13 +7408,7 @@
                 }
             };
 
-            // OpenWebRX SDR tab buttons — all point to the same UI (user picks SDR inside OpenWebRX)
-            document.querySelectorAll('[data-owrx-src]').forEach((btn) => {
-                btn.addEventListener('click', () => {
-                    document.querySelectorAll('[data-owrx-src]').forEach((b) => b.classList.remove('is-active'));
-                    btn.classList.add('is-active');
-                });
-            });
+            // OpenWebRX SDR buttons — dynamically built from SDR_A after it is populated
 
             // ── SDR Array cards ────────────────────────────────────────────
 
@@ -7432,6 +7472,47 @@
             ];
             const SDR_A = window.SDR_A;
 
+            const _buildOwrxButtons = () => {
+                const bar = document.getElementById('owrx-sdr-bar');
+                if (!bar) return;
+                const OWRX_URL = 'http://10.13.73.185:8073/';
+                bar.querySelectorAll('[data-owrx-src]').forEach(b => b.remove());
+                const anchor   = bar.querySelector('a[href]');
+                const eligible = SDR_A.filter(s => s.type !== 'adsb');
+                let firstFree  = null;
+
+                eligible.forEach(s => {
+                    const busy  = !!s.activeLabel;
+                    const badge = s.activeLabel || (s.label !== 'Open' ? s.label : (s.freq || 'open'));
+                    const btn   = document.createElement('button');
+                    btn.type      = 'button';
+                    btn.className = 'adsb-viewer-btn';
+                    btn.dataset.owrxSrc = OWRX_URL;
+                    btn.dataset.sdrId   = s.id;
+                    btn.title = s.id + (busy ? ' · In Use: ' + s.activeLabel : ' · Available');
+                    btn.innerHTML = s.id + ' <span style="font-size:0.62rem;opacity:0.5;font-weight:400;letter-spacing:0;text-transform:none">' + badge + '</span>';
+                    btn.addEventListener('click', () => {
+                        bar.querySelectorAll('[data-owrx-src]').forEach(b => b.classList.remove('is-active'));
+                        btn.classList.add('is-active');
+                    });
+                    if (!busy && !firstFree) { btn.classList.add('is-active'); firstFree = btn; }
+                    if (anchor) bar.insertBefore(btn, anchor);
+                    else bar.appendChild(btn);
+                });
+
+                const freeCount = eligible.filter(s => !s.activeLabel).length;
+                const inUseCount = eligible.length - freeCount;
+                const chip = document.getElementById('owrx-chip-sdrs');
+                if (chip) chip.textContent = freeCount + ' free · ' + eligible.length + ' total';
+                const sbPool  = document.getElementById('owrx-sb-pool');
+                const sbFree  = document.getElementById('owrx-sb-free');
+                const sbInUse = document.getElementById('owrx-sb-inuse');
+                if (sbPool)  sbPool.textContent  = eligible.length + ' SDRs';
+                if (sbFree)  sbFree.textContent  = freeCount + ' available';
+                if (sbInUse) sbInUse.textContent = inUseCount + ' assigned';
+            };
+            _buildOwrxButtons();
+
             // Fetch live SDR list from sdr-test-agent /devices (hubPPPS JSON).
             // Flattens Kerberossdr sub-channels into the top-level array.
             const _fetchSdrDevices = async () => {
@@ -7460,6 +7541,7 @@
 
                     _sdrRenderGrid(SDR_A, 'sdr-grid-a');
                     refreshSdrArray();
+                    _buildOwrxButtons();
                     const ca = document.getElementById('sdr-a-count');
                     if (ca) ca.textContent = SDR_A.length + ' devices';
                 } catch (e) {
@@ -7511,17 +7593,28 @@
                 const canStop = ['monitor','noaa','open'].includes(sdr.type);
                 if (canStop) card.classList.add('can-stop');
                 const _ip = _sdrIp(sdr);
+                const sid = sdr.id.toLowerCase();
+                const hasGuard = !!_ip && sdr.type !== 'pend';
                 const _idLine = sdr.id + (_ip ? '<span style="font-weight:500;opacity:0.7"> · ' + _ip + '</span>' : '');
                 card.innerHTML =
-                    '<div class="sdr-rx-id">' + _idLine + '</div>' +
+                    '<div class="sdr-rx-id" style="display:flex;align-items:center;justify-content:space-between">' +
+                        '<span>' + _idLine + '</span>' +
+                        (hasGuard ? '<span class="sdr-guard-lock-badge" id="sdr-guard-lock-' + sid + '" title="Locked" hidden>&#128274;</span>' : '') +
+                    '</div>' +
                     (sdr.serial ? '<div class="sdr-rx-serial">SN ' + sdr.serial + '</div>' : '') +
                     '<div class="sdr-rx-label">' + sdr.label + '</div>' +
                     '<div class="sdr-rx-footer">' +
-                        '<div class="sdr-rx-stat mute" id="sdr-stat-' + sdr.id.toLowerCase() + '">' +
+                        '<div class="sdr-rx-stat mute" id="sdr-stat-' + sid + '">' +
                             (sdr.type === 'pend' ? 'not configured' : (sdr.freq || '')) +
                         '</div>' +
-                        (canStop ? '<button class="sdr-stop-btn" id="sdr-stop-' + sdr.id.toLowerCase() + '" type="button">Stop</button>' : '') +
-                    '</div>';
+                        (canStop ? '<button class="sdr-stop-btn" id="sdr-stop-' + sid + '" type="button">Stop</button>' : '') +
+                    '</div>' +
+                    (hasGuard ?
+                        '<div class="sdr-guard-footer" id="sdr-guard-footer-' + sid + '" hidden>' +
+                            '<span class="sdr-guard-peer" id="sdr-guard-peer-' + sid + '" hidden></span>' +
+                            '<button class="sdr-guard-assign-btn" data-guard-ip="' + _ip + '" data-guard-id="' + sdr.id + '" type="button">Assign</button>' +
+                        '</div>'
+                    : '');
                 return card;
             };
 
@@ -7682,9 +7775,125 @@
 
                 // NOAA restore is handled by _initNoaaMonitor() which reads the saved device assignment.
 
-                // Auto-launch Acurite 433 panel — always running service, no user action needed
-                if (window._launchAcurite433) window._launchAcurite433();
+                // Acurite 433 panel launches on demand via the 433 WX nav button (wx433 view).
             }, 1000);
+
+            // ── SDR Guard assignments ──────────────────────────────────────
+
+            const GUARD_BASE = 'http://10.13.73.185:7375';
+            let _guardData = {};
+            let _guardModalIp = null;
+
+            const _applyGuardData = (data) => {
+                for (const [ip, info] of Object.entries(data)) {
+                    const sdr = SDR_A.find(s => _sdrIp(s) === ip);
+                    if (!sdr) continue;
+                    const sid = sdr.id.toLowerCase();
+                    sdr.guardLocked = info.locked;
+                    sdr.guardActive = info.active;
+                    sdr.guardLabel  = info.label;
+                    sdr.guardPeer   = info.peer_ip;
+
+                    const lockBadge  = document.getElementById('sdr-guard-lock-' + sid);
+                    const footer     = document.getElementById('sdr-guard-footer-' + sid);
+                    const peerEl     = document.getElementById('sdr-guard-peer-' + sid);
+                    const card       = document.getElementById('sdr-card-' + sid);
+                    const labelEl    = document.querySelector('#sdr-card-' + sid + ' .sdr-rx-label');
+
+                    if (lockBadge) lockBadge.hidden = !info.locked;
+                    if (footer)    footer.hidden    = !(info.locked || info.active);
+                    if (peerEl) {
+                        peerEl.hidden      = !info.active;
+                        peerEl.textContent = info.active ? '\u{1F4F6} ' + info.peer_ip : '';
+                    }
+                    if (card) {
+                        card.classList.toggle('guard-locked', info.locked && !info.active);
+                        card.classList.toggle('guard-active',  info.locked && !!info.active);
+                    }
+                    if (labelEl && info.label && info.label !== 'Open') {
+                        labelEl.textContent = info.label;
+                    }
+                }
+            };
+
+            const _fetchGuardAssignments = async () => {
+                try {
+                    const r = await fetch(GUARD_BASE + '/assignments', { cache:'no-store', signal: AbortSignal.timeout(5000) });
+                    if (!r.ok) return;
+                    _guardData = await r.json();
+                    _applyGuardData(_guardData);
+                } catch (_) {}
+            };
+
+            // Open the assign modal for an SDR IP
+            const _openAssignModal = (ip, sdrId) => {
+                _guardModalIp = ip;
+                const info = _guardData[ip] || {};
+                const titleEl   = document.getElementById('sdr-assign-modal-title');
+                const labelInp  = document.getElementById('sdr-assign-label-input');
+                const lockChk   = document.getElementById('sdr-assign-lock-check');
+                const banner    = document.getElementById('sdr-assign-active-banner');
+                const peerSpan  = document.getElementById('sdr-assign-peer-ip');
+                const modal     = document.getElementById('sdr-assign-modal');
+                if (!modal) return;
+                if (titleEl)  titleEl.textContent  = sdrId + ' · ' + ip;
+                if (labelInp) labelInp.value       = info.label || '';
+                if (lockChk)  lockChk.checked      = !!info.locked;
+                if (banner)   banner.hidden         = !info.active;
+                if (peerSpan) peerSpan.textContent  = info.peer_ip || '';
+                modal.removeAttribute('hidden');
+                if (labelInp) labelInp.focus();
+            };
+
+            document.getElementById('sdr-assign-modal-close')?.addEventListener('click', () => {
+                document.getElementById('sdr-assign-modal')?.setAttribute('hidden', '');
+            });
+            document.getElementById('sdr-assign-cancel')?.addEventListener('click', () => {
+                document.getElementById('sdr-assign-modal')?.setAttribute('hidden', '');
+            });
+            document.getElementById('sdr-assign-modal')?.addEventListener('click', (e) => {
+                if (e.target === e.currentTarget) e.currentTarget.setAttribute('hidden', '');
+            });
+
+            document.getElementById('sdr-assign-save-btn')?.addEventListener('click', async () => {
+                if (!_guardModalIp) return;
+                const labelInp = document.getElementById('sdr-assign-label-input');
+                const lockChk  = document.getElementById('sdr-assign-lock-check');
+                const label    = (labelInp?.value || '').trim() || 'Open';
+                const locked   = lockChk?.checked ?? false;
+                try {
+                    await fetch(GUARD_BASE + '/assignments/' + _guardModalIp + '/assign', {
+                        method: 'POST', headers: {'Content-Type':'application/json'},
+                        body: JSON.stringify({ label, locked }),
+                    });
+                    document.getElementById('sdr-assign-modal')?.setAttribute('hidden', '');
+                    await _fetchGuardAssignments();
+                } catch (e) {
+                    console.error('[guard] assign failed:', e);
+                }
+            });
+
+            document.getElementById('sdr-assign-clear-btn')?.addEventListener('click', async () => {
+                if (!_guardModalIp) return;
+                try {
+                    await fetch(GUARD_BASE + '/assignments/' + _guardModalIp + '/clear', { method:'POST' });
+                    document.getElementById('sdr-assign-modal')?.setAttribute('hidden', '');
+                    await _fetchGuardAssignments();
+                } catch (e) {
+                    console.error('[guard] clear failed:', e);
+                }
+            });
+
+            // Delegate Assign button clicks on card grid
+            document.getElementById('sdr-grid-a')?.addEventListener('click', (e) => {
+                const btn = e.target.closest('[data-guard-ip]');
+                if (!btn) return;
+                _openAssignModal(btn.dataset.guardIp, btn.dataset.guardId);
+            });
+
+            // Initial fetch + 30-second polling
+            _fetchGuardAssignments();
+            setInterval(_fetchGuardAssignments, 30000);
 
             // ── Fault Summary ──────────────────────────────────────────────
 
@@ -8497,7 +8706,7 @@
     <!-- ── Acurite 433 MHz weather sensor panels ──────────────────────── -->
     <div id="acurite433-panels" hidden>
         <!-- Compact sidebar card -->
-        <section class="panel" id="acurite433-sidebar" data-view-section="receivers" hidden>
+        <section class="panel" id="acurite433-sidebar" data-view-section="wx433" hidden>
             <div class="panel-header" style="flex-direction:column;align-items:flex-start;gap:0.35rem">
                 <div style="display:flex;align-items:center;width:100%;min-width:0">
                     <div class="panel-title" style="min-width:0;overflow:hidden;flex:1">
@@ -8511,8 +8720,171 @@
             <div class="panel-body link-lines" style="padding:0" id="sb-acurite-grid"></div>
         </section>
 
+        <!-- WX Gauge card -->
+        <section class="panel" id="acurite433-gauges" data-view-section="wx433" style="grid-column:1/-1" hidden>
+            <div class="panel-header">
+                <div class="panel-title">
+                    <span class="status-dot ok" id="wx-gauge-dot"></span>
+                    <span>Acurite-Atlas · Live Conditions</span>
+                </div>
+                <span class="pill" id="wx-gauge-age" style="color:var(--muted-2);font-size:0.66rem">--</span>
+            </div>
+            <div class="wx-gauge-row">
+
+                <!-- Temperature -->
+                <div class="wx-gauge-card">
+                    <span class="wx-gauge-label">Temperature</span>
+                    <svg viewBox="0 0 120 95" width="130" height="100" style="overflow:visible">
+                        <!-- Track arc -->
+                        <circle cx="60" cy="68" r="46" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="9"
+                            stroke-dasharray="192.4 96.2" stroke-linecap="butt" transform="rotate(135 60 68)"/>
+                        <!-- Blue zone: 0–50 °F (50% of arc = 96.2) -->
+                        <circle cx="60" cy="68" r="46" fill="none" stroke="#3B82F6" stroke-width="9"
+                            stroke-dasharray="96.2 192.4" stroke-linecap="butt" transform="rotate(135 60 68)"/>
+                        <!-- Green zone: 50–80 °F (30% = 57.7), offset 96.2 -->
+                        <circle cx="60" cy="68" r="46" fill="none" stroke="#22C55E" stroke-width="9"
+                            stroke-dasharray="57.7 230.9" stroke-linecap="butt" stroke-dashoffset="-96.2" transform="rotate(135 60 68)"/>
+                        <!-- Red zone: 80–100 °F (20% = 38.5), offset 153.9 -->
+                        <circle cx="60" cy="68" r="46" fill="none" stroke="#EF4444" stroke-width="9"
+                            stroke-dasharray="38.5 250.1" stroke-linecap="butt" stroke-dashoffset="-153.9" transform="rotate(135 60 68)"/>
+                        <!-- Needle -->
+                        <line id="wx-temp-needle" x1="60" y1="68" x2="60" y2="26" stroke="var(--fg)" stroke-width="2.5" stroke-linecap="round" transform="rotate(135 60 68)"/>
+                        <circle cx="60" cy="68" r="5" fill="#F97316"/>
+                        <!-- Labels -->
+                        <text x="16" y="82" text-anchor="middle" fill="rgba(255,255,255,0.3)" font-size="8">0</text>
+                        <text x="60" y="17" text-anchor="middle" fill="rgba(255,255,255,0.3)" font-size="8">50</text>
+                        <text x="104" y="82" text-anchor="middle" fill="rgba(255,255,255,0.3)" font-size="8">100</text>
+                        <!-- Value -->
+                        <text id="wx-temp-val" x="60" y="64" text-anchor="middle" fill="var(--fg)" font-size="15" font-weight="700">--</text>
+                        <text x="60" y="78" text-anchor="middle" fill="rgba(255,255,255,0.45)" font-size="9">°F</text>
+                    </svg>
+                </div>
+
+                <!-- Wind -->
+                <div class="wx-gauge-card">
+                    <span class="wx-gauge-label">Wind</span>
+                    <svg viewBox="0 0 110 110" width="110" height="110">
+                        <circle cx="55" cy="55" r="48" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="3"/>
+                        <circle cx="55" cy="55" r="48" fill="none" stroke="rgba(255,255,255,0.14)" stroke-width="1.5" stroke-dasharray="3 9"/>
+                        <!-- Compass ticks -->
+                        <text x="55" y="8"  text-anchor="middle" fill="rgba(255,255,255,0.3)" font-size="8">N</text>
+                        <text x="102" y="58" text-anchor="middle" fill="rgba(255,255,255,0.3)" font-size="8">E</text>
+                        <text x="55" y="106" text-anchor="middle" fill="rgba(255,255,255,0.3)" font-size="8">S</text>
+                        <text x="8" y="58"  text-anchor="middle" fill="rgba(255,255,255,0.3)" font-size="8">W</text>
+                        <!-- Arrow (points in wind direction, rotates) -->
+                        <g id="wx-wind-arrow" transform="rotate(0 55 55)">
+                            <polygon points="55,16 49,42 55,36 61,42" fill="#F97316"/>
+                            <polygon points="55,94 49,68 55,74 61,68" fill="rgba(255,255,255,0.2)"/>
+                        </g>
+                        <!-- Speed & dir text -->
+                        <text id="wx-wind-spd" x="55" y="52" text-anchor="middle" fill="var(--fg)" font-size="13" font-weight="700">--</text>
+                        <text x="55" y="64" text-anchor="middle" fill="rgba(255,255,255,0.45)" font-size="8">MPH</text>
+                        <text id="wx-wind-dir" x="55" y="76" text-anchor="middle" fill="rgba(255,255,255,0.45)" font-size="8">---°</text>
+                    </svg>
+                </div>
+
+                <!-- Rain -->
+                <div class="wx-gauge-card">
+                    <span class="wx-gauge-label">Rain</span>
+                    <svg viewBox="0 0 80 105" width="80" height="105">
+                        <!-- Cylinder body -->
+                        <ellipse cx="40" cy="22" rx="28" ry="8" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.18)" stroke-width="1.5"/>
+                        <rect x="12" y="22" width="56" height="68" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.18)" stroke-width="1.5"/>
+                        <ellipse cx="40" cy="90" rx="28" ry="8" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.18)" stroke-width="1.5"/>
+                        <!-- Water fill (clipped inside cylinder) -->
+                        <clipPath id="wx-rain-clip"><rect x="13" y="22" width="54" height="68"/></clipPath>
+                        <rect id="wx-rain-fill" x="13" y="90" width="54" height="0" fill="#3B82F6" opacity="0.7" clip-path="url(#wx-rain-clip)"/>
+                        <!-- Tick marks -->
+                        <line x1="60" y1="35" x2="66" y2="35" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
+                        <line x1="60" y1="52" x2="66" y2="52" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
+                        <line x1="60" y1="69" x2="66" y2="69" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
+                        <line x1="60" y1="87" x2="66" y2="87" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
+                        <!-- Value inside -->
+                        <text id="wx-rain-val" x="40" y="62" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-size="11" font-weight="700">--</text>
+                        <text x="40" y="74" text-anchor="middle" fill="rgba(255,255,255,0.35)" font-size="8">in. total</text>
+                    </svg>
+                </div>
+
+                <!-- Humidity -->
+                <div class="wx-gauge-card">
+                    <span class="wx-gauge-label">Humidity</span>
+                    <svg viewBox="0 0 100 105" width="100" height="105">
+                        <!-- Leaf shape -->
+                        <path d="M20 80 Q10 40 40 20 Q55 35 55 60 Q55 80 35 85 Z" fill="#22C55E" opacity="0.85"/>
+                        <path d="M30 85 Q20 50 48 28 Q60 42 58 65 Q56 85 40 88 Z" fill="#16A34A" opacity="0.7"/>
+                        <path d="M35 82 Q30 60 46 40" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" fill="none"/>
+                        <!-- Water drop -->
+                        <path d="M72 38 Q72 20 62 15 Q52 20 52 38 Q52 52 62 55 Q72 52 72 38 Z" fill="#3B82F6" opacity="0.9"/>
+                        <!-- Humidity % inside drop -->
+                        <text id="wx-hum-val" x="62" y="40" text-anchor="middle" fill="white" font-size="11" font-weight="700">--</text>
+                        <text x="62" y="51" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-size="8">%</text>
+                        <!-- Dew point -->
+                        <text x="50" y="75" text-anchor="middle" fill="#22C55E" font-size="8" font-weight="700">DewPoint</text>
+                        <text id="wx-dew-val" x="50" y="87" text-anchor="middle" fill="#22C55E" font-size="10" font-weight="700">-- °F</text>
+                    </svg>
+                </div>
+
+                <!-- UV Index -->
+                <div class="wx-gauge-card">
+                    <span class="wx-gauge-label">UV Index</span>
+                    <svg viewBox="0 0 100 105" width="100" height="105">
+                        <!-- Pyramid tiers (5 levels, widest at bottom) -->
+                        <rect id="wx-uv-t5" x="6"  y="10" width="88" height="16" rx="2" fill="rgba(139,92,246,0.25)" stroke="rgba(139,92,246,0.4)" stroke-width="1"/>
+                        <rect id="wx-uv-t4" x="14" y="30" width="72" height="16" rx="2" fill="rgba(239,68,68,0.25)"  stroke="rgba(239,68,68,0.4)"  stroke-width="1"/>
+                        <rect id="wx-uv-t3" x="22" y="50" width="56" height="16" rx="2" fill="rgba(249,115,22,0.25)" stroke="rgba(249,115,22,0.4)" stroke-width="1"/>
+                        <rect id="wx-uv-t2" x="30" y="70" width="40" height="16" rx="2" fill="rgba(234,179,8,0.25)"  stroke="rgba(234,179,8,0.4)"  stroke-width="1"/>
+                        <rect id="wx-uv-t1" x="38" y="90" width="24" height="12" rx="2" fill="rgba(34,197,94,0.25)"  stroke="rgba(34,197,94,0.4)"  stroke-width="1"/>
+                        <!-- Labels -->
+                        <text x="50" y="22"  text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="7.5">11+</text>
+                        <text x="50" y="42"  text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="7.5">8–10</text>
+                        <text x="50" y="62"  text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="7.5">6–7</text>
+                        <text x="50" y="82"  text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="7.5">3–5</text>
+                        <text x="50" y="99"  text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="7">1–2</text>
+                    </svg>
+                    <span class="wx-gauge-val">UV: <span id="wx-uv-val">--</span></span>
+                </div>
+
+                <!-- LUX / Light -->
+                <div class="wx-gauge-card">
+                    <span class="wx-gauge-label">Light</span>
+                    <svg viewBox="0 0 100 105" width="100" height="105">
+                        <!-- Moon (shown when dark) -->
+                        <g id="wx-lux-moon">
+                            <path d="M62 22 Q40 30 40 55 Q40 78 62 84 Q38 84 30 65 Q22 46 36 30 Z" fill="#F59E0B"/>
+                            <circle cx="74" cy="28" r="4" fill="#FCD34D"/>
+                            <circle cx="80" cy="45" r="2.5" fill="#FCD34D"/>
+                        </g>
+                        <!-- Sun (shown when bright) -->
+                        <g id="wx-lux-sun" style="display:none">
+                            <circle cx="50" cy="52" r="20" fill="#F59E0B"/>
+                            <line x1="50" y1="16" x2="50" y2="26" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
+                            <line x1="50" y1="78" x2="50" y2="88" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
+                            <line x1="14" y1="52" x2="24" y2="52" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
+                            <line x1="76" y1="52" x2="86" y2="52" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
+                            <line x1="25" y1="27" x2="32" y2="34" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
+                            <line x1="68" y1="70" x2="75" y2="77" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
+                            <line x1="75" y1="27" x2="68" y2="34" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
+                            <line x1="32" y1="70" x2="25" y2="77" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
+                        </g>
+                    </svg>
+                    <span class="wx-gauge-val">LUX: <span id="wx-lux-val">--</span></span>
+                </div>
+
+                <!-- Lightning -->
+                <div class="wx-gauge-card">
+                    <span class="wx-gauge-label">Lightning</span>
+                    <svg viewBox="0 0 80 105" width="80" height="105">
+                        <polygon id="wx-strike-bolt" points="46,10 28,55 42,55 34,95 62,45 46,45" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.2)" stroke-width="1.5" stroke-linejoin="round"/>
+                    </svg>
+                    <span class="wx-gauge-val"><span id="wx-strike-val">--</span></span>
+                    <span class="wx-gauge-sub" id="wx-strike-dist"></span>
+                </div>
+
+            </div>
+        </section>
+
         <!-- Full operations panel -->
-        <section class="panel" id="acurite433-panel" data-view-section="operations" style="grid-column:1/-1" hidden>
+        <section class="panel" id="acurite433-panel" data-view-section="wx433" style="grid-column:1/-1" hidden>
             <div class="panel-header">
                 <div class="panel-title">
                     <span class="status-dot ok" id="acurite-dot"></span>
@@ -8534,6 +8906,42 @@
     </div>
 
     <!-- ── EAS Alert detail modal ─────────────────────────────────────── -->
+    <!-- SDR Guard assignment modal -->
+    <div id="sdr-assign-modal" class="sdr-modal-overlay" hidden>
+        <div class="sdr-modal sdr-assign-modal" role="dialog" aria-modal="true">
+            <div class="sdr-modal-head">
+                <div class="sdr-modal-title">
+                    <span class="status-dot ok" id="sdr-assign-modal-dot"></span>
+                    <span id="sdr-assign-modal-title">SDR Assignment</span>
+                </div>
+                <button class="sdr-modal-close" id="sdr-assign-modal-close" title="Close">&times;</button>
+            </div>
+            <div class="sdr-modal-body" style="gap:0.7rem">
+                <div id="sdr-assign-active-banner" hidden style="background:rgba(32,184,160,0.08);border:1px solid rgba(32,184,160,0.25);border-radius:6px;padding:0.45rem 0.7rem;font-size:0.75rem;color:var(--ok)">
+                    Active connection from <strong id="sdr-assign-peer-ip"></strong>
+                </div>
+                <div class="sdr-config-row">
+                    <label class="sdr-config-label" for="sdr-assign-label-input">Label</label>
+                    <input class="sdr-config-val" id="sdr-assign-label-input" type="text" placeholder="Assignment label…" maxlength="48">
+                </div>
+                <div class="sdr-config-row">
+                    <span class="sdr-config-label">Lock</span>
+                    <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer">
+                        <input type="checkbox" id="sdr-assign-lock-check" style="accent-color:var(--ok);width:15px;height:15px">
+                        <span style="font-size:0.78rem;color:var(--muted)">Prevent new connections when in use</span>
+                    </label>
+                </div>
+            </div>
+            <div class="sdr-modal-foot" style="justify-content:space-between">
+                <button class="pill" id="sdr-assign-clear-btn" style="color:var(--fault);border-color:rgba(230,70,70,0.4);cursor:pointer" type="button">Clear</button>
+                <div style="display:flex;gap:0.5rem">
+                    <button class="pill" id="sdr-assign-cancel" style="cursor:pointer" type="button">Cancel</button>
+                    <button class="command-btn" id="sdr-assign-save-btn" type="button">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="eas-alert-modal" class="sdr-modal-overlay" hidden>
         <div class="sdr-modal" role="dialog" style="width:min(520px,96vw)">
             <div class="sdr-modal-head">
@@ -8706,9 +9114,16 @@
             const source = _easModalSource;
             _currentEasAlert = null;
             _easModalSource  = null;
-            if (alert && source !== 'log') {
+            if (alert && source === 'eas-feed') {
+                // Dismissed from the EAS feed panel — log it then hide from ops page
+                _logEasAlert(alert);
+                window._dismissEasFeedAlert?.(alert.id);
+            } else if (alert && source !== 'log') {
                 // First review from the active alert list: log it, dismiss it, remove from active list
-                if (alert.id) _dismissedIds.add(alert.id);
+                if (alert.id) {
+                    _dismissedIds.add(alert.id);
+                    try { localStorage.setItem(_NOAA_DISMISSED_KEY, JSON.stringify([..._dismissedIds])); } catch (_) {}
+                }
                 _logEasAlert(alert);
                 _noaaAlerts = _noaaAlerts.filter(x => x.id !== alert.id);
                 _renderNoaaAlerts();
@@ -8877,7 +9292,7 @@
             } else if (_activeMode === 'tpms') {
                 if (window._launchTpms) await window._launchTpms(_activeSdr);
             } else if (_activeMode === 'acurite433') {
-                if (window._launchAcurite433) window._launchAcurite433();
+                setView('wx433');
             }
             closeSdrModal();
         });
@@ -9033,7 +9448,8 @@
         let _noaaWs = null;
         let _noaaSdr = null;
         let _noaaAlerts = [];
-        const _dismissedIds = new Set();  // alert IDs reviewed this session — never re-added
+        const _NOAA_DISMISSED_KEY = 'noc-noaa-dismissed-v1';
+        const _dismissedIds = new Set(JSON.parse(localStorage.getItem(_NOAA_DISMISSED_KEY) || '[]'));
         const _NOAA_CONFIG_KEY  = 'noc-noaa-config-v1';
 
         const _saveNoaaConfig = () => {
@@ -10333,20 +10749,31 @@
             const _EAS_WS  = 'ws://10.13.73.185:4027/ws/alerts';
             const _EAS_API = 'http://10.13.73.185:4027/alerts?limit=20';
 
-            let _feedAlerts = [];
-            let _feedWs     = null;
-            let _feedTimer  = null;
+            const _FEED_DISMISSED_KEY = 'noc-eas-feed-dismissed-v1';
+            let _feedAlerts    = [];
+            let _feedDismissed = new Set(JSON.parse(localStorage.getItem(_FEED_DISMISSED_KEY) || '[]'));
+            let _feedWs        = null;
+            let _feedTimer     = null;
+
+            window._dismissEasFeedAlert = (id) => {
+                if (id) {
+                    _feedDismissed.add(id);
+                    try { localStorage.setItem(_FEED_DISMISSED_KEY, JSON.stringify([..._feedDismissed])); } catch (_) {}
+                }
+                _feedRender();
+            };
 
             const _feedRender = () => {
                 const list    = document.getElementById('eas-feed-list');
+                const visible = _feedAlerts.filter(a => !_feedDismissed.has(a.id));
                 const countEl = document.getElementById('eas-feed-count');
-                if (countEl) countEl.textContent = _feedAlerts.length + ' alert' + (_feedAlerts.length !== 1 ? 's' : '');
+                if (countEl) countEl.textContent = visible.length + ' alert' + (visible.length !== 1 ? 's' : '');
                 if (!list) return;
-                if (!_feedAlerts.length) {
-                    list.innerHTML = '<div style="font-size:0.75rem;color:var(--muted-2);padding:0.65rem 0.85rem">No EAS alerts on record.</div>';
+                if (!visible.length) {
+                    list.innerHTML = '<div style="font-size:0.75rem;color:var(--muted-2);padding:0.65rem 0.85rem">No new EAS alerts.</div>';
                     return;
                 }
-                list.innerHTML = _feedAlerts.map(a => {
+                list.innerHTML = visible.map(a => {
                     const code  = a.event || '?';
                     const label = EAS_EVENTS[code] || a.event_name || code;
                     const sev   = _easSeverity(code);
@@ -10366,7 +10793,7 @@
                 }).join('');
                 list.querySelectorAll('[data-feed-id]').forEach(el => {
                     const a = _feedAlerts.find(x => x.id === el.dataset.feedId);
-                    if (a) el.addEventListener('click', () => _openEasModal(a));
+                    if (a) el.addEventListener('click', () => _openEasModal(a, 'eas-feed'));
                 });
                 list.querySelectorAll('[data-feed-audio]').forEach(btn => {
                     btn.addEventListener('click', e => {
@@ -11627,6 +12054,7 @@
 
     // ── Acurite 433 MHz Weather Sensors ──────────────────────────────────────
     (() => {
+        const KIWISCAN_BASE = '';
         const _API       = KIWISCAN_BASE + '/api/acurite433/events';
         const _POLL_MS   = 12000;
         let   _pollTimer = null;
@@ -11666,6 +12094,100 @@
                 '<span>' + _fmtLightning(ev) + '</span>' +
                 '<span>' + bat + '</span>';
             return row;
+        };
+
+        const _refreshGauges = (events) => {
+            const latest = {};
+            const fields = ['temperature_F','humidity','wind_avg_mi_h','wind_dir_deg','rain_in','uv','lux','strike_count','storm_dist','strike_distance'];
+            const atlasOnly = events.filter(ev => (ev.model || '') === 'Acurite-Atlas');
+            for (const ev of atlasOnly) {
+                for (const f of fields) { if (!(f in latest) && ev[f] != null) latest[f] = ev[f]; }
+                if (fields.every(f => f in latest)) break;
+            }
+
+            const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+            const setAttr = (id, a, v) => { const el = document.getElementById(id); if (el) el.setAttribute(a, v); };
+
+            // Temperature needle (0–100°F → 135°–375° rotation)
+            const tempF = latest.temperature_F;
+            if (tempF != null) {
+                setText('wx-temp-val', tempF.toFixed(1));
+                const deg = 135 + Math.min(Math.max(tempF, 0), 100) / 100 * 240;
+                setAttr('wx-temp-needle', 'transform', `rotate(${deg.toFixed(1)} 60 68)`);
+            }
+
+            // Wind direction arrow + speed
+            const spd = latest.wind_avg_mi_h;
+            const dir = latest.wind_dir_deg;
+            if (spd != null) setText('wx-wind-spd', spd.toFixed(1));
+            if (dir != null) {
+                setAttr('wx-wind-arrow', 'transform', `rotate(${dir} 55 55)`);
+                setText('wx-wind-dir', dir.toFixed(0) + '°');
+            }
+
+            // Rain cylinder fill (max 5 in = full 68 px)
+            const rain = latest.rain_in;
+            if (rain != null) {
+                setText('wx-rain-val', rain.toFixed(2));
+                const h = Math.min(rain, 5) / 5 * 68;
+                const f = document.getElementById('wx-rain-fill');
+                if (f) { f.setAttribute('y', 90 - h); f.setAttribute('height', h); }
+            }
+
+            // Humidity + dew point
+            const hum = latest.humidity;
+            if (hum != null) {
+                setText('wx-hum-val', hum);
+                if (tempF != null) setText('wx-dew-val', (tempF - (100 - hum) / 5 * 1.8).toFixed(1) + ' °F');
+            }
+
+            // UV pyramid tiers
+            const uv = latest.uv;
+            if (uv != null) {
+                setText('wx-uv-val', uv);
+                [
+                    { id:'wx-uv-t1', min:1,  col:'34,197,94'   },
+                    { id:'wx-uv-t2', min:3,  col:'234,179,8'   },
+                    { id:'wx-uv-t3', min:6,  col:'249,115,22'  },
+                    { id:'wx-uv-t4', min:8,  col:'239,68,68'   },
+                    { id:'wx-uv-t5', min:11, col:'139,92,246'  },
+                ].forEach(t => {
+                    const el = document.getElementById(t.id);
+                    if (!el) return;
+                    const on = uv >= t.min;
+                    el.setAttribute('fill',   `rgba(${t.col},${on ? 0.9 : 0.15})`);
+                    el.setAttribute('stroke', `rgba(${t.col},${on ? 0.9 : 0.35})`);
+                });
+            }
+
+            // LUX — moon vs sun
+            const lux = latest.lux;
+            if (lux != null) {
+                setText('wx-lux-val', lux >= 1000 ? (lux/1000).toFixed(1)+'k' : Math.round(lux).toString());
+                const moon = document.getElementById('wx-lux-moon');
+                const sun  = document.getElementById('wx-lux-sun');
+                if (moon) moon.style.display = lux < 100 ? '' : 'none';
+                if (sun)  sun.style.display  = lux >= 100 ? '' : 'none';
+            }
+
+            // Lightning bolt
+            const strikes = latest.strike_count;
+            if (strikes != null) {
+                setText('wx-strike-val', strikes + (strikes === 1 ? ' strike' : ' strikes'));
+                const dist = latest.storm_dist ?? latest.strike_distance;
+                setText('wx-strike-dist', dist != null ? dist + ' mi away' : '');
+                const bolt = document.getElementById('wx-strike-bolt');
+                if (bolt) {
+                    bolt.setAttribute('fill',   strikes > 0 ? 'rgba(251,191,36,0.85)' : 'rgba(255,255,255,0.08)');
+                    bolt.setAttribute('stroke', strikes > 0 ? '#FCD34D'                : 'rgba(255,255,255,0.2)');
+                }
+            }
+
+            // Header age + dot
+            const ageEl = document.getElementById('wx-gauge-age');
+            if (ageEl && atlasOnly.length > 0 && atlasOnly[0].time) ageEl.textContent = 'Updated ' + _fmtTime(atlasOnly[0].time);
+            const dot = document.getElementById('wx-gauge-dot');
+            if (dot) dot.className = atlasOnly.length > 0 ? 'status-dot ok' : 'status-dot warn';
         };
 
         const _refreshSidebar = (events) => {
@@ -11713,6 +12235,7 @@
                 if (dot)   { dot.className = events.length ? 'status-dot ok' : 'status-dot warn'; }
                 if (sbDot) { sbDot.className = events.length ? 'status-dot ok' : 'status-dot warn'; }
                 _refreshSidebar(events);
+                _refreshGauges(events);
             } catch (_) {}
         };
 
@@ -11720,9 +12243,10 @@
             if (_shown) return;
             _shown = true;
 
-            const holder = document.getElementById('acurite433-panels');
-            const fullEl = document.getElementById('acurite433-panel');
-            const sbEl   = document.getElementById('acurite433-sidebar');
+            const holder    = document.getElementById('acurite433-panels');
+            const fullEl    = document.getElementById('acurite433-panel');
+            const sbEl      = document.getElementById('acurite433-sidebar');
+            const gaugesEl  = document.getElementById('acurite433-gauges');
 
             // Insert sidebar after tpms sidebar if present, else after protomix
             const tpmsSb = document.getElementById('tpms-mon-sidebar');
@@ -11730,16 +12254,23 @@
             const afterSb = tpmsSbInLayout ? tpmsSb : document.getElementById('sidebar-rx-protomix');
             if (afterSb && sbEl && sbEl.parentElement === holder) afterSb.after(sbEl);
 
-            // Insert full panel at end of operations area
+            // Insert gauge card then full panel into main grid
+            const grid = document.querySelector('.main-grid');
+            const tpmsFull = document.getElementById('tpms-monitor-panel');
+            const tpmsInLayout = tpmsFull && !tpmsFull.closest('#tpms-monitor-panels');
+            if (gaugesEl && gaugesEl.parentElement === holder) {
+                if (tpmsInLayout) tpmsFull.after(gaugesEl);
+                else grid?.appendChild(gaugesEl);
+            }
             if (fullEl && fullEl.parentElement === holder) {
-                const tpmsFull = document.getElementById('tpms-monitor-panel');
-                const tpmsInLayout = tpmsFull && !tpmsFull.closest('#tpms-monitor-panels');
-                if (tpmsInLayout) tpmsFull.after(fullEl);
-                else document.querySelector('.main-grid')?.appendChild(fullEl);
+                if (gaugesEl && gaugesEl.parentNode === grid) gaugesEl.after(fullEl);
+                else if (tpmsInLayout) tpmsFull.after(fullEl);
+                else grid?.appendChild(fullEl);
             }
 
-            if (sbEl)   sbEl.hidden   = false;
-            if (fullEl) fullEl.hidden = false;
+            if (sbEl)     sbEl.hidden     = false;
+            if (gaugesEl) gaugesEl.hidden = false;
+            if (fullEl)   fullEl.hidden   = false;
 
             _refresh();
             if (!_pollTimer) _pollTimer = setInterval(_refresh, _POLL_MS);
@@ -11752,11 +12283,13 @@
         const _hidePanel = () => {
             _shown = false;
             if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
-            const holder = document.getElementById('acurite433-panels');
-            const fullEl = document.getElementById('acurite433-panel');
-            const sbEl   = document.getElementById('acurite433-sidebar');
-            if (fullEl) { fullEl.hidden = true; holder?.appendChild(fullEl); }
-            if (sbEl)   { sbEl.hidden   = true; holder?.appendChild(sbEl); }
+            const holder   = document.getElementById('acurite433-panels');
+            const fullEl   = document.getElementById('acurite433-panel');
+            const sbEl     = document.getElementById('acurite433-sidebar');
+            const gaugesEl = document.getElementById('acurite433-gauges');
+            if (fullEl)   { fullEl.hidden   = true; holder?.appendChild(fullEl); }
+            if (gaugesEl) { gaugesEl.hidden = true; holder?.appendChild(gaugesEl); }
+            if (sbEl)     { sbEl.hidden     = true; holder?.appendChild(sbEl); }
         };
 
         // Expose so mode picker can call it
