@@ -1,4 +1,4 @@
-# sigmon-2 (10.13.73.185) — 8 RTL-SDR rtl_tcp services
+# sigmon-2 (10.13.73.185) — 8 RTL-SDR rtl_tcp services + ADS-B decoder
 # Each dongle gets its own dedicated IP on VLAN 73 via macvlan.
 # All device selection uses SERIAL NUMBER, not device index.
 #
@@ -10,6 +10,11 @@
 #     -o parent=eth0 \
 #     sigmon-sdr-net
 #   (replace eth0 with your actual interface — check with: ip link show)
+#
+# Note: adsb-1090 uses 10.13.73.190 which is outside the auto-assign range but
+# within the /24 subnet — Docker allows manual ipv4_address assignments outside
+# --ip-range.  Stop/disable the native dump1090-fa before starting this service:
+#   sudo systemctl stop dump1090-fa && sudo systemctl disable dump1090-fa
 #
 # Verify / reprogram SDR serials before first run:
 #   rtl_test -l          — list all connected dongles and their current serials
@@ -87,6 +92,26 @@ services:
       sigmon-sdr-net:
         ipv4_address: 10.13.73.197
     command: rtl_tcp -a 0.0.0.0 -p 7373 -d 20000145
+
+  # A12 — ADS-B 1090 MHz (dump1090-fa / SkyAware)
+  # SkyAware UI:  http://10.13.73.190:8080/skyaware/
+  # Aircraft JSON: http://10.13.73.190:8080/skyaware/data/aircraft.json
+  # Beast out:     10.13.73.190:30005  (feed FlightAware, FR24, etc.)
+  adsb-1090:
+    image: n4ldr/adsb-1090:latest
+    container_name: adsb-1090
+    restart: unless-stopped
+    devices:
+      - /dev/bus/usb
+    environment:
+      DEVICE_SERIAL: "00001090"
+      GAIN: "60"
+      LAT: "38.59484"
+      LON: "-78.43167"
+      MAX_RANGE: "360"
+    networks:
+      sigmon-sdr-net:
+        ipv4_address: 10.13.73.190
 
   # ── New dongles go below ───────────────────────────────────────────────────
   # Template — copy, set the real serial, and assign the next free IP:

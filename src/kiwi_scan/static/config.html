@@ -61,6 +61,19 @@
     </div>
     <div id="status" class="meta"></div>
 
+    <hr style="margin:24px 0; border:none; border-top:1px solid #ccc">
+
+    <h2 style="font-size:1rem; margin-bottom:12px">Repeater Monitor — Recordings</h2>
+    <div class="row">
+        <label>Retention (days):</label>
+        <input id="rec-retention" type="number" min="1" max="365" value="10" style="width:80px" />
+    </div>
+    <div class="row" style="display:flex;gap:8px;align-items:center">
+        <button id="rec-save">Save Retention</button>
+        <button id="rec-delete-all" style="color:#c00">Delete All Recordings</button>
+        <span id="rec-status" class="meta"></span>
+    </div>
+
     <script>
         async function fetchConfig() {
             const r = await fetch('/config');
@@ -132,6 +145,45 @@
         }
 
         init();
+
+        // ── Repeater recordings settings ──────────────────────────────────
+        (async () => {
+            const recStatus = document.getElementById('rec-status');
+            const retInput  = document.getElementById('rec-retention');
+
+            try {
+                const r = await fetch('/api/rtl-monitor/settings');
+                if (r.ok) {
+                    const s = await r.json();
+                    if (s.retention_days) retInput.value = s.retention_days;
+                }
+            } catch (_) {}
+
+            document.getElementById('rec-save').addEventListener('click', async () => {
+                try {
+                    const r = await fetch('/api/rtl-monitor/settings', {
+                        method: 'POST',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({ retention_days: parseInt(retInput.value, 10) }),
+                    });
+                    recStatus.textContent = r.ok ? 'Saved.' : 'Save failed.';
+                } catch (_) { recStatus.textContent = 'Save failed.'; }
+                setTimeout(() => { recStatus.textContent = ''; }, 3000);
+            });
+
+            document.getElementById('rec-delete-all').addEventListener('click', async () => {
+                if (!confirm('Delete ALL recordings? This cannot be undone.')) return;
+                try {
+                    const r = await fetch('/api/rtl-monitor/recordings/cleanup', { method: 'POST',
+                        headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({ retention_days: 0 }),
+                    });
+                    const d = r.ok ? await r.json() : null;
+                    recStatus.textContent = d ? 'Deleted ' + d.deleted + ' recording(s).' : 'Failed.';
+                } catch (_) { recStatus.textContent = 'Failed.'; }
+                setTimeout(() => { recStatus.textContent = ''; }, 4000);
+            });
+        })();
     </script>
 </body>
 

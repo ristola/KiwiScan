@@ -3309,6 +3309,8 @@
         .noaa-alert-item:last-child { border-bottom:none; }
         .noaa-alert-item:hover { background:rgba(255,255,255,0.04); }
         .noaa-alert-item.compact { display:flex; align-items:center; gap:0.5rem; padding:0.3rem 0.85rem; }
+        /* EAS feed panel embedded inside NOAA monitor card */
+        #eas-feed-panel.eas-feed-embedded { border:none; background:none; box-shadow:none; margin:0; border-radius:0; border-top:1px solid var(--line); }
         .noaa-play-btn { margin-top:0.3rem; font-size:0.67rem; background:none; border:1px solid var(--line); border-radius:4px; color:var(--blue); cursor:pointer; padding:0.15rem 0.5rem; }
         .noaa-play-btn:hover { color:var(--ok); border-color:var(--ok); }
         /* EAS severity badges */
@@ -3319,6 +3321,26 @@
         .eas-blue  { background:rgba(50,130,255,0.18); color:var(--blue); }
         .eas-mute  { background:rgba(255,255,255,0.07); color:var(--muted-2); }
         .rpt-monitor-transcript { font-size:0.67rem; color:var(--muted); font-style:italic; grid-column:2/-1; padding-top:0.1rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .rpt-rec-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--fault); margin-left:4px; vertical-align:middle; animation:recPulse 1s ease-in-out infinite; flex-shrink:0; }
+        @keyframes recPulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+        .rpt-recordings { border-top:1px solid var(--line); padding:0.65rem 0.85rem 0.5rem; }
+        .rpt-rec-header { display:flex; align-items:center; gap:0.5rem; margin-bottom:0.45rem; }
+        .rpt-rec-title  { font-size:0.68rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted-2); }
+        .rpt-rec-list   { display:flex; flex-direction:column; gap:0; max-height:280px; overflow-y:auto; }
+        .rpt-rec-row    { display:grid; grid-template-columns:1fr 4rem 4.5rem 2.2rem 2.2rem; align-items:center; gap:0.4rem; padding:0.3rem 0; border-bottom:1px solid var(--line); font-size:0.72rem; }
+        .rpt-rec-row:last-child { border-bottom:none; }
+        .rpt-rec-chan   { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .rpt-rec-ts     { font-family:var(--mono,'IBM Plex Mono',monospace); font-size:0.63rem; color:var(--muted-2); }
+        .rpt-rec-dur    { font-family:var(--mono,'IBM Plex Mono',monospace); font-size:0.63rem; color:var(--muted-2); text-align:right; }
+        .rpt-rec-btn    { background:none; border:1px solid var(--line); border-radius:4px; padding:2px 5px; cursor:pointer; font-size:0.63rem; color:var(--muted); line-height:1.4; }
+        .rpt-rec-btn:hover { border-color:var(--ok); color:var(--ok); }
+        .rpt-rec-btn.is-playing { border-color:var(--ok); color:var(--ok); animation:recPulse 1.2s ease-in-out infinite; }
+        .rpt-rec-del    { background:none; border:1px solid var(--line); border-radius:4px; padding:2px 5px; cursor:pointer; font-size:0.63rem; color:var(--muted); line-height:1.4; }
+        .rpt-rec-del:hover { border-color:var(--fault); color:var(--fault); }
+        .rpt-rec-badge { background:none; border:1px solid var(--line); border-radius:3px; padding:1px 5px; cursor:pointer; font-size:0.6rem; color:var(--muted-2); line-height:1.4; white-space:nowrap; }
+        .rpt-rec-badge:hover, .rpt-rec-badge.has-recs { border-color:var(--ok); color:var(--ok); }
+        .rpt-ch-rec-dropdown { padding:0.35rem 0.85rem 0.45rem 3.6rem; border-top:1px solid var(--line); background:var(--panel-2); }
+        .rpt-ch-rec-dropdown .rpt-rec-list { max-height:200px; overflow-y:auto; }
         /* ── Fault Summary ─────────────────────────────────────────── */
         .fl-groups { display: grid; gap: 0.75rem; }
         .fl-section { display: grid; gap: 0.45rem; }
@@ -4109,6 +4131,58 @@
                                     <button class="wide-btn" type="button">Save Draft Later</button>
                                 </div>
                             </form>
+                        </div>
+                    </section>
+
+                    <!-- ── Repeater Monitor — Recording Settings ── -->
+                    <section class="panel" data-view-section="setup" hidden>
+                        <div class="panel-header">
+                            <div class="panel-title"><span class="status-dot ok"></span><span>Repeater Recordings</span></div>
+                        </div>
+                        <div class="panel-body link-lines">
+                            <div class="link-row" style="align-items:center;gap:0.5rem">
+                                <span style="flex:1;font-size:0.8rem">Retention (days)</span>
+                                <input id="setup-rec-retention" type="number" min="1" max="365" value="10"
+                                    style="width:60px;padding:0.25rem 0.4rem;border:1px solid var(--line);border-radius:4px;background:var(--panel-2);color:var(--ink);text-align:center" />
+                                <button class="pill" id="setup-rec-save" style="cursor:pointer">Save</button>
+                                <span id="setup-rec-status" style="font-size:0.7rem;color:var(--ok)"></span>
+                            </div>
+                            <div class="link-row" style="padding-top:0.4rem">
+                                <button class="pill" id="setup-rec-delete-all" style="cursor:pointer;color:var(--fault);background:var(--panel-2)">Delete All Recordings</button>
+                                <span id="setup-rec-del-status" style="font-size:0.7rem;color:var(--muted-2);margin-left:0.5rem"></span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- ── Repeater Monitor — Recordings Library ── -->
+                    <section class="panel" data-view-section="setup" hidden>
+                        <div class="panel-header">
+                            <div class="panel-title"><span class="status-dot ok"></span><span>Recordings Library</span></div>
+                            <div style="display:flex;align-items:center;gap:0.4rem">
+                                <span id="setup-rec-lib-count" style="font-size:0.7rem;color:var(--muted-2)"></span>
+                                <button class="pill" id="setup-rec-lib-refresh" style="cursor:pointer;font-size:0.6rem" title="Refresh">↻</button>
+                            </div>
+                        </div>
+                        <div class="panel-body" style="padding:0">
+                            <div id="setup-rec-lib-list" class="rpt-rec-list" style="max-height:360px;overflow-y:auto;padding:0.3rem 0">
+                                <span style="font-size:0.72rem;color:var(--muted-2);padding:0.4rem 0.85rem;display:block">Loading…</span>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- ── NOAA / EAS Alert Recordings Library ── -->
+                    <section class="panel" data-view-section="setup" hidden>
+                        <div class="panel-header">
+                            <div class="panel-title"><span class="status-dot ok"></span><span>EAS Alert Recordings</span></div>
+                            <div style="display:flex;align-items:center;gap:0.4rem">
+                                <span id="setup-noaa-rec-count" style="font-size:0.7rem;color:var(--muted-2)"></span>
+                                <button class="pill" id="setup-noaa-rec-refresh" style="cursor:pointer;font-size:0.6rem" title="Refresh">↻</button>
+                            </div>
+                        </div>
+                        <div class="panel-body" style="padding:0">
+                            <div id="setup-noaa-rec-list" class="rpt-rec-list" style="max-height:360px;overflow-y:auto;padding:0.3rem 0">
+                                <span style="font-size:0.72rem;color:var(--muted-2);padding:0.4rem 0.85rem;display:block">Loading…</span>
+                            </div>
                         </div>
                     </section>
 
@@ -8526,6 +8600,14 @@
                         <span></span><span>Name</span><span style="text-align:right">Power dB</span><span style="text-align:right">SNR dB</span><span style="text-align:right">Count</span><span style="text-align:right">Active sec</span><span></span>
                     </div>
                 </div>
+                <div class="rpt-recordings" id="rpt-recordings">
+                    <div class="rpt-rec-header">
+                        <span class="rpt-rec-title">Recordings</span>
+                        <span id="rpt-rec-count" style="font-size:0.63rem;color:var(--muted-2)"></span>
+                        <div style="flex:1"></div>
+                        <button class="pill" id="rpt-rec-refresh-btn" style="font-size:0.6rem;cursor:pointer" title="Refresh list">↻</button>
+                    </div>
+                </div>
             </div>
         </section>
     </div>
@@ -8572,41 +8654,37 @@
                         <span></span><span>Channel</span><span>Signal</span><span>Status</span><span></span>
                     </div>
                 </div>
-                <!-- EAS Alert history -->
-                <div style="border-top:1px solid var(--line)">
-                    <div style="display:flex;align-items:center;gap:0.4rem;padding:0.45rem 0.85rem;border-bottom:1px solid var(--line)">
-                        <span style="font-size:0.7rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:var(--muted)">EAS Alert History</span>
-                        <span class="pill" id="noaa-alert-count" style="font-size:0.63rem">0 alerts</span>
-                        <span style="flex:1"></span>
-                        <select id="noaa-test-code" hidden>
-                            <optgroup label="── Tests ──">
-                                <option value="RWT">RWT · Weekly Test</option>
-                                <option value="RMT">RMT · Monthly Test</option>
-                                <option value="NPT">NPT · National Test</option>
-                            </optgroup>
-                            <optgroup label="── Watches ──">
-                                <option value="TOA">TOA · Tornado Watch</option>
-                                <option value="SVA">SVA · T-Storm Watch</option>
-                                <option value="FFA">FFA · Flash Flood Watch</option>
-                                <option value="HUA">HUA · Hurricane Watch</option>
-                            </optgroup>
-                            <optgroup label="── Warnings ──">
-                                <option value="TOR">TOR · Tornado Warning</option>
-                                <option value="SVR">SVR · T-Storm Warning</option>
-                                <option value="FFW">FFW · Flash Flood Warning</option>
-                                <option value="HUW">HUW · Hurricane Warning</option>
-                                <option value="WSW">WSW · Winter Storm Warning</option>
-                                <option value="EAN">EAN · Emergency Action</option>
-                                <option value="LAE">LAE · Local Emergency</option>
-                            </optgroup>
-                            <optgroup label="── Info ──">
-                                <option value="ADR">ADR · Admin Message</option>
-                            </optgroup>
-                        </select>
-                        <button id="noaa-inject-btn" hidden disabled>⚡ Inject</button>
-                    </div>
-                    <div id="noaa-alert-list" style="max-height:240px;overflow-y:auto"></div>
-                </div>
+                <!-- EAS feed panel is moved here when monitor is running -->
+                <div id="noaa-eas-host"></div>
+                <!-- Hidden legacy alert elements kept for JS compatibility -->
+                <span id="noaa-alert-count" hidden></span>
+                <div id="noaa-alert-list" hidden></div>
+                <select id="noaa-test-code" hidden>
+                    <optgroup label="── Tests ──">
+                        <option value="RWT">RWT · Weekly Test</option>
+                        <option value="RMT">RMT · Monthly Test</option>
+                        <option value="NPT">NPT · National Test</option>
+                    </optgroup>
+                    <optgroup label="── Watches ──">
+                        <option value="TOA">TOA · Tornado Watch</option>
+                        <option value="SVA">SVA · T-Storm Watch</option>
+                        <option value="FFA">FFA · Flash Flood Watch</option>
+                        <option value="HUA">HUA · Hurricane Watch</option>
+                    </optgroup>
+                    <optgroup label="── Warnings ──">
+                        <option value="TOR">TOR · Tornado Warning</option>
+                        <option value="SVR">SVR · T-Storm Warning</option>
+                        <option value="FFW">FFW · Flash Flood Warning</option>
+                        <option value="HUW">HUW · Hurricane Warning</option>
+                        <option value="WSW">WSW · Winter Storm Warning</option>
+                        <option value="EAN">EAN · Emergency Action</option>
+                        <option value="LAE">LAE · Local Emergency</option>
+                    </optgroup>
+                    <optgroup label="── Info ──">
+                        <option value="ADR">ADR · Admin Message</option>
+                    </optgroup>
+                </select>
+                <button id="noaa-inject-btn" hidden disabled>⚡ Inject</button>
             </div>
         </section>
     </div>
@@ -9448,6 +9526,8 @@
         let _noaaWs = null;
         let _noaaSdr = null;
         let _noaaAlerts = [];
+        let _noaaEasOrigParent  = null;
+        let _noaaEasOrigSibling = null;
         const _NOAA_DISMISSED_KEY = 'noc-noaa-dismissed-v1';
         const _dismissedIds = new Set(JSON.parse(localStorage.getItem(_NOAA_DISMISSED_KEY) || '[]'));
         const _NOAA_CONFIG_KEY  = 'noc-noaa-config-v1';
@@ -9562,6 +9642,16 @@
             if (sbPanelEl) sbPanelEl.hidden = currentView !== 'receivers';
             if (fullEl)    fullEl.hidden    = currentView !== 'operations';
 
+            // Merge EAS feed panel as bottom section of this card
+            const _easPanel = document.getElementById('eas-feed-panel');
+            const _easHost  = document.getElementById('noaa-eas-host');
+            if (_easPanel && _easHost && !_easHost.contains(_easPanel)) {
+                _noaaEasOrigParent  = _easPanel.parentElement;
+                _noaaEasOrigSibling = _easPanel.nextElementSibling;
+                _easPanel.classList.add('eas-feed-embedded');
+                _easHost.appendChild(_easPanel);
+            }
+
             // Update launched device card
             const cardLabelEl = document.querySelector('#sdr-card-' + sdr.id.toLowerCase() + ' .sdr-rx-label');
             const cardStatEl  = document.getElementById('sdr-stat-' + sdr.id.toLowerCase());
@@ -9598,6 +9688,18 @@
                 if (h) {
                     if (fe) { fe.hidden = true; h.appendChild(fe); }
                     if (se) { se.hidden = true; h.appendChild(se); }
+                }
+                // Restore EAS feed panel to standalone position
+                const _easRestore = document.getElementById('eas-feed-panel');
+                if (_easRestore && _noaaEasOrigParent) {
+                    _easRestore.classList.remove('eas-feed-embedded');
+                    if (_noaaEasOrigSibling && _noaaEasOrigSibling.parentElement === _noaaEasOrigParent) {
+                        _noaaEasOrigParent.insertBefore(_easRestore, _noaaEasOrigSibling);
+                    } else {
+                        _noaaEasOrigParent.appendChild(_easRestore);
+                    }
+                    _noaaEasOrigParent  = null;
+                    _noaaEasOrigSibling = null;
                 }
                 // Reset using closure `sdr`, not outer _noaaSdr.
                 const lbl = document.querySelector('#sdr-card-' + sdr.id.toLowerCase() + ' .sdr-rx-label');
@@ -10058,7 +10160,7 @@
                     if (fullEl) { fullEl.hidden = true; holder.appendChild(fullEl); }
                     if (sbEl)   { sbEl.hidden   = true; holder.appendChild(sbEl); }
                 }
-                document.getElementById('rpt-monitor-grid')?.querySelectorAll('.rpt-monitor-row[id]').forEach(r => r.remove());
+                document.getElementById('rpt-monitor-grid')?.querySelectorAll('.rpt-ch-wrapper, .rpt-monitor-row[id]').forEach(r => r.remove());
                 document.getElementById('sb-rpt-grid')?.querySelectorAll('.link-row').forEach(r => r.remove());
                 // Reset the SDR card — use closure `sdr`, not outer _activeSdr (which
                 // may have changed if the user opened another modal before stopping).
@@ -10122,28 +10224,59 @@
             // ── Seed full operations rows ────────────────────────────────────
             const grid = document.getElementById('rpt-monitor-grid');
             channels.forEach(ch => {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'rpt-ch-wrapper';
+                wrapper.id = 'rpt-wrapper-' + ch.freq_hz;
+
                 const row = document.createElement('div');
                 row.className = 'rpt-monitor-row';
                 row.id = 'rpt-row-' + ch.freq_hz;
                 const mhz = (ch.freq_hz / 1e6).toFixed(3);
                 row.innerHTML =
                     '<span class="rpt-carrier-dot" id="rpt-dot-' + ch.freq_hz + '"></span>' +
-                    '<div><div class="rpt-monitor-label">' + ch.label + '</div>' +
-                    '    <div class="rpt-monitor-freq">' + mhz + ' MHz</div>' +
-                    '    <div class="rpt-monitor-transcript" id="rpt-tx-' + ch.freq_hz + '"></div></div>' +
+                    '<div>' +
+                    '  <div style="display:flex;align-items:baseline;gap:0.4rem">' +
+                    '    <div class="rpt-monitor-label">' + ch.label + '</div>' +
+                    '    <button class="rpt-rec-badge" id="rpt-rec-badge-' + ch.freq_hz + '" title="Show recordings" hidden></button>' +
+                    '  </div>' +
+                    '  <div class="rpt-monitor-freq">' + mhz + ' MHz</div>' +
+                    '  <div class="rpt-monitor-transcript" id="rpt-tx-' + ch.freq_hz + '"></div>' +
+                    '</div>' +
                     '<span class="rpt-monitor-val mute" id="rpt-pwr-' + ch.freq_hz + '">-- dB</span>' +
                     '<span class="rpt-monitor-val" id="rpt-snr-' + ch.freq_hz + '">-- dB</span>' +
                     '<span class="rpt-monitor-val" id="rpt-cnt-' + ch.freq_hz + '">0</span>' +
                     '<span class="rpt-monitor-val" id="rpt-sec-' + ch.freq_hz + '">0 s</span>' +
                     '<button class="noaa-spk-btn" id="rpt-spk-' + ch.freq_hz + '" title="Play live audio" disabled>' + SPK_SVG + '</button>';
+
+                const dropdown = document.createElement('div');
+                dropdown.className = 'rpt-ch-rec-dropdown';
+                dropdown.id = 'rpt-ch-rec-' + ch.freq_hz;
+                dropdown.hidden = true;
+                dropdown.innerHTML = '<div class="rpt-rec-list"></div>';
+
                 const spkBtn = row.querySelector('.noaa-spk-btn');
                 spkBtn.addEventListener('click', () => {
                     const streamUrl = spkBtn.dataset.streamUrl;
                     if (!streamUrl) return;
                     _audioMgr.toggle(streamUrl, spkBtn);
                 });
-                grid.appendChild(row);
+
+                const badge = row.querySelector('.rpt-rec-badge');
+                badge.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    dropdown.hidden = !dropdown.hidden;
+                });
+
+                wrapper.appendChild(row);
+                wrapper.appendChild(dropdown);
+                grid.appendChild(wrapper);
             });
+
+            // Refresh recordings list when panel opens
+            fetch(KIWISCAN_BASE + '/api/rtl-monitor/recordings')
+                .then(r => r.ok ? r.json() : null)
+                .then(d => d && document.getElementById('rpt-rec-refresh-btn')?.dispatchEvent(new Event('click')))
+                .catch(() => {});
 
             // Open WebSocket for live updates
             const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -10191,6 +10324,21 @@
                     } else {
                         spkBtn.disabled = true;
                     }
+                }
+                // REC indicator dot on the channel row label
+                const recDotId = 'rpt-rec-ind-' + ch.freq_hz;
+                let recDot = document.getElementById(recDotId);
+                if (ch.recording) {
+                    if (!recDot) {
+                        recDot = document.createElement('span');
+                        recDot.id = recDotId;
+                        recDot.className = 'rpt-rec-dot';
+                        recDot.title = 'Recording';
+                        const labelEl = row?.querySelector('.rpt-monitor-label');
+                        if (labelEl) labelEl.appendChild(recDot);
+                    }
+                } else if (recDot) {
+                    recDot.remove();
                 }
 
                 // ── Compact sidebar panel ────────────────────────────────────
@@ -10294,6 +10442,121 @@
         };
         _initMonitor();
         _initNoaaMonitor();
+
+        // ── Repeater Recordings ──────────────────────────────────────────────
+        (() => {
+            let _recRefreshTimer = null;
+
+            const _fmtTs = (unix) => {
+                if (!unix) return '—';
+                const d = new Date(unix * 1000);
+                const pad = n => String(n).padStart(2, '0');
+                return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate()) +
+                       ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+            };
+            const _fmtDur = (s) => {
+                if (!s || s < 1) return '<1s';
+                if (s < 60) return Math.round(s) + 's';
+                return Math.floor(s/60) + 'm ' + Math.round(s%60) + 's';
+            };
+            const _fmtSize = (b) => {
+                if (b > 1048576) return (b/1048576).toFixed(1) + ' MB';
+                return Math.round(b/1024) + ' KB';
+            };
+
+            const _renderRecordings = (recs) => {
+                const cnt = document.getElementById('rpt-rec-count');
+
+                // Group by freq_hz
+                const byFreq = {};
+                (recs || []).forEach(r => {
+                    const k = r.freq_hz || 0;
+                    if (!byFreq[k]) byFreq[k] = [];
+                    byFreq[k].push(r);
+                });
+                const total = recs ? recs.length : 0;
+                if (cnt) cnt.textContent = total ? '(' + total + ')' : '';
+
+                // Update each channel's badge and dropdown
+                document.querySelectorAll('.rpt-rec-badge').forEach(badge => {
+                    const freq = parseInt(badge.id.replace('rpt-rec-badge-', ''));
+                    const group = byFreq[freq] || [];
+                    const dropdown = document.getElementById('rpt-ch-rec-' + freq);
+                    if (!group.length) {
+                        badge.hidden = true;
+                        badge.classList.remove('has-recs');
+                        if (dropdown) dropdown.hidden = true;
+                        return;
+                    }
+                    badge.hidden = false;
+                    badge.classList.add('has-recs');
+                    badge.textContent = group.length + ' rec' + (group.length !== 1 ? 's' : '');
+                    if (!dropdown) return;
+                    const list = dropdown.querySelector('.rpt-rec-list');
+                    if (!list) return;
+                    list.innerHTML = group.map(r => {
+                        const ts  = _fmtTs(r.created_at);
+                        const dur = _fmtDur(r.duration_sec);
+                        const sz  = _fmtSize(r.size_bytes);
+                        const url = KIWISCAN_BASE + '/api/rtl-monitor/recordings/' + encodeURIComponent(r.filename);
+                        return '<div class="rpt-rec-row" data-filename="' + r.filename + '">' +
+                            '<div class="rpt-rec-ts">' + ts + '</div>' +
+                            '<span class="rpt-rec-dur">' + dur + '</span>' +
+                            '<span class="rpt-rec-dur" style="color:var(--muted-2)">' + sz + '</span>' +
+                            '<button class="rpt-rec-btn rpt-rec-play" data-play-url="' + url + '" title="Play">▶</button>' +
+                            '<button class="rpt-rec-del" title="Delete" data-filename="' + r.filename + '">✕</button>' +
+                            '</div>';
+                    }).join('');
+                    list.querySelectorAll('.rpt-rec-del').forEach(btn => {
+                        btn.addEventListener('click', async () => {
+                            const fn = btn.dataset.filename;
+                            try {
+                                const resp = await fetch(KIWISCAN_BASE + '/api/rtl-monitor/recordings/' + encodeURIComponent(fn), { method: 'DELETE' });
+                                if (!resp.ok) return;
+                                btn.closest('.rpt-rec-row')?.remove();
+                                const remaining = list.querySelectorAll('.rpt-rec-row').length;
+                                if (!remaining) {
+                                    badge.hidden = true;
+                                    badge.classList.remove('has-recs');
+                                    dropdown.hidden = true;
+                                } else {
+                                    badge.textContent = remaining + ' rec' + (remaining !== 1 ? 's' : '');
+                                }
+                                const allRemaining = document.querySelectorAll('.rpt-ch-rec-dropdown .rpt-rec-row').length;
+                                if (cnt) cnt.textContent = allRemaining ? '(' + allRemaining + ')' : '';
+                            } catch (_) {}
+                        });
+                    });
+                });
+            };
+
+            const _loadRecordings = async () => {
+                try {
+                    const resp = await fetch(KIWISCAN_BASE + '/api/rtl-monitor/recordings');
+                    if (!resp.ok) return;
+                    const data = await resp.json();
+                    _renderRecordings(data.recordings || []);
+                } catch (_) {}
+            };
+
+            // Refresh button
+            document.getElementById('rpt-rec-refresh-btn')?.addEventListener('click', _loadRecordings);
+
+            // Auto-refresh every 30 s while the recordings panel is visible
+            const _scheduleRefresh = () => {
+                clearInterval(_recRefreshTimer);
+                _recRefreshTimer = setInterval(() => {
+                    const panel = document.getElementById('rpt-recordings');
+                    if (panel && !panel.closest('[hidden]') && panel.offsetParent !== null) {
+                        _loadRecordings();
+                    }
+                }, 30000);
+            };
+
+            // Initial load + schedule refresh
+            _loadRecordings();
+            _scheduleRefresh();
+        })();
 
         // ── VHF Digital Monitor ──────────────────────────────────────────────
         (() => {
@@ -10788,7 +11051,14 @@
                         <div style="font-size:0.68rem;color:var(--muted-2)">Station: ${a.station||'--'} · ${a.duration_min||'--'} min · ${a.nws_area_desc||a.areas?.join(', ')||'--'}</div>
                         ${a.nws_headline ? `<div style="font-size:0.72rem;color:var(--fg);margin-top:0.3rem;line-height:1.45">${a.nws_headline}</div>` : ''}
                         ${a.nws_description ? `<div style="font-size:0.68rem;color:var(--muted-2);margin-top:0.25rem;max-height:5rem;overflow-y:auto;white-space:pre-wrap;line-height:1.4;border-top:1px solid var(--line);padding-top:0.25rem">${a.nws_description}</div>` : ''}
-                        ${a.has_audio ? `<button class="noaa-play-btn" data-feed-audio="${a.id}">▶ Play Audio</button>` : ''}
+                        ${a.has_audio ? `<div style="display:flex;gap:0.4rem;margin-top:0.3rem">
+                            <button class="noaa-play-btn" data-feed-audio="${a.id}" style="flex:1">▶ Play</button>
+                            <a class="noaa-play-btn" href="http://10.13.73.185:4027/alerts/${a.id}/audio" download="${a.id}.wav" style="flex:1;text-align:center;text-decoration:none" onclick="event.stopPropagation()">↓ Save</a>
+                            </div>` : ''}
+                        ${a.local_recording ? `<div style="display:flex;gap:0.4rem;margin-top:0.3rem">
+                            <button class="noaa-play-btn" data-local-audio="${a.local_recording}" style="flex:1">▶ Local</button>
+                            <a class="noaa-play-btn" href="${(typeof KIWISCAN_BASE!=='undefined'?KIWISCAN_BASE:'')}/api/noaa-monitor/recordings/${a.local_recording}" download="${a.local_recording}" style="flex:1;text-align:center;text-decoration:none" onclick="event.stopPropagation()">↓ Save</a>
+                            </div>` : ''}
                     </div>`;
                 }).join('');
                 list.querySelectorAll('[data-feed-id]').forEach(el => {
@@ -10799,6 +11069,13 @@
                     btn.addEventListener('click', e => {
                         e.stopPropagation();
                         new Audio('http://10.13.73.185:4027/alerts/' + btn.dataset.feedAudio + '/audio').play().catch(() => {});
+                    });
+                });
+                list.querySelectorAll('[data-local-audio]').forEach(btn => {
+                    btn.addEventListener('click', e => {
+                        e.stopPropagation();
+                        const base = typeof KIWISCAN_BASE !== 'undefined' ? KIWISCAN_BASE : '';
+                        new Audio(base + '/api/noaa-monitor/recordings/' + btn.dataset.localAudio).play().catch(() => {});
                     });
                 });
             };
@@ -12298,6 +12575,222 @@
         // Wire mode picker config panel launch button
         const _cfgLaunchBtn = document.getElementById('cfg-acurite433-launch');
         if (_cfgLaunchBtn) _cfgLaunchBtn.addEventListener('click', _startPanel);
+    })();
+
+    // ── Recording play buttons — shared audio player (all lists) ────────────
+    (() => {
+        let _audio = null;
+        let _activeBtn = null;
+
+        const _stop = () => {
+            if (_audio) { _audio.pause(); _audio.src = ''; _audio = null; }
+            if (_activeBtn) { _activeBtn.textContent = '▶'; _activeBtn.classList.remove('is-playing'); _activeBtn = null; }
+        };
+
+        document.addEventListener('click', (e) => {
+            const btn = e.target.closest('.rpt-rec-play');
+            if (!btn) return;
+            e.stopPropagation();
+
+            // Clicking the active button stops playback
+            if (btn === _activeBtn) { _stop(); return; }
+
+            // Stop previous playback
+            _stop();
+
+            const url = btn.dataset.playUrl;
+            if (!url) return;
+
+            _audio = new Audio(url);
+            _activeBtn = btn;
+            btn.textContent = '⏹';
+            btn.classList.add('is-playing');
+
+            _audio.play().catch(() => { btn.textContent = '▶'; btn.classList.remove('is-playing'); _audio = null; _activeBtn = null; });
+            _audio.addEventListener('ended', _stop);
+            _audio.addEventListener('error', _stop);
+        });
+    })();
+
+    // ── Setup-view: EAS Alert Recordings Library ────────────────────────────
+    (() => {
+        const BASE = (typeof KIWISCAN_BASE !== 'undefined' ? KIWISCAN_BASE : '');
+        const list    = document.getElementById('setup-noaa-rec-list');
+        const countEl = document.getElementById('setup-noaa-rec-count');
+        const refresh = document.getElementById('setup-noaa-rec-refresh');
+
+        const _fmtTs = (epoch) => {
+            const d = new Date(epoch * 1000);
+            return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+        };
+        const _fmtDur = (s) => {
+            if (s >= 3600) return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m';
+            if (s >= 60)   return Math.floor(s/60)+'m '+Math.round(s%60)+'s';
+            return s.toFixed(1)+'s';
+        };
+        const _fmtSize = (b) => b > 1048576 ? (b/1048576).toFixed(1)+' MB' : Math.round(b/1024)+' KB';
+
+        const _load = async () => {
+            if (!list) return;
+            try {
+                const resp = await fetch(BASE + '/api/noaa-monitor/recordings');
+                if (!resp.ok) { list.innerHTML = '<span style="font-size:0.72rem;color:var(--fault);padding:0.4rem 0.85rem;display:block">Could not load.</span>'; return; }
+                const data = await resp.json();
+                const recs = data.recordings || [];
+                if (countEl) countEl.textContent = recs.length ? '(' + recs.length + ')' : '';
+                if (!recs.length) {
+                    list.innerHTML = '<span style="font-size:0.72rem;color:var(--muted-2);padding:0.4rem 0.85rem;display:block">No EAS recordings yet.</span>';
+                    return;
+                }
+                list.innerHTML = recs.map(r => {
+                    const url = BASE + '/api/noaa-monitor/recordings/' + encodeURIComponent(r.filename);
+                    return '<div class="rpt-rec-row" data-filename="' + r.filename + '">' +
+                        '<div><div class="rpt-rec-chan">EAS Alert</div>' +
+                        '<div class="rpt-rec-ts">' + _fmtTs(r.created_at) + ' · ' + r.filename.replace('.wav','').replace(/_/g,' ') + '</div></div>' +
+                        '<span class="rpt-rec-dur">' + _fmtDur(r.duration_sec) + '</span>' +
+                        '<span class="rpt-rec-dur" style="color:var(--muted-2)">' + _fmtSize(r.size_bytes) + '</span>' +
+                        '<button class="rpt-rec-btn rpt-rec-play" data-play-url="' + url + '" title="Play">▶</button>' +
+                        '<button class="rpt-rec-del" title="Delete" data-filename="' + r.filename + '">✕</button>' +
+                        '</div>';
+                }).join('');
+                list.querySelectorAll('.rpt-rec-del').forEach(btn => {
+                    btn.addEventListener('click', async () => {
+                        const fn = btn.dataset.filename;
+                        try {
+                            const del = await fetch(BASE + '/api/noaa-monitor/recordings/' + encodeURIComponent(fn), { method: 'DELETE' });
+                            if (del.ok) {
+                                btn.closest('.rpt-rec-row')?.remove();
+                                const rem = list.querySelectorAll('.rpt-rec-row').length;
+                                if (countEl) countEl.textContent = rem ? '(' + rem + ')' : '';
+                                if (!rem) list.innerHTML = '<span style="font-size:0.72rem;color:var(--muted-2);padding:0.4rem 0.85rem;display:block">No EAS recordings yet.</span>';
+                            }
+                        } catch (_) {}
+                    });
+                });
+            } catch (_) {
+                if (list) list.innerHTML = '<span style="font-size:0.72rem;color:var(--fault);padding:0.4rem 0.85rem;display:block">Error loading.</span>';
+            }
+        };
+
+        if (refresh) refresh.addEventListener('click', _load);
+        document.querySelectorAll('.nav-btn[data-view="setup"]').forEach(btn => {
+            btn.addEventListener('click', _load);
+        });
+        _load();
+    })();
+
+    // ── Setup-view: Repeater Recording Settings + Library ───────────────────
+    (() => {
+        const BASE = (typeof KIWISCAN_BASE !== 'undefined' ? KIWISCAN_BASE : '');
+
+        // ── Settings panel ──
+        const retInput   = document.getElementById('setup-rec-retention');
+        const saveBtn    = document.getElementById('setup-rec-save');
+        const saveStatus = document.getElementById('setup-rec-status');
+        const delAllBtn  = document.getElementById('setup-rec-delete-all');
+        const delStatus  = document.getElementById('setup-rec-del-status');
+
+        fetch(BASE + '/api/rtl-monitor/settings').then(r => r.ok ? r.json() : null).then(s => {
+            if (s && s.retention_days && retInput) retInput.value = s.retention_days;
+        }).catch(() => {});
+
+        if (saveBtn) saveBtn.addEventListener('click', async () => {
+            try {
+                const r = await fetch(BASE + '/api/rtl-monitor/settings', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ retention_days: parseInt(retInput?.value || '10', 10) }),
+                });
+                if (saveStatus) {
+                    saveStatus.textContent = r.ok ? 'Saved.' : 'Failed.';
+                    setTimeout(() => { saveStatus.textContent = ''; }, 2500);
+                }
+            } catch (_) { if (saveStatus) saveStatus.textContent = 'Error'; }
+        });
+
+        if (delAllBtn) delAllBtn.addEventListener('click', async () => {
+            if (!confirm('Delete ALL recordings? This cannot be undone.')) return;
+            try {
+                const r = await fetch(BASE + '/api/rtl-monitor/recordings/cleanup', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ retention_days: 0 }),
+                });
+                const d = r.ok ? await r.json() : null;
+                if (delStatus) {
+                    delStatus.textContent = d ? `Deleted ${d.deleted} recording(s).` : 'Failed.';
+                    setTimeout(() => { delStatus.textContent = ''; }, 4000);
+                }
+                _loadLib();
+            } catch (_) { if (delStatus) delStatus.textContent = 'Error'; }
+        });
+
+        // ── Recordings library panel ──
+        const libList    = document.getElementById('setup-rec-lib-list');
+        const libCount   = document.getElementById('setup-rec-lib-count');
+        const libRefresh = document.getElementById('setup-rec-lib-refresh');
+
+        const _fmtTs = (epoch) => {
+            const d = new Date(epoch * 1000);
+            return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+        };
+        const _fmtDur = (s) => {
+            if (s >= 3600) return Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm';
+            if (s >= 60)   return Math.floor(s/60) + 'm ' + Math.round(s%60) + 's';
+            return s.toFixed(1) + 's';
+        };
+        const _fmtSize = (b) => b > 1048576 ? (b/1048576).toFixed(1) + ' MB' : Math.round(b/1024) + ' KB';
+
+        const _loadLib = async () => {
+            if (!libList) return;
+            try {
+                const resp = await fetch(BASE + '/api/rtl-monitor/recordings');
+                if (!resp.ok) { libList.innerHTML = '<span style="font-size:0.72rem;color:var(--fault);padding:0.4rem 0.85rem;display:block">Could not load recordings.</span>'; return; }
+                const data = await resp.json();
+                const recs = data.recordings || [];
+                if (libCount) libCount.textContent = recs.length ? '(' + recs.length + ')' : '';
+                if (!recs.length) {
+                    libList.innerHTML = '<span style="font-size:0.72rem;color:var(--muted-2);padding:0.4rem 0.85rem;display:block">No recordings yet.</span>';
+                    return;
+                }
+                libList.innerHTML = recs.map(r => {
+                    const url = BASE + '/api/rtl-monitor/recordings/' + encodeURIComponent(r.filename);
+                    return '<div class="rpt-rec-row" data-filename="' + r.filename + '">' +
+                        '<div><div class="rpt-rec-chan">' + r.label + '</div>' +
+                        '<div class="rpt-rec-ts">' + _fmtTs(r.created_at) + '</div></div>' +
+                        '<span class="rpt-rec-dur">' + _fmtDur(r.duration_sec) + '</span>' +
+                        '<span class="rpt-rec-dur" style="color:var(--muted-2)">' + _fmtSize(r.size_bytes) + '</span>' +
+                        '<button class="rpt-rec-btn rpt-rec-play" data-play-url="' + url + '" title="Play">▶</button>' +
+                        '<button class="rpt-rec-del" title="Delete" data-filename="' + r.filename + '">✕</button>' +
+                        '</div>';
+                }).join('');
+                libList.querySelectorAll('.rpt-rec-del').forEach(btn => {
+                    btn.addEventListener('click', async () => {
+                        const fn = btn.dataset.filename;
+                        try {
+                            const del = await fetch(BASE + '/api/rtl-monitor/recordings/' + encodeURIComponent(fn), { method: 'DELETE' });
+                            if (del.ok) {
+                                btn.closest('.rpt-rec-row')?.remove();
+                                const rem = libList.querySelectorAll('.rpt-rec-row').length;
+                                if (libCount) libCount.textContent = rem ? '(' + rem + ')' : '';
+                                if (!rem) libList.innerHTML = '<span style="font-size:0.72rem;color:var(--muted-2);padding:0.4rem 0.85rem;display:block">No recordings yet.</span>';
+                            }
+                        } catch (_) {}
+                    });
+                });
+            } catch (_) {
+                if (libList) libList.innerHTML = '<span style="font-size:0.72rem;color:var(--fault);padding:0.4rem 0.85rem;display:block">Error loading recordings.</span>';
+            }
+        };
+
+        if (libRefresh) libRefresh.addEventListener('click', _loadLib);
+
+        // Load when Setup view becomes active (intercept nav-btn clicks)
+        document.querySelectorAll('.nav-btn[data-view="setup"]').forEach(btn => {
+            btn.addEventListener('click', _loadLib);
+        });
+
+        _loadLib();
     })();
     </script>
 </body>

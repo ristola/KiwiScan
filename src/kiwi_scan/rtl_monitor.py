@@ -24,12 +24,19 @@ For network mode, start rtl_tcp on the remote host first:
 from __future__ import annotations
 
 import asyncio
+import datetime
 import logging
+import re
 import time
+import wave
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
+
+RECORDINGS_DIR  = Path("outputs/recordings/repeater")
+MIN_REC_SEC     = 2.0   # discard recordings shorter than this (noise-floor blips)
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +76,10 @@ class RepeaterChannel:
     _audio_buf: list = field(default_factory=list, repr=False)
     _audio_buf_sec: float = field(default=0.0, repr=False)
     _audio_subscribers: list = field(default_factory=list, repr=False)
+    _rec_file:     Optional[object] = field(default=None, repr=False)
+    _rec_path:     Optional[str]    = field(default=None, repr=False)
+    _rec_start:    Optional[float]  = field(default=None, repr=False)
+    _rec_close_at: Optional[float]  = field(default=None, repr=False)
 
 
 def _parse_tcp_device(device: str) -> Optional[tuple[str, int]]:
@@ -127,6 +138,7 @@ class RtlRepeaterMonitor:
             for r in (repeaters or [])
         ]
 
+        self.record_enabled: bool = True
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._tcp_reader: Optional[asyncio.StreamReader] = None
         self._tcp_writer: Optional[asyncio.StreamWriter] = None
@@ -228,6 +240,8 @@ class RtlRepeaterMonitor:
 
     async def stop(self) -> None:
         self._running = False
+        for ch in self.channels:
+            self._close_recording(ch)
         if self._proc and self._proc.returncode is None:
             try:
                 self._proc.terminate()
@@ -250,34 +264,65 @@ class RtlRepeaterMonitor:
 
     async def _read_chunk(self, n_bytes: int) -> bytes:
         if self._tcp_reader:
-            return await self._tcp_reader.read(n_bytes)
+            try:
+                return await self._tcp_reader.readexactly(n_bytes)
+            except asyncio.IncompleteReadError as exc:
+                return exc.partial  # stream closed mid-chunk — let caller handle empty
         return await self._proc.stdout.read(n_bytes)
 
     async def _process_loop(self) -> None:
         bytes_per_chunk = CHUNK_SAMPLES * 2  # I byte + Q byte per sample
-        try:
-            while self._running:
+        reconnect_delay = 3.0
+        tcp_addr = _parse_tcp_device(self.device)
+        while self._running:
+            # Reconnect if the TCP stream was lost
+            if tcp_addr and self._tcp_reader is None:
+                await self._start_tcp(*tcp_addr)
+                if self.error:
+                    logger.warning("rtl_tcp reconnect failed — retry in %.0fs", reconnect_delay)
+                    try:
+                        await asyncio.sleep(reconnect_delay)
+                    except asyncio.CancelledError:
+                        return
+                    self.error = None
+                    continue
+
+            try:
                 raw = await self._read_chunk(bytes_per_chunk)
                 if not raw:
-                    src = "rtl_tcp" if self._tcp_reader else "rtl_sdr"
-                    logger.warning("%s stream closed — stopping monitor", src)
-                    break
+                    src = "rtl_tcp" if tcp_addr else "rtl_sdr"
+                    logger.warning("%s stream closed — reconnecting in %.0fs", src, reconnect_delay)
+                    if self._tcp_writer:
+                        try:
+                            self._tcp_writer.close()
+                        except Exception:
+                            pass
+                    self._tcp_reader = None
+                    self._tcp_writer = None
+                    if not tcp_addr:
+                        break  # local rtl_sdr subprocess — can't reconnect
+                    await asyncio.sleep(reconnect_delay)
+                    continue
+                self.error = None
                 await asyncio.get_event_loop().run_in_executor(
                     None, self._analyze, raw
                 )
-        except asyncio.CancelledError:
-            pass
-        except Exception as exc:
-            self.error = str(exc)
-            logger.exception("RtlRepeaterMonitor error: %s", exc)
-        finally:
-            self._running = False
+            except asyncio.CancelledError:
+                return
+            except Exception as exc:
+                logger.exception("RtlRepeaterMonitor error: %s", exc)
+                self.error = str(exc)
+                await asyncio.sleep(reconnect_delay)
+        self._running = False
 
     # ── Signal analysis ────────────────────────────────────────────────────
 
     def _analyze(self, raw: bytes) -> None:
         # Convert raw uint8 I/Q to complex float in [-1, 1]
-        u8 = np.frombuffer(raw, dtype=np.uint8).astype(np.float32)
+        # Trim to even byte count — TCP may deliver an odd-length partial chunk
+        u8 = np.frombuffer(raw[:len(raw) & ~1], dtype=np.uint8).astype(np.float32)
+        if len(u8) < 2:
+            return
         iq = ((u8[0::2] - 127.5) + 1j * (u8[1::2] - 127.5)) / 127.5
 
         # Full-bandwidth FFT (power spectrum in dB, frequency-sorted)
@@ -320,23 +365,32 @@ class RtlRepeaterMonitor:
         if ch.carrier and not was_active:
             ch.carrier_count += 1
             ch.active_since = time.time()
+            if self.record_enabled:
+                self._open_recording(ch)
 
-        if was_active and not ch.carrier and ch.active_since:
-            ch.total_active_sec += time.time() - ch.active_since
-            ch.active_since = None
-
-        # FM demodulation — also runs when a listener has subscribed for live audio
+        # FM demodulation — runs when carrier is present, a listener is subscribed,
+        # or a recording is still open (to capture the tail of the last transmission)
         has_subs = bool(ch._audio_subscribers)
-        if ch.carrier or has_subs:
+        if ch.carrier or has_subs or ch._rec_file:
             audio = self._fm_demodulate(iq, ch.freq_hz)
 
-            if has_subs and self._loop is not None:
-                pcm = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
-                for q in list(ch._audio_subscribers):
+            # Shared int16 PCM for both recording and live subscribers
+            if ch._rec_file or has_subs:
+                pcm_bytes = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
+
+                if ch._rec_file:
                     try:
-                        self._loop.call_soon_threadsafe(q.put_nowait, pcm)
-                    except Exception:
-                        pass  # queue full — drop chunk, subscriber is too slow
+                        ch._rec_file.writeframes(pcm_bytes)
+                    except Exception as exc:
+                        logger.warning("Recording write error on %s: %s", ch.label, exc)
+                        self._close_recording(ch)
+
+                if has_subs and self._loop is not None:
+                    for q in list(ch._audio_subscribers):
+                        try:
+                            self._loop.call_soon_threadsafe(q.put_nowait, pcm_bytes)
+                        except Exception:
+                            pass  # queue full — drop chunk, subscriber is too slow
 
             if ch.carrier:
                 rms2 = float(np.mean(audio ** 2))
@@ -354,6 +408,18 @@ class RtlRepeaterMonitor:
             ch.voice = False
             if self.enable_stt and ch._audio_buf_sec > 1.0:
                 self._transcribe_channel(ch)
+
+        # On carrier drop: accumulate active time and schedule recording close
+        if was_active and not ch.carrier and ch.active_since:
+            ch.total_active_sec += time.time() - ch.active_since
+            ch.active_since = None
+            if ch._rec_file:
+                ch._rec_close_at = time.time() + 1.0   # 1-second tail buffer
+
+        # Flush pending tail and close recording once the delay has elapsed
+        if ch._rec_close_at and ch._rec_file and time.time() >= ch._rec_close_at:
+            ch._rec_close_at = None
+            self._close_recording(ch)
 
     def _fm_demodulate(self, iq: np.ndarray, channel_hz: int) -> np.ndarray:
         """
@@ -411,6 +477,46 @@ class RtlRepeaterMonitor:
         except Exception as exc:
             logger.debug("STT error on %s: %s", ch.label, exc)
 
+    # ── Recording ─────────────────────────────────────────────────────────
+
+    def _open_recording(self, ch: RepeaterChannel) -> None:
+        RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+        slug = re.sub(r"[^\w]", "_", ch.label)
+        ts   = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = RECORDINGS_DIR / f"{ts}_{slug}_{ch.freq_hz}Hz.wav"
+        try:
+            f = wave.open(str(path), "w")
+            f.setnchannels(1)
+            f.setsampwidth(2)
+            f.setframerate(AUDIO_RATE)
+            ch._rec_file  = f
+            ch._rec_path  = str(path)
+            ch._rec_start = time.time()
+            logger.info("REC start  %s → %s", ch.label, path.name)
+        except Exception as exc:
+            logger.warning("Cannot open recording %s: %s", path, exc)
+            ch._rec_file = ch._rec_path = ch._rec_start = None
+
+    def _close_recording(self, ch: RepeaterChannel) -> None:
+        if not ch._rec_file:
+            return
+        dur  = time.time() - (ch._rec_start or time.time())
+        path = ch._rec_path
+        try:
+            ch._rec_file.close()
+        except Exception:
+            pass
+        ch._rec_file = ch._rec_path = ch._rec_start = ch._rec_close_at = None
+        if dur < MIN_REC_SEC and path:
+            # Discard very short recordings — likely noise-floor startup blips
+            try:
+                Path(path).unlink(missing_ok=True)
+            except Exception:
+                pass
+            logger.debug("REC discard  %s  %.2f s (< %.1f s)", path, dur, MIN_REC_SEC)
+        else:
+            logger.info("REC saved  %s  %.1f s", path, dur)
+
     # ── Audio subscriptions ────────────────────────────────────────────────
 
     def subscribe_audio(self, freq_hz: int) -> "asyncio.Queue[bytes]":
@@ -455,6 +561,8 @@ class RtlRepeaterMonitor:
                     "active_since":   ch.active_since,
                     "transcripts":    ch.transcripts[-5:],
                     "stream_url":     f"/api/rtl-monitor/audio/{ch.freq_hz}",
+                    "recording":      ch._rec_file is not None,
+                    "recording_start": ch._rec_start,
                 }
                 for ch in self.channels
             ],

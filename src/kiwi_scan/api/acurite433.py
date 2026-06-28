@@ -2,8 +2,8 @@
 api/acurite433.py — Proxy for the Acurite 433 MHz sensor feed on sigmon.
 
 rtl_433 runs on sigmon as a systemd service writing newline-delimited JSON to
-/var/log/433/Accurite.json.  A thin PHP endpoint on the sigmon web server
-(http://10.13.73.185/433_api.php) exposes the last N events as JSON.
+/var/log/433/Accurite.json.  wx433-api (port 8433, /opt/wx433-api/service.py)
+exposes the last N events as JSON.
 
 GET /api/acurite433/events          — recent detections (default 200)
 GET /api/acurite433/status          — is the feed reachable and recent?
@@ -21,14 +21,14 @@ from fastapi.responses import JSONResponse
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/acurite433", tags=["acurite433"])
 
-_SIGMON_API = os.getenv("ACURITE433_URL", "http://10.13.73.185/433_api.php")
+_SIGMON_API = os.getenv("ACURITE433_URL", "http://10.13.73.185:8433")
 _TIMEOUT    = httpx.Timeout(6.0)
 
 
 async def _fetch(limit: int) -> dict:
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as c:
-            r = await c.get(_SIGMON_API, params={"limit": limit})
+            r = await c.get(f"{_SIGMON_API}/events", params={"limit": limit})
         r.raise_for_status()
         return r.json()
     except httpx.ConnectError:

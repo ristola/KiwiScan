@@ -43,6 +43,7 @@ import re
 import struct
 import time
 import urllib.request
+import wave
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
@@ -58,7 +59,10 @@ router = APIRouter(tags=["noaa-monitor"])
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-_LOG_PATH = Path("outputs") / "noaa_alert_log.jsonl"
+_LOG_PATH        = Path("outputs") / "noaa_alert_log.jsonl"
+_LOG_RETAIN_DAYS = 30
+_NOAA_REC_DIR    = Path("outputs/recordings/noaa")
+_MAX_REC_SEC     = 600   # hard cap: 10 minutes per EAS alert recording
 
 RTLTCP_CONTAINER  = "kiwiscan-noaa-rtltcp"
 DOCKER_IMAGE      = "n4ldr/noaa-weather-radio:latest"
@@ -121,7 +125,50 @@ _DC_ZI     = lfilter_zi(_DC_B, _DC_A)
 _start_time:      Optional[float] = None
 _active_channels: list[int]       = list(WX_CHANNELS)
 _recent_eas:      list[dict]      = []   # server-side SAME alerts (ring buffer, max 50)
-_dismissed_ids:   set[str]        = set()  # alert IDs reviewed by operator — excluded from polls
+
+def _prune_log() -> None:
+    """Remove log entries whose event date is older than _LOG_RETAIN_DAYS days."""
+    if not _LOG_PATH.exists():
+        return
+    try:
+        cutoff = datetime.utcnow().timestamp() - _LOG_RETAIN_DAYS * 86400
+        kept: list[str] = []
+        for line in _LOG_PATH.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                entry = json.loads(line)
+                # Use received_at (event time) preferring over logged_at
+                ts_str = entry.get("received_at") or entry.get("logged_at", "")
+                ts = datetime.fromisoformat(ts_str.rstrip("Z")).timestamp() if ts_str else cutoff
+                if ts >= cutoff:
+                    kept.append(line)
+            except Exception:
+                kept.append(line)  # keep malformed lines rather than silently drop
+        _LOG_PATH.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _load_dismissed_from_log() -> set:
+    """Pre-populate dismissed IDs from the persistent log so restarts don't resurface old alerts."""
+    _prune_log()
+    ids: set = set()
+    if not _LOG_PATH.exists():
+        return ids
+    try:
+        for line in _LOG_PATH.read_text(encoding="utf-8").splitlines():
+            try:
+                entry = json.loads(line)
+                if entry.get("id"):
+                    ids.add(entry["id"])
+            except (ValueError, KeyError):
+                pass
+    except OSError:
+        pass
+    return ids
+
+_dismissed_ids: set = _load_dismissed_from_log()  # persists reviewed alert IDs across restarts
 
 
 # ── Docker remote TCP API ─────────────────────────────────────────────────────
@@ -333,6 +380,12 @@ class _IQHub:
         self._task:   asyncio.Task | None = None
         self._lock    = asyncio.Lock()
         self._same_proc: asyncio.subprocess.Process | None = None
+        # EAS alert recording state
+        self._rec_file:  wave.Wave_write | None = None
+        self._rec_path:  Path | None = None
+        self._rec_q:     asyncio.Queue | None = None
+        self._rec_task:  asyncio.Task | None = None
+        self._rec_entry: dict | None = None
 
     # ── Public API ─────────────────────────────────────────────────────────
 
@@ -379,6 +432,80 @@ class _IQHub:
             except Exception:
                 pass
         self._same_proc = None
+        self._close_recording()
+
+    # ── Internal: EAS alert recording ──────────────────────────────────────
+
+    def _open_recording(self, entry: dict) -> None:
+        """Open a WAV file and subscribe the recording queue on the SAME channel."""
+        self._close_recording()   # close any prior open recording first
+        _NOAA_REC_DIR.mkdir(parents=True, exist_ok=True)
+        alert_id = entry.get("id") or f"EAS_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+        safe_id  = re.sub(r"[^\w\-]", "_", alert_id)
+        path     = _NOAA_REC_DIR / f"{safe_id}.wav"
+        try:
+            wf = wave.open(str(path), "wb")
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(_AUDIO_RATE)
+            self._rec_file  = wf
+            self._rec_path  = path
+            self._rec_entry = entry
+            self._rec_q     = asyncio.Queue(maxsize=200)
+            self._subs.setdefault(_SAME_CHANNEL_HZ, []).append(self._rec_q)
+            dur_sec = min(entry.get("duration_min", 15) * 60 + 30, _MAX_REC_SEC)
+            self._rec_task  = asyncio.create_task(self._record_loop(self._rec_q, dur_sec))
+            entry["has_audio"]       = False
+            entry["local_recording"] = path.name
+            logger.info("EAS recording started: %s (max %.0fs)", path.name, dur_sec)
+        except Exception as exc:
+            logger.warning("EAS recording open failed: %s", exc)
+            self._rec_file = self._rec_path = self._rec_q = self._rec_task = None
+
+    async def _record_loop(self, q: asyncio.Queue, max_sec: float) -> None:
+        deadline = time.time() + max_sec
+        try:
+            while time.time() < deadline:
+                try:
+                    pcm = await asyncio.wait_for(q.get(), timeout=1.0)
+                    if self._rec_file:
+                        self._rec_file.writeframes(pcm)
+                except asyncio.TimeoutError:
+                    pass
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self._close_recording()
+
+    def _close_recording(self) -> None:
+        if self._rec_task and not self._rec_task.done():
+            self._rec_task.cancel()
+        self._rec_task = None
+        if self._rec_q is not None:
+            lst = self._subs.get(_SAME_CHANNEL_HZ, [])
+            try:
+                lst.remove(self._rec_q)
+            except ValueError:
+                pass
+            self._rec_q = None
+        if self._rec_file:
+            try:
+                self._rec_file.close()
+            except Exception:
+                pass
+            if self._rec_path and self._rec_path.exists():
+                frames = (self._rec_path.stat().st_size - 44) // 2
+                if frames < _AUDIO_RATE * 2:   # discard if < 2 s
+                    self._rec_path.unlink(missing_ok=True)
+                    logger.info("EAS recording too short, discarded: %s", self._rec_path.name)
+                else:
+                    if self._rec_entry:
+                        self._rec_entry["has_audio"]       = True
+                        self._rec_entry["local_recording"] = self._rec_path.name
+                    logger.info("EAS recording saved: %s", self._rec_path.name)
+            self._rec_file  = None
+            self._rec_path  = None
+            self._rec_entry = None
 
     # ── Internal: SAME decoder ──────────────────────────────────────────────
 
@@ -451,6 +578,11 @@ class _IQHub:
         try:
             async for line_bytes in proc.stdout:
                 line = line_bytes.decode("utf-8", errors="ignore").strip()
+                # EOM — stop recording
+                if "NNNN" in line or line.strip() == "EOM":
+                    logger.info("SAME EOM detected — closing recording")
+                    self._close_recording()
+                    continue
                 if "ZCZC" in line:
                     # SAME protocol sends each message 3× — deduplicate by raw content within 90s
                     now_ts = time.time()
@@ -468,6 +600,8 @@ class _IQHub:
                     _recent_eas.append(entry)
                     if len(_recent_eas) > 50:
                         _recent_eas.pop(0)
+                    # Start recording this alert's audio
+                    self._open_recording(entry)
                     # Fetch NWS text in background without blocking the reader
                     asyncio.create_task(_attach_nws_text(entry))
         except asyncio.CancelledError:
@@ -835,10 +969,14 @@ async def noaa_log_entry(body: dict = Body(...)) -> dict:
     """
     global _recent_eas
     _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    alert_id = body.get("id")
+    # Skip if this alert ID was already logged (prevents duplicate entries on page refresh)
+    if alert_id and alert_id in _dismissed_ids:
+        return {"ok": True, "skipped": True, "reason": "already_logged"}
     entry = {**body, "logged_at": datetime.utcnow().isoformat() + "Z"}
     with _LOG_PATH.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
-    alert_id = body.get("id")
+    _prune_log()
     if alert_id:
         _dismissed_ids.add(alert_id)
         _recent_eas = [e for e in _recent_eas if e.get("id") != alert_id]
@@ -905,6 +1043,56 @@ async def noaa_alert_audio(alert_id: str) -> StreamingResponse:
             yield chunk
 
     return StreamingResponse(_stream(), media_type="audio/wav")
+
+
+@router.get("/api/noaa-monitor/recordings")
+def noaa_list_recordings():
+    if not _NOAA_REC_DIR.exists():
+        return {"recordings": []}
+    files = sorted(
+        _NOAA_REC_DIR.glob("*.wav"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    result = []
+    for f in files:
+        stat = f.stat()
+        dur  = max(0.0, (stat.st_size - 44) / (_AUDIO_RATE * 2))
+        result.append({
+            "filename":     f.name,
+            "created_at":   stat.st_mtime,
+            "size_bytes":   stat.st_size,
+            "duration_sec": round(dur, 1),
+        })
+    return {"recordings": result}
+
+
+@router.get("/api/noaa-monitor/recordings/{filename}")
+def noaa_get_recording(filename: str) -> StreamingResponse:
+    path = _NOAA_REC_DIR / Path(filename).name
+    if not path.exists() or path.suffix != ".wav":
+        raise HTTPException(404, "Recording not found")
+    size = path.stat().st_size
+
+    def _stream():
+        with open(str(path), "rb") as fh:
+            while chunk := fh.read(65536):
+                yield chunk
+
+    return StreamingResponse(
+        _stream(), media_type="audio/wav",
+        headers={"Content-Disposition": f'attachment; filename="{path.name}"',
+                 "Content-Length": str(size)},
+    )
+
+
+@router.delete("/api/noaa-monitor/recordings/{filename}")
+def noaa_delete_recording(filename: str):
+    path = _NOAA_REC_DIR / Path(filename).name
+    if not path.exists():
+        raise HTTPException(404, "Recording not found")
+    path.unlink()
+    return {"deleted": filename}
 
 
 @router.get("/api/noaa-monitor/audio/live")

@@ -1,11 +1,17 @@
 """
 api/rtl_monitor.py — REST + WebSocket endpoints for the RTL-SDR IQ monitor.
 
-POST /api/rtl-monitor/start   — launch a new monitor session
-GET  /api/rtl-monitor/status  — current per-channel status JSON
-POST /api/rtl-monitor/stop    — stop the active session
-GET  /api/rtl-monitor/presets — list built-in channel group presets
-WS   /api/rtl-monitor/ws      — push status every second while running
+POST /api/rtl-monitor/start              — launch a new monitor session
+GET  /api/rtl-monitor/status             — current per-channel status JSON
+POST /api/rtl-monitor/stop               — stop the active session
+GET  /api/rtl-monitor/presets            — list built-in channel group presets
+WS   /api/rtl-monitor/ws                — push status every second while running
+GET  /api/rtl-monitor/recordings         — list recordings with metadata
+GET  /api/rtl-monitor/recordings/{name} — download a WAV recording
+DELETE /api/rtl-monitor/recordings/{name} — delete one recording
+POST /api/rtl-monitor/recordings/cleanup — delete all recordings older than retention
+GET  /api/rtl-monitor/settings           — get retention_days
+POST /api/rtl-monitor/settings           — set retention_days
 """
 
 from __future__ import annotations
@@ -13,15 +19,19 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re as _re
 import struct
+import time
+from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from ..rtl_monitor import (
     RtlRepeaterMonitor,
+    RECORDINGS_DIR,
     SHENANDOAH_REPEATERS,
     SHENANDOAH_CENTER_HZ,
 )
@@ -31,6 +41,56 @@ router = APIRouter(prefix="/api/rtl-monitor", tags=["rtl-monitor"])
 
 # Single active monitor (one SDR at a time per KiwiScan instance)
 _monitor: Optional[RtlRepeaterMonitor] = None
+
+# ── Recording config ──────────────────────────────────────────────────────────
+
+_REC_CONFIG_PATH = Path("outputs/repeater_monitor_config.json")
+_REC_NAME_RE     = _re.compile(r"^(\d{8}_\d{6})_(.+)_(\d+)Hz\.wav$")
+
+
+def _load_rec_config() -> dict:
+    try:
+        return json.loads(_REC_CONFIG_PATH.read_text())
+    except Exception:
+        return {"retention_days": 10}
+
+
+def _save_rec_config(cfg: dict) -> None:
+    _REC_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _REC_CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
+
+
+def _cleanup_recordings() -> int:
+    days = _load_rec_config().get("retention_days", 10)
+    if not RECORDINGS_DIR.exists():
+        return 0
+    cutoff  = time.time() - days * 86400
+    deleted = 0
+    for f in RECORDINGS_DIR.glob("*.wav"):
+        try:
+            if f.stat().st_mtime < cutoff:
+                f.unlink()
+                deleted += 1
+        except Exception:
+            pass
+    if deleted:
+        logger.info("Pruned %d recordings older than %d days", deleted, days)
+    return deleted
+
+
+def _parse_rec_info(f: Path) -> dict:
+    stat = f.stat()
+    m    = _REC_NAME_RE.match(f.name)
+    dur  = max(0.0, (stat.st_size - 44) / (48_000 * 2))   # 48 kHz mono 16-bit
+    info: dict = {
+        "filename":     f.name,
+        "label":        m.group(2).replace("_", " ") if m else f.stem,
+        "freq_hz":      int(m.group(3)) if m else 0,
+        "created_at":   stat.st_mtime,
+        "size_bytes":   stat.st_size,
+        "duration_sec": round(dur, 1),
+    }
+    return info
 
 PRESETS = {
     "shenandoah-vhf": {
@@ -72,6 +132,8 @@ async def start_monitor(req: StartRequest):
 
     if _monitor and _monitor._running:
         raise HTTPException(409, "A monitor session is already running — stop it first")
+
+    asyncio.ensure_future(asyncio.get_event_loop().run_in_executor(None, _cleanup_recordings))
 
     # Resolve preset if given
     channels = [c.model_dump() for c in req.channels]
@@ -174,3 +236,80 @@ async def ws_status(ws: WebSocket):
         pass
     except Exception as exc:
         logger.debug("rtl-monitor ws error: %s", exc)
+
+
+# ── Recordings ────────────────────────────────────────────────────────────────
+
+@router.get("/recordings")
+async def list_recordings():
+    if not RECORDINGS_DIR.exists():
+        return {"recordings": []}
+    files = sorted(
+        RECORDINGS_DIR.glob("*.wav"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    return {"recordings": [_parse_rec_info(f) for f in files]}
+
+
+@router.get("/recordings/{filename}")
+async def get_recording(filename: str):
+    path = RECORDINGS_DIR / Path(filename).name   # strip any path traversal
+    if not path.exists() or path.suffix != ".wav":
+        raise HTTPException(404, "Recording not found")
+    return FileResponse(str(path), media_type="audio/wav", filename=path.name)
+
+
+@router.delete("/recordings/{filename}")
+async def delete_recording(filename: str):
+    path = RECORDINGS_DIR / Path(filename).name
+    if not path.exists():
+        raise HTTPException(404, "Recording not found")
+    path.unlink()
+    return {"deleted": filename}
+
+
+@router.post("/recordings/cleanup")
+async def cleanup_recordings(request: Request):
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+    # Optional override: retention_days=0 means delete everything
+    override_days = body.get("retention_days")
+
+    def _do():
+        days   = override_days if override_days is not None else _load_rec_config().get("retention_days", 10)
+        cutoff = time.time() - days * 86400
+        if not RECORDINGS_DIR.exists():
+            return 0
+        deleted = 0
+        for f in RECORDINGS_DIR.glob("*.wav"):
+            try:
+                if f.stat().st_mtime < cutoff:
+                    f.unlink()
+                    deleted += 1
+            except Exception:
+                pass
+        return deleted
+
+    deleted = await asyncio.get_event_loop().run_in_executor(None, _do)
+    return {"deleted": deleted}
+
+
+# ── Settings ──────────────────────────────────────────────────────────────────
+
+@router.get("/settings")
+async def get_settings():
+    return _load_rec_config()
+
+
+@router.post("/settings")
+async def save_settings(request: Request):
+    body = await request.json()
+    cfg  = _load_rec_config()
+    if "retention_days" in body:
+        cfg["retention_days"] = max(1, int(body["retention_days"]))
+    _save_rec_config(cfg)
+    return cfg
