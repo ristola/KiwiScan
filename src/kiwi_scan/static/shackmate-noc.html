@@ -7569,10 +7569,10 @@
                 '00000005': { type:'noaa',   freq:'162 MHz',     label:'Open',        activeLabel:'NOAA WX'               },
                 '00000315': { type:'monitor', freq:'314.490 MHz', label:'Open',        activeLabel:'TPMS'                  },
                 '20000145': { type:'open',    freq:'',            label:'Open'                                                   },
-                '10000001': { type:'open',    freq:'',            label:'Open'                                                   },
-                '10000002': { type:'open',    freq:'',            label:'Open'                                                   },
-                '10000003': { type:'open',    freq:'',            label:'Open'                                                   },
-                '10000004': { type:'open',    freq:'',            label:'Open'                                                   },
+                '10000001': { type:'monitor', freq:'859.2375 MHz', label:'P25 Voice',       activeLabel:'HRP25 Trunking Voice' },
+                '10000002': { type:'monitor', freq:'858.2375 MHz', label:'P25 Voice',       activeLabel:'HRP25 Trunking Voice' },
+                '10000003': { type:'monitor', freq:'857.2375 MHz', label:'P25 Voice',       activeLabel:'HRP25 Trunking Voice' },
+                '10000004': { type:'monitor', freq:'856.0875 MHz', label:'P25 Control Ch',  activeLabel:'HRP25 Trunking CC'    },
                 '00000006': { type:'decode',  freq:'978 MHz',     label:'NooElec UAT'                                            },
             };
 
@@ -7601,10 +7601,10 @@
             // Kerberossdr K1-K4 first (hub 3-1.1.4 LP 2-5), then ports 2-10.
             // Keeping the same order means A-IDs are stable before and after the fetch.
             window.SDR_A = [
-                { id:'A0',  serial:'10000004', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.201:7373' },
-                { id:'A1',  serial:'10000003', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.200:7373' },
-                { id:'A2',  serial:'10000002', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.199:7373' },
-                { id:'A3',  serial:'10000001', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.198:7373' },
+                { id:'A0',  serial:'10000004', label:'P25 Control Ch', freq:'856.0875 MHz', type:'monitor', activeLabel:'HRP25 Trunking CC',    tcpDevice:'tcp://10.13.73.201:7373' },
+                { id:'A1',  serial:'10000003', label:'P25 Voice',      freq:'857.2375 MHz', type:'monitor', activeLabel:'HRP25 Trunking Voice', tcpDevice:'tcp://10.13.73.200:7373' },
+                { id:'A2',  serial:'10000002', label:'P25 Voice',      freq:'858.2375 MHz', type:'monitor', activeLabel:'HRP25 Trunking Voice', tcpDevice:'tcp://10.13.73.199:7373' },
+                { id:'A3',  serial:'10000001', label:'P25 Voice',      freq:'859.2375 MHz', type:'monitor', activeLabel:'HRP25 Trunking Voice', tcpDevice:'tcp://10.13.73.198:7373' },
                 { id:'A4',  serial:'00000006', label:'NooElec UAT', freq:'978 MHz',     type:'decode',  tcpDevice:'tcp://10.13.73.202:7373' },
                 { id:'A5',  serial:'20000145', label:'Open',        freq:'',            type:'open',    tcpDevice:'tcp://10.13.73.197:7373' },
                 { id:'A6',  serial:'00000315', label:'Open',        freq:'314.490 MHz', type:'monitor', tcpDevice:'tcp://10.13.73.196:7373' },
@@ -7685,6 +7685,7 @@
                     built.forEach(s => window.SDR_A.push(s));
 
                     _sdrRenderGrid(SDR_A, 'sdr-grid-a');
+                    if (typeof _applyGuardData === 'function') _applyGuardData(_guardData || {});
                     refreshSdrArray();
                     _buildOwrxButtons();
                     const ca = document.getElementById('sdr-a-count');
