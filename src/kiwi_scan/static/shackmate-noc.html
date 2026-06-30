@@ -7460,7 +7460,7 @@
             // hubPPPS doesn't know (SDR function, mode type, target frequency).
             const SDR_SERIAL_META = {
                 '00001090': { type:'adsb',    freq:'1090 MHz',    label:'ADS-B 1090',  host:'10.13.73.190'                       },
-                '00144390': { type:'monitor', freq:'171.7–173.8 MHz', label:'NPS P25 VHF', activeLabel:'ShenNPS Conv P25'      },
+                '00144390': { type:'open',    freq:'',            label:'Open'                                                   },
                 '20000897': { type:'monitor', freq:'2m',          label:'Open',        activeLabel:'Repeater Monitoring'          },
                 '00000978': { type:'open',    freq:'',            label:'Open',        activeLabel:'VHF Digital'                  },
                 '00000433': { type:'decode',  freq:'433.920 MHz', label:'Acurite 433'                                            },
@@ -7510,7 +7510,7 @@
                 { id:'A8',  serial:'00000433', label:'Acurite 433', freq:'433.920 MHz', type:'decode',  tcpDevice:'tcp://10.13.73.194:7373' },
                 { id:'A9',  serial:'00000978', label:'Open',        freq:'',            type:'open',    activeLabel:'VHF Digital',          tcpDevice:'tcp://10.13.73.193:7373' },
                 { id:'A10', serial:'20000897', label:'Open',        freq:'2m',          type:'monitor', activeLabel:'Repeater Monitoring',  tcpDevice:'tcp://10.13.73.192:7373' },
-                { id:'A11', serial:'00144390', label:'NPS P25 VHF', freq:'171.7–173.8 MHz', type:'monitor', activeLabel:'ShenNPS Conv P25',     tcpDevice:'tcp://10.13.73.191:7373' },
+                { id:'A11', serial:'00144390', label:'Open',        freq:'',            type:'open',                                        tcpDevice:'tcp://10.13.73.191:7373' },
                 { id:'A12', serial:'00001090', label:'ADS-B 1090',  freq:'1090 MHz',    type:'adsb',    host:'10.13.73.190' },
             ];
             const SDR_A = window.SDR_A;
