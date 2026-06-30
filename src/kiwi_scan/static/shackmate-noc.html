@@ -3420,9 +3420,6 @@
                 <button class="nav-btn" type="button" title="ADS-B" data-view="adsb" aria-pressed="false">
                     <svg viewBox="0 0 18 18" width="18" height="18" fill="currentColor" stroke="none" aria-hidden="true"><path d="M9 1 L11.2 8.2 L17 7.5 L16.2 9.8 L11.2 10.8 L10.5 15.5 L9 14.8 L7.5 15.5 L6.8 10.8 L1.8 9.8 L1 7.5 L6.8 8.2 Z"/></svg>
                 </button>
-                <button class="nav-btn" type="button" title="OpenWebRX" data-view="webrx" aria-pressed="false">
-                    <svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9 Q4.5 5 6 9 Q7.5 13 9 9 Q10.5 5 12 9 Q13.5 13 15 9"/><circle cx="9" cy="9" r="1" fill="currentColor" stroke="none"/></svg>
-                </button>
                 <button class="nav-btn" type="button" title="System Info" data-view="sysinfo" aria-pressed="false">
                     <svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3.5" width="14" height="4" rx="1.2"/><rect x="2" y="10.5" width="14" height="4" rx="1.2"/><circle cx="5" cy="5.5" r="0.85" fill="currentColor" stroke="none"/><circle cx="5" cy="12.5" r="0.85" fill="currentColor" stroke="none"/><line x1="8.5" y1="5.5" x2="13" y2="5.5" stroke-width="1.3"/><line x1="8.5" y1="12.5" x2="13" y2="12.5" stroke-width="1.3"/></svg>
                 </button>
@@ -3675,29 +3672,6 @@
                         <div class="panel-body link-lines">
                             <div class="link-row"><span class="status-dot ok" id="adsb-n4ldr-dot"></span><strong>N4LDR 1090</strong><span id="adsb-n4ldr-status">--</span></div>
                             <div class="link-row"><span class="status-dot"></span><strong>WD4VA 978</strong><span>Staged</span></div>
-                        </div>
-                    </section>
-
-                    <!-- ── OpenWebRX ── -->
-                    <section class="panel" data-view-section="webrx" hidden>
-                        <div class="panel-header">
-                            <div class="panel-title"><span class="status-dot" id="owrx-sb-dot"></span><span>OpenWebRX</span></div>
-                        </div>
-                        <div class="panel-body link-lines">
-                            <div class="link-row"><span class="status-dot" id="owrx-status-dot"></span><strong>Status</strong><span id="owrx-status-text">--</span></div>
-                            <div class="link-row"><span class="status-dot ok"></span><strong>SDRs</strong><span id="owrx-users">--</span></div>
-                            <div class="link-row"><span class="status-dot ok"></span><strong>Clients</strong><span id="owrx-users-max">--</span></div>
-                            <div class="link-row"><span class="status-dot ok"></span><strong>Host</strong><span>10.13.73.185:8073</span></div>
-                        </div>
-                    </section>
-                    <section class="panel" data-view-section="webrx" hidden>
-                        <div class="panel-header">
-                            <div class="panel-title"><span class="status-dot ok"></span><span>SDR Pool</span></div>
-                        </div>
-                        <div class="panel-body link-lines">
-                            <div class="link-row"><span class="status-dot ok"></span><strong>Pool</strong><span id="owrx-sb-pool">12 SDRs</span></div>
-                            <div class="link-row"><span class="status-dot ok"></span><strong>Free</strong><span id="owrx-sb-free">--</span></div>
-                            <div class="link-row"><span class="status-dot ok"></span><strong>In Use</strong><span id="owrx-sb-inuse">--</span></div>
                         </div>
                     </section>
 
@@ -4136,35 +4110,6 @@
                         </div>
                     </section>
 
-                    <!-- ── OpenWebRX main panel ── -->
-                    <section class="panel" data-view-section="webrx" hidden style="grid-column:1/-1">
-                        <div class="panel-header">
-                            <div class="panel-title">
-                                <span class="status-dot" id="owrx-dot"></span>
-                                <span>OpenWebRX &nbsp;·&nbsp; sigmon-2 &nbsp;·&nbsp; 10.13.73.185:8073</span>
-                            </div>
-                            <div style="display:flex;align-items:center;gap:0.45rem;flex-shrink:0">
-                                <span class="pill" id="owrx-chip-users" style="min-width:2.5rem;text-align:center">--</span>
-                                <span class="pill" style="color:var(--muted);font-size:0.68rem" id="owrx-chip-sdrs">--</span>
-                            </div>
-                        </div>
-                        <div class="panel-body" style="padding:0">
-                            <div id="owrx-sdr-bar" class="adsb-viewer-bar" style="flex-wrap:wrap">
-                                <span class="adsb-viewer-label">SDR</span>
-                                <!-- buttons injected by _buildOwrxButtons() from SDR_A -->
-                                <a href="http://10.13.73.185:8073/" target="_blank" class="adsb-viewer-btn" style="text-decoration:none;margin-left:auto" title="Open in new tab">
-                                    <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:0.25rem"><path d="M6 2H2v10h10V8"/><path d="M9 2h3v3"/><line x1="7.5" y1="6.5" x2="12" y2="2"/></svg>New Tab
-                                </a>
-                            </div>
-                            <div id="owrx-launch-overlay" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;height:200px;background:var(--bg-b);color:var(--muted-2)">
-                                <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.4"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none"/></svg>
-                                <button type="button" onclick="(function(){var o=document.getElementById('owrx-launch-overlay');var f=document.getElementById('owrx-iframe');if(o)o.style.display='none';if(f){f.src='http://10.13.73.185:8073/';f.style.display='block';}})()" style="background:var(--accent);color:#fff;border:none;padding:0.5rem 1.4rem;border-radius:6px;font-size:0.82rem;font-weight:700;cursor:pointer;letter-spacing:0.04em">Launch OpenWebRX</button>
-                                <span style="font-size:0.68rem">Click to connect — SDR audio starts immediately</span>
-                            </div>
-                            <iframe id="owrx-iframe" src="" style="width:100%;height:600px;border:none;display:none;" allow="autoplay; microphone" title="OpenWebRX"></iframe>
-                        </div>
-                    </section>
-
                     <section class="panel" data-view-section="setup" hidden>
                         <div class="panel-header">
                             <div class="panel-title"><span class="status-dot warn"></span><span>Site Setup</span></div>
@@ -4467,10 +4412,6 @@
                 adsb: {
                     title: 'ADS-B / Airband',
                     subtitle: 'Aircraft and VHF monitoring view for N4LDR plus the WD4VA remote feed.'
-                },
-                webrx: {
-                    title: 'OpenWebRX',
-                    subtitle: 'sigmon-2 OpenWebRX · all RTL-SDRs available — select receiver inside the UI · 10.13.73.185:8073'
                 },
                 setup: {
                     title: 'Site Setup',
@@ -6578,17 +6519,6 @@
                 } else {
                     if (_adsbInterval) { clearInterval(_adsbInterval); _adsbInterval = null; }
                 }
-                if (viewName === 'webrx') {
-                    refreshOwrx();
-                    if (!_owrxInterval) _owrxInterval = setInterval(refreshOwrx, 15000);
-                } else {
-                    if (_owrxInterval) { clearInterval(_owrxInterval); _owrxInterval = null; }
-                    // Reset iframe so returning to webrx view requires a manual click to reconnect
-                    const _owrxF = document.getElementById('owrx-iframe');
-                    const _owrxO = document.getElementById('owrx-launch-overlay');
-                    if (_owrxF && _owrxF.src) { _owrxF.src = ''; _owrxF.style.display = 'none'; }
-                    if (_owrxO) _owrxO.style.display = 'flex';
-                }
                 if (viewName === 'receivers') {
                     refreshSdrArray();
                     _fetchSdrDevices();
@@ -7523,38 +7453,6 @@
                 });
             });
 
-            // ── OpenWebRX ──────────────────────────────────────────────────
-
-            const OWRX_STATUS_URL = 'http://10.13.73.185:8073/status.json';
-            let _owrxInterval = null;
-
-            const refreshOwrx = async () => {
-                const dot      = document.getElementById('owrx-dot');
-                const sbDot    = document.getElementById('owrx-sb-dot');
-                const sDot     = document.getElementById('owrx-status-dot');
-                const setDot   = (el, cls) => { if (el) el.className = 'status-dot ' + cls; };
-                const _sid     = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
-                try {
-                    const resp = await fetch(OWRX_STATUS_URL, { cache: 'no-store', signal: AbortSignal.timeout(5000) });
-                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-                    const st = await resp.json();
-                    const usersMax = Number(st.max_clients || 0);
-                    const sdrCount = Array.isArray(st.sdrs) ? st.sdrs.length : 0;
-                    setDot(dot, 'ok'); setDot(sbDot, 'ok'); setDot(sDot, 'ok');
-                    _sid('owrx-status-text', st.version || 'active');
-                    _sid('owrx-users', sdrCount + ' SDR' + (sdrCount !== 1 ? 's' : ''));
-                    _sid('owrx-users-max', 'max ' + usersMax);
-                    _sid('owrx-chip-users', sdrCount + ' SDR' + (sdrCount !== 1 ? 's' : ''));
-                } catch (_err) {
-                    setDot(dot, 'bad'); setDot(sbDot, 'bad'); setDot(sDot, 'bad');
-                    _sid('owrx-status-text', 'offline');
-                    _sid('owrx-users', '--');
-                    _sid('owrx-chip-users', 'offline');
-                }
-            };
-
-            // OpenWebRX SDR buttons — dynamically built from SDR_A after it is populated
-
             // ── SDR Array cards ────────────────────────────────────────────
 
             // Per-serial stable metadata: type, freq, label, optional host.
@@ -7617,47 +7515,6 @@
             ];
             const SDR_A = window.SDR_A;
 
-            const _buildOwrxButtons = () => {
-                const bar = document.getElementById('owrx-sdr-bar');
-                if (!bar) return;
-                const OWRX_URL = 'http://10.13.73.185:8073/';
-                bar.querySelectorAll('[data-owrx-src]').forEach(b => b.remove());
-                const anchor   = bar.querySelector('a[href]');
-                const eligible = SDR_A.filter(s => s.type !== 'adsb');
-                let firstFree  = null;
-
-                eligible.forEach(s => {
-                    const busy  = !!s.activeLabel;
-                    const badge = s.activeLabel || (s.label !== 'Open' ? s.label : (s.freq || 'open'));
-                    const btn   = document.createElement('button');
-                    btn.type      = 'button';
-                    btn.className = 'adsb-viewer-btn';
-                    btn.dataset.owrxSrc = OWRX_URL;
-                    btn.dataset.sdrId   = s.id;
-                    btn.title = s.id + (busy ? ' · In Use: ' + s.activeLabel : ' · Available');
-                    btn.innerHTML = s.id + ' <span style="font-size:0.62rem;opacity:0.5;font-weight:400;letter-spacing:0;text-transform:none">' + badge + '</span>';
-                    btn.addEventListener('click', () => {
-                        bar.querySelectorAll('[data-owrx-src]').forEach(b => b.classList.remove('is-active'));
-                        btn.classList.add('is-active');
-                    });
-                    if (!busy && !firstFree) { btn.classList.add('is-active'); firstFree = btn; }
-                    if (anchor) bar.insertBefore(btn, anchor);
-                    else bar.appendChild(btn);
-                });
-
-                const freeCount = eligible.filter(s => !s.activeLabel).length;
-                const inUseCount = eligible.length - freeCount;
-                const chip = document.getElementById('owrx-chip-sdrs');
-                if (chip) chip.textContent = freeCount + ' free · ' + eligible.length + ' total';
-                const sbPool  = document.getElementById('owrx-sb-pool');
-                const sbFree  = document.getElementById('owrx-sb-free');
-                const sbInUse = document.getElementById('owrx-sb-inuse');
-                if (sbPool)  sbPool.textContent  = eligible.length + ' SDRs';
-                if (sbFree)  sbFree.textContent  = freeCount + ' available';
-                if (sbInUse) sbInUse.textContent = inUseCount + ' assigned';
-            };
-            _buildOwrxButtons();
-
             // Fetch live SDR list from sdr-test-agent /devices (hubPPPS JSON).
             // Flattens Kerberossdr sub-channels into the top-level array.
             const _fetchSdrDevices = async () => {
@@ -7687,7 +7544,6 @@
                     _sdrRenderGrid(SDR_A, 'sdr-grid-a');
                     if (typeof _applyGuardData === 'function') _applyGuardData(_guardData || {});
                     refreshSdrArray();
-                    _buildOwrxButtons();
                     const ca = document.getElementById('sdr-a-count');
                     if (ca) ca.textContent = SDR_A.length + ' devices';
                 } catch (e) {
@@ -7785,27 +7641,6 @@
                 if (el) el.textContent = text;
             };
 
-            const _sdrUpdateOwrx = async () => {
-                try {
-                    const resp = await fetch(OWRX_STATUS_URL, { cache:'no-store', signal: AbortSignal.timeout(5000) });
-                    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-                    const st = await resp.json();
-                    const owrxNames = new Set((st.sdrs || []).map(s => s.name));
-                    SDR_A.filter(s => s.type === 'owrx').forEach(s => {
-                        if (owrxNames.has(s.owrxName)) {
-                            _sdrSetStat(s.id, 'online · ' + s.freq, 'ok');
-                        } else {
-                            _sdrSetStat(s.id, 'offline', 'bad');
-                        }
-                    });
-                } catch {
-                    // OpenWebRX offline — SDRs available via rtl_tcp instead
-                    SDR_A.filter(s => s.type === 'owrx').forEach(s => {
-                        _sdrSetStat(s.id, s.tcpDevice ? 'rtl_tcp · ' + s.freq : 'offline', s.tcpDevice ? 'ok' : 'bad');
-                    });
-                }
-            };
-
             // Set of SDR IDs currently in use by any monitor (repeater, NOAA, etc.)
             if (!(window._monitorActiveSdrId instanceof Set)) window._monitorActiveSdrId = new Set();
             // Registry of card-level stop functions — survives grid re-renders that replace DOM buttons
@@ -7829,7 +7664,7 @@
                     if      (s.type === 'adsb')    _sdrSetStat(s.id, 'active · ' + s.freq, 'ok');
                     else if (s.type === 'decode')  _sdrSetStat(s.id, (s.tcpDevice ? 'rtl_tcp · ' : 'decoding · ') + s.freq, 'ok');
                     else if (s.type === 'local')   _sdrSetStat(s.id, 'local · ' + s.freq, 'warn');
-                    else if (s.type === 'owrx')    _sdrSetStat(s.id, 'checking…', 'mute');
+
                     else if (s.type === 'monitor')     { if (_active.has(sid)) { _sdrSetLabel(s.id, s.activeLabel || s.label); _sdrSetStat(s.id, 'active' + (s.freq ? ' · ' + s.freq : ''), 'ok'); } else if (s.dedicated) { _sdrSetStat(s.id, 'running · ' + s.freq, 'ok'); } else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
                     else if (s.type === 'noaa')        { if (_active.has(sid)) { _sdrSetLabel(s.id, s.activeLabel || 'NOAA Wx'); _sdrSetStat(s.id, 'active · ' + (s.freq || '162 MHz'), 'ok'); } else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
                     else if (s.type === 'vhf-digital') { if (window._vhfActiveSdrId === sid) { _sdrSetLabel(s.id, s.activeLabel || 'VHF Digital'); _sdrSetStat(s.id, 'active · VHF', 'ok'); } else { _sdrSetLabel(s.id, s.label); _sdrSetStat(s.id, 'Available', 'mute'); } }
@@ -7852,7 +7687,6 @@
 
             const refreshSdrArray = () => {
                 _sdrSetStaticStatus();
-                _sdrUpdateOwrx();
             };
             // Allow applySiteFilter (defined earlier) to trigger a pill/count refresh
             window._sdrRefreshPill = () => _sdrSetStaticStatus();
@@ -8435,10 +8269,6 @@
                             <span class="mode-opt-name">Repeater Monitor</span>
                             <span class="mode-opt-desc">IQ scan &middot; virtual FM receivers &middot; carrier detect &middot; VAD &middot; speech-to-text</span>
                         </button>
-                        <button class="mode-opt" data-mode="openwebrx" type="button">
-                            <span class="mode-opt-name">OpenWebRX</span>
-                            <span class="mode-opt-desc">Full waterfall &middot; browser audio &middot; manual tuning</span>
-                        </button>
                         <button class="mode-opt" data-mode="spectrum" type="button">
                             <span class="mode-opt-name">Spectrum Scan</span>
                             <span class="mode-opt-desc">Wideband sweep &middot; signal survey &middot; coming soon</span>
@@ -8506,13 +8336,6 @@
                             <label class="opt-row"><input type="checkbox" id="opt-vad" checked> Voice activity detect</label>
                             <label class="opt-row"><input type="checkbox" id="opt-stats" checked> Usage statistics</label>
                         </div>
-                    </div>
-                </div>
-
-                <!-- Config: OpenWebRX (just a link) -->
-                <div class="sdr-config-panel" id="cfg-openwebrx" hidden>
-                    <div style="font-size:0.78rem;color:var(--muted);line-height:1.6">
-                        Opens OpenWebRX in a new tab tuned to this SDR. You can tune freely, change modes, and use browser audio.
                     </div>
                 </div>
 
@@ -9387,11 +9210,11 @@
             document.querySelectorAll('.mode-opt').forEach(btn => {
                 btn.classList.toggle('is-selected', btn.dataset.mode === mode);
             });
-            ['repeater-monitor','openwebrx','spectrum','record','noaa-monitor','vhf-digital','tpms'].forEach(m => {
+            ['repeater-monitor','spectrum','record','noaa-monitor','vhf-digital','tpms'].forEach(m => {
                 const el = document.getElementById('cfg-' + m);
                 if (el) el.hidden = (m !== mode);
             });
-            launchBtn.textContent = mode === 'openwebrx' ? 'Open Tab' : 'Launch';
+            launchBtn.textContent = 'Launch';
             if (mode === 'noaa-monitor') _renderNoaaChannelList();
             if (mode === 'vhf-digital' && window._renderVhfChannels) window._renderVhfChannels();
         };
@@ -9522,11 +9345,6 @@
         // ── Launch ───────────────────────────────────────────────────────
 
         launchBtn.addEventListener('click', async () => {
-            if (_activeMode === 'openwebrx') {
-                window.open('http://10.13.73.185:8073/', '_blank');
-                closeSdrModal();
-                return;
-            }
             if (_activeMode === 'repeater-monitor') {
                 await _launchRepeaterMonitor();
             } else if (_activeMode === 'noaa-monitor') {
