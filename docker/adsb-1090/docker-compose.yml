@@ -1,0 +1,29 @@
+# ADS-B 1090 MHz decoder — dump1090-fa + SkyAware
+#
+# Build and push:
+#   docker build -t n4ldr/adsb-1090:latest .
+#   docker push n4ldr/adsb-1090:latest
+#
+# For macvlan deployment on sigmon-2 (preserves 10.13.73.190):
+#   see docker/sigmon-2/docker-compose.yml
+#
+# For host-network deployment on any other SBC:
+#   docker compose up -d
+
+services:
+  adsb-1090:
+    image: n4ldr/adsb-1090:latest
+    container_name: adsb-1090
+    restart: unless-stopped
+    devices:
+      - /dev/bus/usb
+    environment:
+      DEVICE_SERIAL: "00001090"
+      GAIN: "60"
+      LAT: "38.59484"
+      LON: "-78.43167"
+      MAX_RANGE: "360"
+    network_mode: host
+    # SkyAware UI:   http://<host>:8080/skyaware/
+    # Aircraft JSON: http://<host>:8080/skyaware/data/aircraft.json
+    # Beast output:  <host>:30005

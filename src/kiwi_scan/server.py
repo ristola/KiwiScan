@@ -72,6 +72,7 @@ from .api.sdr_test import router as sdr_test_router
 from .api.noc import router as noc_router
 from .api.sdr_assignments import router as sdr_assignments_router
 from .api.acurite433 import router as acurite433_router
+from .api.waterfall import router as waterfall_router
 
 # Configure logging to output to console (stderr) with timestamps
 logging.basicConfig(
@@ -789,6 +790,7 @@ app.include_router(sdr_test_router)
 app.include_router(noc_router)
 app.include_router(sdr_assignments_router)
 app.include_router(acurite433_router)
+app.include_router(waterfall_router)
 
 register_lifecycle(
     app,

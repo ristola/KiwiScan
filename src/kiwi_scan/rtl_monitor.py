@@ -50,6 +50,19 @@ VOICE_ENERGY    = 0.004         # RMS² threshold for voice activity
 STT_WINDOW_SEC  = 4.0           # seconds of audio before sending to Whisper
 NOISE_ALPHA     = 0.05          # IIR weight for noise floor tracking
 
+# ── Recording gate ────────────────────────────────────────────────────────────
+# Carrier events are buffered before committing to a WAV file.  The gate
+# classifier distinguishes voice from CW / bare carrier to avoid recording
+# repeater ID pings and squelch-tail false triggers.
+
+PRE_ROLL_SEC        = 1.5   # audio buffer kept before the recording decision
+GATE_SEC            = 1.0   # carrier must be present this long before recording
+MONITOR_WIN_SEC     = 0.5   # re-evaluation window after a CW skip
+MIN_VOICE_GATE_FRAC = 0.25  # voice fraction in gate window → commit immediately
+CW_TONE_RATIO       = 0.45  # spectral peak / band total > this → classify as CW
+SUSTAINED_THRESH_SEC = 5.0  # force-record any carrier sustained longer than this
+TAIL_DELAY_SEC      = 3.5   # keep recording this long after carrier drops (breath pause)
+
 # rtl_tcp command IDs
 _CMD_SET_FREQ        = 0x01
 _CMD_SET_RATE        = 0x02
@@ -76,10 +89,22 @@ class RepeaterChannel:
     _audio_buf: list = field(default_factory=list, repr=False)
     _audio_buf_sec: float = field(default=0.0, repr=False)
     _audio_subscribers: list = field(default_factory=list, repr=False)
-    _rec_file:     Optional[object] = field(default=None, repr=False)
-    _rec_path:     Optional[str]    = field(default=None, repr=False)
-    _rec_start:    Optional[float]  = field(default=None, repr=False)
-    _rec_close_at: Optional[float]  = field(default=None, repr=False)
+    mode:                str             = "idle"  # idle | voice | cw | carrier
+    _rec_file:           Optional[object] = field(default=None,  repr=False)
+    _rec_path:           Optional[str]    = field(default=None,  repr=False)
+    _rec_start:          Optional[float]  = field(default=None,  repr=False)
+    _rec_close_at:       Optional[float]  = field(default=None,  repr=False)
+    # Gate / pre-roll state
+    _prebuf_chunks:      list            = field(default_factory=list, repr=False)
+    _prebuf_sec:         float           = field(default=0.0,  repr=False)
+    _gate_start:         Optional[float] = field(default=None, repr=False)
+    _gate_voice_frames:  int             = field(default=0,    repr=False)
+    _gate_cw_frames:     int             = field(default=0,    repr=False)
+    _gate_total_frames:  int             = field(default=0,    repr=False)
+    # Post-skip monitoring (re-evaluate if voice appears after a CW skip)
+    _monitor_start:        Optional[float] = field(default=None, repr=False)
+    _monitor_voice_frames: int             = field(default=0,    repr=False)
+    _monitor_total_frames: int             = field(default=0,    repr=False)
 
 
 def _parse_tcp_device(device: str) -> Optional[tuple[str, int]]:
@@ -144,7 +169,8 @@ class RtlRepeaterMonitor:
         self._tcp_writer: Optional[asyncio.StreamWriter] = None
         self._running = False
         self._task: Optional[asyncio.Task] = None
-        self._noise_floor = -90.0
+        self._noise_floor = -999.0   # sentinel: first chunk snap-inits to real median
+        self._warmup_chunks = 0      # carrier detection suppressed for first N chunks
         self._whisper = None
         self.started_at: Optional[float] = None
         self.error: Optional[str] = None
@@ -331,9 +357,16 @@ class RtlRepeaterMonitor:
         # Update global noise floor estimate (median of spectrum)
         median_pwr = float(np.median(spectrum_db))
         if self._noise_floor < -900:
-            self._noise_floor = median_pwr
+            self._noise_floor = median_pwr   # snap-init on first real measurement
         else:
             self._noise_floor += NOISE_ALPHA * (median_pwr - self._noise_floor)
+
+        # Suppress carrier detection for the first ~3 seconds while the noise
+        # floor IIR stabilises — prevents false triggers on every channel at startup.
+        _WARMUP_CHUNKS = 110   # 110 × 27 ms ≈ 3 s
+        self._warmup_chunks += 1
+        if self._warmup_chunks <= _WARMUP_CHUNKS:
+            return
 
         # Per-channel analysis
         for ch in self.channels:
@@ -362,36 +395,133 @@ class RtlRepeaterMonitor:
         was_active = ch.carrier
         ch.carrier = ch.snr_db > CARRIER_THRESH
 
+        # ── Carrier rising edge ────────────────────────────────────────────────
         if ch.carrier and not was_active:
             ch.carrier_count += 1
             ch.active_since = time.time()
-            if self.record_enabled:
-                self._open_recording(ch)
 
-        # FM demodulation — runs when carrier is present, a listener is subscribed,
-        # or a recording is still open (to capture the tail of the last transmission)
+            if ch._rec_file and ch._rec_close_at:
+                # Carrier returned while a recording was still in its tail delay
+                # (breath pause, momentary dropout).  Cancel the close and continue
+                # writing to the same file — no gap, no new gate needed.
+                ch._rec_close_at = None
+                logger.debug("Carrier resumed during tail — continuing recording %s", ch.label)
+            else:
+                # Fresh carrier event — run the gate classifier before committing
+                ch._gate_start        = time.time()
+                ch._gate_voice_frames = 0
+                ch._gate_cw_frames    = 0
+                ch._gate_total_frames = 0
+
+        # ── FM demodulation ────────────────────────────────────────────────────
         has_subs = bool(ch._audio_subscribers)
         if ch.carrier or has_subs or ch._rec_file:
-            audio = self._fm_demodulate(iq, ch.freq_hz)
+            audio     = self._fm_demodulate(iq, ch.freq_hz)
+            chunk_dur = len(audio) / AUDIO_RATE
+            pcm_bytes = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
 
-            # Shared int16 PCM for both recording and live subscribers
-            if ch._rec_file or has_subs:
-                pcm_bytes = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
+            # ── Pre-roll circular buffer ───────────────────────────────────────
+            # Keep the last PRE_ROLL_SEC of audio so it can be flushed to disk
+            # when the gate commits to a recording.
+            ch._prebuf_chunks.append((audio, pcm_bytes))
+            ch._prebuf_sec += chunk_dur
+            while ch._prebuf_sec > PRE_ROLL_SEC + chunk_dur and len(ch._prebuf_chunks) > 1:
+                old_a, _ = ch._prebuf_chunks.pop(0)
+                ch._prebuf_sec -= len(old_a) / AUDIO_RATE
 
-                if ch._rec_file:
+            # ── Gate: classify chunks and decide ──────────────────────────────
+            if ch._gate_start is not None and ch.carrier:
+                sig_mode = self._classify_chunk(audio)
+                ch._gate_total_frames += 1
+                if sig_mode == 'voice':
+                    ch._gate_voice_frames += 1
+                    ch.mode = 'voice'
+                elif sig_mode == 'cw':
+                    ch._gate_cw_frames += 1
+                    ch.mode = 'cw'
+                else:
+                    ch.mode = 'carrier'
+
+                gate_age     = time.time() - ch._gate_start
+                voice_frac   = ch._gate_voice_frames / max(1, ch._gate_total_frames)
+                cw_frac      = ch._gate_cw_frames    / max(1, ch._gate_total_frames)
+                carrier_secs = time.time() - (ch.active_since or time.time())
+
+                early_voice  = voice_frac >= MIN_VOICE_GATE_FRAC and gate_age >= 0.3
+                gate_expired = gate_age >= GATE_SEC
+                sustained    = carrier_secs >= SUSTAINED_THRESH_SEC
+
+                if early_voice or gate_expired or sustained:
+                    # Short CW burst with no voice → skip
+                    skip = (
+                        not sustained and not early_voice
+                        and cw_frac > 0.50 and voice_frac < 0.10
+                    )
+                    ch._gate_start = None
+                    if skip:
+                        logger.debug(
+                            "Gate skip CW  %s  cw=%.0f%%  voice=%.0f%%  %.1fs",
+                            ch.label, cw_frac * 100, voice_frac * 100, gate_age,
+                        )
+                        # Begin post-skip monitoring window for voice re-evaluation
+                        ch._monitor_start        = time.time()
+                        ch._monitor_voice_frames = 0
+                        ch._monitor_total_frames = 0
+                    else:
+                        self._commit_recording(ch)
+
+            # ── Post-skip monitoring: re-evaluate if voice appears later ───────
+            elif (ch.carrier and ch._gate_start is None and ch._rec_file is None
+                    and ch.active_since):
+                sig_mode     = self._classify_chunk(audio)
+                carrier_secs = time.time() - ch.active_since
+
+                if ch._monitor_start is not None:
+                    ch._monitor_total_frames += 1
+                    if sig_mode == 'voice':
+                        ch._monitor_voice_frames += 1
+
+                    mon_age    = time.time() - ch._monitor_start
+                    voice_frac = ch._monitor_voice_frames / max(1, ch._monitor_total_frames)
+
+                    if mon_age >= MONITOR_WIN_SEC:
+                        if voice_frac >= MIN_VOICE_GATE_FRAC:
+                            logger.debug(
+                                "Voice detected post-skip on %s — committing recording",
+                                ch.label,
+                            )
+                            self._commit_recording(ch)
+                        else:
+                            # Another quiet window; reset and keep watching
+                            ch._monitor_start        = time.time()
+                            ch._monitor_voice_frames = 0
+                            ch._monitor_total_frames = 0
+
+                # Sustained carrier override: record regardless after SUSTAINED_THRESH_SEC
+                if ch._rec_file is None and carrier_secs >= SUSTAINED_THRESH_SEC:
+                    logger.debug(
+                        "Sustained carrier override on %s (%.0fs) — committing recording",
+                        ch.label, carrier_secs,
+                    )
+                    self._commit_recording(ch)
+
+            # ── Write to open recording ────────────────────────────────────────
+            if ch._rec_file:
+                try:
+                    ch._rec_file.writeframes(pcm_bytes)
+                except Exception as exc:
+                    logger.warning("Recording write error on %s: %s", ch.label, exc)
+                    self._close_recording(ch)
+
+            # ── Live audio subscribers ─────────────────────────────────────────
+            if has_subs and self._loop is not None:
+                for q in list(ch._audio_subscribers):
                     try:
-                        ch._rec_file.writeframes(pcm_bytes)
-                    except Exception as exc:
-                        logger.warning("Recording write error on %s: %s", ch.label, exc)
-                        self._close_recording(ch)
+                        self._loop.call_soon_threadsafe(q.put_nowait, pcm_bytes)
+                    except Exception:
+                        pass  # queue full — drop chunk
 
-                if has_subs and self._loop is not None:
-                    for q in list(ch._audio_subscribers):
-                        try:
-                            self._loop.call_soon_threadsafe(q.put_nowait, pcm_bytes)
-                        except Exception:
-                            pass  # queue full — drop chunk, subscriber is too slow
-
+            # ── Voice activity and STT ─────────────────────────────────────────
             if ch.carrier:
                 rms2 = float(np.mean(audio ** 2))
                 ch.voice = rms2 > VOICE_ENERGY
@@ -406,17 +536,31 @@ class RtlRepeaterMonitor:
                     self._transcribe_channel(ch)
         else:
             ch.voice = False
+            ch.mode = 'idle'
             if self.enable_stt and ch._audio_buf_sec > 1.0:
                 self._transcribe_channel(ch)
 
-        # On carrier drop: accumulate active time and schedule recording close
+        # ── Carrier falling edge ───────────────────────────────────────────────
         if was_active and not ch.carrier and ch.active_since:
             ch.total_active_sec += time.time() - ch.active_since
             ch.active_since = None
-            if ch._rec_file:
-                ch._rec_close_at = time.time() + 1.0   # 1-second tail buffer
+            ch.mode = 'idle'
 
-        # Flush pending tail and close recording once the delay has elapsed
+            if ch._gate_start is not None:
+                # Carrier dropped before the gate could decide — discard (too short)
+                logger.debug("Gate discard  %s  (carrier too short)", ch.label)
+                ch._gate_start = None
+                ch._prebuf_chunks.clear()
+                ch._prebuf_sec = 0.0
+            elif ch._rec_file:
+                ch._rec_close_at = time.time() + TAIL_DELAY_SEC
+
+            # Always clear monitoring state when the carrier drops
+            ch._monitor_start        = None
+            ch._monitor_voice_frames = 0
+            ch._monitor_total_frames = 0
+
+        # ── Flush tail and close recording after delay ─────────────────────────
         if ch._rec_close_at and ch._rec_file and time.time() >= ch._rec_close_at:
             ch._rec_close_at = None
             self._close_recording(ch)
@@ -445,6 +589,53 @@ class RtlRepeaterMonitor:
         # Normalize to float32 in [-1, 1]
         peak = np.max(np.abs(disc)) + 1e-9
         return (disc / peak).astype(np.float32)
+
+    # ── Signal classifier ─────────────────────────────────────────────────
+
+    def _classify_chunk(self, audio: np.ndarray) -> str:
+        """Return 'voice', 'cw', or 'carrier' for one FM-demodulated audio chunk.
+
+        Uses spectral concentration in the 300–3000 Hz voice band.  CW tones
+        produce a single dominant peak (high concentration); voice spreads energy
+        across many bins (low concentration).
+        """
+        rms2 = float(np.mean(audio ** 2))
+        if rms2 < VOICE_ENERGY * 0.3:
+            return 'carrier'  # below audio floor — bare carrier, no modulation
+        n = len(audio)
+        if n < 64:
+            return 'voice' if rms2 > VOICE_ENERGY else 'carrier'
+        fft_pwr  = np.abs(np.fft.rfft(audio * np.hanning(n))) ** 2
+        freqs    = np.fft.rfftfreq(n, d=1.0 / AUDIO_RATE)
+        mask     = (freqs >= 300) & (freqs <= 3000)
+        band_pwr = fft_pwr[mask]
+        total    = float(band_pwr.sum())
+        if total < 1e-9:
+            return 'carrier'
+        concentration = float(band_pwr.max()) / total
+        return 'cw' if concentration > CW_TONE_RATIO else 'voice'
+
+    # ── Recording commit ───────────────────────────────────────────────────
+
+    def _commit_recording(self, ch: RepeaterChannel) -> None:
+        """Open WAV file and flush pre-roll buffer, backdating start to carrier onset."""
+        if not self.record_enabled:
+            return
+        self._open_recording(ch)
+        if not ch._rec_file:
+            return
+        # Backdate so duration is measured from when the carrier first appeared
+        if ch.active_since:
+            ch._rec_start = ch.active_since
+        # Flush pre-roll (all buffered chunks except current, which the main loop writes)
+        for _, old_pcm in ch._prebuf_chunks[:-1]:
+            try:
+                ch._rec_file.writeframes(old_pcm)
+            except Exception:
+                pass
+        ch._monitor_start        = None
+        ch._monitor_voice_frames = 0
+        ch._monitor_total_frames = 0
 
     # ── STT ───────────────────────────────────────────────────────────────
 
@@ -507,6 +698,11 @@ class RtlRepeaterMonitor:
         except Exception:
             pass
         ch._rec_file = ch._rec_path = ch._rec_start = ch._rec_close_at = None
+        ch._prebuf_chunks.clear()
+        ch._prebuf_sec = 0.0
+        ch._monitor_start        = None
+        ch._monitor_voice_frames = 0
+        ch._monitor_total_frames = 0
         if dur < MIN_REC_SEC and path:
             # Discard very short recordings — likely noise-floor startup blips
             try:
@@ -554,6 +750,7 @@ class RtlRepeaterMonitor:
                     "label":          ch.label,
                     "carrier":        ch.carrier,
                     "voice":          ch.voice,
+                    "mode":           ch.mode,
                     "power_db":       round(ch.power_db, 1),
                     "snr_db":         ch.snr_db,
                     "carrier_count":  ch.carrier_count,

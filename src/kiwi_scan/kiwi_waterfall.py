@@ -3,11 +3,14 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import logging
+import math
 import os
 import sys
 import time
 from dataclasses import dataclass
 from typing import Callable, Optional, Sequence
+
+_KIWI_MAX_SPAN_HZ = 30_000_000.0  # Standard KiWi SDR full bandwidth
 
 
 def _wait_event_cleared(event: object, *, timeout_s: float) -> None:
@@ -472,6 +475,16 @@ def subscribe_waterfall(
         )
     }
 
+    # Compute KiWi zoom level from requested span (zoom 0 = full 30 MHz).
+    # KiWi quantizes span to 30 MHz / 2^zoom; actual_span_hz reflects what the
+    # server actually delivers so the frontend ruler matches the bin data.
+    if span_hz >= _KIWI_MAX_SPAN_HZ:
+        _zoom = 0
+        actual_span_hz = _KIWI_MAX_SPAN_HZ
+    else:
+        _zoom = max(0, round(math.log2(_KIWI_MAX_SPAN_HZ / span_hz)))
+        actual_span_hz = _KIWI_MAX_SPAN_HZ / (2 ** _zoom)
+
     class _WF(KiwiSDRStream):  # type: ignore[misc]
         def __init__(self) -> None:
             super().__init__()  # type: ignore[no-untyped-call]
@@ -595,7 +608,7 @@ def subscribe_waterfall(
                 WaterfallFrame(
                     frame_index=frame_counter,
                     center_freq_hz=float(center_freq_hz),
-                    span_hz=float(span_hz),
+                    span_hz=float(actual_span_hz),
                     power_bins=power_bins,
                 )
             )
@@ -658,7 +671,7 @@ def subscribe_waterfall(
     opt.S_meter = -1
     opt.sdt = 0
     opt.tstamp = False
-    opt.zoom = 0
+    opt.zoom = _zoom
     opt.netcat = False
     # If required_rx is None, allow the Kiwi to auto-assign a free receiver by
     # omitting rx_chan from the websocket URL query (client only includes it

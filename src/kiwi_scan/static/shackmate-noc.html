@@ -2310,6 +2310,16 @@
             font-size: 0.74rem;
         }
 
+        /* ── Wideband Waterfall ─────────────────────────────────── */
+        .wf-ctrl-input {
+            background: var(--panel-2); color: var(--ink);
+            border: 1px solid var(--line); border-radius: 6px;
+            padding: 2px 6px; font-size: 0.7rem; font-family: var(--mono,'IBM Plex Mono',monospace);
+        }
+        .wf-ctrl-input:focus { outline: none; border-color: var(--ok); }
+        .wf-range-label { font-size: 0.63rem; color: var(--muted-2); display:flex; align-items:center; gap:0.3rem; }
+        .wf-range-val   { font-family: var(--mono,'IBM Plex Mono',monospace); min-width:2.8rem; color:var(--ink); }
+
         .add-form {
             display: grid;
             gap: 0.65rem;
@@ -3183,11 +3193,30 @@
         .adsb-tab-pane[hidden] { display:none !important; }
         .adsb-viewer-bar { display:flex; align-items:center; gap:0.35rem; padding:0.5rem 0.85rem; border-bottom:1px solid var(--line); background:var(--panel-2); }
         /* ── WX Gauges ─────────────────────────────────────────────────────── */
-        .wx-gauge-row { display:flex; flex-wrap:wrap; gap:1rem; padding:1.1rem 1rem; justify-content:center; background:var(--bg-a); }
-        .wx-gauge-card { display:flex; flex-direction:column; align-items:center; gap:0.35rem; min-width:110px; }
-        .wx-gauge-label { font-size:0.68rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted-2); }
-        .wx-gauge-val { font-size:0.8rem; font-weight:700; color:var(--fg); text-align:center; }
-        .wx-gauge-sub { font-size:0.65rem; color:var(--muted-2); text-align:center; margin-top:-0.1rem; }
+        /* ── Weather stat cards ──────────────────────────────────────────── */
+        .wx-stat-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(155px,1fr)); gap:0.65rem; padding:0.85rem; background:var(--bg-a); }
+        .wx-stat-card { background:rgba(255,255,255,0.032); border:1px solid rgba(255,255,255,0.08); border-radius:10px; padding:0.85rem 0.95rem 0.8rem; display:flex; flex-direction:column; gap:0.08rem; position:relative; overflow:hidden; transition:border-color .15s,background .15s; }
+        .wx-stat-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; border-radius:10px 10px 0 0; background:var(--wx-color,rgba(255,255,255,0.2)); }
+        .wx-stat-card:hover { background:rgba(255,255,255,0.052); border-color:rgba(255,255,255,0.14); }
+        .wx-stat-label { font-size:0.56rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted-2); padding-top:0.25rem; margin-bottom:0.25rem; }
+        .wx-stat-visual { display:flex; justify-content:center; align-items:center; margin:0.15rem 0 0.3rem; }
+        .wx-stat-main { display:flex; align-items:baseline; gap:0.22rem; line-height:1; }
+        .wx-stat-value { font-size:2.1rem; font-weight:700; color:var(--fg); font-variant-numeric:tabular-nums; letter-spacing:-0.02em; }
+        .wx-stat-unit  { font-size:0.78rem; font-weight:500; color:var(--muted); }
+        .wx-stat-sub   { font-size:0.63rem; color:var(--muted-2); margin-top:0.3rem; line-height:1.45; }
+        .wx-chart-label { font-size:0.55rem; font-weight:700; letter-spacing:0.09em; text-transform:uppercase; color:var(--muted-2); margin-bottom:0.4rem; }
+        /* UV scale bar */
+        .wx-uv-bar { height:7px; border-radius:4px; background:linear-gradient(to right,#22C55E,#EAB308,#F97316,#EF4444,#8B5CF6); position:relative; margin:0.55rem 0 0.25rem; }
+        .wx-uv-bar-marker { position:absolute; top:-4px; width:3px; height:15px; background:#fff; border-radius:2px; left:0%; transition:left .5s; box-shadow:0 0 5px rgba(255,255,255,0.55); }
+        .wx-uv-bar-labels { display:flex; justify-content:space-between; font-size:0.5rem; color:var(--muted-2); }
+        /* Sidebar sensor rows + detail tiles */
+        .wx-sensor-row { display:flex; align-items:center; gap:0.5rem; padding:0.38rem 0.75rem; cursor:pointer; border-left:2px solid transparent; transition:background .12s,border-color .12s; }
+        .wx-sensor-row:hover { background:rgba(255,255,255,0.04); }
+        .wx-sensor-row.wx-active { background:rgba(32,184,160,0.07); border-left-color:#20b8a0; }
+        .wx-sensor-detail { display:grid; grid-template-columns:1fr 1fr; gap:0.4rem; padding:0.55rem 0.65rem 0.65rem; border-top:1px solid rgba(255,255,255,0.05); }
+        .wx-mini-tile { background:rgba(255,255,255,0.036); border:1px solid rgba(255,255,255,0.07); border-radius:8px; padding:0.45rem 0.6rem; }
+        .wx-mini-lbl { font-size:0.52rem; font-weight:700; letter-spacing:0.09em; text-transform:uppercase; color:var(--muted-2); margin-bottom:0.12rem; }
+        .wx-mini-val { font-size:1.05rem; font-weight:700; font-variant-numeric:tabular-nums; }
         .adsb-viewer-label { font-size:0.68rem; font-weight:700; letter-spacing:0.07em; text-transform:uppercase; color:var(--muted-2); margin-right:0.2rem; flex-shrink:0; }
         .adsb-viewer-btn { background:none; border:1px solid var(--line); border-radius:4px; color:var(--muted); font-size:0.71rem; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; padding:0.22rem 0.65rem; cursor:pointer; transition:color 0.15s, border-color 0.15s; white-space:nowrap; }
         .adsb-viewer-btn:hover { color:var(--fg); border-color:var(--muted); }
@@ -3911,6 +3940,48 @@
                                             style="--h:30%"></i><i style="--h:30%"></i><i style="--h:30%"></i></div>
                                 </div>
                             </article>
+                        </div>
+                    </section>
+
+                    <!-- ── Wideband Waterfall ── -->
+                    <section class="panel" id="wf-panel" data-view-section="spectrum" style="grid-column:1/-1" hidden>
+                        <div class="panel-header" style="flex-wrap:wrap;gap:0.4rem">
+                            <div class="panel-title">
+                                <span class="status-dot" id="wf-dot"></span>
+                                <span>Wideband Waterfall</span>
+                            </div>
+                            <div style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;flex:1;justify-content:flex-end">
+                                <select id="wf-host-sel" class="wf-ctrl-input" style="cursor:pointer">
+                                    <option value="10.13.73.235:8073">K1 · 10.13.73.235</option>
+                                    <option value="10.13.73.236:8073">K2 · 10.13.73.236</option>
+                                </select>
+                                <label class="wf-range-label">Center
+                                    <input id="wf-center" class="wf-ctrl-input" type="number" step="0.5" min="0.5" max="30" value="15" style="width:5rem;text-align:right" title="Center frequency MHz">
+                                    <span style="color:var(--muted-2)">MHz</span>
+                                </label>
+                                <label class="wf-range-label">Span
+                                    <input id="wf-span" class="wf-ctrl-input" type="number" step="1" min="1" max="32" value="30" style="width:4rem;text-align:right" title="Span MHz">
+                                    <span style="color:var(--muted-2)">MHz</span>
+                                </label>
+                                <label class="wf-range-label">Floor
+                                    <input id="wf-floor" type="range" min="-200" max="-60" value="-130" style="width:5rem">
+                                    <span id="wf-floor-lbl" class="wf-range-val">-130 dB</span>
+                                </label>
+                                <label class="wf-range-label">Ceil
+                                    <input id="wf-ceil" type="range" min="-120" max="0" value="-50" style="width:5rem">
+                                    <span id="wf-ceil-lbl" class="wf-range-val">-50 dB</span>
+                                </label>
+                                <button class="pill" id="wf-start-btn" style="cursor:pointer">Start</button>
+                            </div>
+                        </div>
+                        <div id="wf-error" style="display:none;padding:0.4rem 0.85rem;font-size:0.72rem;color:var(--fault);background:rgba(220,50,50,0.08);border-bottom:1px solid var(--line)"></div>
+                        <div class="panel-body" style="padding:0;overflow:hidden">
+                            <div id="wf-canvases" style="position:relative;display:block;line-height:0;cursor:crosshair">
+                                <canvas id="wf-spectrum" height="48"  style="display:block;width:100%;background:#000;border-bottom:1px solid var(--line)"></canvas>
+                                <canvas id="wf-canvas"   height="280" style="display:block;width:100%;background:#000;image-rendering:pixelated"></canvas>
+                                <canvas id="wf-overlay"  style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none"></canvas>
+                            </div>
+                            <canvas id="wf-ruler" height="28" style="display:block;width:100%;background:#111"></canvas>
                         </div>
                     </section>
 
@@ -8572,7 +8643,6 @@
                     <button class="pill" id="sb-rpt-stop-btn" type="button" style="cursor:pointer;color:var(--fault);font-size:0.63rem;flex-shrink:0">Stop</button>
                 </div>
                 <div style="display:flex;align-items:center;gap:0.4rem">
-                    <span class="pill" id="sb-rpt-device" style="font-size:0.63rem;color:var(--muted-2)"></span>
                     <span class="pill" id="sb-rpt-noise" style="font-size:0.63rem">-- dB</span>
                     <span class="pill" id="sb-rpt-uptime" style="font-size:0.63rem">--</span>
                 </div>
@@ -8588,7 +8658,6 @@
                     <span id="rpt-mon-title">Repeater Monitor</span>
                 </div>
                 <div style="display:flex;align-items:center;gap:0.5rem">
-                    <span class="pill" id="rpt-mon-device" style="color:var(--muted-2)"></span>
                     <span class="pill" id="rpt-mon-noise">-- dB</span>
                     <span class="pill" id="rpt-mon-uptime">--</span>
                     <button class="pill" id="rpt-mon-stop-btn" type="button" style="cursor:pointer;color:var(--fault)">Stop</button>
@@ -8796,6 +8865,7 @@
                 <div id="sb-acurite-summary" style="font-size:0.68rem;color:var(--muted-2)">Loading…</div>
             </div>
             <div class="panel-body link-lines" style="padding:0" id="sb-acurite-grid"></div>
+            <div id="wx-sensor-detail" hidden></div>
         </section>
 
         <!-- WX Gauge card -->
@@ -8803,161 +8873,256 @@
             <div class="panel-header">
                 <div class="panel-title">
                     <span class="status-dot ok" id="wx-gauge-dot"></span>
-                    <span>Acurite-Atlas · Live Conditions</span>
+                    <span id="wx-gauge-sensor-name">Acurite-Atlas · Live Conditions</span>
                 </div>
                 <span class="pill" id="wx-gauge-age" style="color:var(--muted-2);font-size:0.66rem">--</span>
             </div>
-            <div class="wx-gauge-row">
+            <div class="wx-stat-grid">
 
                 <!-- Temperature -->
-                <div class="wx-gauge-card">
-                    <span class="wx-gauge-label">Temperature</span>
-                    <svg viewBox="0 0 120 95" width="130" height="100" style="overflow:visible">
-                        <!-- Track arc -->
-                        <circle cx="60" cy="68" r="46" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="9"
-                            stroke-dasharray="192.4 96.2" stroke-linecap="butt" transform="rotate(135 60 68)"/>
-                        <!-- Blue zone: 0–50 °F (50% of arc = 96.2) -->
-                        <circle cx="60" cy="68" r="46" fill="none" stroke="#3B82F6" stroke-width="9"
-                            stroke-dasharray="96.2 192.4" stroke-linecap="butt" transform="rotate(135 60 68)"/>
-                        <!-- Green zone: 50–80 °F (30% = 57.7), offset 96.2 -->
-                        <circle cx="60" cy="68" r="46" fill="none" stroke="#22C55E" stroke-width="9"
-                            stroke-dasharray="57.7 230.9" stroke-linecap="butt" stroke-dashoffset="-96.2" transform="rotate(135 60 68)"/>
-                        <!-- Red zone: 80–100 °F (20% = 38.5), offset 153.9 -->
-                        <circle cx="60" cy="68" r="46" fill="none" stroke="#EF4444" stroke-width="9"
-                            stroke-dasharray="38.5 250.1" stroke-linecap="butt" stroke-dashoffset="-153.9" transform="rotate(135 60 68)"/>
-                        <!-- Needle -->
-                        <line id="wx-temp-needle" x1="60" y1="68" x2="60" y2="26" stroke="var(--fg)" stroke-width="2.5" stroke-linecap="round" transform="rotate(135 60 68)"/>
-                        <circle cx="60" cy="68" r="5" fill="#F97316"/>
-                        <!-- Labels -->
-                        <text x="16" y="82" text-anchor="middle" fill="rgba(255,255,255,0.3)" font-size="8">0</text>
-                        <text x="60" y="17" text-anchor="middle" fill="rgba(255,255,255,0.3)" font-size="8">50</text>
-                        <text x="104" y="82" text-anchor="middle" fill="rgba(255,255,255,0.3)" font-size="8">100</text>
-                        <!-- Value -->
-                        <text id="wx-temp-val" x="60" y="64" text-anchor="middle" fill="var(--fg)" font-size="15" font-weight="700">--</text>
-                        <text x="60" y="78" text-anchor="middle" fill="rgba(255,255,255,0.45)" font-size="9">°F</text>
-                    </svg>
+                <div class="wx-stat-card" id="wx-card-temp" style="--wx-color:#3B82F6">
+                    <span class="wx-stat-label">Temperature</span>
+                    <div class="wx-stat-visual">
+                        <svg viewBox="0 0 120 95" width="110" height="85" style="overflow:visible">
+                            <!-- Background track (full arc) -->
+                            <circle cx="60" cy="68" r="46" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="11"
+                                stroke-dasharray="192.7 96.3" stroke-linecap="butt" transform="rotate(135 60 68)"/>
+                            <!-- Zone tint backgrounds -->
+                            <circle cx="60" cy="68" r="46" fill="none" stroke="rgba(59,130,246,0.15)" stroke-width="11"
+                                stroke-dasharray="96.2 192.8" stroke-linecap="butt" transform="rotate(135 60 68)"/>
+                            <circle cx="60" cy="68" r="46" fill="none" stroke="rgba(34,197,94,0.15)" stroke-width="11"
+                                stroke-dasharray="57.7 231.3" stroke-linecap="butt" stroke-dashoffset="-96.2" transform="rotate(135 60 68)"/>
+                            <circle cx="60" cy="68" r="46" fill="none" stroke="rgba(239,68,68,0.15)" stroke-width="11"
+                                stroke-dasharray="38.5 250.5" stroke-linecap="butt" stroke-dashoffset="-153.9" transform="rotate(135 60 68)"/>
+                            <!-- Live fill arcs — updated by JS -->
+                            <circle id="wx-temp-fill-b" cx="60" cy="68" r="46" fill="none" stroke="#3B82F6" stroke-width="11"
+                                stroke-dasharray="0 289.0" stroke-linecap="butt" transform="rotate(135 60 68)"/>
+                            <circle id="wx-temp-fill-g" cx="60" cy="68" r="46" fill="none" stroke="#22C55E" stroke-width="11"
+                                stroke-dasharray="0 289.0" stroke-linecap="butt" stroke-dashoffset="-96.2" transform="rotate(135 60 68)"/>
+                            <circle id="wx-temp-fill-r" cx="60" cy="68" r="46" fill="none" stroke="#EF4444" stroke-width="11"
+                                stroke-dasharray="0 289.0" stroke-linecap="butt" stroke-dashoffset="-153.9" transform="rotate(135 60 68)"/>
+                            <!-- Tick marks (populated by JS) -->
+                            <g id="wx-temp-ticks"></g>
+                            <!-- Needle & pivot -->
+                            <polygon id="wx-temp-needle" points="58,66 62,66 60.4,25 59.6,25" fill="#F97316" transform="rotate(135 60 68)"/>
+                            <circle cx="60" cy="68" r="6" fill="#F97316"/>
+                            <circle cx="60" cy="68" r="2.5" fill="rgba(0,0,0,0.4)"/>
+                            <!-- Scale labels -->
+                            <text x="16"  y="82" text-anchor="middle" fill="rgba(255,255,255,0.22)" font-size="7.5">0°</text>
+                            <text x="60"  y="7"  text-anchor="middle" fill="rgba(255,255,255,0.22)" font-size="7.5">50°</text>
+                            <text x="104" y="82" text-anchor="middle" fill="rgba(255,255,255,0.22)" font-size="7.5">100°</text>
+                        </svg>
+                    </div>
+                    <div class="wx-stat-main">
+                        <span class="wx-stat-value" id="wx-temp-val">--</span>
+                        <span class="wx-stat-unit">°F</span>
+                    </div>
                 </div>
 
                 <!-- Wind -->
-                <div class="wx-gauge-card">
-                    <span class="wx-gauge-label">Wind</span>
-                    <svg viewBox="0 0 110 110" width="110" height="110">
-                        <circle cx="55" cy="55" r="48" fill="none" stroke="rgba(255,255,255,0.07)" stroke-width="3"/>
-                        <circle cx="55" cy="55" r="48" fill="none" stroke="rgba(255,255,255,0.14)" stroke-width="1.5" stroke-dasharray="3 9"/>
-                        <!-- Compass ticks -->
-                        <text x="55" y="8"  text-anchor="middle" fill="rgba(255,255,255,0.3)" font-size="8">N</text>
-                        <text x="102" y="58" text-anchor="middle" fill="rgba(255,255,255,0.3)" font-size="8">E</text>
-                        <text x="55" y="106" text-anchor="middle" fill="rgba(255,255,255,0.3)" font-size="8">S</text>
-                        <text x="8" y="58"  text-anchor="middle" fill="rgba(255,255,255,0.3)" font-size="8">W</text>
-                        <!-- Arrow (points in wind direction, rotates) -->
-                        <g id="wx-wind-arrow" transform="rotate(0 55 55)">
-                            <polygon points="55,16 49,42 55,36 61,42" fill="#F97316"/>
-                            <polygon points="55,94 49,68 55,74 61,68" fill="rgba(255,255,255,0.2)"/>
+                <div class="wx-stat-card" id="wx-card-wind" style="--wx-color:#20b8a0">
+                    <span class="wx-stat-label">Wind</span>
+                    <svg viewBox="0 0 130 130" width="130" height="130" style="display:block;margin:0.15rem auto 0.1rem">
+                        <!-- Compass face -->
+                        <circle cx="65" cy="65" r="59" fill="rgba(255,255,255,0.016)" stroke="rgba(255,255,255,0.07)" stroke-width="1.5"/>
+                        <!-- Tick ring background -->
+                        <circle cx="65" cy="65" r="52" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="9"/>
+                        <!-- Tick marks (populated by JS) -->
+                        <g id="wx-compass-ticks"></g>
+                        <!-- Cardinal labels -->
+                        <text x="65"  y="8"   text-anchor="middle" fill="rgba(255,255,255,0.88)" font-size="10.5" font-weight="700">N</text>
+                        <text x="123" y="69"  text-anchor="middle" fill="rgba(255,255,255,0.5)"  font-size="9">E</text>
+                        <text x="65"  y="128" text-anchor="middle" fill="rgba(255,255,255,0.5)"  font-size="9">S</text>
+                        <text x="7"   y="69"  text-anchor="middle" fill="rgba(255,255,255,0.5)"  font-size="9">W</text>
+                        <!-- Wind direction pointer (solid chevron, tip at ring edge, rotates to wind dir) -->
+                        <g id="wx-wind-arrow" transform="rotate(0 65 65)">
+                            <polygon points="65,13 58,37 65,30 72,37" fill="#EF4444" stroke="rgba(0,0,0,0.25)" stroke-width="0.75" stroke-linejoin="round"/>
                         </g>
-                        <!-- Speed & dir text -->
-                        <text id="wx-wind-spd" x="55" y="52" text-anchor="middle" fill="var(--fg)" font-size="13" font-weight="700">--</text>
-                        <text x="55" y="64" text-anchor="middle" fill="rgba(255,255,255,0.45)" font-size="8">MPH</text>
-                        <text id="wx-wind-dir" x="55" y="76" text-anchor="middle" fill="rgba(255,255,255,0.45)" font-size="8">---°</text>
+                        <!-- Speed in center -->
+                        <text id="wx-wind-spd" x="65" y="69" text-anchor="middle" fill="var(--fg)" font-size="30" font-weight="700" letter-spacing="-0.5">--</text>
+                        <text x="65" y="82" text-anchor="middle" fill="rgba(255,255,255,0.22)" font-size="7.5" letter-spacing="0.1em">mph</text>
                     </svg>
+                    <div style="display:flex;border-top:1px solid rgba(255,255,255,0.07);margin-top:0.2rem">
+                        <div style="flex:1;text-align:center;padding:0.3rem 0.2rem">
+                            <div style="font-size:0.55rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:rgba(255,255,255,0.3)">Gusts</div>
+                            <div style="font-size:1.15rem;font-weight:700;color:rgba(255,255,255,0.88);font-variant-numeric:tabular-nums" id="wx-wind-gust">--</div>
+                            <div style="font-size:0.5rem;color:rgba(255,255,255,0.22)">mph</div>
+                        </div>
+                        <div style="width:1px;background:rgba(255,255,255,0.05)"></div>
+                        <div style="flex:1;text-align:center;padding:0.3rem 0.2rem">
+                            <div style="font-size:0.55rem;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:rgba(255,255,255,0.3)">Max</div>
+                            <div style="font-size:1.15rem;font-weight:700;color:rgba(255,255,255,0.88);font-variant-numeric:tabular-nums" id="wx-wind-max">--</div>
+                            <div style="font-size:0.5rem;color:rgba(255,255,255,0.22)">mph</div>
+                        </div>
+                    </div>
+                    <span class="wx-stat-sub" style="text-align:center;margin-top:0.1rem"><span id="wx-wind-dir">---°</span> <span id="wx-wind-dir-txt" style="color:var(--muted)">---</span></span>
                 </div>
 
                 <!-- Rain -->
-                <div class="wx-gauge-card">
-                    <span class="wx-gauge-label">Rain</span>
-                    <svg viewBox="0 0 80 105" width="80" height="105">
-                        <!-- Cylinder body -->
-                        <ellipse cx="40" cy="22" rx="28" ry="8" fill="rgba(255,255,255,0.06)" stroke="rgba(255,255,255,0.18)" stroke-width="1.5"/>
-                        <rect x="12" y="22" width="56" height="68" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.18)" stroke-width="1.5"/>
-                        <ellipse cx="40" cy="90" rx="28" ry="8" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.18)" stroke-width="1.5"/>
-                        <!-- Water fill (clipped inside cylinder) -->
-                        <clipPath id="wx-rain-clip"><rect x="13" y="22" width="54" height="68"/></clipPath>
-                        <rect id="wx-rain-fill" x="13" y="90" width="54" height="0" fill="#3B82F6" opacity="0.7" clip-path="url(#wx-rain-clip)"/>
-                        <!-- Tick marks -->
-                        <line x1="60" y1="35" x2="66" y2="35" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
-                        <line x1="60" y1="52" x2="66" y2="52" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
-                        <line x1="60" y1="69" x2="66" y2="69" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
-                        <line x1="60" y1="87" x2="66" y2="87" stroke="rgba(255,255,255,0.3)" stroke-width="1"/>
-                        <!-- Value inside -->
-                        <text id="wx-rain-val" x="40" y="62" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-size="11" font-weight="700">--</text>
-                        <text x="40" y="74" text-anchor="middle" fill="rgba(255,255,255,0.35)" font-size="8">in. total</text>
-                    </svg>
+                <div class="wx-stat-card" id="wx-card-rain" style="--wx-color:#60A5FA">
+                    <span class="wx-stat-label">Precipitation</span>
+                    <div class="wx-stat-visual">
+                        <svg viewBox="0 0 70 105" width="58" height="88">
+                            <!-- Cylinder body -->
+                            <ellipse cx="35" cy="18" rx="22" ry="6" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.22)" stroke-width="1.5"/>
+                            <rect x="13" y="18" width="44" height="72" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.22)" stroke-width="1.5"/>
+                            <ellipse cx="35" cy="90" rx="22" ry="6" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.22)" stroke-width="1.5"/>
+                            <!-- Water fill -->
+                            <clipPath id="wx-rain-clip"><rect x="14" y="18" width="42" height="72"/></clipPath>
+                            <rect id="wx-rain-fill" x="14" y="90" width="42" height="0" fill="#3B82F6" opacity="0.6" clip-path="url(#wx-rain-clip)"/>
+                            <ellipse id="wx-rain-fill-top" cx="35" cy="90" rx="21" ry="5.5" fill="#60A5FA" opacity="0.55"/>
+                            <!-- Tick marks -->
+                            <line x1="50" y1="34" x2="55" y2="34" stroke="rgba(255,255,255,0.28)" stroke-width="1"/>
+                            <line x1="50" y1="52" x2="55" y2="52" stroke="rgba(255,255,255,0.28)" stroke-width="1"/>
+                            <line x1="50" y1="70" x2="55" y2="70" stroke="rgba(255,255,255,0.28)" stroke-width="1"/>
+                            <line x1="50" y1="88" x2="55" y2="88" stroke="rgba(255,255,255,0.28)" stroke-width="1"/>
+                        </svg>
+                    </div>
+                    <div class="wx-stat-main">
+                        <span class="wx-stat-value" id="wx-rain-rate">--</span>
+                        <span class="wx-stat-unit">in/hr</span>
+                    </div>
+                    <div style="margin-top:0.35rem;display:grid;grid-template-columns:1fr 1fr;gap:0.25rem 0.5rem">
+                        <div>
+                            <div style="font-size:0.5rem;font-weight:700;letter-spacing:0.09em;text-transform:uppercase;color:var(--muted-2)">Today</div>
+                            <div style="font-size:1.05rem;font-weight:700;color:#60A5FA;font-variant-numeric:tabular-nums"><span id="wx-rain-today">--</span> <span style="font-size:0.65rem;font-weight:500;color:var(--muted)">in</span></div>
+                        </div>
+                        <div>
+                            <div style="font-size:0.5rem;font-weight:700;letter-spacing:0.09em;text-transform:uppercase;color:var(--muted-2)">Month</div>
+                            <div style="font-size:1.05rem;font-weight:700;color:#60A5FA;font-variant-numeric:tabular-nums"><span id="wx-rain-month">--</span> <span style="font-size:0.65rem;font-weight:500;color:var(--muted)">in</span></div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Humidity -->
-                <div class="wx-gauge-card">
-                    <span class="wx-gauge-label">Humidity</span>
-                    <svg viewBox="0 0 100 105" width="100" height="105">
-                        <!-- Leaf shape -->
-                        <path d="M20 80 Q10 40 40 20 Q55 35 55 60 Q55 80 35 85 Z" fill="#22C55E" opacity="0.85"/>
-                        <path d="M30 85 Q20 50 48 28 Q60 42 58 65 Q56 85 40 88 Z" fill="#16A34A" opacity="0.7"/>
-                        <path d="M35 82 Q30 60 46 40" stroke="rgba(255,255,255,0.3)" stroke-width="1.5" fill="none"/>
-                        <!-- Water drop -->
-                        <path d="M72 38 Q72 20 62 15 Q52 20 52 38 Q52 52 62 55 Q72 52 72 38 Z" fill="#3B82F6" opacity="0.9"/>
-                        <!-- Humidity % inside drop -->
-                        <text id="wx-hum-val" x="62" y="40" text-anchor="middle" fill="white" font-size="11" font-weight="700">--</text>
-                        <text x="62" y="51" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-size="8">%</text>
-                        <!-- Dew point -->
-                        <text x="50" y="75" text-anchor="middle" fill="#22C55E" font-size="8" font-weight="700">DewPoint</text>
-                        <text id="wx-dew-val" x="50" y="87" text-anchor="middle" fill="#22C55E" font-size="10" font-weight="700">-- °F</text>
-                    </svg>
+                <div class="wx-stat-card" id="wx-card-humidity" style="--wx-color:#22C55E">
+                    <span class="wx-stat-label">Humidity</span>
+                    <div class="wx-stat-visual">
+                        <svg viewBox="0 0 80 88" width="56" height="62">
+                            <path d="M40 8 Q62 38 62 56 Q62 76 40 82 Q18 76 18 56 Q18 38 40 8 Z"
+                                fill="rgba(34,197,94,0.14)" stroke="rgba(34,197,94,0.55)" stroke-width="1.5"/>
+                            <path d="M31 28 Q27 44 28 56" stroke="rgba(255,255,255,0.18)" stroke-width="2" fill="none" stroke-linecap="round"/>
+                        </svg>
+                    </div>
+                    <div style="display:flex;align-items:flex-end;gap:0.7rem;margin-top:0.1rem">
+                        <div>
+                            <div class="wx-stat-main">
+                                <span class="wx-stat-value" id="wx-hum-val">--</span>
+                                <span class="wx-stat-unit">%</span>
+                            </div>
+                            <div class="wx-stat-sub">Humidity</div>
+                        </div>
+                        <div style="width:1px;height:2.4rem;background:rgba(255,255,255,0.08);flex-shrink:0;margin-bottom:0.35rem"></div>
+                        <div>
+                            <div class="wx-stat-main">
+                                <span class="wx-stat-value" id="wx-dew-val">--</span>
+                                <span class="wx-stat-unit">°F</span>
+                            </div>
+                            <div class="wx-stat-sub">Dew point</div>
+                        </div>
+                    </div>
                 </div>
+
 
                 <!-- UV Index -->
-                <div class="wx-gauge-card">
-                    <span class="wx-gauge-label">UV Index</span>
-                    <svg viewBox="0 0 100 105" width="100" height="105">
-                        <!-- Pyramid tiers (5 levels, widest at bottom) -->
-                        <rect id="wx-uv-t5" x="6"  y="10" width="88" height="16" rx="2" fill="rgba(139,92,246,0.25)" stroke="rgba(139,92,246,0.4)" stroke-width="1"/>
-                        <rect id="wx-uv-t4" x="14" y="30" width="72" height="16" rx="2" fill="rgba(239,68,68,0.25)"  stroke="rgba(239,68,68,0.4)"  stroke-width="1"/>
-                        <rect id="wx-uv-t3" x="22" y="50" width="56" height="16" rx="2" fill="rgba(249,115,22,0.25)" stroke="rgba(249,115,22,0.4)" stroke-width="1"/>
-                        <rect id="wx-uv-t2" x="30" y="70" width="40" height="16" rx="2" fill="rgba(234,179,8,0.25)"  stroke="rgba(234,179,8,0.4)"  stroke-width="1"/>
-                        <rect id="wx-uv-t1" x="38" y="90" width="24" height="12" rx="2" fill="rgba(34,197,94,0.25)"  stroke="rgba(34,197,94,0.4)"  stroke-width="1"/>
-                        <!-- Labels -->
-                        <text x="50" y="22"  text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="7.5">11+</text>
-                        <text x="50" y="42"  text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="7.5">8–10</text>
-                        <text x="50" y="62"  text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="7.5">6–7</text>
-                        <text x="50" y="82"  text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="7.5">3–5</text>
-                        <text x="50" y="99"  text-anchor="middle" fill="rgba(255,255,255,0.5)" font-size="7">1–2</text>
-                    </svg>
-                    <span class="wx-gauge-val">UV: <span id="wx-uv-val">--</span></span>
+                <div class="wx-stat-card" id="wx-card-uv" style="--wx-color:#A855F7">
+                    <span class="wx-stat-label">UV Index</span>
+                    <div style="margin:0.65rem 0 0.5rem">
+                        <div class="wx-uv-bar">
+                            <div class="wx-uv-bar-marker" id="wx-uv-marker"></div>
+                        </div>
+                        <div class="wx-uv-bar-labels">
+                            <span>Low</span><span>Mod</span><span>High</span><span>V.Hi</span><span>Ext</span>
+                        </div>
+                    </div>
+                    <div class="wx-stat-main">
+                        <span class="wx-stat-value" id="wx-uv-val">--</span>
+                    </div>
+                    <span class="wx-stat-sub" id="wx-uv-cat">--</span>
                 </div>
 
-                <!-- LUX / Light -->
-                <div class="wx-gauge-card">
-                    <span class="wx-gauge-label">Light</span>
-                    <svg viewBox="0 0 100 105" width="100" height="105">
-                        <!-- Moon (shown when dark) -->
-                        <g id="wx-lux-moon">
-                            <path d="M62 22 Q40 30 40 55 Q40 78 62 84 Q38 84 30 65 Q22 46 36 30 Z" fill="#F59E0B"/>
-                            <circle cx="74" cy="28" r="4" fill="#FCD34D"/>
-                            <circle cx="80" cy="45" r="2.5" fill="#FCD34D"/>
-                        </g>
-                        <!-- Sun (shown when bright) -->
-                        <g id="wx-lux-sun" style="display:none">
-                            <circle cx="50" cy="52" r="20" fill="#F59E0B"/>
-                            <line x1="50" y1="16" x2="50" y2="26" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
-                            <line x1="50" y1="78" x2="50" y2="88" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
-                            <line x1="14" y1="52" x2="24" y2="52" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
-                            <line x1="76" y1="52" x2="86" y2="52" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
-                            <line x1="25" y1="27" x2="32" y2="34" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
-                            <line x1="68" y1="70" x2="75" y2="77" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
-                            <line x1="75" y1="27" x2="68" y2="34" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
-                            <line x1="32" y1="70" x2="25" y2="77" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
-                        </g>
-                    </svg>
-                    <span class="wx-gauge-val">LUX: <span id="wx-lux-val">--</span></span>
+                <!-- Light -->
+                <div class="wx-stat-card" id="wx-card-light" style="--wx-color:#F59E0B">
+                    <span class="wx-stat-label">Light</span>
+                    <div class="wx-stat-visual">
+                        <svg viewBox="0 0 100 105" width="80" height="85">
+                            <g id="wx-lux-moon">
+                                <!-- Moon disc (dark base) -->
+                                <circle cx="50" cy="52" r="22" fill="rgba(255,255,255,0.07)" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>
+                                <!-- Lit portion — phase arc drawn by JS -->
+                                <path id="wx-moon-phase" fill="#F59E0B" d=""/>
+                                <!-- Stars -->
+                                <circle cx="82" cy="22" r="1.8" fill="#FCD34D" opacity="0.7"/>
+                                <circle cx="88" cy="42" r="1.1" fill="#FCD34D" opacity="0.5"/>
+                                <circle cx="76" cy="13" r="1.3" fill="#FCD34D" opacity="0.4"/>
+                                <circle cx="91" cy="30" r="0.9" fill="#FCD34D" opacity="0.45"/>
+                                <circle cx="18" cy="20" r="1.1" fill="#FCD34D" opacity="0.3"/>
+                            </g>
+                            <g id="wx-lux-sun" style="display:none">
+                                <circle cx="50" cy="52" r="20" fill="#F59E0B"/>
+                                <line x1="50" y1="16" x2="50" y2="26" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
+                                <line x1="50" y1="78" x2="50" y2="88" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
+                                <line x1="14" y1="52" x2="24" y2="52" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
+                                <line x1="76" y1="52" x2="86" y2="52" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
+                                <line x1="25" y1="27" x2="32" y2="34" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
+                                <line x1="68" y1="70" x2="75" y2="77" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
+                                <line x1="75" y1="27" x2="68" y2="34" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
+                                <line x1="32" y1="70" x2="25" y2="77" stroke="#FCD34D" stroke-width="3" stroke-linecap="round"/>
+                            </g>
+                        </svg>
+                    </div>
+                    <div class="wx-stat-main">
+                        <span class="wx-stat-value" id="wx-lux-val">--</span>
+                        <span class="wx-stat-unit">lux</span>
+                    </div>
+                    <span class="wx-stat-sub" id="wx-lux-desc">Night</span>
                 </div>
 
                 <!-- Lightning -->
-                <div class="wx-gauge-card">
-                    <span class="wx-gauge-label">Lightning</span>
-                    <svg viewBox="0 0 80 105" width="80" height="105">
-                        <polygon id="wx-strike-bolt" points="46,10 28,55 42,55 34,95 62,45 46,45" fill="rgba(255,255,255,0.1)" stroke="rgba(255,255,255,0.2)" stroke-width="1.5" stroke-linejoin="round"/>
-                    </svg>
-                    <span class="wx-gauge-val"><span id="wx-strike-val">--</span></span>
-                    <span class="wx-gauge-sub" id="wx-strike-dist"></span>
+                <div class="wx-stat-card" id="wx-card-lightning" style="--wx-color:#FCD34D">
+                    <span class="wx-stat-label">Lightning</span>
+                    <div class="wx-stat-visual">
+                        <svg viewBox="0 0 80 105" width="60" height="82">
+                            <polygon id="wx-strike-bolt" points="46,10 28,55 42,55 34,95 62,45 46,45"
+                                fill="rgba(255,255,255,0.07)" stroke="rgba(255,255,255,0.18)" stroke-width="1.5" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <div class="wx-stat-main">
+                        <span class="wx-stat-value" id="wx-strike-val">--</span>
+                        <span class="wx-stat-unit">strikes</span>
+                    </div>
+                    <span class="wx-stat-sub" id="wx-strike-dist">-- mi away</span>
                 </div>
 
+            </div>
+            <!-- WX History Charts -->
+            <div style="border-top:1px solid rgba(255,255,255,0.05)">
+                <div style="display:flex;align-items:center;gap:0.6rem;padding:0.5rem 0.9rem 0.15rem;font-size:0.58rem;font-weight:700;letter-spacing:0.09em;text-transform:uppercase;color:var(--muted-2)">
+                    WX History · <span id="wx-history-span" style="font-weight:400;color:var(--muted);text-transform:none;letter-spacing:0">collecting data…</span>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:rgba(255,255,255,0.04)">
+                    <div id="wx-chart-panel-temp" style="background:var(--bg-a);padding:0.75rem 0.9rem">
+                        <div class="wx-chart-label">Temperature &amp; Dew Point · °F
+                            <span style="float:right;font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted)">
+                                <span style="display:inline-block;width:10px;height:2px;background:#F97316;vertical-align:middle;margin-right:3px;border-radius:1px"></span>Temp
+                                <span style="display:inline-block;width:10px;height:2px;background:#3B82F6;vertical-align:middle;margin:0 3px 0 8px;border-radius:1px"></span>Dew pt
+                            </span>
+                        </div>
+                        <canvas id="wx-chart-temp" height="140" style="display:block;width:100%"></canvas>
+                    </div>
+                    <div id="wx-chart-panel-hum" style="background:var(--bg-a);padding:0.75rem 0.9rem">
+                        <div class="wx-chart-label">Humidity · %</div>
+                        <canvas id="wx-chart-hum" height="140" style="display:block;width:100%"></canvas>
+                    </div>
+                    <div id="wx-chart-panel-wind" style="background:var(--bg-a);padding:0.75rem 0.9rem">
+                        <div class="wx-chart-label">Wind Speed · mph</div>
+                        <canvas id="wx-chart-wind" height="140" style="display:block;width:100%"></canvas>
+                    </div>
+                    <div id="wx-chart-panel-rain" style="background:var(--bg-a);padding:0.75rem 0.9rem">
+                        <div class="wx-chart-label">Precipitation · in (today)</div>
+                        <canvas id="wx-chart-rain" height="140" style="display:block;width:100%"></canvas>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -10184,10 +10349,6 @@
             if (_rptStopBtn) _rptStopBtn._stopFn = _stopMonitor;
             window._sdrStopFns[sdr.id.toLowerCase()] = _stopMonitor;
 
-            ['sb-rpt-device', 'rpt-mon-device'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.hidden = true;
-            });
             [
                 { titleId: 'sb-rpt-title', stopId: 'sb-rpt-stop-btn' },
                 { titleId: 'rpt-mon-title', stopId: 'rpt-mon-stop-btn' },
@@ -12373,126 +12534,483 @@
             return row;
         };
 
-        const _refreshGauges = (events) => {
-            const latest = {};
-            const fields = ['temperature_F','humidity','wind_avg_mi_h','wind_dir_deg','rain_in','uv','lux','strike_count','storm_dist','strike_distance'];
-            const atlasOnly = events.filter(ev => (ev.model || '') === 'Acurite-Atlas');
-            for (const ev of atlasOnly) {
-                for (const f of fields) { if (!(f in latest) && ev[f] != null) latest[f] = ev[f]; }
-                if (fields.every(f => f in latest)) break;
+        const _COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+        const _compassDir = deg => _COMPASS[Math.round(deg / 22.5) % 16];
+        const _uvCat = uv => uv >= 11 ? 'Extreme' : uv >= 8 ? 'Very High' : uv >= 6 ? 'High' : uv >= 3 ? 'Moderate' : 'Low';
+        const _luxDesc = lux => lux >= 10000 ? 'Direct sunlight' : lux >= 1000 ? 'Overcast / cloudy' : 'Dusk / dawn';
+
+        // Moon phase helpers
+        const _getMoonAge = () => {
+            const epoch = new Date(Date.UTC(2000, 0, 6, 18, 14)); // known new moon
+            const days  = (Date.now() - epoch) / 86400000;
+            return ((days % 29.53058867) + 29.53058867) % 29.53058867; // 0–29.53 days
+        };
+        const _moonPhaseName = age => {
+            const p = age / 29.53058867;
+            if (p < 0.033 || p >= 0.967) return 'New Moon';
+            if (p < 0.242) return 'Waxing Crescent';
+            if (p < 0.283) return 'First Quarter';
+            if (p < 0.483) return 'Waxing Gibbous';
+            if (p < 0.533) return 'Full Moon';
+            if (p < 0.742) return 'Waning Gibbous';
+            if (p < 0.783) return 'Last Quarter';
+            return 'Waning Crescent';
+        };
+        const _initTempTicks = () => {
+            if (_tempTicksInited) return;
+            _tempTicksInited = true;
+            const g = document.getElementById('wx-temp-ticks');
+            if (!g) return;
+            for (let t = 0; t <= 100; t += 10) {
+                const major = t % 20 === 0;
+                const rot   = 135 + (t / 100) * 240;
+                const ln    = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                ln.setAttribute('x1', '60');
+                ln.setAttribute('y1', '14');
+                ln.setAttribute('x2', '60');
+                ln.setAttribute('y2', major ? '6' : '10');
+                ln.setAttribute('stroke', major ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.22)');
+                ln.setAttribute('stroke-width', major ? '1.5' : '1');
+                ln.setAttribute('transform', `rotate(${rot} 60 68)`);
+                g.appendChild(ln);
             }
+        };
+
+        const _moonPhasePath = (p, cx, cy, r) => {
+            if (p <= 0.01 || p >= 0.99) return ''; // new moon — dark disc
+            const waxing  = p < 0.5;
+            const gibbous = p > 0.25 && p < 0.75;
+            const ex = (Math.abs(Math.cos(p * 2 * Math.PI)) * r).toFixed(2);
+            const s1 = waxing ? 1 : 0;
+            const s2 = gibbous ? (waxing ? 0 : 1) : (waxing ? 1 : 0);
+            return `M${cx},${cy-r} A${r},${r},0,0,${s1},${cx},${cy+r} A${ex},${r},0,0,${s2},${cx},${cy-r}Z`;
+        };
+
+        let _selectedKey     = null;
+        let _windMaxSeen     = 0;
+        let _compassInited   = false;
+        let _tempTicksInited = false;
+        let _presInited    = false;
+        let _presHistory   = [];  // [{t, v}] inHg, last 3 hours
+        let _rainDay       = null; // { date:'YYYY-MM-DD', startVal }
+        let _rainMonth     = null; // { month:'YYYY-MM', startVal }
+        let _rainRateData  = [];   // [{t, v}] recent readings for rate calc
+        let _wxHistory     = [];   // [{t, tempF, dewF, hum, windSpd, rainToday}]
+
+        // Merge all events for same sensor key so Atlas subtype 37 (temp) + 38 (wind dir) coexist
+        const _aggregateEvents = (events) => {
+            const agg = new Map();
+            for (const e of events) {
+                const key = (e.model || '') + '#' + (e.id || '');
+                if (!agg.has(key)) { agg.set(key, { ...e }); }
+                else {
+                    const a = agg.get(key);
+                    for (const [k, v] of Object.entries(e)) {
+                        if (a[k] == null && v != null) a[k] = v;
+                    }
+                }
+            }
+            return agg;
+        };
+
+        const _initCompass = () => {
+            if (_compassInited) return;
+            const g = document.getElementById('wx-compass-ticks');
+            if (!g) return;
+            _compassInited = true;
+            const cx = 65, cy = 65, R = 56.5; // outer edge of tick zone
+            const lines = [];
+            for (let deg = 0; deg < 360; deg += 2) {
+                const isCard = deg % 90 === 0;
+                const isMaj  = deg % 45 === 0 && !isCard;
+                const isMed  = deg % 15 === 0 && deg % 45 !== 0;
+                const isSm   = deg % 5  === 0 && deg % 15 !== 0;
+                const len = isCard ? 15 : isMaj ? 11 : isMed ? 7 : isSm ? 4 : 2.5;
+                const sw  = isCard ? 2   : isMaj ? 1.5 : isMed ? 1.2 : 0.9;
+                const op  = isCard ? 0.85 : isMaj ? 0.65 : isMed ? 0.48 : isSm ? 0.3 : 0.18;
+                const rad = (deg - 90) * Math.PI / 180;
+                const x1  = (cx + (R - len) * Math.cos(rad)).toFixed(2);
+                const y1  = (cy + (R - len) * Math.sin(rad)).toFixed(2);
+                const x2  = (cx + R * Math.cos(rad)).toFixed(2);
+                const y2  = (cy + R * Math.sin(rad)).toFixed(2);
+                lines.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="white" stroke-width="${sw}" stroke-opacity="${op}"/>`);
+            }
+            g.innerHTML = lines.join('');
+        };
+
+        const _drawChart = (id, series, opts = {}) => {
+            const canvas = document.getElementById(id);
+            if (!canvas) return;
+            const allPts = series.flatMap(s => s.pts);
+            const r = canvas.getBoundingClientRect();
+            const W = Math.max(r.width || 300, 100), H = 140;
+            canvas.width = W * 2; canvas.height = H * 2;
+            const ctx = canvas.getContext('2d');
+            ctx.scale(2, 2);
+            if (!allPts.length) {
+                ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
+                ctx.fillText('Collecting data…', W/2, H/2); return;
+            }
+            const PL=40, PR=6, PT=8, PB=22, cw=W-PL-PR, ch=H-PT-PB;
+            let lo = opts.yMin ?? Math.min(...allPts.map(p=>p.v));
+            let hi = opts.yMax ?? Math.max(...allPts.map(p=>p.v));
+            const margin = (hi - lo) * 0.08 || 0.5;
+            if (opts.yMin == null) lo = lo - margin;
+            if (opts.yMax == null) hi = hi + margin;
+            const yr = hi - lo || 1;
+            const tLo = Math.min(...allPts.map(p=>p.t)), tHi = Math.max(...allPts.map(p=>p.t));
+            const tr = tHi - tLo || 1;
+            const pxX = t => PL + (t-tLo)/tr*cw;
+            const pxY = v => PT + ch*(1-(v-lo)/yr);
+            // Grid
+            for (let i = 0; i <= 4; i++) {
+                const y = PT + ch*(1-i/4), v = lo + yr*i/4;
+                ctx.strokeStyle='rgba(255,255,255,0.055)'; ctx.lineWidth=0.5;
+                ctx.beginPath(); ctx.moveTo(PL,y); ctx.lineTo(PL+cw,y); ctx.stroke();
+                ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.font='8px system-ui'; ctx.textAlign='right';
+                const lbl = opts.pct ? v.toFixed(0)+'%' : v.toFixed(opts.dec??1);
+                ctx.fillText(lbl, PL-3, y+3);
+            }
+            // Series lines
+            for (const s of series) {
+                if (!s.pts.length) continue;
+                ctx.strokeStyle=s.color; ctx.lineWidth=1.5; ctx.lineJoin='round';
+                if (s.fill) {
+                    ctx.beginPath(); ctx.moveTo(pxX(s.pts[0].t), pxY(Math.max(lo,0)));
+                    for (const p of s.pts) ctx.lineTo(pxX(p.t), pxY(p.v));
+                    ctx.lineTo(pxX(s.pts[s.pts.length-1].t), pxY(Math.max(lo,0)));
+                    ctx.closePath(); ctx.fillStyle=s.fill; ctx.fill();
+                }
+                ctx.beginPath(); let first=true;
+                for (const p of s.pts) {
+                    const [x,y]=[pxX(p.t),pxY(p.v)];
+                    first ? (ctx.moveTo(x,y),first=false) : ctx.lineTo(x,y);
+                }
+                ctx.stroke();
+            }
+            // X axis time labels
+            ctx.fillStyle='rgba(255,255,255,0.28)'; ctx.font='7.5px system-ui'; ctx.textAlign='center';
+            for (let i=0; i<=4; i++) {
+                const t=tLo+tr*(i/4), x=PL+cw*(i/4);
+                const d=new Date(t);
+                ctx.fillText(d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',hour12:false}), x, H-4);
+            }
+        };
+
+        const _renderCharts = () => {
+            if (_wxHistory.length < 2) return;
+            const span = document.getElementById('wx-history-span');
+            if (span) {
+                const dur = (_wxHistory.at(-1).t - _wxHistory[0].t) / 60000;
+                span.textContent = dur < 60 ? Math.round(dur)+' min' : (dur/60).toFixed(1)+' hr';
+            }
+            const pts = k => _wxHistory.filter(d=>d[k]!=null).map(d=>({t:d.t, v:d[k]}));
+            _drawChart('wx-chart-temp', [
+                { color:'#F97316', pts: pts('tempF') },
+                { color:'#3B82F6', pts: pts('dewF')  },
+            ]);
+            _drawChart('wx-chart-hum',  [{ color:'#22C55E', pts: pts('hum'), fill:'rgba(34,197,94,0.08)' }], { yMin:0, yMax:100, pct:true });
+            _drawChart('wx-chart-wind', [{ color:'#20b8a0', pts: pts('windSpd'), fill:'rgba(32,184,160,0.08)' }], { yMin:0, dec:1 });
+            _drawChart('wx-chart-rain', [{ color:'#60A5FA', pts: pts('rainToday'), fill:'rgba(96,165,250,0.1)' }], { yMin:0, dec:2 });
+        };
+
+        const _initPressure = () => {
+            if (_presInited) return;
+            const g = document.getElementById('wx-pres-scale');
+            if (!g) return;
+            _presInited = true;
+            const cx = 70, cy = 70;
+            const MIN_HG = 28.0, MAX_HG = 31.5, RANGE = 3.5;
+            const START = -135, SWEEP = 270;
+            const toAngle = p => START + (p - MIN_HG) / RANGE * SWEEP;
+            const toXY = (angleDeg, r) => {
+                const rad = (angleDeg - 90) * Math.PI / 180;
+                return [(cx + r * Math.cos(rad)).toFixed(2), (cy + r * Math.sin(rad)).toFixed(2)];
+            };
+            const els = [];
+            // Tick marks every 0.1 inHg
+            for (let i = 0; i <= 35; i++) {
+                const p = MIN_HG + i * 0.1;
+                const major = i % 5 === 0;
+                const a = toAngle(p);
+                const [x1,y1] = toXY(a, 66);
+                const [x2,y2] = toXY(a, major ? 55 : 60);
+                els.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="white" stroke-width="${major ? 1.8 : 0.9}" stroke-opacity="${major ? 0.7 : 0.35}"/>`);
+            }
+            // inHg labels (inside face near edge)
+            for (const p of [28.5, 29, 29.5, 30, 30.5, 31]) {
+                const a = toAngle(p);
+                const [x, y] = toXY(a, 46);
+                els.push(`<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" fill="rgba(255,255,255,0.7)" font-size="8" font-weight="600">${p}</text>`);
+            }
+            // hPa labels (inside, dimmer)
+            for (const hpa of [960, 990, 1013, 1040]) {
+                const p = hpa * 0.02953;
+                if (p < MIN_HG || p > MAX_HG) continue;
+                const a = toAngle(p);
+                const [x, y] = toXY(a, 33);
+                els.push(`<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" fill="rgba(255,255,255,0.28)" font-size="6.5">${hpa}</text>`);
+            }
+            g.innerHTML = els.join('');
+        };
+
+        const _presPrediction = (presHg, trendPerHr) => {
+            const rising  = trendPerHr >  0.02;
+            const falling = trendPerHr < -0.02;
+            const fast    = Math.abs(trendPerHr) > 0.06;
+            if (presHg >= 30.5)                        return fast && falling ? 'Fair → Unsettled' : 'Clear · Dry';
+            if (presHg >= 30.2 && !falling)            return 'Fair Weather';
+            if (presHg >= 30.2 && falling && !fast)    return 'Fair → Cloudy';
+            if (presHg >= 30.2 && falling && fast)     return 'Rapidly Changing';
+            if (presHg >= 29.8 && rising)              return fast ? 'Gusty — Clearing' : 'Clearing Soon';
+            if (presHg >= 29.8 && !rising && !falling) return 'Variable';
+            if (presHg >= 29.8 && falling && !fast)    return 'Rain Likely';
+            if (presHg >= 29.8 && falling && fast)     return 'Rain · Windy';
+            if (presHg >= 29.5 && rising)              return 'Clearing Later';
+            if (presHg >= 29.5 && !falling)            return 'Cloudy · Rain';
+            if (presHg >= 29.5 && falling)             return fast ? 'Violent Storm' : 'Storm Approaching';
+            if (presHg < 29.5 && rising)               return 'Slowly Clearing';
+            if (presHg < 29.5 && !falling)             return 'Heavy Rain';
+            return 'Violent Storm';
+        };
+
+        const _refreshGauges = (events) => {
+            const agg = _aggregateEvents(events);
+
+            // Always find Atlas so rain/wind baselines stay current regardless of selection
+            let atlasEntry = {};
+            const atlasOnly = events.filter(ev => (ev.model || '') === 'Acurite-Atlas');
+            for (const [k, v] of agg) {
+                if ((v.model || '').includes('Atlas')) { atlasEntry = v; break; }
+            }
+
+            // All display data comes exclusively from the selected sensor
+            const data = (_selectedKey && agg.has(_selectedKey)) ? agg.get(_selectedKey) : atlasEntry;
+            const has  = f => data[f] != null;
+
+            // Show/hide stat cards based on what the selected sensor actually reports
+            [['wx-card-temp',     'temperature_F'],
+             ['wx-card-wind',     'wind_avg_mi_h'],
+             ['wx-card-rain',     'rain_in'],
+             ['wx-card-humidity', 'humidity'],
+             ['wx-card-uv',       'uv'],
+             ['wx-card-light',    'lux'],
+             ['wx-card-lightning','strike_count'],
+            ].forEach(([id, f]) => { const el = document.getElementById(id); if (el) el.hidden = !has(f); });
+
+            // Show/hide chart panels the same way
+            [['wx-chart-panel-temp', 'temperature_F'],
+             ['wx-chart-panel-hum',  'humidity'],
+             ['wx-chart-panel-wind', 'wind_avg_mi_h'],
+             ['wx-chart-panel-rain', 'rain_in'],
+            ].forEach(([id, f]) => { const el = document.getElementById(id); if (el) el.hidden = !has(f); });
+
+            // Header: reflect selected sensor name
+            const nameEl = document.getElementById('wx-gauge-sensor-name');
+            if (nameEl) nameEl.textContent = (data.model || 'Sensor').replace('Acurite-', '') + (data.id ? ' #' + data.id : '') + ' · Live Conditions';
 
             const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
             const setAttr = (id, a, v) => { const el = document.getElementById(id); if (el) el.setAttribute(a, v); };
 
-            // Temperature needle (0–100°F → 135°–375° rotation)
-            const tempF = latest.temperature_F;
+            _initCompass();
+            _initTempTicks();
+
+            // Temperature needle + fill arcs (0–100°F → 135°–375°)
+            const tempF = data.temperature_F;
             if (tempF != null) {
                 setText('wx-temp-val', tempF.toFixed(1));
-                const deg = 135 + Math.min(Math.max(tempF, 0), 100) / 100 * 240;
-                setAttr('wx-temp-needle', 'transform', `rotate(${deg.toFixed(1)} 60 68)`);
+                const clamped = Math.min(Math.max(tempF, 0), 100);
+                setAttr('wx-temp-needle', 'transform', `rotate(${(135 + clamped / 100 * 240).toFixed(1)} 60 68)`);
+                const C      = 289.0;
+                const filled = clamped / 100 * 192.7;
+                const blueF  = Math.min(filled, 96.2);
+                const greenF = Math.max(0, Math.min(filled - 96.2, 57.7));
+                const redF   = Math.max(0, Math.min(filled - 153.9, 38.5));
+                setAttr('wx-temp-fill-b', 'stroke-dasharray', `${blueF.toFixed(1)} ${(C - blueF).toFixed(1)}`);
+                setAttr('wx-temp-fill-g', 'stroke-dasharray', `${greenF.toFixed(1)} ${(C - greenF).toFixed(1)}`);
+                setAttr('wx-temp-fill-r', 'stroke-dasharray', `${redF.toFixed(1)} ${(C - redF).toFixed(1)}`);
             }
 
-            // Wind direction arrow + speed
-            const spd = latest.wind_avg_mi_h;
-            const dir = latest.wind_dir_deg;
-            if (spd != null) setText('wx-wind-spd', spd.toFixed(1));
+            // Wind: compass rose + speed in center + gusts + session max
+            const spd  = data.wind_avg_mi_h;
+            const gust = data.wind_max_mi_h;
+            const dir  = data.wind_dir_deg;
+            if (spd != null) {
+                setText('wx-wind-spd', spd.toFixed(1));
+                _windMaxSeen = Math.max(_windMaxSeen, spd);
+                setText('wx-wind-max', _windMaxSeen.toFixed(1));
+            }
+            if (gust != null) setText('wx-wind-gust', gust.toFixed(1));
             if (dir != null) {
-                setAttr('wx-wind-arrow', 'transform', `rotate(${dir} 55 55)`);
+                setAttr('wx-wind-arrow', 'transform', `rotate(${dir} 65 65)`);
                 setText('wx-wind-dir', dir.toFixed(0) + '°');
+                setText('wx-wind-dir-txt', _compassDir(dir));
             }
 
-            // Rain cylinder fill (max 5 in = full 68 px)
-            const rain = latest.rain_in;
+            // Rain baseline: always track from Atlas so history stays consistent
+            const atlasRain = atlasEntry.rain_in;
+            if (atlasRain != null) {
+                const today2     = new Date().toISOString().slice(0, 10);
+                const thisMonth2 = new Date().toISOString().slice(0, 7);
+                if (!_rainDay   || _rainDay.date   !== today2)     _rainDay   = { date: today2,     startVal: atlasRain };
+                if (!_rainMonth || _rainMonth.month !== thisMonth2) _rainMonth = { month: thisMonth2, startVal: atlasRain };
+                _rainRateData.push({ t: Date.now(), v: atlasRain });
+                _rainRateData = _rainRateData.filter(d => d.t > Date.now() - 7200000);
+            }
+
+            // Rain display: only when selected sensor has rain_in
+            const rain = data.rain_in;
             if (rain != null) {
-                setText('wx-rain-val', rain.toFixed(2));
-                const h = Math.min(rain, 5) / 5 * 68;
-                const f = document.getElementById('wx-rain-fill');
-                if (f) { f.setAttribute('y', 90 - h); f.setAttribute('height', h); }
+                const todayTotal = _rainDay   ? Math.max(0, rain - _rainDay.startVal)   : 0;
+                const monthTotal = _rainMonth ? Math.max(0, rain - _rainMonth.startVal) : 0;
+                setText('wx-rain-today', todayTotal.toFixed(2));
+                setText('wx-rain-month', monthTotal.toFixed(2));
+                const hrAgo = Date.now() - 3600000;
+                const prev  = _rainRateData.find(d => d.t >= hrAgo);
+                if (prev) {
+                    const hrFrac = (Date.now() - prev.t) / 3600000;
+                    setText('wx-rain-rate', (hrFrac > 0 ? Math.max(0, rain - prev.v) / hrFrac : 0).toFixed(2));
+                } else {
+                    setText('wx-rain-rate', '0.00');
+                }
+                const fillH = Math.min(todayTotal, 2) / 2 * 72;
+                const fill  = document.getElementById('wx-rain-fill');
+                const top   = document.getElementById('wx-rain-fill-top');
+                if (fill) { fill.setAttribute('y', 90 - fillH); fill.setAttribute('height', fillH); }
+                if (top)  { top.setAttribute('cy', 90 - fillH); top.setAttribute('display', fillH > 0 ? '' : 'none'); }
             }
 
-            // Humidity + dew point
-            const hum = latest.humidity;
+            // Humidity + dew point (Magnus approximation)
+            const hum = data.humidity;
             if (hum != null) {
                 setText('wx-hum-val', hum);
-                if (tempF != null) setText('wx-dew-val', (tempF - (100 - hum) / 5 * 1.8).toFixed(1) + ' °F');
+                if (tempF != null) setText('wx-dew-val', (tempF - (100 - hum) / 5 * 1.8).toFixed(1));
             }
 
-            // UV pyramid tiers
-            const uv = latest.uv;
+            // UV — marker position + category label
+            const uv = data.uv;
             if (uv != null) {
                 setText('wx-uv-val', uv);
-                [
-                    { id:'wx-uv-t1', min:1,  col:'34,197,94'   },
-                    { id:'wx-uv-t2', min:3,  col:'234,179,8'   },
-                    { id:'wx-uv-t3', min:6,  col:'249,115,22'  },
-                    { id:'wx-uv-t4', min:8,  col:'239,68,68'   },
-                    { id:'wx-uv-t5', min:11, col:'139,92,246'  },
-                ].forEach(t => {
-                    const el = document.getElementById(t.id);
-                    if (!el) return;
-                    const on = uv >= t.min;
-                    el.setAttribute('fill',   `rgba(${t.col},${on ? 0.9 : 0.15})`);
-                    el.setAttribute('stroke', `rgba(${t.col},${on ? 0.9 : 0.35})`);
-                });
+                setText('wx-uv-cat', _uvCat(uv));
+                const marker = document.getElementById('wx-uv-marker');
+                if (marker) marker.style.left = Math.min(uv / 11 * 100, 97) + '%';
             }
 
-            // LUX — moon vs sun
-            const lux = latest.lux;
+            // Light (lux) — moon phase vs sun icon
+            const lux = data.lux;
             if (lux != null) {
                 setText('wx-lux-val', lux >= 1000 ? (lux/1000).toFixed(1)+'k' : Math.round(lux).toString());
                 const moon = document.getElementById('wx-lux-moon');
                 const sun  = document.getElementById('wx-lux-sun');
-                if (moon) moon.style.display = lux < 100 ? '' : 'none';
-                if (sun)  sun.style.display  = lux >= 100 ? '' : 'none';
-            }
-
-            // Lightning bolt
-            const strikes = latest.strike_count;
-            if (strikes != null) {
-                setText('wx-strike-val', strikes + (strikes === 1 ? ' strike' : ' strikes'));
-                const dist = latest.storm_dist ?? latest.strike_distance;
-                setText('wx-strike-dist', dist != null ? dist + ' mi away' : '');
-                const bolt = document.getElementById('wx-strike-bolt');
-                if (bolt) {
-                    bolt.setAttribute('fill',   strikes > 0 ? 'rgba(251,191,36,0.85)' : 'rgba(255,255,255,0.08)');
-                    bolt.setAttribute('stroke', strikes > 0 ? '#FCD34D'                : 'rgba(255,255,255,0.2)');
+                if (lux < 100) {
+                    if (moon) moon.style.display = '';
+                    if (sun)  sun.style.display  = 'none';
+                    const age  = _getMoonAge();
+                    const phEl = document.getElementById('wx-moon-phase');
+                    if (phEl) phEl.setAttribute('d', _moonPhasePath(age / 29.53058867, 50, 52, 22));
+                    setText('wx-lux-desc', _moonPhaseName(age));
+                } else {
+                    if (moon) moon.style.display = 'none';
+                    if (sun)  sun.style.display  = '';
+                    setText('wx-lux-desc', _luxDesc(lux));
                 }
             }
 
-            // Header age + dot
+            // Lightning bolt
+            const strikes = data.strike_count;
+            if (strikes != null) {
+                setText('wx-strike-val', strikes);
+                const dist = data.storm_dist ?? data.strike_distance;
+                setText('wx-strike-dist', dist != null ? dist + ' mi away' : 'no recent activity');
+                const bolt = document.getElementById('wx-strike-bolt');
+                if (bolt) {
+                    bolt.setAttribute('fill',   strikes > 0 ? 'rgba(251,191,36,0.85)' : 'rgba(255,255,255,0.07)');
+                    bolt.setAttribute('stroke', strikes > 0 ? '#FCD34D'                : 'rgba(255,255,255,0.18)');
+                }
+            }
+
+            // Header age + status dot from selected sensor's own events
+            const selEvents = _selectedKey
+                ? events.filter(e => ((e.model || '') + '#' + (e.id || '')) === _selectedKey)
+                : atlasOnly;
             const ageEl = document.getElementById('wx-gauge-age');
-            if (ageEl && atlasOnly.length > 0 && atlasOnly[0].time) ageEl.textContent = 'Updated ' + _fmtTime(atlasOnly[0].time);
+            if (ageEl && selEvents.length > 0 && selEvents[0].time) ageEl.textContent = 'Updated ' + _fmtTime(selEvents[0].time);
             const dot = document.getElementById('wx-gauge-dot');
-            if (dot) dot.className = atlasOnly.length > 0 ? 'status-dot ok' : 'status-dot warn';
+            if (dot) dot.className = selEvents.length > 0 ? 'status-dot ok' : 'status-dot warn';
         };
 
         const _refreshSidebar = (events) => {
-            const grid = document.getElementById('sb-acurite-grid');
+            const grid    = document.getElementById('sb-acurite-grid');
             const summary = document.getElementById('sb-acurite-summary');
+            const detail  = document.getElementById('wx-sensor-detail');
             if (!grid) return;
-            // Latest reading per sensor model
-            const seen = new Map();
-            for (const e of events) {
-                const key = (e.model || '') + '#' + (e.id || '');
-                if (!seen.has(key)) seen.set(key, e);
+
+            // Aggregate across subtypes so Atlas shows temp (subtype 37) even if newest is subtype 38
+            const seen = _aggregateEvents(events);
+
+            // Default selection: prefer Atlas, else first sensor
+            if (!_selectedKey || !seen.has(_selectedKey)) {
+                _selectedKey = null;
+                for (const k of seen.keys()) {
+                    if (!_selectedKey) _selectedKey = k;
+                    if (k.includes('Atlas')) { _selectedKey = k; break; }
+                }
             }
+
             grid.innerHTML = '';
-            seen.forEach((e) => {
-                const row = document.createElement('div');
-                row.className = 'link-row';
+            seen.forEach((e, key) => {
+                const row   = document.createElement('div');
                 const model = (e.model || '').replace('Acurite-', '');
                 const temp  = e.temperature_F != null ? e.temperature_F.toFixed(1) + '°F' : '';
                 const hum   = e.humidity != null ? e.humidity + '%' : '';
-                row.innerHTML = '<span class="status-dot ok"></span><strong>' + model + ' #' + (e.id ?? '?') + '</strong><span>' + [temp, hum].filter(Boolean).join(' · ') + '</span>';
+                row.className = 'wx-sensor-row' + (key === _selectedKey ? ' wx-active' : '');
+                row.innerHTML =
+                    '<span class="status-dot ok" style="flex-shrink:0"></span>' +
+                    '<strong style="font-size:0.78rem;flex:1">' + model + ' #' + (e.id ?? '?') + '</strong>' +
+                    '<span style="font-size:0.71rem;color:var(--muted)">' + [temp, hum].filter(Boolean).join(' · ') + '</span>';
+                row.addEventListener('click', () => {
+                    _selectedKey = key;
+                    _refreshSidebar(events);
+                    _refreshGauges(events);
+                    _renderCharts();
+                });
                 grid.appendChild(row);
             });
+
+            // Mini stat tiles for selected sensor
+            if (detail) {
+                const sel = seen.get(_selectedKey);
+                if (sel) {
+                    const tiles = [];
+                    if (sel.temperature_F != null) tiles.push({ lbl:'Temp',    val: sel.temperature_F.toFixed(1)+'°F', col:'#60A5FA' });
+                    if (sel.humidity      != null) tiles.push({ lbl:'Humidity', val: sel.humidity+'%',                  col:'#22C55E' });
+                    if (sel.wind_avg_mi_h != null) tiles.push({ lbl:'Wind',     val: sel.wind_avg_mi_h.toFixed(1)+' mph', col:'#20b8a0' });
+                    if (sel.rain_in       != null) tiles.push({ lbl:'Rain',     val: sel.rain_in.toFixed(2)+'"',        col:'#60A5FA' });
+                    if (sel.uv            != null) tiles.push({ lbl:'UV',       val: String(sel.uv),                    col:'#A855F7' });
+                    if (sel.strike_count  != null) tiles.push({ lbl:'Strikes',  val: String(sel.strike_count),          col:'#FCD34D' });
+                    if (tiles.length) {
+                        detail.hidden = false;
+                        detail.innerHTML = '<div class="wx-sensor-detail">' +
+                            tiles.map(t =>
+                                '<div class="wx-mini-tile">' +
+                                '<div class="wx-mini-lbl">' + t.lbl + '</div>' +
+                                '<div class="wx-mini-val" style="color:' + t.col + '">' + t.val + '</div>' +
+                                '</div>'
+                            ).join('') + '</div>';
+                    } else {
+                        detail.hidden = true;
+                    }
+                } else {
+                    detail.hidden = true;
+                }
+            }
+
             if (summary) summary.textContent = seen.size + ' sensor' + (seen.size !== 1 ? 's' : '') + ' · ' + events.length + ' events';
         };
 
         const _refresh = async () => {
             try {
-                const resp = await fetch(_API + '?limit=300', { cache: 'no-store', signal: AbortSignal.timeout(6000) });
+                const resp = await fetch(_API + '?limit=1000', { cache: 'no-store', signal: AbortSignal.timeout(6000) });
                 if (!resp.ok) return;
                 const data = await resp.json();
                 const events = data.events || [];
@@ -12513,6 +13031,27 @@
                 if (sbDot) { sbDot.className = events.length ? 'status-dot ok' : 'status-dot warn'; }
                 _refreshSidebar(events);
                 _refreshGauges(events);
+
+                // Accumulate WX history for charts (throttle to one record per 15s)
+                if (events.length) {
+                    const last = _wxHistory.at(-1);
+                    if (!last || Date.now() - last.t > 15000) {
+                        const agg    = _aggregateEvents(events);
+                        const atlas  = [...agg.values()].find(e => (e.model||'').includes('Atlas')) || {};
+                        const sel    = (_selectedKey && agg.has(_selectedKey)) ? agg.get(_selectedKey) : atlas;
+                        const tempF  = sel.temperature_F ?? null;
+                        const hum    = sel.humidity      ?? null;
+                        const dewF   = tempF != null && hum != null ? tempF - (100 - hum) / 5 * 1.8 : null;
+                        const rain   = atlas.rain_in ?? null;
+                        _wxHistory.push({
+                            t: Date.now(), tempF, dewF, hum,
+                            windSpd: atlas.wind_avg_mi_h ?? null,
+                            rainToday: (_rainDay && rain != null) ? Math.max(0, rain - _rainDay.startVal) : null,
+                        });
+                        if (_wxHistory.length > 7200) _wxHistory.shift();
+                    }
+                }
+                _renderCharts();
             } catch (_) {}
         };
 
@@ -12791,6 +13330,478 @@
         });
 
         _loadLib();
+    })();
+
+    // ── Wideband Waterfall ───────────────────────────────────────────────────
+    (() => {
+        const specCanvas    = document.getElementById('wf-spectrum');
+        const wfCanvas      = document.getElementById('wf-canvas');
+        const rulerCanvas   = document.getElementById('wf-ruler');
+        const overlayCanvas = document.getElementById('wf-overlay');
+        const wfWrap        = document.getElementById('wf-canvases');
+        if (!wfCanvas) return;
+
+        const specCtx    = specCanvas.getContext('2d');
+        const wfCtx      = wfCanvas.getContext('2d');
+        const rulerCtx   = rulerCanvas.getContext('2d');
+        const overlayCtx = overlayCanvas.getContext('2d');
+
+        let _ws          = null;
+        let _running     = false;
+        let _lastMeta    = { center_hz: 15e6, span_hz: 30e6 };
+        let _lastBins    = [];
+        let _retryTimer  = null;
+        let _retryCount  = 0;
+        const _RETRY_SEC = 8;
+
+        const startBtn  = document.getElementById('wf-start-btn');
+        const dot       = document.getElementById('wf-dot');
+        const floorEl   = document.getElementById('wf-floor');
+        const ceilEl    = document.getElementById('wf-ceil');
+        const floorLbl  = document.getElementById('wf-floor-lbl');
+        const ceilLbl   = document.getElementById('wf-ceil-lbl');
+        const errEl     = document.getElementById('wf-error');
+
+        const _showErr  = (msg) => { if (errEl) { errEl.textContent = msg; errEl.style.display = msg ? '' : 'none'; } };
+        const _clearErr = () => _showErr('');
+
+        function _scheduleRetry() {
+            if (_retryTimer) return;
+            let remaining = _RETRY_SEC;
+            const tick = () => {
+                if (!_running && !_retryTimer) return; // user stopped
+                _showErr(`KiWi slots full — retrying in ${remaining}s…`);
+                if (remaining <= 0) {
+                    _retryTimer = null;
+                    _retryCount++;
+                    _start();
+                } else {
+                    remaining--;
+                    _retryTimer = setTimeout(tick, 1000);
+                }
+            };
+            tick();
+        }
+
+        function _cancelRetry() {
+            if (_retryTimer) { clearTimeout(_retryTimer); _retryTimer = null; }
+            _retryCount = 0;
+        }
+
+        // ── Color map ─────────────────────────────────────────────────────
+        const _STOPS = [
+            [0.00,   0,   0,  40],
+            [0.20,   0,   0, 200],
+            [0.40,   0, 200, 200],
+            [0.60,   0, 200,   0],
+            [0.80, 220, 220,   0],
+            [1.00, 255,   0,   0],
+        ];
+        function _color(t) {
+            t = Math.max(0, Math.min(1, t));
+            let i = 0;
+            while (i < _STOPS.length - 2 && t > _STOPS[i + 1][0]) i++;
+            const [t0, r0, g0, b0] = _STOPS[i];
+            const [t1, r1, g1, b1] = _STOPS[i + 1];
+            const f = (t - t0) / (t1 - t0);
+            return [r0 + f*(r1-r0), g0 + f*(g1-g0), b0 + f*(b1-b0)];
+        }
+
+        // ── Sync canvas pixel widths ──────────────────────────────────────
+        function _syncWidths() {
+            const w = wfCanvas.offsetWidth;
+            if (w <= 0) return;
+            [specCanvas, wfCanvas, rulerCanvas, overlayCanvas].forEach(c => {
+                if (c.width !== w) c.width = w;
+            });
+            const h = (specCanvas.offsetHeight || 48) + (wfCanvas.offsetHeight || 280);
+            if (overlayCanvas.height !== h) overlayCanvas.height = h;
+        }
+
+        // ── Ham bands with names ──────────────────────────────────────────
+        const _BANDS = [
+            [1.8,  2.0,   '160m'],
+            [3.5,  4.0,   '80m' ],
+            [7.0,  7.3,   '40m' ],
+            [10.1, 10.15, '30m' ],
+            [14.0, 14.35, '20m' ],
+            [18.068,18.168,'17m'],
+            [21.0, 21.45, '15m' ],
+            [24.89,24.99, '12m' ],
+            [28.0, 29.7,  '10m' ],
+        ];
+
+        // ── Frequency ruler ───────────────────────────────────────────────
+        function _drawRuler(center_hz, span_hz) {
+            const w = rulerCanvas.width;
+            const h = rulerCanvas.height;
+            const lo = (center_hz - span_hz / 2) / 1e6;
+            const hi = (center_hz + span_hz / 2) / 1e6;
+            const spanMhz = hi - lo;
+            const xOf = mhz => Math.round((mhz - lo) / spanMhz * w);
+
+            rulerCtx.fillStyle = '#111';
+            rulerCtx.fillRect(0, 0, w, h);
+
+            // Ham band fills + labels
+            _BANDS.forEach(([a, b, name]) => {
+                if (b < lo || a > hi) return;
+                const x0 = xOf(Math.max(a, lo));
+                const x1 = xOf(Math.min(b, hi));
+                const bw = x1 - x0;
+                rulerCtx.fillStyle = 'rgba(32,184,160,0.15)';
+                rulerCtx.fillRect(x0, 0, bw, h);
+                // Left edge marker
+                rulerCtx.fillStyle = 'rgba(32,184,160,0.5)';
+                rulerCtx.fillRect(x0, 0, 1, h);
+                // Band name label (only if wide enough)
+                if (bw >= 18) {
+                    rulerCtx.font = 'bold 9px IBM Plex Mono, monospace';
+                    rulerCtx.textAlign = 'center';
+                    rulerCtx.fillStyle = 'rgba(32,184,160,0.9)';
+                    rulerCtx.fillText(name, x0 + bw / 2, h * 0.62);
+                }
+            });
+
+            // Frequency tick marks
+            const interval = spanMhz > 25 ? 5 : spanMhz > 10 ? 2 : spanMhz > 4 ? 1 : 0.5;
+            const muted = '#777';
+            rulerCtx.font = '9px IBM Plex Mono, monospace';
+            rulerCtx.textAlign = 'center';
+            const first = Math.ceil(lo / interval) * interval;
+            for (let mhz = first; mhz <= hi + 0.001; mhz = Math.round((mhz + interval) * 1000) / 1000) {
+                const px = xOf(mhz);
+                rulerCtx.fillStyle = 'rgba(255,255,255,0.25)';
+                rulerCtx.fillRect(px, 0, 1, 6);
+                rulerCtx.fillStyle = muted;
+                const label = Number.isInteger(mhz) ? mhz.toFixed(0) : mhz.toFixed(1);
+                rulerCtx.fillText(label, px, h - 2);
+            }
+        }
+
+        // ── Spectrum line ─────────────────────────────────────────────────
+        function _drawSpectrum(bins) {
+            const w = specCanvas.width;
+            const h = specCanvas.height;
+            const floor = parseFloat(floorEl.value);
+            const ceil  = parseFloat(ceilEl.value);
+
+            specCtx.fillStyle = '#000';
+            specCtx.fillRect(0, 0, w, h);
+
+            specCtx.beginPath();
+            specCtx.moveTo(0, h);
+            for (let px = 0; px < w; px++) {
+                const bi = Math.min(Math.floor(px * bins.length / w), bins.length - 1);
+                const t  = Math.max(0, Math.min(1, (bins[bi] - floor) / (ceil - floor)));
+                specCtx.lineTo(px, h - t * (h - 2));
+            }
+            specCtx.lineTo(w, h);
+            specCtx.closePath();
+            specCtx.fillStyle = 'rgba(32,184,160,0.25)';
+            specCtx.fill();
+
+            specCtx.beginPath();
+            specCtx.strokeStyle = '#20b8a0';
+            specCtx.lineWidth = 1;
+            for (let px = 0; px < w; px++) {
+                const bi = Math.min(Math.floor(px * bins.length / w), bins.length - 1);
+                const t  = Math.max(0, Math.min(1, (bins[bi] - floor) / (ceil - floor)));
+                const y  = h - t * (h - 2);
+                px === 0 ? specCtx.moveTo(px, y) : specCtx.lineTo(px, y);
+            }
+            specCtx.stroke();
+        }
+
+        // ── Waterfall scroll-and-paint ────────────────────────────────────
+        function _drawFrame(bins) {
+            _lastBins = bins;
+            const w = wfCanvas.width;
+            const h = wfCanvas.height;
+            const floor = parseFloat(floorEl.value);
+            const ceil  = parseFloat(ceilEl.value);
+
+            wfCtx.drawImage(wfCanvas, 0, 0, w, h - 1, 0, 1, w, h - 1);
+
+            const row = wfCtx.createImageData(w, 1);
+            const d   = row.data;
+            for (let px = 0; px < w; px++) {
+                const bi = Math.min(Math.floor(px * bins.length / w), bins.length - 1);
+                const t  = Math.max(0, Math.min(1, (bins[bi] - floor) / (ceil - floor)));
+                const [r, g, b] = _color(t);
+                const i = px * 4;
+                d[i] = r; d[i+1] = g; d[i+2] = b; d[i+3] = 255;
+            }
+            wfCtx.putImageData(row, 0, 0);
+        }
+
+        // ── Crosshair overlay ─────────────────────────────────────────────
+        function _drawCrosshair(clientX) {
+            const rect  = wfWrap.getBoundingClientRect();
+            const px    = Math.round(clientX - rect.left);
+            const w     = overlayCanvas.width;
+            const h     = overlayCanvas.height;
+            const specH = specCanvas.offsetHeight || 48;
+
+            overlayCtx.clearRect(0, 0, w, h);
+
+            // Dashed vertical line full height
+            overlayCtx.strokeStyle = 'rgba(255,255,255,0.55)';
+            overlayCtx.lineWidth   = 1;
+            overlayCtx.setLineDash([4, 4]);
+            overlayCtx.beginPath();
+            overlayCtx.moveTo(px + 0.5, 0);
+            overlayCtx.lineTo(px + 0.5, h);
+            overlayCtx.stroke();
+            overlayCtx.setLineDash([]);
+
+            // Frequency + dBm from last bins
+            const { center_hz, span_hz } = _lastMeta;
+            const freqHz  = (center_hz - span_hz / 2) + (px / w) * span_hz;
+            const freqMhz = freqHz / 1e6;
+            const bins    = _lastBins;
+            let dbmStr = '';
+            if (bins.length > 0) {
+                const bi  = Math.min(Math.floor(px * bins.length / w), bins.length - 1);
+                dbmStr = '  ' + bins[bi].toFixed(1) + ' dB';
+            }
+            const label = freqMhz.toFixed(4) + ' MHz' + dbmStr;
+
+            overlayCtx.font = '11px IBM Plex Mono, monospace';
+            const tw = overlayCtx.measureText(label).width;
+            let lx = px + 8;
+            if (lx + tw + 10 > w) lx = px - tw - 12;
+
+            const ty = specH + 18;
+            overlayCtx.fillStyle = 'rgba(0,0,0,0.80)';
+            overlayCtx.beginPath();
+            overlayCtx.roundRect(lx - 5, ty - 13, tw + 10, 18, 3);
+            overlayCtx.fill();
+            overlayCtx.fillStyle = '#e8e8e8';
+            overlayCtx.fillText(label, lx, ty);
+        }
+
+        function _clearCrosshair() {
+            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        }
+
+        // ── Mouse / drag state ────────────────────────────────────────────
+        let _dragStartX   = null;   // canvas-relative X where mousedown fired
+        let _isDragging   = false;  // true once pointer moves > 8 px from start
+        let _dragConsumed = false;  // prevents click handler firing after a drag
+        let _clickTimer   = null;
+
+        // ── Drag-selection overlay ────────────────────────────────────────
+        function _drawDragSelection(x0, x1) {
+            const w      = overlayCanvas.width;
+            const h      = overlayCanvas.height;
+            const specH  = specCanvas.offsetHeight || 48;
+            const left   = Math.min(x0, x1);
+            const right  = Math.max(x0, x1);
+            const wPx    = wfCanvas.offsetWidth || wfCanvas.width;
+            const { center_hz, span_hz } = _lastMeta;
+            const startHz = (center_hz - span_hz / 2) + (left  / wPx) * span_hz;
+            const endHz   = (center_hz - span_hz / 2) + (right / wPx) * span_hz;
+
+            overlayCtx.clearRect(0, 0, w, h);
+
+            // Shaded selection band
+            overlayCtx.fillStyle = 'rgba(32,184,160,0.15)';
+            overlayCtx.fillRect(left, specH, right - left, h - specH);
+
+            // Edge lines
+            overlayCtx.strokeStyle = 'rgba(32,184,160,0.9)';
+            overlayCtx.lineWidth   = 1;
+            overlayCtx.setLineDash([]);
+            overlayCtx.beginPath();
+            overlayCtx.moveTo(left  + 0.5, 0); overlayCtx.lineTo(left  + 0.5, h);
+            overlayCtx.moveTo(right + 0.5, 0); overlayCtx.lineTo(right + 0.5, h);
+            overlayCtx.stroke();
+
+            overlayCtx.font         = 'bold 11px monospace';
+            overlayCtx.textBaseline = 'top';
+
+            function _tag(label, cx, align) {
+                const lw = overlayCtx.measureText(label).width + 8;
+                const lx = align === 'right' ? cx - lw : cx;
+                overlayCtx.fillStyle = 'rgba(0,0,0,0.65)';
+                overlayCtx.fillRect(lx, specH + 4, lw, 17);
+                overlayCtx.fillStyle = '#20b8a0';
+                overlayCtx.fillText(label, lx + 4, specH + 6);
+            }
+            _tag((startHz / 1e6).toFixed(3) + ' MHz', left  + 2, 'left');
+            _tag((endHz   / 1e6).toFixed(3) + ' MHz', right - 2, 'right');
+
+            // Span badge centred in selection
+            const spanLabel = ((endHz - startHz) / 1e6).toFixed(2) + ' MHz';
+            const slw = overlayCtx.measureText(spanLabel).width + 8;
+            const midX = (left + right) / 2;
+            overlayCtx.fillStyle = 'rgba(0,0,0,0.65)';
+            overlayCtx.fillRect(midX - slw / 2, specH + 4, slw, 17);
+            overlayCtx.fillStyle = '#fff';
+            overlayCtx.fillText(spanLabel, midX - slw / 2 + 4, specH + 6);
+        }
+
+        // ── Mouse events ──────────────────────────────────────────────────
+        wfWrap.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            const rect  = wfWrap.getBoundingClientRect();
+            _dragStartX = e.clientX - rect.left;
+            _isDragging = false;
+        });
+
+        wfWrap.addEventListener('mousemove', (e) => {
+            if ((e.buttons & 1) && _dragStartX !== null) {
+                const rect = wfWrap.getBoundingClientRect();
+                const curX = e.clientX - rect.left;
+                if (!_isDragging && Math.abs(curX - _dragStartX) > 8) _isDragging = true;
+                if (_isDragging) { _drawDragSelection(_dragStartX, curX); return; }
+            }
+            _drawCrosshair(e.clientX);
+        });
+
+        wfWrap.addEventListener('mouseup', (e) => {
+            if (!_isDragging) { _dragStartX = null; return; }
+
+            const rect    = wfWrap.getBoundingClientRect();
+            const x0      = Math.min(_dragStartX, e.clientX - rect.left);
+            const x1      = Math.max(_dragStartX, e.clientX - rect.left);
+            _dragStartX   = null;
+            _isDragging   = false;
+            _dragConsumed = true;
+            _clearCrosshair();
+
+            const wPx  = wfCanvas.offsetWidth || wfCanvas.width;
+            const { center_hz, span_hz } = _lastMeta;
+            const startHz  = (center_hz - span_hz / 2) + (x0 / wPx) * span_hz;
+            const endHz    = (center_hz - span_hz / 2) + (x1 / wPx) * span_hz;
+            const newCenter = (startHz + endHz) / 2;
+            const newSpan   = Math.max(1e6, endHz - startHz);
+            document.getElementById('wf-center').value = (newCenter / 1e6).toFixed(3);
+            document.getElementById('wf-span').value   = (newSpan   / 1e6).toFixed(1);
+            if (_running) { _stop(); setTimeout(_start, 150); }
+        });
+
+        wfWrap.addEventListener('mouseleave', () => {
+            if (_isDragging) { _dragStartX = null; _isDragging = false; }
+            _clearCrosshair();
+        });
+
+        // ── Click to zoom in (single) / zoom out (double) ─────────────────
+        wfWrap.addEventListener('click', (e) => {
+            if (_dragConsumed) { _dragConsumed = false; return; }
+            if (_clickTimer) return;
+            _clickTimer = setTimeout(() => {
+                _clickTimer = null;
+                const rect   = wfWrap.getBoundingClientRect();
+                const px     = e.clientX - rect.left;
+                const w      = wfCanvas.offsetWidth || wfCanvas.width;
+                const { center_hz, span_hz } = _lastMeta;
+                const freqHz  = (center_hz - span_hz / 2) + (px / w) * span_hz;
+                const newSpan = Math.max(1e6, span_hz / 2);
+                document.getElementById('wf-center').value = (freqHz / 1e6).toFixed(3);
+                document.getElementById('wf-span').value   = (newSpan / 1e6).toFixed(1);
+                if (_running) { _stop(); setTimeout(_start, 150); }
+            }, 220);
+        });
+
+        wfWrap.addEventListener('dblclick', (e) => {
+            if (_clickTimer) { clearTimeout(_clickTimer); _clickTimer = null; }
+            const { center_hz, span_hz } = _lastMeta;
+            const newSpan = Math.min(32e6, span_hz * 2);
+            document.getElementById('wf-center').value = (center_hz / 1e6).toFixed(3);
+            document.getElementById('wf-span').value   = (newSpan / 1e6).toFixed(1);
+            if (_running) { _stop(); setTimeout(_start, 150); }
+        });
+
+        // ── WebSocket connection ──────────────────────────────────────────
+        function _start() {
+            if (_running) return;
+            _syncWidths();
+            // Clear canvases so old waterfall data doesn't scroll through on zoom/restart
+            wfCtx.fillStyle = '#000';
+            wfCtx.fillRect(0, 0, wfCanvas.width, wfCanvas.height);
+            specCtx.fillStyle = '#000';
+            specCtx.fillRect(0, 0, specCanvas.width, specCanvas.height);
+
+            const hostSel  = document.getElementById('wf-host-sel');
+            const centerEl = document.getElementById('wf-center');
+            const spanEl   = document.getElementById('wf-span');
+            const [kHost, kPort] = (hostSel.value || '').split(':');
+            const centerHz = Math.round(parseFloat(centerEl.value) * 1e6);
+            const spanHz   = Math.round(parseFloat(spanEl.value)   * 1e6);
+
+            const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+            const url = `${wsProto}://${location.host}/api/waterfall/ws` +
+                `?host=${encodeURIComponent(kHost)}&port=${kPort || 8073}` +
+                `&center_hz=${centerHz}&span_hz=${spanHz}`;
+
+            startBtn.textContent = 'Connecting…';
+            startBtn.disabled = true;
+            dot.className = 'status-dot';
+            _clearErr();
+
+            _ws = new WebSocket(url);
+
+            _ws.onopen = () => {
+                _running = true;
+                startBtn.textContent = 'Stop';
+                startBtn.disabled = false;
+                dot.className = 'status-dot ok';
+            };
+            _ws.onmessage = ({ data }) => {
+                try {
+                    const msg = JSON.parse(data);
+                    if (msg.error) {
+                        const slotsErr = msg.error.includes('slots taken') || msg.error.includes('slots full');
+                        if (slotsErr) { _scheduleRetry(); }
+                        else { _showErr('KiWi error: ' + msg.error); }
+                        return;
+                    }
+                    const { bins, center_hz, span_hz } = msg;
+                    _clearErr();
+                    _cancelRetry();
+                    _retryCount = 0;
+                    _lastMeta = { center_hz, span_hz };
+                    _drawFrame(bins);
+                    _drawSpectrum(bins);
+                    _drawRuler(center_hz, span_hz);
+                } catch (_) {}
+            };
+            _ws.onerror = () => { dot.className = 'status-dot bad'; };
+            _ws.onclose = () => {
+                _running = false;
+                _ws = null;
+                // If a retry is already scheduled, keep "Connecting" state alive
+                if (!_retryTimer) {
+                    startBtn.textContent = 'Start';
+                    startBtn.disabled = false;
+                    dot.className = 'status-dot';
+                    _clearCrosshair();
+                }
+            };
+        }
+
+        function _stop() {
+            _cancelRetry();
+            if (_ws) { _ws.close(); _ws = null; }
+            _running = false;
+            startBtn.textContent = 'Start';
+            startBtn.disabled = false;
+            dot.className = 'status-dot';
+            _clearErr();
+            _clearCrosshair();
+        }
+
+        startBtn.addEventListener('click', () => _running ? _stop() : _start());
+
+        floorEl.addEventListener('input', () => { floorLbl.textContent = floorEl.value + ' dB'; });
+        ceilEl.addEventListener('input',  () => { ceilLbl.textContent  = ceilEl.value  + ' dB'; });
+
+        new ResizeObserver(() => {
+            _syncWidths();
+            _drawRuler(_lastMeta.center_hz, _lastMeta.span_hz);
+        }).observe(wfWrap);
     })();
     </script>
 </body>
