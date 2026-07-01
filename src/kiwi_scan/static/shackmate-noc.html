@@ -13775,6 +13775,7 @@
             if (runningMission) {
                 _activeMissionId = runningMission.id;
                 _loadPreset(runningMission.id);
+                _p25UpdateCard(sdr, runningMission.name, runningMission.shortName, true);
                 if (launchBtn) launchBtn.textContent = 'Drop';
                 if (statusRow) {
                     statusRow.style.display = 'block';
@@ -13808,6 +13809,23 @@
 
         // ── launch / drop ─────────────────────────────────────────────────
 
+        const _p25UpdateCard = (sdr, missionName, shortName, active) => {
+            const cid        = (sdr?.id || '').toLowerCase();
+            const cardEl     = document.getElementById('sdr-card-' + cid);
+            const labelEl    = cardEl?.querySelector('.sdr-rx-label');
+            const statEl     = document.getElementById('sdr-stat-' + cid);
+            if (!cardEl) return;
+            if (active) {
+                if (labelEl) labelEl.textContent = 'P25 Scanner';
+                if (statEl)  { statEl.textContent = 'active · ' + (shortName || missionName || 'P25'); statEl.className = 'sdr-rx-stat ok'; }
+                cardEl.className = cardEl.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-ok';
+            } else {
+                if (labelEl) labelEl.textContent = sdr?.label || 'Open';
+                if (statEl)  { statEl.textContent = 'Available'; statEl.className = 'sdr-rx-stat'; }
+                cardEl.className = cardEl.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '').trimEnd();
+            }
+        };
+
         window._p25Launch = async (sdr) => {
             const launchBtn = document.getElementById('sdr-modal-launch');
 
@@ -13820,6 +13838,7 @@
                     if (!r.ok) { alert('Stop failed: ' + (d.error || r.status)); return; }
                     _missionData[_activeMissionId] = d;
                 } catch (e) { alert('Stop error: ' + e); return; }
+                _p25UpdateCard(sdr, null, null, false);
                 document.getElementById('sdr-launch-modal').hidden = true;
                 return;
             }
@@ -13870,6 +13889,7 @@
                 _missionData[missionId] = d;
             } catch (e) { alert('Launch error: ' + e); return; }
 
+            _p25UpdateCard(sdr, name, short || body.shortName, true);
             document.getElementById('sdr-launch-modal').hidden = true;
         };
 
