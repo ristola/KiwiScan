@@ -3429,6 +3429,9 @@
                 <button class="nav-btn" type="button" title="433 WX" data-view="wx433" aria-pressed="false">
                     <svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="14" r="2.4" fill="currentColor" stroke="currentColor" stroke-width="1"/><path d="M7.5 11.8V5a1.5 1.5 0 0 1 3 0v6.8"/><line x1="10.5" y1="7" x2="13" y2="7" stroke-width="1.2"/><line x1="10.5" y1="9.5" x2="12" y2="9.5" stroke-width="1.2"/></svg>
                 </button>
+                <button class="nav-btn" type="button" title="Missions" data-view="missions" aria-pressed="false">
+                    <svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="6.5"/><circle cx="9" cy="9" r="2.2"/><line x1="9" y1="2.5" x2="9" y2="6.8"/><line x1="9" y1="11.2" x2="9" y2="15.5"/><line x1="2.5" y1="9" x2="6.8" y2="9"/><line x1="11.2" y1="9" x2="15.5" y2="9"/></svg>
+                </button>
             </nav>
             <div class="rail-tools">
                 <button class="nav-btn" type="button" title="Setup" data-view="setup" aria-pressed="false">
@@ -4382,6 +4385,76 @@
                     </section>
 
                 </section>
+
+                <!-- ══════════════════════════════════════════════════════
+                     MISSIONS VIEW
+                     ══════════════════════════════════════════════════ -->
+                <section class="main-grid" data-view-section="missions" hidden style="grid-column:1/-1;padding:var(--sp-3)">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--sp-3)">
+                        <h2 style="font-size:1rem;font-weight:600;color:var(--ink);margin:0">Active Missions</h2>
+                        <button id="mission-new-btn" class="btn-sm" type="button"
+                            style="padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-b);color:var(--ink);cursor:pointer;font-size:.8rem">
+                            + New Mission
+                        </button>
+                    </div>
+                    <div id="missions-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:var(--sp-3)">
+                        <div style="color:var(--ink-2);font-size:.85rem;padding:var(--sp-3)">Loading missions…</div>
+                    </div>
+                </section>
+
+                <!-- Mission edit / create modal -->
+                <dialog id="mission-modal" style="border:1px solid var(--border);border-radius:10px;padding:0;background:var(--bg-b);color:var(--ink);min-width:420px;max-width:520px">
+                    <form method="dialog" style="display:flex;flex-direction:column;gap:0">
+                        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;border-bottom:1px solid var(--border)">
+                            <h3 id="mission-modal-title" style="margin:0;font-size:.95rem;font-weight:600">Edit Mission</h3>
+                            <button type="submit" style="background:none;border:none;cursor:pointer;color:var(--ink-2);font-size:1.2rem;line-height:1">✕</button>
+                        </div>
+                        <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
+                            <input type="hidden" id="mf-id">
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                                <label style="display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--ink-2)">
+                                    Mission Name
+                                    <input id="mf-name" type="text" placeholder="Shenandoah NPS P25"
+                                        style="padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-a);color:var(--ink);font-size:.85rem">
+                                </label>
+                                <label style="display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--ink-2)">
+                                    Short Name (recordings folder)
+                                    <input id="mf-short" type="text" placeholder="ShenNPS" maxlength="12"
+                                        style="padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-a);color:var(--ink);font-size:.85rem">
+                                </label>
+                            </div>
+                            <label style="display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--ink-2)">
+                                System Type
+                                <select id="mf-type" style="padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-a);color:var(--ink);font-size:.85rem">
+                                    <option value="conventionalP25">Conventional P25 (fixed channels)</option>
+                                    <option value="conventionalDMR">Conventional DMR</option>
+                                </select>
+                            </label>
+                            <label style="display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--ink-2)">
+                                Channels — one per line: <code style="font-size:.75rem;color:var(--cyan)">172.650 Label</code> or just <code style="font-size:.75rem;color:var(--cyan)">172.650</code>
+                                <textarea id="mf-channels" rows="7" placeholder="171.700 Hogback Mountain&#10;172.4625 Blue Mountain&#10;172.650 Bucks Elbow&#10;172.675 Fork Mountain&#10;173.675 Millers Head&#10;173.7625 Big Mountain"
+                                    style="padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-a);color:var(--ink);font-size:.82rem;font-family:monospace;resize:vertical"></textarea>
+                            </label>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                                <label style="display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--ink-2)">
+                                    Squelch (dB)
+                                    <input id="mf-squelch" type="number" value="-50" step="1"
+                                        style="padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-a);color:var(--ink);font-size:.85rem">
+                                </label>
+                                <label style="display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--ink-2)">
+                                    Gain (dB)
+                                    <input id="mf-gain" type="number" value="35" step="1"
+                                        style="padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-a);color:var(--ink);font-size:.85rem">
+                                </label>
+                            </div>
+                        </div>
+                        <div style="display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--border)">
+                            <button type="submit" style="padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:var(--bg-a);color:var(--ink);cursor:pointer;font-size:.85rem">Cancel</button>
+                            <button id="mission-modal-save" type="button" style="padding:6px 14px;border-radius:6px;border:none;background:var(--cyan);color:#000;cursor:pointer;font-size:.85rem;font-weight:600">Save</button>
+                        </div>
+                    </form>
+                </dialog>
+
             </div>
         </main>
     </div>
@@ -4428,6 +4501,10 @@
                 wx433: {
                     title: '433 MHz Weather Sensors',
                     subtitle: 'Acurite 433 MHz wireless sensor feed via rtl_433 on sigmon (10.13.73.185).'
+                },
+                missions: {
+                    title: 'SDR Missions',
+                    subtitle: 'Assign any free RTL-SDR to a monitoring mission. Start and drop on demand.'
                 }
             };
 
@@ -6512,6 +6589,9 @@
                 if (viewName === 'faults') renderFaultSummary();
                 if (viewName === 'wx433') {
                     if (window._launchAcurite433) window._launchAcurite433();
+                }
+                if (viewName === 'missions') {
+                    if (window._missionsInit) window._missionsInit();
                 }
                 if (viewName === 'adsb') {
                     refreshAdsb();
@@ -13621,6 +13701,247 @@
             _syncWidths();
             _drawRuler(_lastMeta.center_hz, _lastMeta.span_hz);
         }).observe(wfWrap);
+    })();
+    </script>
+
+    <!-- ═══════════════════════════════════════════════
+         MISSIONS  —  SDR mission management
+         ═══════════════════════════════════════════ -->
+    <script>
+    (() => {
+        const GUARD_HTTP = 'http://10.13.73.185:7375';
+        let _missionData = {};   // id -> mission
+        let _assignmentsData = {}; // ip -> assignment
+        let _pollTimer = null;
+        let _initialized = false;
+
+        // ── helpers ─────────────────────────────────────────────────────
+
+        const _mhz = hz => (hz / 1e6).toFixed(4).replace(/\.?0+$/, '') + ' MHz';
+
+        const _freeSdrs = () =>
+            Object.values(_assignmentsData)
+                .filter(a => !a.locked && a.id)
+                .sort((a, b) => (a.id || '').localeCompare(b.id || ''));
+
+        const _parseChannelLines = text =>
+            text.trim().split('\n')
+                .map(l => l.trim()).filter(Boolean)
+                .map(l => {
+                    const parts = l.split(/\s+/);
+                    const mhzVal = parseFloat(parts[0]);
+                    const label  = parts.slice(1).join(' ') || null;
+                    const hz     = Math.round(mhzVal * 1e6);
+                    return { hz, label };
+                })
+                .filter(c => c.hz > 100e6 && c.hz < 3000e6);
+
+        const _chanLinesToPayload = lines => {
+            const chans  = lines.map(c => c.hz);
+            const labels = {};
+            lines.forEach(c => { if (c.label) labels[String(c.hz)] = c.label; });
+            return { channels: chans, channelLabels: labels };
+        };
+
+        const _payloadToLines = mission => {
+            const labels = mission.channelLabels || {};
+            return (mission.channels || [])
+                .map(hz => {
+                    const lbl = labels[String(hz)] || '';
+                    return (hz / 1e6).toFixed(4).replace(/\.?0+$/, '') + (lbl ? ' ' + lbl : '');
+                })
+                .join('\n');
+        };
+
+        // ── fetch ────────────────────────────────────────────────────────
+
+        const _fetchAll = async () => {
+            try {
+                const [mRes, aRes] = await Promise.all([
+                    fetch(GUARD_HTTP + '/missions'),
+                    fetch(GUARD_HTTP + '/assignments'),
+                ]);
+                if (mRes.ok) _missionData = await mRes.json();
+                if (aRes.ok) _assignmentsData = await aRes.json();
+                _render();
+            } catch (e) {
+                console.warn('[missions] fetch error', e);
+            }
+        };
+
+        // ── render ───────────────────────────────────────────────────────
+
+        const _statusBadge = status => {
+            const color = status === 'running' ? 'var(--ok)' : status === 'error' ? 'var(--fault)' : 'var(--ink-2)';
+            const label = status === 'running' ? 'Running' : status === 'error' ? 'Error' : 'Stopped';
+            return `<span style="font-size:.72rem;font-weight:600;padding:2px 7px;border-radius:10px;background:${color}22;color:${color};border:1px solid ${color}44">${label}</span>`;
+        };
+
+        const _render = () => {
+            const grid = document.getElementById('missions-grid');
+            if (!grid) return;
+
+            if (Object.keys(_missionData).length === 0) {
+                grid.innerHTML = '<div style="color:var(--ink-2);font-size:.85rem;padding:var(--sp-3)">No missions defined. Click <strong>+ New Mission</strong> to create one.</div>';
+                return;
+            }
+
+            grid.innerHTML = Object.values(_missionData).map(m => {
+                const running   = m.status === 'running';
+                const err       = m.status === 'error';
+                const chCount   = (m.channels || []).length;
+                const sdrLabel  = running ? (() => {
+                    const serial = m.assignedSerial;
+                    const asgn   = Object.values(_assignmentsData).find(a => a.sn === serial);
+                    return asgn ? `${asgn.id} (SN ${serial})` : serial || '—';
+                })() : '';
+
+                const freeSdrs  = _freeSdrs();
+                const sdrPicker = !running ? `
+                    <select id="sdr-pick-${m.id}" style="flex:1;padding:5px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-a);color:var(--ink);font-size:.8rem">
+                        <option value="">— pick SDR —</option>
+                        ${freeSdrs.map(a => `<option value="${a.sn}">${a.id} — ${a.label || 'Open'} (${a.sn})</option>`).join('')}
+                    </select>
+                    <button onclick="window._missionStart('${m.id}')" style="padding:5px 12px;border-radius:5px;border:none;background:var(--ok);color:#000;cursor:pointer;font-size:.8rem;font-weight:600;white-space:nowrap">▶ Start</button>
+                ` : `
+                    <span style="font-size:.8rem;color:var(--ink-2)">SDR: <strong style="color:var(--ink)">${sdrLabel}</strong></span>
+                    <button onclick="window._missionStop('${m.id}')" style="padding:5px 12px;border-radius:5px;border:none;background:var(--fault);color:#fff;cursor:pointer;font-size:.8rem;font-weight:600;white-space:nowrap">■ Drop</button>
+                `;
+
+                const chanSummary = (m.channels || []).slice(0, 3).map(_mhz).join(', ')
+                    + (chCount > 3 ? ` +${chCount - 3} more` : '');
+
+                return `<div style="background:var(--bg-b);border:1px solid var(--border);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:10px">
+                    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
+                        <div>
+                            <div style="font-size:.9rem;font-weight:600;color:var(--ink)">${m.name}</div>
+                            <div style="font-size:.75rem;color:var(--ink-2);margin-top:2px">${m.type} · ${chCount} ch · ${m.shortName}</div>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+                            ${_statusBadge(m.status)}
+                            ${!running ? `<button onclick="window._missionEdit('${m.id}')" title="Edit" style="background:none;border:none;cursor:pointer;color:var(--ink-2);font-size:.9rem;padding:2px 4px">✎</button>` : ''}
+                            ${!running ? `<button onclick="window._missionDelete('${m.id}')" title="Delete" style="background:none;border:none;cursor:pointer;color:var(--fault);font-size:.9rem;padding:2px 4px">✕</button>` : ''}
+                        </div>
+                    </div>
+                    <div style="font-size:.75rem;color:var(--ink-2);font-family:monospace;background:var(--bg-a);padding:6px 8px;border-radius:5px;border:1px solid var(--border)88">${chanSummary}</div>
+                    <div style="display:flex;align-items:center;gap:8px">${sdrPicker}</div>
+                </div>`;
+            }).join('');
+        };
+
+        // ── actions ──────────────────────────────────────────────────────
+
+        window._missionStart = async id => {
+            const pick = document.getElementById('sdr-pick-' + id);
+            const serial = pick ? pick.value : '';
+            if (!serial) { alert('Select an SDR first.'); return; }
+            try {
+                const r = await fetch(GUARD_HTTP + '/missions/' + id + '/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ serial }),
+                });
+                const d = await r.json();
+                if (!r.ok) { alert('Start failed: ' + (d.error || r.status)); return; }
+                _missionData[id] = d;
+                _render();
+                setTimeout(_fetchAll, 4000); // re-fetch after container starts
+            } catch (e) { alert('Start error: ' + e); }
+        };
+
+        window._missionStop = async id => {
+            if (!confirm('Drop this mission and release the SDR?')) return;
+            try {
+                const r = await fetch(GUARD_HTTP + '/missions/' + id + '/stop', { method: 'POST' });
+                const d = await r.json();
+                if (!r.ok) { alert('Stop failed: ' + (d.error || r.status)); return; }
+                _missionData[id] = d;
+                _render();
+                setTimeout(_fetchAll, 3000);
+            } catch (e) { alert('Stop error: ' + e); }
+        };
+
+        window._missionDelete = async id => {
+            if (!confirm('Delete mission "' + (_missionData[id]?.name || id) + '"?')) return;
+            try {
+                const r = await fetch(GUARD_HTTP + '/missions/' + id, { method: 'DELETE' });
+                if (!r.ok) { const d = await r.json(); alert('Delete failed: ' + (d.error || r.status)); return; }
+                delete _missionData[id];
+                _render();
+            } catch (e) { alert('Delete error: ' + e); }
+        };
+
+        window._missionEdit = id => _openModal(_missionData[id]);
+
+        // ── modal ────────────────────────────────────────────────────────
+
+        const _openModal = (mission) => {
+            const isNew = !mission;
+            document.getElementById('mission-modal-title').textContent = isNew ? 'New Mission' : 'Edit Mission';
+            document.getElementById('mf-id').value        = isNew ? '' : mission.id;
+            document.getElementById('mf-name').value      = isNew ? '' : mission.name;
+            document.getElementById('mf-short').value     = isNew ? '' : mission.shortName;
+            document.getElementById('mf-type').value      = isNew ? 'conventionalP25' : mission.type;
+            document.getElementById('mf-squelch').value   = isNew ? '-50' : mission.squelch;
+            document.getElementById('mf-gain').value      = isNew ? '35'  : mission.gain;
+            document.getElementById('mf-channels').value  = isNew ? '' : _payloadToLines(mission);
+            document.getElementById('mission-modal').showModal();
+        };
+
+        document.getElementById('mission-modal-save')?.addEventListener('click', async () => {
+            const id      = document.getElementById('mf-id').value.trim();
+            const name    = document.getElementById('mf-name').value.trim();
+            const short   = document.getElementById('mf-short').value.trim();
+            const type    = document.getElementById('mf-type').value;
+            const squelch = parseInt(document.getElementById('mf-squelch').value, 10);
+            const gain    = parseInt(document.getElementById('mf-gain').value, 10);
+            const lines   = _parseChannelLines(document.getElementById('mf-channels').value);
+
+            if (!name || lines.length === 0) { alert('Name and at least one channel are required.'); return; }
+
+            const chanPayload = _chanLinesToPayload(lines);
+            const body = { name, shortName: short || name.replace(/\W+/g, '').slice(0, 8).toUpperCase(), type, squelch, gain, ...chanPayload };
+
+            let r;
+            if (id && _missionData[id]) {
+                // update
+                r = await fetch(GUARD_HTTP + '/missions/' + id, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+            } else {
+                // create
+                const newId = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+                body.id = newId;
+                r = await fetch(GUARD_HTTP + '/missions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+            }
+
+            const d = await r.json();
+            if (!r.ok) { alert('Save failed: ' + (d.error || r.status)); return; }
+            _missionData[d.id] = d;
+            document.getElementById('mission-modal').close();
+            _render();
+        });
+
+        document.getElementById('mission-new-btn')?.addEventListener('click', () => _openModal(null));
+
+        // ── init / poll ──────────────────────────────────────────────────
+
+        window._missionsInit = () => {
+            if (!_initialized) {
+                _initialized = true;
+                _fetchAll();
+                _pollTimer = setInterval(_fetchAll, 10000);
+            } else {
+                _fetchAll();
+            }
+        };
+
     })();
     </script>
 </body>
