@@ -7653,6 +7653,7 @@
                 const _noaaId    = (window._noaaActiveSdrId    || '').toLowerCase();
                 const _rptId     = (window._repeaterActiveSdrId || '').toLowerCase();
                 const _tpmsId    = (window._tpmsActiveSdrId    || '').toLowerCase();
+                const _p25Id     = (window._p25ActiveSdrId     || '').toLowerCase();
                 SDR_A.forEach(s => {
                     const sid = s.id.toLowerCase();
                     // Active-state checks take priority over type-based defaults.
@@ -7663,7 +7664,6 @@
                     if (_noaaId  && _noaaId  === sid)       { _sdrSetLabel(s.id, 'NOAA Weather');          _sdrSetStat(s.id, 'active · 162 MHz', 'ok'); return; }
                     if (_rptId   && _rptId   === sid)       { _sdrSetLabel(s.id, 'Repeater Monitoring');   _sdrSetStat(s.id, 'active', 'ok'); return; }
                     if (_tpmsId  && _tpmsId  === sid)       { _sdrSetLabel(s.id, 'TPMS');                  _sdrSetStat(s.id, 'active · ' + (s.freq || '314.490 MHz'), 'ok'); return; }
-                    const _p25Id = (window._p25ActiveSdrId || '').toLowerCase();
                     if (_p25Id   && _p25Id   === sid)       { _sdrSetLabel(s.id, 'P25 Scanner');           _sdrSetStat(s.id, 'active · ' + (window._p25ActiveShortName || 'P25'), 'ok'); return; }
                     if      (s.type === 'adsb')    _sdrSetStat(s.id, 'active · ' + s.freq, 'ok');
                     else if (s.type === 'decode')  _sdrSetStat(s.id, (s.tcpDevice ? 'rtl_tcp · ' : 'decoding · ') + s.freq, 'ok');
@@ -7794,8 +7794,15 @@
                         card.classList.toggle('guard-locked', info.locked && !info.active);
                         card.classList.toggle('guard-active',  info.locked && !!info.active);
                     }
+                    // Only update label when no active service has claimed this SDR
                     if (labelEl && info.label && info.label !== 'Open') {
-                        labelEl.textContent = info.label;
+                        const _sid2 = sdr.id.toLowerCase();
+                        const _claimed = window._p25ActiveSdrId   === _sid2
+                                      || window._noaaActiveSdrId  === _sid2
+                                      || window._vhfActiveSdrId   === _sid2
+                                      || window._tpmsActiveSdrId  === _sid2
+                                      || (window._repeaterActiveSdrId === _sid2);
+                        if (!_claimed) labelEl.textContent = info.label;
                     }
                 }
             };
@@ -13823,12 +13830,29 @@
         // ── launch / drop ─────────────────────────────────────────────────
 
         const _p25UpdateCard = (sdr, missionName, shortName, active) => {
+            const cid = (sdr?.id || '').toLowerCase();
             if (active) {
-                window._p25ActiveSdrId     = (sdr?.id || '').toLowerCase();
+                window._p25ActiveSdrId     = cid;
                 window._p25ActiveShortName = shortName || missionName || 'P25';
+                // Wire the card's Stop button to drop the P25 mission
+                if (!window._sdrStopFns) window._sdrStopFns = {};
+                window._sdrStopFns[cid] = async () => {
+                    const mission = Object.values(_missionData).find(m =>
+                        m.status === 'running' && m.assignedSerial === sdr?.serial);
+                    if (!mission) { _p25UpdateCard(sdr, null, null, false); return; }
+                    if (!confirm('Drop "' + mission.name + '" and release the SDR?')) return;
+                    try {
+                        const r = await fetch(GUARD_HTTP + '/missions/' + mission.id + '/stop', { method: 'POST' });
+                        const d = await r.json();
+                        if (!r.ok) { alert('Stop failed: ' + (d.error || r.status)); return; }
+                        _missionData[mission.id] = d;
+                    } catch (e) { alert('Stop error: ' + e); return; }
+                    _p25UpdateCard(sdr, null, null, false);
+                };
             } else {
                 window._p25ActiveSdrId     = null;
                 window._p25ActiveShortName = null;
+                if (window._sdrStopFns) delete window._sdrStopFns[cid];
             }
             // Trigger the shared render cycle so all cards update consistently
             if (typeof window._sdrRefreshPill === 'function') window._sdrRefreshPill();
@@ -13912,9 +13936,7 @@
             if (!running) return;
             const sdr = (window.SDR_A || []).find(s => s.serial === running.assignedSerial);
             if (!sdr) return;
-            window._p25ActiveSdrId     = sdr.id.toLowerCase();
-            window._p25ActiveShortName = running.shortName || running.name || 'P25';
-            if (typeof window._sdrRefreshPill === 'function') window._sdrRefreshPill();
+            _p25UpdateCard(sdr, running.name, running.shortName, true);
         });
 
     })();
