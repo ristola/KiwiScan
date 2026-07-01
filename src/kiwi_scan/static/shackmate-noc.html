@@ -7786,31 +7786,42 @@
 
                     if (lockBadge) lockBadge.hidden = !info.locked;
                     if (footer)    footer.hidden    = !(info.locked || info.active);
-                    if (peerEl) {
-                        peerEl.hidden      = !info.active;
-                        peerEl.textContent = info.active ? '\u{1F4F6} ' + info.peer_ip : '';
-                    }
+                    const _sid2 = sdr.id.toLowerCase();
+                    // Consider an SDR "app-active" if any KiwiScan service is running on it,
+                    // or if it's a permanently-on decode/adsb type (no JS tracking variable needed).
+                    const _appActive = window._p25ActiveSdrId      === _sid2
+                                    || window._noaaActiveSdrId     === _sid2
+                                    || window._vhfActiveSdrId      === _sid2
+                                    || window._tpmsActiveSdrId     === _sid2
+                                    || window._repeaterActiveSdrId === _sid2
+                                    || sdr.type === 'decode'
+                                    || sdr.type === 'adsb';
+                    const _isActive  = info.active || _appActive;
+
+                    // A noaa-type slot with a stale lock (NOAA is alive but on a different SDR)
+                    // should not show orange — _sdrSetStaticStatus will render it as Available.
+                    const _staleNoaaLock = sdr.type === 'noaa'
+                                       && !!window._noaaActiveSdrId
+                                       && window._noaaActiveSdrId !== _sid2;
+
                     if (card) {
-                        const _sid2 = sdr.id.toLowerCase();
-                        // Consider the SDR "active" if sdr-guard says so OR if our app has
-                        // a live service running on it — either way the border should be green.
-                        const _appActive = window._p25ActiveSdrId   === _sid2
-                                        || window._noaaActiveSdrId  === _sid2
-                                        || window._vhfActiveSdrId   === _sid2
-                                        || window._tpmsActiveSdrId  === _sid2
-                                        || window._repeaterActiveSdrId === _sid2;
-                        const _isActive  = info.active || _appActive;
-                        card.classList.toggle('guard-locked', info.locked && !_isActive);
+                        card.classList.toggle('guard-locked', info.locked && !_isActive && !_staleNoaaLock);
                         card.classList.toggle('guard-active',  info.locked && !!_isActive);
                     }
-                    // Only update label when no active service has claimed this SDR
+                    // Hide the peer-IP element when nothing is actively using this SDR —
+                    // a stale sdr-guard lock (active:true but no service running) is confusing.
+                    if (peerEl) {
+                        const showPeer = info.active && _isActive;
+                        peerEl.hidden      = !showPeer;
+                        peerEl.textContent = showPeer ? '\u{1F4F6} ' + info.peer_ip : '';
+                    }
+                    // Don't let sdr-guard override labels for slots whose state is managed
+                    // dynamically by _sdrSetStaticStatus (noaa-type, vhf-digital-type).
+                    // Those slots show Available/active based on live service globals, not guard data.
                     if (labelEl && info.label && info.label !== 'Open') {
-                        const _sid2 = sdr.id.toLowerCase();
-                        const _claimed = window._p25ActiveSdrId   === _sid2
-                                      || window._noaaActiveSdrId  === _sid2
-                                      || window._vhfActiveSdrId   === _sid2
-                                      || window._tpmsActiveSdrId  === _sid2
-                                      || window._repeaterActiveSdrId === _sid2;
+                        const _claimed = _appActive
+                                      || sdr.type === 'noaa'
+                                      || sdr.type === 'vhf-digital';
                         if (!_claimed) labelEl.textContent = info.label;
                     }
                 }
