@@ -9269,7 +9269,7 @@
             launchBtn.textContent = 'Launch';
             if (mode === 'noaa-monitor') _renderNoaaChannelList();
             if (mode === 'vhf-digital' && window._renderVhfChannels) window._renderVhfChannels();
-            if (mode === 'p25-scanner') window._p25LoadModal?.(_activeSdr);
+            if (mode === 'p25-scanner') window._p25InitPanel?.(_activeSdr);
         };
 
         document.querySelectorAll('.mode-opt').forEach(btn => {
@@ -13760,44 +13760,32 @@
             if (this.value) _loadPreset(this.value);
         });
 
-        // ── load P25 panel when mode selected ───────────────────────────
+        // ── populate panel when P25 mode card is selected (no side-effects) ──
 
-        window._p25LoadModal = async (sdr) => {
-            await _fetchMissions();
+        window._p25InitPanel = (sdr) => {
             _populatePresets();
-
-            // Check if this SDR is already running a P25 mission
-            const runningMission = Object.values(_missionData).find(m =>
-                m.status === 'running' && m.assignedSerial === (sdr?.serial || sdr?.device)
-            );
-
-            const launchBtn = document.getElementById('sdr-modal-launch');
             const statusRow = document.getElementById('p25-status-row');
+
+            // Show a soft indicator if a mission is already running on this SDR,
+            // but DON'T lock the form or change the Launch button — user still
+            // decides what to do when they click it.
+            const serial = sdr?.serial;
+            const runningMission = serial
+                ? Object.values(_missionData).find(m => m.status === 'running' && m.assignedSerial === serial)
+                : null;
 
             if (runningMission) {
                 _activeMissionId = runningMission.id;
                 _loadPreset(runningMission.id);
-                _p25UpdateCard(sdr, runningMission.name, runningMission.shortName, true);
-                if (launchBtn) launchBtn.textContent = 'Drop';
                 if (statusRow) {
                     statusRow.style.display = 'block';
-                    statusRow.innerHTML = `<span style="color:var(--ok)">&#9679;</span> Running: <strong>${runningMission.name}</strong> &middot; ${(runningMission.channels || []).length} channels`;
+                    statusRow.innerHTML = '<span style="color:var(--ok)">&#9679;</span> Running: <strong>'
+                        + runningMission.name + '</strong> &middot; '
+                        + (runningMission.channels || []).length + ' channels &mdash; <em>Launch will drop and restart, or cancel to leave it running.</em>';
                 }
-                // lock fields while running
-                ['p25-name','p25-short','p25-channels','p25-squelch','p25-gain'].forEach(id => {
-                    const el = document.getElementById(id);
-                    if (el) el.disabled = true;
-                });
-                document.getElementById('p25-preset').disabled = true;
             } else {
                 _activeMissionId = null;
-                if (launchBtn) launchBtn.textContent = 'Launch';
                 if (statusRow) statusRow.style.display = 'none';
-                ['p25-name','p25-short','p25-channels','p25-squelch','p25-gain'].forEach(id => {
-                    const el = document.getElementById(id);
-                    if (el) el.disabled = false;
-                });
-                document.getElementById('p25-preset').disabled = false;
                 // Auto-select first preset if fields are empty
                 if (!document.getElementById('p25-name').value) {
                     const firstId = Object.keys(_missionData)[0];
@@ -13807,6 +13795,11 @@
                     }
                 }
             }
+            // Always enable all fields — user can edit config before launching
+            ['p25-name','p25-short','p25-channels','p25-squelch','p25-gain','p25-preset'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.disabled = false;
+            });
         };
 
         // ── launch / drop ─────────────────────────────────────────────────
@@ -13824,16 +13817,23 @@
         };
 
         window._p25Launch = async (sdr) => {
-            const launchBtn = document.getElementById('sdr-modal-launch');
+            // Fresh fetch so we know the real current state
+            await _fetchMissions();
 
-            // DROP — if already running
-            if (launchBtn?.textContent === 'Drop' && _activeMissionId) {
-                if (!confirm('Drop P25 scanner and release the SDR?')) return;
+            const serial = sdr?.serial;
+            const runningMission = serial
+                ? Object.values(_missionData).find(m => m.status === 'running' && m.assignedSerial === serial)
+                : (_activeMissionId ? _missionData[_activeMissionId] : null);
+
+            // DROP — if already running on this SDR
+            if (runningMission) {
+                if (!confirm('Drop "' + runningMission.name + '" and release the SDR?')) return;
                 try {
-                    const r = await fetch(GUARD_HTTP + '/missions/' + _activeMissionId + '/stop', { method: 'POST' });
+                    const r = await fetch(GUARD_HTTP + '/missions/' + runningMission.id + '/stop', { method: 'POST' });
                     const d = await r.json();
                     if (!r.ok) { alert('Stop failed: ' + (d.error || r.status)); return; }
-                    _missionData[_activeMissionId] = d;
+                    _missionData[runningMission.id] = d;
+                    _activeMissionId = null;
                 } catch (e) { alert('Stop error: ' + e); return; }
                 _p25UpdateCard(sdr, null, null, false);
                 document.getElementById('sdr-launch-modal').hidden = true;
