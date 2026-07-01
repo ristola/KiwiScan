@@ -13820,7 +13820,7 @@
             // Fresh fetch so we know the real current state
             await _fetchMissions();
 
-            const serial = sdr?.serial;
+            const serial = sdr?.serial || null;
             const runningMission = serial
                 ? Object.values(_missionData).find(m => m.status === 'running' && m.assignedSerial === serial)
                 : (_activeMissionId ? _missionData[_activeMissionId] : null);
@@ -13850,7 +13850,6 @@
             if (!name || lines.length === 0) { alert('Mission name and at least one channel are required.'); return; }
 
             const chanPayload = _chanLinesToPayload(lines);
-            const serial = sdr?.serial || (sdr?.device?.match(/^([0-9A-Fa-f]{8})$/) ? sdr.device : null);
 
             // Determine mission id — use existing preset or create slug from name
             let missionId = _activeMissionId
