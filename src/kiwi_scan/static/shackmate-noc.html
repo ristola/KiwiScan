@@ -7791,8 +7791,17 @@
                         peerEl.textContent = info.active ? '\u{1F4F6} ' + info.peer_ip : '';
                     }
                     if (card) {
-                        card.classList.toggle('guard-locked', info.locked && !info.active);
-                        card.classList.toggle('guard-active',  info.locked && !!info.active);
+                        const _sid2 = sdr.id.toLowerCase();
+                        // Consider the SDR "active" if sdr-guard says so OR if our app has
+                        // a live service running on it — either way the border should be green.
+                        const _appActive = window._p25ActiveSdrId   === _sid2
+                                        || window._noaaActiveSdrId  === _sid2
+                                        || window._vhfActiveSdrId   === _sid2
+                                        || window._tpmsActiveSdrId  === _sid2
+                                        || window._repeaterActiveSdrId === _sid2;
+                        const _isActive  = info.active || _appActive;
+                        card.classList.toggle('guard-locked', info.locked && !_isActive);
+                        card.classList.toggle('guard-active',  info.locked && !!_isActive);
                     }
                     // Only update label when no active service has claimed this SDR
                     if (labelEl && info.label && info.label !== 'Open') {
@@ -7801,7 +7810,7 @@
                                       || window._noaaActiveSdrId  === _sid2
                                       || window._vhfActiveSdrId   === _sid2
                                       || window._tpmsActiveSdrId  === _sid2
-                                      || (window._repeaterActiveSdrId === _sid2);
+                                      || window._repeaterActiveSdrId === _sid2;
                         if (!_claimed) labelEl.textContent = info.label;
                     }
                 }
