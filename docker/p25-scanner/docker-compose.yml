@@ -1,0 +1,11 @@
+services:
+  p25-scanner:
+    build: .
+    container_name: p25-scanner
+    restart: "no"          # scan once; restart manually to re-scan
+    network_mode: host     # reaches 10.13.73.201 directly without extra routing
+    environment:
+      RTL_HOST:   "10.13.73.201"   # KerberoSDR K1 — reserved for P25 control channel
+      RTL_PORT:   "17373"          # direct rtl_tcp (bypasses sdr-guard)
+      SERVE_PORT: "8099"
+      GAIN_TENTH: "350"            # 35.0 dB — tune up/down if signals are clipped or buried
