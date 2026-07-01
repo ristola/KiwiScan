@@ -3429,9 +3429,6 @@
                 <button class="nav-btn" type="button" title="433 WX" data-view="wx433" aria-pressed="false">
                     <svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="14" r="2.4" fill="currentColor" stroke="currentColor" stroke-width="1"/><path d="M7.5 11.8V5a1.5 1.5 0 0 1 3 0v6.8"/><line x1="10.5" y1="7" x2="13" y2="7" stroke-width="1.2"/><line x1="10.5" y1="9.5" x2="12" y2="9.5" stroke-width="1.2"/></svg>
                 </button>
-                <button class="nav-btn" type="button" title="Missions" data-view="missions" aria-pressed="false">
-                    <svg viewBox="0 0 18 18" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="9" r="6.5"/><circle cx="9" cy="9" r="2.2"/><line x1="9" y1="2.5" x2="9" y2="6.8"/><line x1="9" y1="11.2" x2="9" y2="15.5"/><line x1="2.5" y1="9" x2="6.8" y2="9"/><line x1="11.2" y1="9" x2="15.5" y2="9"/></svg>
-                </button>
             </nav>
             <div class="rail-tools">
                 <button class="nav-btn" type="button" title="Setup" data-view="setup" aria-pressed="false">
@@ -4386,74 +4383,6 @@
 
                 </section>
 
-                <!-- ══════════════════════════════════════════════════════
-                     MISSIONS VIEW
-                     ══════════════════════════════════════════════════ -->
-                <section class="main-grid" data-view-section="missions" hidden style="grid-column:1/-1;padding:var(--sp-3)">
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--sp-3)">
-                        <h2 style="font-size:1rem;font-weight:600;color:var(--ink);margin:0">Active Missions</h2>
-                        <button id="mission-new-btn" class="btn-sm" type="button"
-                            style="padding:4px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-b);color:var(--ink);cursor:pointer;font-size:.8rem">
-                            + New Mission
-                        </button>
-                    </div>
-                    <div id="missions-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:var(--sp-3)">
-                        <div style="color:var(--ink-2);font-size:.85rem;padding:var(--sp-3)">Loading missions…</div>
-                    </div>
-                </section>
-
-                <!-- Mission edit / create modal -->
-                <dialog id="mission-modal" style="border:1px solid var(--border);border-radius:10px;padding:0;background:var(--bg-b);color:var(--ink);min-width:420px;max-width:520px">
-                    <form method="dialog" style="display:flex;flex-direction:column;gap:0">
-                        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;border-bottom:1px solid var(--border)">
-                            <h3 id="mission-modal-title" style="margin:0;font-size:.95rem;font-weight:600">Edit Mission</h3>
-                            <button type="submit" style="background:none;border:none;cursor:pointer;color:var(--ink-2);font-size:1.2rem;line-height:1">✕</button>
-                        </div>
-                        <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
-                            <input type="hidden" id="mf-id">
-                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-                                <label style="display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--ink-2)">
-                                    Mission Name
-                                    <input id="mf-name" type="text" placeholder="Shenandoah NPS P25"
-                                        style="padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-a);color:var(--ink);font-size:.85rem">
-                                </label>
-                                <label style="display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--ink-2)">
-                                    Short Name (recordings folder)
-                                    <input id="mf-short" type="text" placeholder="ShenNPS" maxlength="12"
-                                        style="padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-a);color:var(--ink);font-size:.85rem">
-                                </label>
-                            </div>
-                            <label style="display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--ink-2)">
-                                System Type
-                                <select id="mf-type" style="padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-a);color:var(--ink);font-size:.85rem">
-                                    <option value="conventionalP25">Conventional P25 (fixed channels)</option>
-                                    <option value="conventionalDMR">Conventional DMR</option>
-                                </select>
-                            </label>
-                            <label style="display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--ink-2)">
-                                Channels — one per line: <code style="font-size:.75rem;color:var(--cyan)">172.650 Label</code> or just <code style="font-size:.75rem;color:var(--cyan)">172.650</code>
-                                <textarea id="mf-channels" rows="7" placeholder="171.700 Hogback Mountain&#10;172.4625 Blue Mountain&#10;172.650 Bucks Elbow&#10;172.675 Fork Mountain&#10;173.675 Millers Head&#10;173.7625 Big Mountain"
-                                    style="padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-a);color:var(--ink);font-size:.82rem;font-family:monospace;resize:vertical"></textarea>
-                            </label>
-                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-                                <label style="display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--ink-2)">
-                                    Squelch (dB)
-                                    <input id="mf-squelch" type="number" value="-50" step="1"
-                                        style="padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-a);color:var(--ink);font-size:.85rem">
-                                </label>
-                                <label style="display:flex;flex-direction:column;gap:4px;font-size:.8rem;color:var(--ink-2)">
-                                    Gain (dB)
-                                    <input id="mf-gain" type="number" value="35" step="1"
-                                        style="padding:6px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-a);color:var(--ink);font-size:.85rem">
-                                </label>
-                            </div>
-                        </div>
-                        <div style="display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--border)">
-                            <button type="submit" style="padding:6px 14px;border-radius:6px;border:1px solid var(--border);background:var(--bg-a);color:var(--ink);cursor:pointer;font-size:.85rem">Cancel</button>
-                            <button id="mission-modal-save" type="button" style="padding:6px 14px;border-radius:6px;border:none;background:var(--cyan);color:#000;cursor:pointer;font-size:.85rem;font-weight:600">Save</button>
-                        </div>
-                    </form>
-                </dialog>
 
             </div>
         </main>
@@ -4502,10 +4431,6 @@
                     title: '433 MHz Weather Sensors',
                     subtitle: 'Acurite 433 MHz wireless sensor feed via rtl_433 on sigmon (10.13.73.185).'
                 },
-                missions: {
-                    title: 'SDR Missions',
-                    subtitle: 'Assign any free RTL-SDR to a monitoring mission. Start and drop on demand.'
-                }
             };
 
             const viewButtons = document.querySelectorAll('[data-view]');
@@ -6590,9 +6515,6 @@
                 if (viewName === 'wx433') {
                     if (window._launchAcurite433) window._launchAcurite433();
                 }
-                if (viewName === 'missions') {
-                    if (window._missionsInit) window._missionsInit();
-                }
                 if (viewName === 'adsb') {
                     refreshAdsb();
                     if (!_adsbInterval) _adsbInterval = setInterval(refreshAdsb, 6000);
@@ -8373,6 +8295,10 @@
                             <span class="mode-opt-name">Acurite 433</span>
                             <span class="mode-opt-desc">433.920 MHz &middot; weather sensors</span>
                         </button>
+                        <button class="mode-opt" data-mode="p25-scanner" type="button">
+                            <span class="mode-opt-name">P25 Scanner</span>
+                            <span class="mode-opt-desc">Conventional P25 &middot; trunk-recorder &middot; rdio-scanner upload</span>
+                        </button>
                     </div>
                 </div>
 
@@ -8481,6 +8407,50 @@
                     <div style="font-size:0.72rem;color:var(--muted);margin-top:0.5rem;line-height:1.6">
                         Receives temperature, humidity, wind, rain, and lightning data from Acurite 433 MHz sensors. The decoder runs continuously as a systemd service on sigmon-2.
                     </div>
+                </div>
+
+                <!-- Config: P25 Scanner -->
+                <div class="sdr-config-panel" id="cfg-p25-scanner" hidden>
+                    <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:var(--muted);margin-bottom:0.2rem">Configuration</div>
+
+                    <div class="sdr-config-row">
+                        <span class="sdr-config-label">Preset</span>
+                        <select class="sdr-config-val" id="p25-preset" style="max-width:20rem">
+                            <option value="">Loading presets…</option>
+                        </select>
+                    </div>
+
+                    <div class="sdr-config-row">
+                        <span class="sdr-config-label">Mission Name</span>
+                        <input class="sdr-config-val" id="p25-name" type="text" placeholder="Shenandoah NPS P25" style="max-width:18rem">
+                    </div>
+                    <div class="sdr-config-row">
+                        <span class="sdr-config-label">Short Name</span>
+                        <input class="sdr-config-val" id="p25-short" type="text" placeholder="ShenNPS" maxlength="12" style="max-width:10rem">
+                        <span style="font-size:0.68rem;color:var(--muted-2)">recordings folder &amp; rdio-scanner label</span>
+                    </div>
+
+                    <div style="margin-top:0.6rem">
+                        <div style="font-size:0.7rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:var(--muted);margin-bottom:0.4rem">
+                            Channels <span style="font-size:0.65rem;font-weight:400;text-transform:none;color:var(--muted-2)">— one per line: <code style="color:var(--ok)">172.650 Bucks Elbow</code></span>
+                        </div>
+                        <textarea id="p25-channels" rows="6"
+                            placeholder="171.700 Hogback Mountain&#10;172.4625 Blue Mountain&#10;172.650 Bucks Elbow&#10;172.675 Fork Mountain&#10;173.675 Millers Head&#10;173.7625 Big Mountain"
+                            style="width:100%;box-sizing:border-box;padding:0.4rem 0.5rem;border-radius:5px;border:1px solid var(--line);background:var(--panel-2);color:var(--fg);font-size:0.8rem;font-family:var(--mono,monospace);resize:vertical"></textarea>
+                    </div>
+
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem;margin-top:0.5rem">
+                        <div class="sdr-config-row" style="margin:0">
+                            <span class="sdr-config-label">Squelch (dB)</span>
+                            <input class="sdr-config-val" id="p25-squelch" type="number" value="-50" step="1" style="max-width:6rem">
+                        </div>
+                        <div class="sdr-config-row" style="margin:0">
+                            <span class="sdr-config-label">Gain (dB)</span>
+                            <input class="sdr-config-val" id="p25-gain" type="number" value="35" step="1" style="max-width:6rem">
+                        </div>
+                    </div>
+
+                    <div id="p25-status-row" style="display:none;margin-top:0.6rem;padding:0.4rem 0.6rem;border-radius:5px;border:1px solid var(--line);background:var(--panel-2);font-size:0.75rem;color:var(--muted-2)"></div>
                 </div>
 
                 <!-- Config: coming soon modes -->
@@ -9290,13 +9260,14 @@
             document.querySelectorAll('.mode-opt').forEach(btn => {
                 btn.classList.toggle('is-selected', btn.dataset.mode === mode);
             });
-            ['repeater-monitor','spectrum','record','noaa-monitor','vhf-digital','tpms'].forEach(m => {
+            ['repeater-monitor','spectrum','record','noaa-monitor','vhf-digital','tpms','acurite433','p25-scanner'].forEach(m => {
                 const el = document.getElementById('cfg-' + m);
                 if (el) el.hidden = (m !== mode);
             });
             launchBtn.textContent = 'Launch';
             if (mode === 'noaa-monitor') _renderNoaaChannelList();
             if (mode === 'vhf-digital' && window._renderVhfChannels) window._renderVhfChannels();
+            if (mode === 'p25-scanner') window._p25LoadModal?.(_activeSdr);
         };
 
         document.querySelectorAll('.mode-opt').forEach(btn => {
@@ -9435,6 +9406,9 @@
                 if (window._launchTpms) await window._launchTpms(_activeSdr);
             } else if (_activeMode === 'acurite433') {
                 setView('wx433');
+            } else if (_activeMode === 'p25-scanner') {
+                if (window._p25Launch) await window._p25Launch(_activeSdr);
+                return; // p25Launch controls modal close
             }
             closeSdrModal();
         });
@@ -13705,24 +13679,17 @@
     </script>
 
     <!-- ═══════════════════════════════════════════════
-         MISSIONS  —  SDR mission management
+         P25 SCANNER  —  SDR modal integration
          ═══════════════════════════════════════════ -->
     <script>
     (() => {
         const GUARD_HTTP = 'http://10.13.73.185:7375';
         let _missionData = {};   // id -> mission
-        let _assignmentsData = {}; // ip -> assignment
-        let _pollTimer = null;
-        let _initialized = false;
+        let _activeMissionId = null;  // mission currently editing in modal
 
         // ── helpers ─────────────────────────────────────────────────────
 
         const _mhz = hz => (hz / 1e6).toFixed(4).replace(/\.?0+$/, '') + ' MHz';
-
-        const _freeSdrs = () =>
-            Object.values(_assignmentsData)
-                .filter(a => !a.locked && a.id)
-                .sort((a, b) => (a.id || '').localeCompare(b.id || ''));
 
         const _parseChannelLines = text =>
             text.trim().split('\n')
@@ -13753,194 +13720,161 @@
                 .join('\n');
         };
 
-        // ── fetch ────────────────────────────────────────────────────────
+        // ── fetch missions from sdr-guard ────────────────────────────────
 
-        const _fetchAll = async () => {
+        const _fetchMissions = async () => {
             try {
-                const [mRes, aRes] = await Promise.all([
-                    fetch(GUARD_HTTP + '/missions'),
-                    fetch(GUARD_HTTP + '/assignments'),
-                ]);
-                if (mRes.ok) _missionData = await mRes.json();
-                if (aRes.ok) _assignmentsData = await aRes.json();
-                _render();
-            } catch (e) {
-                console.warn('[missions] fetch error', e);
+                const r = await fetch(GUARD_HTTP + '/missions');
+                if (r.ok) _missionData = await r.json();
+            } catch (_) {}
+        };
+
+        // ── populate preset picker ────────────────────────────────────────
+
+        const _populatePresets = () => {
+            const sel = document.getElementById('p25-preset');
+            if (!sel) return;
+            const missions = Object.values(_missionData);
+            if (missions.length === 0) {
+                sel.innerHTML = '<option value="">— no presets, fill manually —</option>';
+                return;
+            }
+            sel.innerHTML = '<option value="">— pick preset —</option>'
+                + missions.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+        };
+
+        const _loadPreset = (id) => {
+            const m = _missionData[id];
+            if (!m) return;
+            _activeMissionId = id;
+            document.getElementById('p25-name').value     = m.name || '';
+            document.getElementById('p25-short').value    = m.shortName || '';
+            document.getElementById('p25-channels').value = _payloadToLines(m);
+            document.getElementById('p25-squelch').value  = m.squelch ?? -50;
+            document.getElementById('p25-gain').value     = m.gain ?? 35;
+        };
+
+        document.getElementById('p25-preset')?.addEventListener('change', function () {
+            if (this.value) _loadPreset(this.value);
+        });
+
+        // ── load P25 panel when mode selected ───────────────────────────
+
+        window._p25LoadModal = async (sdr) => {
+            await _fetchMissions();
+            _populatePresets();
+
+            // Check if this SDR is already running a P25 mission
+            const runningMission = Object.values(_missionData).find(m =>
+                m.status === 'running' && m.assignedSerial === (sdr?.serial || sdr?.device)
+            );
+
+            const launchBtn = document.getElementById('sdr-modal-launch');
+            const statusRow = document.getElementById('p25-status-row');
+
+            if (runningMission) {
+                _activeMissionId = runningMission.id;
+                _loadPreset(runningMission.id);
+                if (launchBtn) launchBtn.textContent = 'Drop';
+                if (statusRow) {
+                    statusRow.style.display = 'block';
+                    statusRow.innerHTML = `<span style="color:var(--ok)">&#9679;</span> Running: <strong>${runningMission.name}</strong> &middot; ${(runningMission.channels || []).length} channels`;
+                }
+                // lock fields while running
+                ['p25-name','p25-short','p25-channels','p25-squelch','p25-gain'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.disabled = true;
+                });
+                document.getElementById('p25-preset').disabled = true;
+            } else {
+                _activeMissionId = null;
+                if (launchBtn) launchBtn.textContent = 'Launch';
+                if (statusRow) statusRow.style.display = 'none';
+                ['p25-name','p25-short','p25-channels','p25-squelch','p25-gain'].forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.disabled = false;
+                });
+                document.getElementById('p25-preset').disabled = false;
+                // Auto-select first preset if fields are empty
+                if (!document.getElementById('p25-name').value) {
+                    const firstId = Object.keys(_missionData)[0];
+                    if (firstId) {
+                        document.getElementById('p25-preset').value = firstId;
+                        _loadPreset(firstId);
+                    }
+                }
             }
         };
 
-        // ── render ───────────────────────────────────────────────────────
+        // ── launch / drop ─────────────────────────────────────────────────
 
-        const _statusBadge = status => {
-            const color = status === 'running' ? 'var(--ok)' : status === 'error' ? 'var(--fault)' : 'var(--ink-2)';
-            const label = status === 'running' ? 'Running' : status === 'error' ? 'Error' : 'Stopped';
-            return `<span style="font-size:.72rem;font-weight:600;padding:2px 7px;border-radius:10px;background:${color}22;color:${color};border:1px solid ${color}44">${label}</span>`;
-        };
+        window._p25Launch = async (sdr) => {
+            const launchBtn = document.getElementById('sdr-modal-launch');
 
-        const _render = () => {
-            const grid = document.getElementById('missions-grid');
-            if (!grid) return;
-
-            if (Object.keys(_missionData).length === 0) {
-                grid.innerHTML = '<div style="color:var(--ink-2);font-size:.85rem;padding:var(--sp-3)">No missions defined. Click <strong>+ New Mission</strong> to create one.</div>';
+            // DROP — if already running
+            if (launchBtn?.textContent === 'Drop' && _activeMissionId) {
+                if (!confirm('Drop P25 scanner and release the SDR?')) return;
+                try {
+                    const r = await fetch(GUARD_HTTP + '/missions/' + _activeMissionId + '/stop', { method: 'POST' });
+                    const d = await r.json();
+                    if (!r.ok) { alert('Stop failed: ' + (d.error || r.status)); return; }
+                    _missionData[_activeMissionId] = d;
+                } catch (e) { alert('Stop error: ' + e); return; }
+                document.getElementById('sdr-launch-modal').hidden = true;
                 return;
             }
 
-            grid.innerHTML = Object.values(_missionData).map(m => {
-                const running   = m.status === 'running';
-                const err       = m.status === 'error';
-                const chCount   = (m.channels || []).length;
-                const sdrLabel  = running ? (() => {
-                    const serial = m.assignedSerial;
-                    const asgn   = Object.values(_assignmentsData).find(a => a.sn === serial);
-                    return asgn ? `${asgn.id} (SN ${serial})` : serial || '—';
-                })() : '';
+            // LAUNCH — build/update mission from form then start
+            const name    = document.getElementById('p25-name').value.trim();
+            const short   = document.getElementById('p25-short').value.trim();
+            const squelch = parseInt(document.getElementById('p25-squelch').value, 10);
+            const gain    = parseInt(document.getElementById('p25-gain').value, 10);
+            const lines   = _parseChannelLines(document.getElementById('p25-channels').value);
 
-                const freeSdrs  = _freeSdrs();
-                const sdrPicker = !running ? `
-                    <select id="sdr-pick-${m.id}" style="flex:1;padding:5px 8px;border-radius:5px;border:1px solid var(--border);background:var(--bg-a);color:var(--ink);font-size:.8rem">
-                        <option value="">— pick SDR —</option>
-                        ${freeSdrs.map(a => `<option value="${a.sn}">${a.id} — ${a.label || 'Open'} (${a.sn})</option>`).join('')}
-                    </select>
-                    <button onclick="window._missionStart('${m.id}')" style="padding:5px 12px;border-radius:5px;border:none;background:var(--ok);color:#000;cursor:pointer;font-size:.8rem;font-weight:600;white-space:nowrap">▶ Start</button>
-                ` : `
-                    <span style="font-size:.8rem;color:var(--ink-2)">SDR: <strong style="color:var(--ink)">${sdrLabel}</strong></span>
-                    <button onclick="window._missionStop('${m.id}')" style="padding:5px 12px;border-radius:5px;border:none;background:var(--fault);color:#fff;cursor:pointer;font-size:.8rem;font-weight:600;white-space:nowrap">■ Drop</button>
-                `;
+            if (!name || lines.length === 0) { alert('Mission name and at least one channel are required.'); return; }
 
-                const chanSummary = (m.channels || []).slice(0, 3).map(_mhz).join(', ')
-                    + (chCount > 3 ? ` +${chCount - 3} more` : '');
+            const chanPayload = _chanLinesToPayload(lines);
+            const serial = sdr?.serial || (sdr?.device?.match(/^([0-9A-Fa-f]{8})$/) ? sdr.device : null);
 
-                return `<div style="background:var(--bg-b);border:1px solid var(--border);border-radius:8px;padding:14px 16px;display:flex;flex-direction:column;gap:10px">
-                    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px">
-                        <div>
-                            <div style="font-size:.9rem;font-weight:600;color:var(--ink)">${m.name}</div>
-                            <div style="font-size:.75rem;color:var(--ink-2);margin-top:2px">${m.type} · ${chCount} ch · ${m.shortName}</div>
-                        </div>
-                        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
-                            ${_statusBadge(m.status)}
-                            ${!running ? `<button onclick="window._missionEdit('${m.id}')" title="Edit" style="background:none;border:none;cursor:pointer;color:var(--ink-2);font-size:.9rem;padding:2px 4px">✎</button>` : ''}
-                            ${!running ? `<button onclick="window._missionDelete('${m.id}')" title="Delete" style="background:none;border:none;cursor:pointer;color:var(--fault);font-size:.9rem;padding:2px 4px">✕</button>` : ''}
-                        </div>
-                    </div>
-                    <div style="font-size:.75rem;color:var(--ink-2);font-family:monospace;background:var(--bg-a);padding:6px 8px;border-radius:5px;border:1px solid var(--border)88">${chanSummary}</div>
-                    <div style="display:flex;align-items:center;gap:8px">${sdrPicker}</div>
-                </div>`;
-            }).join('');
-        };
+            // Determine mission id — use existing preset or create slug from name
+            let missionId = _activeMissionId
+                || Object.keys(_missionData).find(id => _missionData[id].name === name)
+                || name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
-        // ── actions ──────────────────────────────────────────────────────
+            const body = { name, shortName: short || name.replace(/\W+/g, '').slice(0, 8).toUpperCase(),
+                type: 'conventionalP25', squelch, gain, ...chanPayload };
 
-        window._missionStart = async id => {
-            const pick = document.getElementById('sdr-pick-' + id);
-            const serial = pick ? pick.value : '';
-            if (!serial) { alert('Select an SDR first.'); return; }
             try {
-                const r = await fetch(GUARD_HTTP + '/missions/' + id + '/start', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ serial }),
+                // Upsert mission
+                if (_missionData[missionId]) {
+                    const u = await fetch(GUARD_HTTP + '/missions/' + missionId, {
+                        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+                    });
+                    if (u.ok) _missionData[missionId] = await u.json();
+                } else {
+                    body.id = missionId;
+                    const c = await fetch(GUARD_HTTP + '/missions', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+                    });
+                    if (c.ok) { const d = await c.json(); missionId = d.id; _missionData[missionId] = d; }
+                }
+
+                // Start mission with this SDR's serial
+                const startBody = serial ? { serial } : {};
+                const r = await fetch(GUARD_HTTP + '/missions/' + missionId + '/start', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(startBody),
                 });
                 const d = await r.json();
                 if (!r.ok) { alert('Start failed: ' + (d.error || r.status)); return; }
-                _missionData[id] = d;
-                _render();
-                setTimeout(_fetchAll, 4000); // re-fetch after container starts
-            } catch (e) { alert('Start error: ' + e); }
+                _missionData[missionId] = d;
+            } catch (e) { alert('Launch error: ' + e); return; }
+
+            document.getElementById('sdr-launch-modal').hidden = true;
         };
 
-        window._missionStop = async id => {
-            if (!confirm('Drop this mission and release the SDR?')) return;
-            try {
-                const r = await fetch(GUARD_HTTP + '/missions/' + id + '/stop', { method: 'POST' });
-                const d = await r.json();
-                if (!r.ok) { alert('Stop failed: ' + (d.error || r.status)); return; }
-                _missionData[id] = d;
-                _render();
-                setTimeout(_fetchAll, 3000);
-            } catch (e) { alert('Stop error: ' + e); }
-        };
-
-        window._missionDelete = async id => {
-            if (!confirm('Delete mission "' + (_missionData[id]?.name || id) + '"?')) return;
-            try {
-                const r = await fetch(GUARD_HTTP + '/missions/' + id, { method: 'DELETE' });
-                if (!r.ok) { const d = await r.json(); alert('Delete failed: ' + (d.error || r.status)); return; }
-                delete _missionData[id];
-                _render();
-            } catch (e) { alert('Delete error: ' + e); }
-        };
-
-        window._missionEdit = id => _openModal(_missionData[id]);
-
-        // ── modal ────────────────────────────────────────────────────────
-
-        const _openModal = (mission) => {
-            const isNew = !mission;
-            document.getElementById('mission-modal-title').textContent = isNew ? 'New Mission' : 'Edit Mission';
-            document.getElementById('mf-id').value        = isNew ? '' : mission.id;
-            document.getElementById('mf-name').value      = isNew ? '' : mission.name;
-            document.getElementById('mf-short').value     = isNew ? '' : mission.shortName;
-            document.getElementById('mf-type').value      = isNew ? 'conventionalP25' : mission.type;
-            document.getElementById('mf-squelch').value   = isNew ? '-50' : mission.squelch;
-            document.getElementById('mf-gain').value      = isNew ? '35'  : mission.gain;
-            document.getElementById('mf-channels').value  = isNew ? '' : _payloadToLines(mission);
-            document.getElementById('mission-modal').showModal();
-        };
-
-        document.getElementById('mission-modal-save')?.addEventListener('click', async () => {
-            const id      = document.getElementById('mf-id').value.trim();
-            const name    = document.getElementById('mf-name').value.trim();
-            const short   = document.getElementById('mf-short').value.trim();
-            const type    = document.getElementById('mf-type').value;
-            const squelch = parseInt(document.getElementById('mf-squelch').value, 10);
-            const gain    = parseInt(document.getElementById('mf-gain').value, 10);
-            const lines   = _parseChannelLines(document.getElementById('mf-channels').value);
-
-            if (!name || lines.length === 0) { alert('Name and at least one channel are required.'); return; }
-
-            const chanPayload = _chanLinesToPayload(lines);
-            const body = { name, shortName: short || name.replace(/\W+/g, '').slice(0, 8).toUpperCase(), type, squelch, gain, ...chanPayload };
-
-            let r;
-            if (id && _missionData[id]) {
-                // update
-                r = await fetch(GUARD_HTTP + '/missions/' + id, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body),
-                });
-            } else {
-                // create
-                const newId = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-                body.id = newId;
-                r = await fetch(GUARD_HTTP + '/missions', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body),
-                });
-            }
-
-            const d = await r.json();
-            if (!r.ok) { alert('Save failed: ' + (d.error || r.status)); return; }
-            _missionData[d.id] = d;
-            document.getElementById('mission-modal').close();
-            _render();
-        });
-
-        document.getElementById('mission-new-btn')?.addEventListener('click', () => _openModal(null));
-
-        // ── init / poll ──────────────────────────────────────────────────
-
-        window._missionsInit = () => {
-            if (!_initialized) {
-                _initialized = true;
-                _fetchAll();
-                _pollTimer = setInterval(_fetchAll, 10000);
-            } else {
-                _fetchAll();
-            }
-        };
+        // Pre-fetch missions so presets are ready when modal opens
+        _fetchMissions();
 
     })();
     </script>
