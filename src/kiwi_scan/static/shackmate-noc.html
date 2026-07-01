@@ -7663,6 +7663,8 @@
                     if (_noaaId  && _noaaId  === sid)       { _sdrSetLabel(s.id, 'NOAA Weather');          _sdrSetStat(s.id, 'active · 162 MHz', 'ok'); return; }
                     if (_rptId   && _rptId   === sid)       { _sdrSetLabel(s.id, 'Repeater Monitoring');   _sdrSetStat(s.id, 'active', 'ok'); return; }
                     if (_tpmsId  && _tpmsId  === sid)       { _sdrSetLabel(s.id, 'TPMS');                  _sdrSetStat(s.id, 'active · ' + (s.freq || '314.490 MHz'), 'ok'); return; }
+                    const _p25Id = (window._p25ActiveSdrId || '').toLowerCase();
+                    if (_p25Id   && _p25Id   === sid)       { _sdrSetLabel(s.id, 'P25 Scanner');           _sdrSetStat(s.id, 'active · ' + (window._p25ActiveShortName || 'P25'), 'ok'); return; }
                     if      (s.type === 'adsb')    _sdrSetStat(s.id, 'active · ' + s.freq, 'ok');
                     else if (s.type === 'decode')  _sdrSetStat(s.id, (s.tcpDevice ? 'rtl_tcp · ' : 'decoding · ') + s.freq, 'ok');
                     else if (s.type === 'local')   _sdrSetStat(s.id, 'local · ' + s.freq, 'warn');
@@ -13810,20 +13812,15 @@
         // ── launch / drop ─────────────────────────────────────────────────
 
         const _p25UpdateCard = (sdr, missionName, shortName, active) => {
-            const cid        = (sdr?.id || '').toLowerCase();
-            const cardEl     = document.getElementById('sdr-card-' + cid);
-            const labelEl    = cardEl?.querySelector('.sdr-rx-label');
-            const statEl     = document.getElementById('sdr-stat-' + cid);
-            if (!cardEl) return;
             if (active) {
-                if (labelEl) labelEl.textContent = 'P25 Scanner';
-                if (statEl)  { statEl.textContent = 'active · ' + (shortName || missionName || 'P25'); statEl.className = 'sdr-rx-stat ok'; }
-                cardEl.className = cardEl.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '') + ' is-ok';
+                window._p25ActiveSdrId     = (sdr?.id || '').toLowerCase();
+                window._p25ActiveShortName = shortName || missionName || 'P25';
             } else {
-                if (labelEl) labelEl.textContent = sdr?.label || 'Open';
-                if (statEl)  { statEl.textContent = 'Available'; statEl.className = 'sdr-rx-stat'; }
-                cardEl.className = cardEl.className.replace(/\bis-(ok|warn|bad|mute)\b/g, '').trimEnd();
+                window._p25ActiveSdrId     = null;
+                window._p25ActiveShortName = null;
             }
+            // Trigger the shared render cycle so all cards update consistently
+            if (typeof window._sdrRefreshPill === 'function') window._sdrRefreshPill();
         };
 
         window._p25Launch = async (sdr) => {
