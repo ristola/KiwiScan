@@ -13781,7 +13781,21 @@
                     statusRow.style.display = 'block';
                     statusRow.innerHTML = '<span style="color:var(--ok)">&#9679;</span> Running: <strong>'
                         + runningMission.name + '</strong> &middot; '
-                        + (runningMission.channels || []).length + ' channels &mdash; <em>Launch will drop and restart, or cancel to leave it running.</em>';
+                        + (runningMission.channels || []).length + ' channels'
+                        + ' &nbsp;<button id="p25-drop-only-btn" type="button" style="font-size:0.7rem;padding:2px 8px;border-radius:4px;border:1px solid var(--fault);background:transparent;color:var(--fault);cursor:pointer">Drop &amp; release SDR</button>';
+                    document.getElementById('p25-drop-only-btn')?.addEventListener('click', async () => {
+                        if (!confirm('Drop "' + runningMission.name + '" and release the SDR?')) return;
+                        try {
+                            const rd = await fetch(GUARD_HTTP + '/missions/' + runningMission.id + '/stop', { method: 'POST' });
+                            const dd = await rd.json();
+                            if (!rd.ok) { alert('Stop failed: ' + (dd.error || rd.status)); return; }
+                            _missionData[runningMission.id] = dd;
+                            _activeMissionId = null;
+                        } catch (e) { alert('Stop error: ' + e); return; }
+                        _p25UpdateCard(window._p25DropSdr, null, null, false);
+                        document.getElementById('sdr-launch-modal').hidden = true;
+                    });
+                    window._p25DropSdr = sdr;
                 }
             } else {
                 _activeMissionId = null;
@@ -13825,19 +13839,18 @@
                 ? Object.values(_missionData).find(m => m.status === 'running' && m.assignedSerial === serial)
                 : (_activeMissionId ? _missionData[_activeMissionId] : null);
 
-            // DROP — if already running on this SDR
+            // Already running — stop first, then fall through to re-launch below
             if (runningMission) {
-                if (!confirm('Drop "' + runningMission.name + '" and release the SDR?')) return;
+                if (!confirm('"' + runningMission.name + '" is already running on this SDR.\n\nStop it and re-launch with the current config?')) return;
                 try {
                     const r = await fetch(GUARD_HTTP + '/missions/' + runningMission.id + '/stop', { method: 'POST' });
                     const d = await r.json();
                     if (!r.ok) { alert('Stop failed: ' + (d.error || r.status)); return; }
                     _missionData[runningMission.id] = d;
-                    _activeMissionId = null;
+                    _activeMissionId = runningMission.id;
                 } catch (e) { alert('Stop error: ' + e); return; }
                 _p25UpdateCard(sdr, null, null, false);
-                document.getElementById('sdr-launch-modal').hidden = true;
-                return;
+                // fall through to re-launch
             }
 
             // LAUNCH — build/update mission from form then start
