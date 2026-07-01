@@ -10119,17 +10119,16 @@
                 } catch (_) {}
 
                 if (st.running) {
-                    // Match by device (tcpDevice) first — stable across SDR_A reorderings
-                    let sdrDef = saved?.device ? _allSdrs().find(s => s.tcpDevice === saved.device) : null;
-                    if (!sdrDef && saved?.sdrId) sdrDef = _allSdrs().find(s => s.id === saved.sdrId);
-                    const hadExplicitAssignment = !!sdrDef;
-                    sdrDef = sdrDef || _allSdrs().find(s => s.type === 'noaa') || { id:'A7', label:'Open', tcpDevice:'tcp://10.13.73.195:7373', type:'noaa' };
+                    // Prefer the device the server is actually using (st.device = rtl_tcp URL)
+                    // over the stale saved assignment — avoids mapping to the wrong SDR card.
+                    let sdrDef = st.device ? _allSdrs().find(s => s.tcpDevice === st.device) : null;
+                    if (!sdrDef && saved?.device) sdrDef = _allSdrs().find(s => s.tcpDevice === saved.device);
+                    if (!sdrDef && saved?.sdrId)  sdrDef = _allSdrs().find(s => s.id === saved.sdrId);
+                    sdrDef = sdrDef || _allSdrs().find(s => s.type === 'noaa') || { id:'A9', label:'Open', tcpDevice:'tcp://10.13.73.193:7373', type:'open' };
                     _noaaSdr = Object.assign({}, sdrDef);
                     _startNoaaPanel(_noaaSdr);
                     if (st.alerts?.length) { _noaaAlerts = st.alerts; _renderNoaaAlerts(); }
-                    // Only write back the assignment when we have an explicit sdrId — avoid
-                    // clobbering a user's explicit assignment with the type-based fallback.
-                    if (hadExplicitAssignment) _saveNoaaSession();
+                    _saveNoaaSession();
                     return;
                 }
 
@@ -13907,8 +13906,16 @@
             document.getElementById('sdr-launch-modal').hidden = true;
         };
 
-        // Pre-fetch missions so presets are ready when modal opens
-        _fetchMissions();
+        // Pre-fetch missions and restore any running P25 mission card state
+        _fetchMissions().then(() => {
+            const running = Object.values(_missionData).find(m => m.status === 'running' && m.assignedSerial);
+            if (!running) return;
+            const sdr = (window.SDR_A || []).find(s => s.serial === running.assignedSerial);
+            if (!sdr) return;
+            window._p25ActiveSdrId     = sdr.id.toLowerCase();
+            window._p25ActiveShortName = running.shortName || running.name || 'P25';
+            if (typeof window._sdrRefreshPill === 'function') window._sdrRefreshPill();
+        });
 
     })();
     </script>
