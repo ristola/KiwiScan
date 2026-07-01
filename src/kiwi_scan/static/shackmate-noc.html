@@ -9192,12 +9192,17 @@
             titleEl.textContent = sdr.id + ' · ' + sdr.label;
             badgeEl.textContent = 'Available';
             _renderChannelList();
-            // Pre-select mode based on SDR type / label
-            const defaultMode = _activeSdr.type === 'noaa'                   ? 'noaa-monitor'
-                              : _activeSdr.type === 'vhf-digital'             ? 'vhf-digital'
-                              : _activeSdr.label === 'Acurite 433'            ? 'acurite433'
-                              : (_activeSdr.serial === '00000315' || _activeSdr.label === 'Open' && _activeSdr.freq === '314.490 MHz') ? 'tpms'
-                              : 'repeater-monitor';
+            // Pre-select mode only when that service is actively running on THIS SDR.
+            // Type-based defaults are wrong when the service is running on a different SDR.
+            const _sid = (_activeSdr.id || '').toLowerCase();
+            const defaultMode =
+                (window._noaaActiveSdrId  === _sid)                             ? 'noaa-monitor'
+              : (window._vhfActiveSdrId   === _sid || window._vhfAssignedSdrId === _sid) ? 'vhf-digital'
+              : (window._p25ActiveSdrId   === _sid)                             ? 'p25-scanner'
+              : (window._tpmsActiveSdrId  === _sid)                             ? 'tpms'
+              : (window._repeaterActiveSdrId === _sid)                          ? 'repeater-monitor'
+              : _activeSdr.label === 'Acurite 433'                              ? 'acurite433'
+              : 'repeater-monitor';
             _selectMode(defaultMode);
             modal.hidden = false;
         };
