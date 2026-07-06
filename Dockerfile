@@ -34,6 +34,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   zlib1g-dev \
   librtaudio-dev \
   wsjtx \
+  multimon-ng \
   curl \
   ca-certificates \
   procps \

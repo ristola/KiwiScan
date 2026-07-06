@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+from scipy.signal import bilinear, lfilter, lfilter_zi
 
 RECORDINGS_DIR  = Path("outputs/recordings/repeater")
 MIN_REC_SEC     = 2.0   # discard recordings shorter than this (noise-floor blips)
@@ -46,7 +47,7 @@ FFT_SIZE        = 4096          # frequency resolution: 2400000/4096 ≈ 586 Hz/
 CHUNK_SAMPLES   = 65536         # IQ pairs per processing chunk (~27 ms at 2.4 MSPS)
 AUDIO_RATE      = 48_000        # output audio sample rate after FM demod + decimate
 CARRIER_THRESH  = 12.0          # dB above noise floor → carrier present
-VOICE_ENERGY    = 0.004         # RMS² threshold for voice activity
+VOICE_ENERGY    = 0.04          # RMS² threshold for voice activity
 STT_WINDOW_SEC  = 4.0           # seconds of audio before sending to Whisper
 NOISE_ALPHA     = 0.05          # IIR weight for noise floor tracking
 
@@ -69,6 +70,18 @@ _CMD_SET_RATE        = 0x02
 _CMD_SET_GAIN_MODE   = 0x03  # 0=auto, 1=manual
 _CMD_SET_GAIN        = 0x04  # tenths of dB
 _CMD_SET_AGC_MODE    = 0x08  # 1=enable hardware AGC
+
+# ── NBFM audio chain constants ────────────────────────────────────────────────
+# VHF FM repeaters use 75 µs pre-emphasis (US standard); de-emphasis undoes it.
+_DEEMPH_B, _DEEMPH_A = bilinear([1.0], [75e-6, 1.0], AUDIO_RATE)
+_DEEMPH_ZI_PROTO: np.ndarray = lfilter_zi(_DEEMPH_B, _DEEMPH_A).astype(np.float64)
+
+# FM discriminator gain: ±5 kHz deviation → disc ≈ ±0.654 rad at 48 kHz.
+# 0.7 brings 5 kHz dev to ~0.69 before de-emphasis, leaving headroom so that
+# carrier noise sits at ~18% RMS (below VOICE_ENERGY threshold) and speech
+# peaks at ~60% — giving ~10 dB perceptual SNR.
+_RPT_FM_GAIN    = 0.7
+_RPT_AUDIO_GAIN = 1.5  # tanh soft-limiter drive (higher = harder limiting)
 
 
 # ── Data model ───────────────────────────────────────────────────────────────
@@ -105,6 +118,10 @@ class RepeaterChannel:
     _monitor_start:        Optional[float] = field(default=None, repr=False)
     _monitor_voice_frames: int             = field(default=0,    repr=False)
     _monitor_total_frames: int             = field(default=0,    repr=False)
+    # Per-channel FM demod state (phase continuity + de-emphasis IIR)
+    _lo_phase: float                          = field(default=0.0,  repr=False)
+    _last_iq:  complex                        = field(default=0j,   repr=False)
+    _zi_dem:   Optional[np.ndarray]           = field(default=None, repr=False)
 
 
 def _parse_tcp_device(device: str) -> Optional[tuple[str, int]]:
@@ -416,7 +433,7 @@ class RtlRepeaterMonitor:
         # ── FM demodulation ────────────────────────────────────────────────────
         has_subs = bool(ch._audio_subscribers)
         if ch.carrier or has_subs or ch._rec_file:
-            audio     = self._fm_demodulate(iq, ch.freq_hz)
+            audio     = self._fm_demodulate(iq, ch)
             chunk_dur = len(audio) / AUDIO_RATE
             pcm_bytes = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
 
@@ -565,30 +582,42 @@ class RtlRepeaterMonitor:
             ch._rec_close_at = None
             self._close_recording(ch)
 
-    def _fm_demodulate(self, iq: np.ndarray, channel_hz: int) -> np.ndarray:
+    def _fm_demodulate(self, iq: np.ndarray, ch: RepeaterChannel) -> np.ndarray:
         """
-        Mix the wideband IQ down to channel_hz, lowpass filter, decimate to
-        AUDIO_RATE, then FM-discriminate to get baseband audio.
+        Mix the wideband IQ down to ch.freq_hz, box-decimate to AUDIO_RATE,
+        FM-discriminate, apply 75 µs de-emphasis, and soft-limit.
+        Phase continuity and de-emphasis IIR state are stored on `ch`.
         """
         decimate = self.sample_rate // AUDIO_RATE  # 50 for 2.4 MSPS → 48 kHz
+        n = len(iq)
 
-        # Mix down to channel (frequency shift)
-        offset = channel_hz - self.center_hz
-        t = np.arange(len(iq)) / self.sample_rate
-        mixed = iq * np.exp(-2j * np.pi * offset * t)
+        # Mix down — maintain LO phase across chunks to avoid per-chunk click
+        offset = ch.freq_hz - self.center_hz
+        phase_vec = (
+            2 * np.pi * offset / self.sample_rate * np.arange(n) + ch._lo_phase
+        )
+        mixed = iq * np.exp(-1j * phase_vec)
+        ch._lo_phase = (ch._lo_phase + 2 * np.pi * offset / self.sample_rate * n) % (2 * np.pi)
 
-        # Lowpass: keep only ±channel_bw/2 (simple box filter via decimate)
-        # A proper implementation would use scipy.signal.lfilter with FIR taps;
-        # this box decimate is adequate for carrier/voice detection purposes.
-        n_out = len(mixed) // decimate
+        # Box decimate
+        n_out = n // decimate
         chan = mixed[: n_out * decimate].reshape(n_out, decimate).mean(axis=1)
 
-        # FM discriminator: angle of adjacent-sample product
-        disc = np.angle(np.conj(chan[:-1]) * chan[1:])
+        # FM discriminator — prepend last sample from previous chunk for continuity
+        extended = np.concatenate([[ch._last_iq], chan])
+        ch._last_iq = chan[-1]
+        disc = np.angle(np.conj(extended[:-1]) * extended[1:])
 
-        # Normalize to float32 in [-1, 1]
-        peak = np.max(np.abs(disc)) + 1e-9
-        return (disc / peak).astype(np.float32)
+        # Fixed FM gain (no per-chunk peak normalization — that amplifies silence)
+        audio = (disc * _RPT_FM_GAIN).astype(np.float64)
+
+        # De-emphasis: 75 µs IIR (undoes transmitter pre-emphasis)
+        if ch._zi_dem is None:
+            ch._zi_dem = _DEEMPH_ZI_PROTO.copy() * float(audio[0]) if len(audio) else _DEEMPH_ZI_PROTO.copy()
+        audio, ch._zi_dem = lfilter(_DEEMPH_B, _DEEMPH_A, audio, zi=ch._zi_dem)
+
+        # Soft limiter
+        return np.tanh(audio * _RPT_AUDIO_GAIN).astype(np.float32)
 
     # ── Signal classifier ─────────────────────────────────────────────────
 

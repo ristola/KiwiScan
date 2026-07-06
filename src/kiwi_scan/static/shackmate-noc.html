@@ -1399,10 +1399,12 @@
         .dm-mode-btn[data-dm-mode="WSPR"] { border-color: rgba(140,80,255,0.6); }
         .dm-mode-btn[data-dm-mode="FT4"]  { border-color: rgba(50,200,80,0.6); }
         .dm-mode-btn[data-dm-mode="FT8"]  { border-color: rgba(47,140,255,0.6); }
+        .dm-mode-btn[data-dm-mode="APRS"] { border-color: rgba(32,184,160,0.6); }
         .dm-mode-btn.is-on { color: var(--fg); opacity: 1; }
         .dm-mode-btn.is-on[data-dm-mode="WSPR"] { color: rgba(170,130,255,1); }
         .dm-mode-btn.is-on[data-dm-mode="FT4"]  { color: rgba(50,200,80,1); }
         .dm-mode-btn.is-on[data-dm-mode="FT8"]  { color: rgba(80,160,255,1); }
+        .dm-mode-btn.is-on[data-dm-mode="APRS"] { color: var(--ok); }
         .dm-check {
             display: flex; align-items: center; gap: 0.3rem;
             font-size: 0.72rem; color: var(--fg-dim); cursor: pointer;
@@ -2230,6 +2232,7 @@
             white-space: nowrap;
         }
         .sc-chip.ok   { border-color: rgba(50,200,80,0.4);  color: rgba(50,200,80,1); }
+        .sc-chip.warn { border-color: rgba(240,183,47,0.4); color: rgba(240,183,47,1); }
         .sc-chip.bad  { border-color: rgba(255,80,80,0.4);  color: rgba(255,80,80,1); }
         .sc-chip.ft8-chip  { color: rgba(47,140,255,0.9); }
         .sc-chip.ft4-chip  { color: rgba(50,200,80,0.9); }
@@ -4271,6 +4274,7 @@
                                     <button class="dm-mode-btn is-on" data-dm-mode="WSPR" type="button">WSPR</button>
                                     <button class="dm-mode-btn is-on" data-dm-mode="FT4" type="button">FT4</button>
                                     <button class="dm-mode-btn is-on" data-dm-mode="FT8" type="button">FT8</button>
+                                    <button class="dm-mode-btn is-on" data-dm-mode="APRS" type="button">APRS</button>
                                 </div>
                                 <label class="dm-check"><input type="checkbox" id="dm-cq-only" checked><span>CQ's Only</span></label>
                                 <label class="dm-check"><input type="checkbox" id="dm-dx-only"><span>DX Only</span></label>
@@ -4813,8 +4817,15 @@
                     const comment = String(decode && decode.comment || '').trim();
                     return comment ? `${call} · ${comment}` : call;
                 }
-                const band = String(decode && decode.band || '').trim();
-                const snr = decode && decode.snr !== undefined ? ` / ${decode.snr} dB` : '';
+                // For VHF frames (have freq_hz), show freq instead of empty band + extract SNR from jt9 message
+                const freqLabel = decode && decode.freq_hz ? `${(decode.freq_hz / 1e6).toFixed(3)} MHz` : '';
+                const band = freqLabel || String(decode && decode.band || '').trim();
+                let snrVal = (decode && decode.snr !== undefined) ? decode.snr : null;
+                if (snrVal === null && decode && decode.message) {
+                    const _p = String(decode.message).trim().split(/\s+/);
+                    if (_p.length >= 2 && /^\d{6}$/.test(_p[0]) && !isNaN(_p[1])) snrVal = parseInt(_p[1], 10);
+                }
+                const snr = snrVal !== null ? ` / ${snrVal >= 0 ? '+' : ''}${snrVal} dB` : '';
                 return [call, band, mode].filter(Boolean).join(' / ') + snr;
             };
 
@@ -4903,9 +4914,17 @@
 
             const getAvailableRfModes = () => {
                 const seen = new Set();
-                for (const decode of siteState.decodes) {
-                    const mode = String(decode.mode || '').toUpperCase();
-                    if (mode && ['FT8', 'FT4', 'WSPR', 'SSB'].includes(mode)) seen.add(mode);
+                if (rfMapDataMode === 'vhf') {
+                    // VHF/UHF mode: show only buttons for modes with actual decoded frames
+                    for (const f of rfVhfDecodes) {
+                        const mode = String(f.mode || '').toUpperCase();
+                        if (mode && ['FT8', 'FT4', 'WSPR'].includes(mode)) seen.add(mode);
+                    }
+                } else {
+                    for (const decode of siteState.decodes) {
+                        const mode = String(decode.mode || '').toUpperCase();
+                        if (mode && ['FT8', 'FT4', 'WSPR', 'SSB'].includes(mode)) seen.add(mode);
+                    }
                 }
                 return Array.from(seen);
             };
@@ -5063,7 +5082,7 @@
                 } else {
                     const modeTest = rfMapDataMode === 'aprs'
                         ? (f) => String(f.mode || '').toUpperCase() === 'APRS'
-                        : (f) => ['FT8', 'FT4', 'WSPR'].includes(String(f.mode || '').toUpperCase());
+                        : (f) => { const m = String(f.mode || '').toUpperCase(); return ['FT8', 'FT4', 'WSPR'].includes(m) && rfMapSelectedModes.has(m); };
                     decodePoints = rfVhfDecodes
                         .filter((f) => {
                             if (!f || !modeTest(f)) return false;
@@ -5096,9 +5115,64 @@
                             dashArray: '8 8'
                         }).addTo(rfPathLayer);
                     }
-                    decodePoints.forEach(({ decode, coords }) => {
-                        const mode = String(decode && decode.mode || '').toUpperCase();
-                        const icon = mode === 'APRS' ? makeAprsIcon(decode) : makeDecodeIcon(mode);
+                    // Group digital VHF decodes by callsign → one marker per station
+                    // showing all decoded modes in the popup.  APRS frames keep
+                    // individual markers (each position may differ).
+                    const _vhfFmModes = new Set(['APRS', 'PACKET']);
+                    const _digitalPts = decodePoints.filter(({ decode }) => !_vhfFmModes.has(String(decode && decode.mode || '').toUpperCase()));
+                    const _aprsPts    = decodePoints.filter(({ decode }) =>  _vhfFmModes.has(String(decode && decode.mode || '').toUpperCase()));
+
+                    // decodePoints is newest-first; group keeping all decodes per callsign
+                    const _byCall = new Map();
+                    _digitalPts.forEach(({ decode, coords }) => {
+                        const call = String(decode && (decode.callsign || decode.call) || '').trim().toUpperCase();
+                        if (!call) return;
+                        if (!_byCall.has(call)) _byCall.set(call, { coords, decodes: [] });
+                        _byCall.get(call).decodes.push(decode);
+                    });
+
+                    _byCall.forEach(({ coords, decodes }, call) => {
+                        const primary = decodes[0];   // most recent (array is newest-first)
+                        const primaryMode = String(primary && primary.mode || '').toUpperCase();
+                        const icon = makeDecodeIcon(primaryMode);
+                        // Time ago from most recent decode
+                        const _primTs = primary
+                            ? (primary.received_at ? Date.parse(primary.received_at)
+                               : primary.epoch_ts   ? Number(primary.epoch_ts) * 1000 : 0)
+                            : 0;
+                        let _agoStr = '';
+                        if (_primTs > 0) {
+                            const _ageS = Math.max(0, Math.round((Date.now() - _primTs) / 1000));
+                            _agoStr = _ageS < 60 ? `${_ageS}s ago`
+                                    : _ageS < 3600 ? `${Math.round(_ageS / 60)}m ago`
+                                    : `${Math.round(_ageS / 3600)}h ago`;
+                        }
+                        // Build compact popup: one line per unique (mode, band)
+                        const _seenModeFreq = new Set();
+                        const modeLines = decodes.reduce((acc, d) => {
+                            const m    = String(d.mode || '').toUpperCase();
+                            const band = String(d.band || '').toUpperCase();
+                            const key  = m + '|' + (band || d.freq_hz || '');
+                            if (_seenModeFreq.has(key)) return acc;
+                            _seenModeFreq.add(key);
+                            const _p  = String(d.message || '').trim().split(/\s+/);
+                            const snrN = (_p.length >= 2 && /^\d{6}$/.test(_p[0]) && !isNaN(_p[1])) ? parseInt(_p[1], 10) : null;
+                            const snrS = snrN !== null ? ` ${snrN >= 0 ? '+' : ''}${snrN} dB` : '';
+                            const bandS = band ? ` · ${band}` : (d.freq_hz ? ` · ${(d.freq_hz / 1e6).toFixed(3)} MHz` : '');
+                            acc.push(`<span style="color:${modeColor(m)};font-weight:700">${m}</span>${bandS}${snrS}`);
+                            return acc;
+                        }, []).join('<br>');
+                        const _header = _agoStr ? `<b>${call}</b> <span style="opacity:.65;font-size:.85em">${_agoStr}</span>` : `<b>${call}</b>`;
+                        const popup = `<div class="rf-map-popup">${_header}<br>${modeLines}</div>`;
+                        const marker = L.marker([coords.lat, coords.lon], { icon })
+                            .bindPopup(popup);
+                        marker.on('mouseover', () => marker.openPopup());
+                        marker.on('mouseout', () => marker.closePopup());
+                        marker.addTo(rfDecodeLayer);
+                    });
+
+                    _aprsPts.forEach(({ decode, coords }) => {
+                        const icon = makeAprsIcon(decode);
                         const marker = L.marker([coords.lat, coords.lon], { icon })
                             .bindPopup(`<div class="rf-map-popup">${decodeLabel(decode)}</div>`);
                         marker.on('mouseover', () => marker.openPopup());
@@ -5235,15 +5309,18 @@
                         }
                         _setVhfOverlay(null);
                         renderRfMap();
+                        renderDecodeMessages();
                     } else {
                         rfVhfDecodes = [];
                         _setVhfOverlay('VHF Digital offline');
                         renderRfMap();
+                        renderDecodeMessages();
                     }
                 } catch (_) {
                     rfVhfDecodes = [];
                     _setVhfOverlay('VHF Digital offline');
                     renderRfMap();
+                    renderDecodeMessages();
                 }
             };
 
@@ -5259,7 +5336,6 @@
                     fetchVhfDecodes().then(() => setTimeout(() => fitRfMap(), 80));
                     rfVhfFetchTimer = setInterval(fetchVhfDecodes, 5000);
                 } else {
-                    rfVhfDecodes = [];
                     _setVhfOverlay(null);
                     renderRfMap();
                     updateRfBandFilterButtons();
@@ -5639,6 +5715,7 @@
                 renderDecodeMessages();
                 updateRailPanel();
                 backfillOpsHistory();
+                pushOpsPoint();
                 renderOpsAll();
                 updateStatCards();
                 applySiteFilter(siteState.active);
@@ -5698,18 +5775,22 @@
 
 
                 // ── VPN Health ──
+                // Latency thresholds: <200ms=ok, 200-499ms=warn, ≥500ms=bad
+                const _vpnQuality = (ms) => ms === null ? 'bad' : ms >= 500 ? 'bad' : ms >= 200 ? 'warn' : 'ok';
                 if (_lastNetPingResults) {
                     const vpn = _lastNetPingResults.find((r) => r.id === 'kb');
                     const vpnVal = document.getElementById('sc-vpn-val');
                     const vpnDot = document.getElementById('sc-vpn-dot');
-                    if (vpnVal) vpnVal.textContent = vpn && vpn.ok ? `${vpn.ms} ms` : 'DOWN';
-                    if (vpnDot) vpnDot.className = `status-dot ${vpn && vpn.ok ? 'ok' : 'bad'}`;
+                    const vpnMs  = vpn && vpn.ok ? vpn.ms : null;
+                    if (vpnVal) vpnVal.textContent = vpnMs !== null ? `${vpnMs} ms` : 'DOWN';
+                    if (vpnDot) vpnDot.className = `status-dot ${_vpnQuality(vpnMs)}`;
                     (['k1', 'k2', 'kb']).forEach((id) => {
                         const chip = document.getElementById(`sc-vpn-${id}`);
                         if (!chip) return;
-                        const r = _lastNetPingResults.find((x) => x.id === id);
-                        chip.innerHTML = `<b>${KIWI_ID_LABEL[id] || id.toUpperCase()}</b>&nbsp;${r && r.ok ? r.ms + ' ms' : 'offline'}`;
-                        chip.className = `sc-chip ${r && r.ok ? 'ok' : 'bad'}`;
+                        const r  = _lastNetPingResults.find((x) => x.id === id);
+                        const ms = r && r.ok ? r.ms : null;
+                        chip.innerHTML = `<b>${KIWI_ID_LABEL[id] || id.toUpperCase()}</b>&nbsp;${ms !== null ? ms + ' ms' : 'offline'}`;
+                        chip.className = `sc-chip ${_vpnQuality(ms)}`;
                     });
                 }
             };
@@ -5765,7 +5846,22 @@
                 const check = document.getElementById('net-last-check');
                 if (check) check.textContent = fmtRefreshTime(new Date());
 
-                updateStatCards();
+                // If the main kiwi refresh hasn't run yet, seed siteState.system
+                // so CPU load shows immediately instead of waiting up to 15 s.
+                const _sysEmpty = !Object.values(siteState.system || {}).some((s) => s && s.container);
+                if (_sysEmpty) {
+                    getJson('/system/info', 5000).then((info) => {
+                        if (info && info.container) {
+                            const _anyKey = Object.values(KIWI_DEFS)[0]?.key;
+                            if (_anyKey && !siteState.system[_anyKey]) {
+                                siteState.system[_anyKey] = info;
+                                updateStatCards();
+                            }
+                        }
+                    }).catch(() => {});
+                } else {
+                    updateStatCards();
+                }
             };
 
             // Keep the activity chart bars sliding in real-time even when no new fetches arrive.
@@ -5778,6 +5874,10 @@
             // Run on load and then every 30s independently of the main refresh cycle
             runNetworkPing();
             setInterval(runNetworkPing, 30000);
+
+            // Always-on VHF decode poll — feeds decode messages table regardless of map mode or view
+            fetchVhfDecodes();
+            setInterval(fetchVhfDecodes, 15000);
 
             // === Per-Kiwi users/users_max ===
             // Direct fetch of KiwiSDR /status (plain text key=value) — no server restart needed.
@@ -6136,7 +6236,7 @@
 
             // === Decoded Messages Table ===
             const dmState = {
-                modesOn: new Set(['WSPR', 'FT4', 'FT8']),
+                modesOn: new Set(['WSPR', 'FT4', 'FT8', 'APRS']),
                 band: 'ALL',
                 freqRange: 'ALL',   // 'ALL' | 'HF' | 'VHF'
                 cqOnly: true,
@@ -6265,8 +6365,8 @@
                     if (mode) _modesPresent.add(mode);
                     // Mode filter
                     if (!dmState.modesOn.has(mode)) return false;
-                    // CQ only — WSPR beacons are never CQ format, so skip this filter for WSPR
-                    if (dmState.cqOnly && mode !== 'WSPR') {
+                    // CQ only — WSPR/APRS never use CQ format, bypass that filter for them
+                    if (dmState.cqOnly && mode !== 'WSPR' && mode !== 'APRS') {
                         let msg = String(d.message || '').trim().toUpperCase();
                         // VHF jt9 lines: "HHMMSS SNR DT FREQ ~ MSG" — strip header before CQ check
                         if (d._isVhf) {
@@ -6275,8 +6375,8 @@
                         }
                         if (!msg.startsWith('CQ')) return false;
                     }
-                    // DX only (> 500 mi) — FT4/FT8 only
-                    if (dmState.dxOnly && mode !== 'WSPR' && Number(d.dist_mi || 0) <= 500) return false;
+                    // DX only (> 500 mi) — FT4/FT8 only; WSPR/APRS bypass
+                    if (dmState.dxOnly && mode !== 'WSPR' && mode !== 'APRS' && Number(d.dist_mi || 0) <= 500) return false;
                     return true;
                 });
 
@@ -6345,7 +6445,7 @@
                 if (!rows.length) {
                     tbody.innerHTML = `<tr><td colspan="9"><div class="dm-empty">No decodes match the current filters</div></td></tr>`;
                 } else {
-                    const DM_MODE_COLOR = { FT8: 'rgba(47,140,255,1)', FT4: 'rgba(50,200,80,1)', WSPR: 'rgba(140,80,255,1)' };
+                    const DM_MODE_COLOR = { FT8: 'rgba(47,140,255,1)', FT4: 'rgba(50,200,80,1)', WSPR: 'rgba(140,80,255,1)', APRS: 'rgba(32,184,160,1)' };
                     const frag = document.createDocumentFragment();
                     rows.slice(0, 300).forEach((d) => {
                         const mode = String(d.mode || '').toUpperCase();
@@ -6953,9 +7053,8 @@
                 while (opsHistory.length > OPS_MAX_PTS) opsHistory.shift();
             };
 
-            // Push a point now and every 15 s
+            // Initial ops point — subsequent pushes happen inside refreshLiveKiwiActivity
             pushOpsPoint();
-            window.setInterval(() => { pushOpsPoint(); renderOpsAll(); }, 15000);
 
             // Toolbar: series toggles
             document.querySelectorAll('.ops-series-toggle[data-ops-series]').forEach((btn) => {
@@ -8249,6 +8348,14 @@
             connectStatusWs();
             refreshLiveKiwiActivity();
             window.setInterval(refreshLiveKiwiActivity, 15000);
+
+            // Refresh immediately when the tab becomes visible again after being backgrounded.
+            // Browsers throttle setInterval to ~1 min in background tabs, which leaves a gap
+            // in opsHistory and makes the chart appear frozen until the next scheduled tick.
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) refreshLiveKiwiActivity();
+            });
+
             // Initial ops chart render after layout has painted
             requestAnimationFrame(() => requestAnimationFrame(renderOpsAll));
         })();
@@ -9630,68 +9737,29 @@
             });
         };
 
-        // ── Global audio manager — only one speaker plays at a time across all panels ──
-        // Uses Web Audio API + fetch stream for reliable chunked WAV playback in Chrome/Firefox/Safari.
+        // ── Global audio manager — one stream plays at a time across all panels ──
         const _audioMgr = (() => {
-            let _cur = null;   // { controller: AbortController, btn: HTMLElement }
+            let _cur = null;   // { el: HTMLAudioElement, btn: HTMLElement }
             const _clearBtn = (btn) => {
                 if (btn) btn.classList.remove('is-playing');
             };
             const stopAll = () => {
                 if (_cur) {
-                    try { _cur.controller.abort(); } catch (_) {}
+                    try { _cur.el.pause(); _cur.el.src = ''; } catch (_) {}
                     _clearBtn(_cur.btn);
                     _cur = null;
                 }
                 document.querySelectorAll('.noaa-spk-btn.is-playing').forEach(b => b.classList.remove('is-playing'));
             };
-            const _catBufs = (a, b) => { const c = new Uint8Array(a.length + b.length); c.set(a); c.set(b, a.length); return c; };
             const toggle = (url, btn) => {
                 if (_cur && _cur.btn === btn) { stopAll(); return; }
                 stopAll();
-                const controller = new AbortController();
-                _cur = { controller, btn };
                 btn.classList.add('is-playing');
-                const ac = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
-                ac.resume().catch(() => {});   // unlock suspended context (browser autoplay policy)
-                let nextTime = 0;
-                let headerSkipped = false;
-                let headerBuf = new Uint8Array(0);
-                (async () => {
-                    try {
-                        const resp = await fetch(url, { signal: controller.signal });
-                        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-                        const reader = resp.body.getReader();
-                        while (true) {
-                            const { done, value } = await reader.read();
-                            if (done) break;
-                            let chunk = value;
-                            if (!headerSkipped) {
-                                headerBuf = _catBufs(headerBuf, value);
-                                if (headerBuf.length < 44) continue;
-                                chunk = headerBuf.slice(44);
-                                headerSkipped = true;
-                                headerBuf = null;
-                            }
-                            if (!chunk || chunk.length < 2) continue;
-                            // Ensure even byte count and proper alignment for Int16Array
-                            const even = chunk.slice(0, chunk.length & ~1);
-                            const int16 = new Int16Array(even.buffer, even.byteOffset, even.byteLength >> 1);
-                            const buf = ac.createBuffer(1, int16.length, 48000);
-                            const f32 = buf.getChannelData(0);
-                            for (let i = 0; i < int16.length; i++) f32[i] = int16[i] / 32768;
-                            const src = ac.createBufferSource();
-                            src.buffer = buf;
-                            src.connect(ac.destination);
-                            const when = nextTime < ac.currentTime ? ac.currentTime + 0.1 : nextTime;
-                            src.start(when);
-                            nextTime = when + buf.duration;
-                        }
-                    } catch (_) {}
-                    _clearBtn(btn);
-                    if (_cur?.btn === btn) _cur = null;
-                    ac.close().catch(() => {});
-                })();
+                const el = new Audio(url);
+                _cur = { el, btn };
+                el.addEventListener('ended',  stopAll);
+                el.addEventListener('error',  () => { console.warn('[NOC audio] stream error', url); stopAll(); });
+                el.play().catch(err => { console.warn('[NOC audio] play rejected:', err); stopAll(); });
             };
             return { toggle, stopAll };
         })();
@@ -9957,15 +10025,25 @@
                 });
             }
 
-            // Open WS for live updates
+            // Open WS for live updates — auto-reconnect on drop
             const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
-            _noaaWs = new WebSocket(wsProto + '://' + location.host + '/ws/noaa-monitor');
-            _noaaWs.onmessage = ({ data }) => {
-                try { _applyNoaaStatus(JSON.parse(data)); } catch {}
+            let _noaaWsRetry = null;
+            const _openNoaaWs = () => {
+                if (_noaaWs && (_noaaWs.readyState === WebSocket.OPEN || _noaaWs.readyState === WebSocket.CONNECTING)) return;
+                _noaaWs = new WebSocket(wsProto + '://' + location.host + '/ws/noaa-monitor');
+                _noaaWs.onmessage = ({ data }) => {
+                    try { _applyNoaaStatus(JSON.parse(data)); } catch {}
+                };
+                _noaaWs.onerror = () => {
+                    document.getElementById('noaa-mon-dot')?.classList.replace('ok','bad');
+                };
+                _noaaWs.onclose = () => {
+                    document.getElementById('noaa-mon-dot')?.classList.replace('ok','bad');
+                    if (_noaaWsRetry) clearTimeout(_noaaWsRetry);
+                    _noaaWsRetry = setTimeout(_openNoaaWs, 5000);
+                };
             };
-            _noaaWs.onerror = () => {
-                document.getElementById('noaa-mon-dot')?.classList.replace('ok','bad');
-            };
+            _openNoaaWs();
 
             // Poll alerts immediately then every 15s
             _fetchNoaaAlerts();

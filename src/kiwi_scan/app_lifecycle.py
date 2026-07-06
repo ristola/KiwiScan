@@ -261,6 +261,17 @@ def register_lifecycle(
 
         asyncio.create_task(_restore_sdr_assignments())
 
+        async def _start_noaa_hub() -> None:
+            await asyncio.sleep(5)
+            try:
+                from .api.noaa_monitor import _iq_hub
+                await _iq_hub.ensure_running()
+                logger.info("NOAA IQ hub started at server startup")
+            except Exception:
+                logger.exception("NOAA IQ hub failed to start at server startup")
+
+        asyncio.create_task(_start_noaa_hub())
+
     async def _shutdown() -> None:
         try:
             mgr.stop()  # type: ignore[attr-defined]

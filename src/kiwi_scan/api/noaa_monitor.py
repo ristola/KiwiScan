@@ -22,14 +22,22 @@ the primary WX channel if multimon-ng is available on the host.
 and it is stable on the R820T2 tuner chip (minimum ~250 kHz).  multimon-ng is
 invoked with -s 48000 so no resampling is needed for SAME/EAS detection.
 
-Environment variables
-─────────────────────
-  NOAA_DOCKER_HOST    sigmon-2 IP (default 10.13.73.195)
-  NOAA_DOCKER_PORT    Docker TCP API port (default 2375)
-  NOAA_ALERT_URL      Base URL of the noaa-eas-api container (default http://10.13.73.195:4027)
-  NOAA_RTL_TCP_PORT   rtl_tcp port on sigmon-2 (default 7373)
-  NOAA_SDR_SERIAL     RTL-SDR serial number (default 00162400)
-  NOAA_SAME_CHANNEL   WX channel Hz to monitor for SAME (default 162475000 = WX3)
+SDR assignment
+──────────────
+The IQ hub and the built-in multimon-ng SAME decoder both derive their rtl_tcp
+host/port from config/noc_assignments.json → noaa-monitor.device (tcp://HOST:PORT).
+Changing that entry and restarting the server moves both NOAA audio and SAME
+decoding to the new SDR automatically.  No separate dsame.py connection needed.
+
+Environment variables (fallbacks when noc_assignments.json is absent)
+──────────────────────────────────────────────────────────────────────
+  NOAA_RTL_TCP_IQ_HOST  rtl_tcp / sdr-guard host (default 10.13.73.195)
+  NOAA_RTL_TCP_PORT     rtl_tcp / sdr-guard port (default 7373)
+  NOAA_DOCKER_HOST      Docker API host for rtl_tcp container mgmt (default = IQ host)
+  NOAA_DOCKER_PORT      Docker TCP API port (default 2375)
+  NOAA_ALERT_URL        Base URL of the noaa-eas-api container (default http://10.13.73.185:4027)
+  NOAA_SDR_SERIAL       RTL-SDR serial number (default 00162400)
+  NOAA_SAME_CHANNEL     WX channel Hz to monitor for SAME (default 162475000 = WX3)
 """
 
 from __future__ import annotations
@@ -49,7 +57,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import numpy as np
-from scipy.signal import firwin, lfilter, lfilter_zi
+from scipy.signal import firwin, lfilter, lfilter_zi, resample_poly
 from fastapi import APIRouter, Body, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -67,16 +75,37 @@ _MAX_REC_SEC     = 600   # hard cap: 10 minutes per EAS alert recording
 RTLTCP_CONTAINER  = "kiwiscan-noaa-rtltcp"
 DOCKER_IMAGE      = "n4ldr/noaa-weather-radio:latest"
 
-DOCKER_HOST       = os.environ.get("NOAA_DOCKER_HOST", "10.13.73.195")
-DOCKER_PORT       = int(os.environ.get("NOAA_DOCKER_PORT", "2375"))
-ALERT_URL         = os.environ.get("NOAA_ALERT_URL", "http://10.13.73.185:4027").rstrip("/")
-NOAA_RTL_TCP_PORT = int(os.environ.get("NOAA_RTL_TCP_PORT", "7373"))
-NOAA_SDR_SERIAL   = os.environ.get("NOAA_SDR_SERIAL", "00162400")
-# RTL-TCP host the IQ hub actually connects to for IQ samples.
-# May differ from DOCKER_HOST when using a pre-existing system rtl_tcp instance.
-# SN 00000978 at .193 is OpenWebRX SDR-3 (NOAA WX profile, always running).
-# SN 00162400 at .195 is the KiwiScan-managed container (hardware failed 2026-06).
-_RTL_TCP_HOST = os.environ.get("NOAA_RTL_TCP_IQ_HOST", "10.13.73.195")
+DOCKER_PORT     = int(os.environ.get("NOAA_DOCKER_PORT", "2375"))
+ALERT_URL       = os.environ.get("NOAA_ALERT_URL", "http://10.13.73.185:4027").rstrip("/")
+NOAA_SDR_SERIAL = os.environ.get("NOAA_SDR_SERIAL", "00162400")
+
+
+def _noaa_sdr_from_config() -> tuple[str, int]:
+    """Read rtl_tcp host/port from noc_assignments.json noaa-monitor.device.
+
+    Both the IQ hub and the built-in multimon-ng SAME decoder use this value,
+    so changing the SDR in noc_assignments.json moves both automatically.
+    Falls back to NOAA_RTL_TCP_IQ_HOST / NOAA_RTL_TCP_PORT env vars.
+    """
+    try:
+        device = json.loads(
+            (Path("config/noc_assignments.json")).read_text()
+        ).get("noaa-monitor", {}).get("device", "")
+        if device.startswith("tcp://"):
+            host, _, port_str = device[6:].rpartition(":")
+            if host and port_str.isdigit():
+                return host, int(port_str)
+    except Exception:
+        pass
+    return (
+        os.environ.get("NOAA_RTL_TCP_IQ_HOST", "10.13.73.195"),
+        int(os.environ.get("NOAA_RTL_TCP_PORT", "7373")),
+    )
+
+
+_RTL_TCP_HOST, NOAA_RTL_TCP_PORT = _noaa_sdr_from_config()
+# Docker management API lives on the same host as the SDR by convention
+DOCKER_HOST = os.environ.get("NOAA_DOCKER_HOST", _RTL_TCP_HOST)
 
 WX_CHANNELS = [162_400_000, 162_425_000, 162_450_000, 162_475_000,
                162_500_000, 162_525_000, 162_550_000]
@@ -91,6 +120,12 @@ _IQ_CHUNK       = _CAPTURE_RATE // 10 * 2        # 0.1 s = 192 000 bytes of uint
 
 # Primary WX channel to monitor for SAME alerts (centre of capture → best SNR)
 _SAME_CHANNEL_HZ = int(os.environ.get("NOAA_SAME_CHANNEL", str(162_475_000)))
+
+# multimon-ng raw mode expects 22050 Hz; hub produces 48000 Hz → resample_poly
+# GCD(48000, 22050) = 150  →  up=147, down=320
+_EAS_RATE = 22_050
+_EAS_UP   = 147
+_EAS_DOWN = 320
 
 # NFM channel filter — LP at ±8 kHz before FM demod.
 # NOAA WX peak deviation is ±5 kHz; 8 kHz gives a 3 kHz guard band to the
@@ -114,13 +149,29 @@ _DEEMPH_B   = np.array([1.0 - _DEEMPH_A], dtype=np.float64)
 _DEEMPH_A_  = np.array([1.0, -_DEEMPH_A],  dtype=np.float64)
 _DEEMPH_ZI  = lfilter_zi(_DEEMPH_B, _DEEMPH_A_)
 
-# Voice HPF: 300 Hz — NOAA WX voice content starts at 300 Hz (telephony standard).
-# Replaces the old 100 Hz DC-block; still removes carrier-offset DC but also
-# eliminates sub-audio squelch tones and low-frequency rumble.
-_DC_ALPHA  = float(1.0 - 2.0 * np.pi * 300.0 / _AUDIO_RATE)       # ≈ 0.961
+# Voice HPF: 150 Hz — removes DC and sub-audio squelch tones while preserving
+# male voice fundamentals (100–300 Hz); keeps SAME/EAS detection unaffected.
+_DC_ALPHA  = float(1.0 - 2.0 * np.pi * 150.0 / _AUDIO_RATE)       # ≈ 0.980
 _DC_B      = np.array([1.0, -1.0],       dtype=np.float64)
 _DC_A      = np.array([1.0, -_DC_ALPHA], dtype=np.float64)
 _DC_ZI     = lfilter_zi(_DC_B, _DC_A)
+
+# Voice LPF: 3 kHz — cuts FM discriminator noise above the NOAA WX voice band.
+# De-emphasis attenuates 3–8 kHz by −7 to −14 dB but doesn't eliminate it;
+# this FIR removes the remainder cleanly without touching SAME/EAS tones (≤2.1 kHz).
+_VOICE_LPF_NTAPS     = 65
+_VOICE_LPF_TAPS: np.ndarray = firwin(
+    _VOICE_LPF_NTAPS,
+    3_000.0 / (_AUDIO_RATE / 2),
+    window="hamming",
+).astype(np.float32)
+_VOICE_LPF_ZI_PROTO: np.ndarray = lfilter_zi(_VOICE_LPF_TAPS, [1.0]).astype(np.float64)
+
+# Post-deemph audio gain for the tanh soft limiter.
+# AGC is ON for maximum sensitivity (NOAA signal is weak at this antenna).
+# The voice LPF at 3 kHz below suppresses the FM noise that AGC amplifies during
+# quiet NOAA periods, keeping the signal-to-noise ratio audible.
+_NOAA_AUDIO_GAIN = 1.6
 
 _start_time:      Optional[float] = None
 _active_channels: list[int]       = list(WX_CHANNELS)
@@ -195,12 +246,14 @@ def _docker_stop_rm(name: str) -> None:
 
 
 def _rtl_tcp_reachable() -> bool:
-    """Return True if _RTL_TCP_HOST:NOAA_RTL_TCP_PORT accepts a TCP connection."""
+    """Return True if rtl_tcp at _RTL_TCP_HOST:NOAA_RTL_TCP_PORT sends the RTL0 magic header."""
     import socket as _socket
     try:
         s = _socket.create_connection((_RTL_TCP_HOST, NOAA_RTL_TCP_PORT), timeout=2)
+        s.settimeout(2)
+        magic = s.recv(4)
         s.close()
-        return True
+        return magic == b"RTL0"
     except Exception:
         return False
 
@@ -306,7 +359,7 @@ def _demod_channel(
 
     Steps:
       1. Complex mixer — shift desired channel to baseband.
-      2. LP FIR filter (±15 kHz) — isolate WX channel; prevents 960 kHz noise
+      2. LP FIR filter (±8 kHz) — isolate WX channel; prevents 960 kHz noise
          from saturating the FM discriminator.
       3. FM discriminator — ∠(z[n] · conj(z[n-1])).
       4. Decimate 20× — 960 kHz → 48 kHz audio.
@@ -331,9 +384,10 @@ def _demod_channel(
         zi_r      = _NFM_ZI_PROTO * float(iq.real[0]) if n else _NFM_ZI_PROTO.copy()
         zi_i      = _NFM_ZI_PROTO * float(iq.imag[0]) if n else _NFM_ZI_PROTO.copy()
         zi_dem    = _DEEMPH_ZI.copy()
+        zi_lpf    = _VOICE_LPF_ZI_PROTO.copy()
         zi_dc     = _DC_ZI.copy()
     else:
-        zi_r, zi_i, zi_dem, zi_dc = zi
+        zi_r, zi_i, zi_dem, zi_lpf, zi_dc = zi
 
     filt_r, zi_r = lfilter(_NFM_TAPS, [1.0], iq.real.astype(np.float64), zi=zi_r)
     filt_i, zi_i = lfilter(_NFM_TAPS, [1.0], iq.imag.astype(np.float64), zi=zi_i)
@@ -344,21 +398,23 @@ def _demod_channel(
     phase = np.angle(z[1:] * np.conj(z[:-1]))
 
     # Step 4: decimate — 960 kHz → 48 kHz
-    # Scale: use 7.5 kHz as the full-scale reference — NOAA peak deviation is ±5 kHz but
-    # 75 µs pre-emphasis boosts high-freq consonants to ~±7-8 kHz before de-emphasis.
-    # Using 7.5 kHz avoids hard clipping those transients while keeping good loudness.
-    scale = _CAPTURE_RATE / (2.0 * np.pi * 7_500) * 0.5
+    # Normalise to ±1.0 for ±5 kHz NOAA peak deviation (FCC limit).
+    scale = _CAPTURE_RATE / (2.0 * np.pi * 5_000)
     audio = phase[::_DECIMATE] * scale
 
     # Step 5: de-emphasis (75 µs)
     audio, zi_dem = lfilter(_DEEMPH_B, _DEEMPH_A_, audio, zi=zi_dem)
 
-    # Step 6: DC-block (100 Hz HPF)
+    # Step 5.5: voice LPF at 3 kHz — cuts FM noise above the NOAA voice band
+    audio, zi_lpf = lfilter(_VOICE_LPF_TAPS, [1.0], audio, zi=zi_lpf)
+
+    # Step 6: DC-block (150 Hz HPF)
     audio, zi_dc = lfilter(_DC_B, _DC_A, audio, zi=zi_dc)
 
-    pcm = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16)
+    # Step 7: soft limiter — tanh(x · _NOAA_AUDIO_GAIN).
+    pcm = (np.tanh(audio * _NOAA_AUDIO_GAIN) * 32767).astype(np.int16)
 
-    return pcm.tobytes(), mixer_phase, complex(iq[-1]), (zi_r, zi_i, zi_dem, zi_dc)
+    return pcm.tobytes(), mixer_phase, complex(iq[-1]), (zi_r, zi_i, zi_dem, zi_lpf, zi_dc)
 
 
 class _IQHub:
@@ -379,7 +435,8 @@ class _IQHub:
         self._states: dict[int, tuple[float, complex, tuple | None]] = {}
         self._task:   asyncio.Task | None = None
         self._lock    = asyncio.Lock()
-        self._same_proc: asyncio.subprocess.Process | None = None
+        self._same_procs: dict[int, asyncio.subprocess.Process] = {}  # freq_hz → proc
+        self._last_iq_at: float = 0.0   # epoch of last received IQ chunk
         # EAS alert recording state
         self._rec_file:  wave.Wave_write | None = None
         self._rec_path:  Path | None = None
@@ -415,6 +472,10 @@ class _IQHub:
     def running(self) -> bool:
         return bool(self._task and not self._task.done())
 
+    @property
+    def connected(self) -> bool:
+        return time.time() - self._last_iq_at < 15.0
+
     async def stop(self) -> None:
         async with self._lock:
             if self._task and not self._task.done():
@@ -426,12 +487,13 @@ class _IQHub:
             self._task = None
             self._subs.clear()
             self._states.clear()   # clears (mixer_phase, last_iq, filter_zi) per channel
-        if self._same_proc and self._same_proc.returncode is None:
-            try:
-                self._same_proc.terminate()
-            except Exception:
-                pass
-        self._same_proc = None
+        for proc in list(self._same_procs.values()):
+            if proc.returncode is None:
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+        self._same_procs.clear()
         self._close_recording()
 
     # ── Internal: EAS alert recording ──────────────────────────────────────
@@ -525,54 +587,62 @@ class _IQHub:
             pass
 
     async def _start_same_decoder(self) -> None:
-        """Start multimon-ng subprocess for server-side SAME/EAS detection.
+        """Start one multimon-ng subprocess per WX channel for SAME/EAS detection.
 
-        Feeds 48 kHz mono int16 PCM from the primary WX channel.
-        Falls back to a drain-only keep-alive queue when multimon-ng is not
+        Each channel gets its own process fed 48 kHz mono int16 PCM.  Monitoring
+        all 7 channels ensures alerts broadcast on any WX frequency are caught.
+        Falls back to a single drain-only keep-alive queue when multimon-ng is not
         installed so the IQ hub stays connected at startup without browser clients.
         """
         try:
-            self._same_proc = await asyncio.create_subprocess_exec(
-                "multimon-ng", "-t", "raw", "-s", str(_AUDIO_RATE),
-                "-a", "SAME", "-a", "EAS", "-",
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            # Subscribe internal queue for the primary monitoring channel
-            same_q: asyncio.Queue = asyncio.Queue(maxsize=50)
-            self._subs.setdefault(_SAME_CHANNEL_HZ, []).append(same_q)
-            asyncio.create_task(self._feed_same(same_q))
-            asyncio.create_task(self._read_same_output())
-            logger.info("SAME decoder started (multimon-ng) on %d Hz", _SAME_CHANNEL_HZ)
+            for freq_hz in WX_CHANNELS:
+                proc = await asyncio.create_subprocess_exec(
+                    "multimon-ng", "-t", "raw", "-a", "EAS", "-",
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                self._same_procs[freq_hz] = proc
+                same_q: asyncio.Queue = asyncio.Queue(maxsize=50)
+                self._subs.setdefault(freq_hz, []).append(same_q)
+                asyncio.create_task(self._feed_same(same_q, proc))
+                asyncio.create_task(self._read_same_output(proc, freq_hz))
+            logger.info("SAME decoders started on all %d WX channels", len(WX_CHANNELS))
         except FileNotFoundError:
-            logger.info("multimon-ng not found — adding keep-alive queue so IQ hub stays connected")
-            self._same_proc = None
+            logger.info("multimon-ng not found — keep-alive queue so IQ hub stays connected")
             keep_q: asyncio.Queue = asyncio.Queue(maxsize=2)
             self._subs.setdefault(_SAME_CHANNEL_HZ, []).append(keep_q)
             asyncio.create_task(self._drain_keep_alive(keep_q))
 
-    async def _feed_same(self, q: asyncio.Queue) -> None:
-        """Pump FM-demodulated PCM from the primary WX channel into multimon-ng stdin."""
-        proc = self._same_proc
+    async def _feed_same(self, q: asyncio.Queue, proc: asyncio.subprocess.Process) -> None:
+        """Pump FM-demodulated PCM from a WX channel into its multimon-ng stdin.
+
+        Resamples from _AUDIO_RATE (48000 Hz) to _EAS_RATE (22050 Hz) because
+        multimon-ng raw mode hardcodes 22050 Hz sample rate.
+        """
+        loop = asyncio.get_running_loop()
         try:
             while proc and proc.returncode is None:
                 try:
-                    pcm = await asyncio.wait_for(q.get(), timeout=5.0)
+                    pcm_bytes = await asyncio.wait_for(q.get(), timeout=5.0)
                 except asyncio.TimeoutError:
                     continue
                 if proc.stdin:
                     try:
-                        proc.stdin.write(pcm)
+                        samples = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32)
+                        resampled = await loop.run_in_executor(
+                            None, resample_poly, samples, _EAS_UP, _EAS_DOWN
+                        )
+                        out = resampled.astype(np.int16).tobytes()
+                        proc.stdin.write(out)
                         await proc.stdin.drain()
                     except Exception:
                         break
         except asyncio.CancelledError:
             pass
 
-    async def _read_same_output(self) -> None:
+    async def _read_same_output(self, proc: asyncio.subprocess.Process, freq_hz: int = 0) -> None:
         """Parse multimon-ng stdout for ZCZC SAME messages → _recent_eas."""
-        proc = self._same_proc
         if not proc or not proc.stdout:
             return
         try:
@@ -594,7 +664,7 @@ class _IQHub:
                     if is_dup:
                         logger.debug("SAME duplicate suppressed: %s", line[:60])
                         continue
-                    logger.info("SAME alert: %s", line)
+                    logger.info("SAME alert on %.3f MHz: %s", freq_hz / 1e6, line)
                     entry: dict = {"raw": line, "received_at": datetime.utcnow().isoformat()}
                     entry.update(_parse_same(line))
                     _recent_eas.append(entry)
@@ -616,6 +686,7 @@ class _IQHub:
         reader: asyncio.StreamReader | None = None
         writer: asyncio.StreamWriter | None = None
         loop   = asyncio.get_running_loop()
+        _chunks = 0
 
         await self._start_same_decoder()
 
@@ -635,12 +706,14 @@ class _IQHub:
                 await asyncio.sleep(0.5)
                 continue
 
-            # Connect (or reconnect) to rtl_tcp
+            # Connect (or reconnect) to rtl_tcp — re-read config each attempt so
+            # an SDR re-assignment in noc_assignments.json is picked up immediately.
             if reader is None or reader.at_eof():
                 _close()
+                _host, _port = _noaa_sdr_from_config()
                 try:
                     reader, writer = await asyncio.wait_for(
-                        asyncio.open_connection(_RTL_TCP_HOST, NOAA_RTL_TCP_PORT),
+                        asyncio.open_connection(_host, _port),
                         timeout=5.0,
                     )
                     hello = await asyncio.wait_for(reader.readexactly(12), timeout=5.0)
@@ -651,8 +724,8 @@ class _IQHub:
                         return bytes([c]) + v.to_bytes(4, "big")
 
                     writer.write(
-                        _cmd(0x03, 0) +               # SET_GAIN_MODE: auto (AGC)
-                        _cmd(0x08, 1) +               # SET_RTL_AGC: on
+                        _cmd(0x03, 0) +               # SET_GAIN_MODE: auto (tuner AGC — NOAA WX signal is weak at this antenna)
+                        _cmd(0x08, 1) +               # SET_RTL_AGC: on  (RTL2832U chip AGC for maximum sensitivity)
                         _cmd(0x02, _CAPTURE_RATE) +   # SET_SAMPLE_RATE: 960 kHz
                         _cmd(0x01, _NOAA_CENTER_HZ)   # SET_FREQUENCY: centre of all 7 WX
                     )
@@ -688,6 +761,13 @@ class _IQHub:
                 continue
             u8 = u8[: len(u8) & ~1]
             iq = ((u8[0::2] - 127.5) + 1j * (u8[1::2] - 127.5)) / 127.5
+
+            _chunks += 1
+            self._last_iq_at = time.time()
+            if _chunks % 300 == 0:   # every ~30 s (300 × 0.1 s chunks)
+                iq_rms = float(np.sqrt(np.mean(np.abs(iq) ** 2)))
+                logger.info("NOAA-IQ heartbeat: chunk=%d iq_rms=%.4f sdr=%s:%d",
+                            _chunks, iq_rms, _RTL_TCP_HOST, NOAA_RTL_TCP_PORT)
 
             # NFM-demodulate each subscribed channel and push PCM to its queues
             for freq_hz, queues in list(self._subs.items()):
@@ -833,10 +913,12 @@ async def _attach_nws_text(entry: dict) -> None:
 def _channel_payload(running: bool) -> list[dict]:
     return [
         {
-            "freq_hz":    f,
-            "name":       n,
-            "monitoring": running and f in _active_channels,
-            "stream_url": f"/api/noaa-monitor/audio/live?freq={f}",
+            "freq_hz":      f,
+            "name":         n,
+            "monitoring":   running and f in _active_channels,
+            "eas_active":   running and f in _iq_hub._same_procs
+                            and _iq_hub._same_procs[f].returncode is None,
+            "stream_url":   f"/api/noaa-monitor/audio/live?freq={f}",
         }
         for f, n in zip(WX_CHANNELS, WX_NAMES)
     ]
@@ -853,23 +935,20 @@ class NoaaStartRequest(BaseModel):
 
 @router.get("/api/noaa-monitor/status")
 def noaa_status() -> dict:
-    running = _iq_hub.running
-    uptime  = round(time.time() - _start_time) if running and _start_time else 0
-    rtltcp_up = False
-    try:
-        s, d  = _docker("GET", f"/containers/{RTLTCP_CONTAINER}/json", timeout=3)
-        rtltcp_up = s == 200 and bool(d.get("State", {}).get("Running"))
-    except Exception:
-        pass
+    running   = _iq_hub.running
+    uptime    = round(time.time() - _start_time) if running and _start_time else 0
+    rtltcp_up = running and _iq_hub.connected
+    eas_ch    = sum(1 for p in _iq_hub._same_procs.values() if p.returncode is None)
     return {
-        "running":      running,
-        "rtltcp_up":    rtltcp_up,
-        "capture_rate": _CAPTURE_RATE,
-        "center_hz":    _NOAA_CENTER_HZ,
-        "docker_host":  f"{DOCKER_HOST}:{DOCKER_PORT}",
-        "uptime_sec":   uptime,
-        "channels":     _channel_payload(running),
-        "alerts":       _list_alerts(10),
+        "running":       running,
+        "rtltcp_up":     rtltcp_up,
+        "eas_channels":  eas_ch,
+        "capture_rate":  _CAPTURE_RATE,
+        "center_hz":     _NOAA_CENTER_HZ,
+        "docker_host":   f"{DOCKER_HOST}:{DOCKER_PORT}",
+        "uptime_sec":    uptime,
+        "channels":      _channel_payload(running),
+        "alerts":        _list_alerts(10),
     }
 
 
@@ -1142,3 +1221,27 @@ async def noaa_ws(websocket: WebSocket) -> None:
             await asyncio.sleep(10)
     except (WebSocketDisconnect, Exception):
         pass
+
+
+# ── NOC assignment hook ─────────────────────────────────────────────────────
+# When noc_assignments.json changes via the NOC UI, reconnect the IQ hub to the
+# new SDR without requiring a server restart.
+
+async def _on_noaa_assignment_changed(changed_keys: set, _state: dict) -> None:
+    if "noaa-monitor" not in changed_keys:
+        return
+    new_device = (_state.get("noaa-monitor") or {}).get("device", "?")
+    logger.info("NOC: noaa-monitor SDR changed to %s — reconnecting IQ hub", new_device)
+    await _iq_hub.stop()
+    await _iq_hub.ensure_running()
+
+
+def _register_noc_hook() -> None:
+    try:
+        from .noc import register_assignment_hook
+        register_assignment_hook(_on_noaa_assignment_changed)
+    except Exception as exc:
+        logger.warning("Could not register NOC assignment hook: %s", exc)
+
+
+_register_noc_hook()

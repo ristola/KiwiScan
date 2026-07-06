@@ -13041,17 +13041,35 @@ ${passwordMarkup.actionsHtml}
         function formatMapTooltip(entry) {
             const call = entry.callsign || "Unknown";
             const grid = entry.grid || "----";
-            const title = call && call !== grid ? `${call} (${grid})` : grid;
-            const band = entry.band ? String(entry.band).toUpperCase() : "---";
-            const mode = entry.mode || "---";
-            const snr = Number.isFinite(entry.snr) ? `${entry.snr} dB` : "n/a";
-            const seen = Number.isFinite(entry.lastSeen) ? `${Math.max(0, Math.round((Date.now() - entry.lastSeen) / 1000))}s ago` : "n/a";
-            let dist = "";
+            const band = entry.band ? String(entry.band).toUpperCase() : null;
+            const mode = String(entry.mode || "").toUpperCase();
+            const modeColor = MAP_MODE_COLORS[mode] || "#94a3b8";
+            const snr = Number.isFinite(entry.snr) ? `${entry.snr} dB` : null;
+
+            // Human-friendly age: "12s ago", "3m ago", "2h ago"
+            let seen = null;
+            if (Number.isFinite(entry.lastSeen) && entry.lastSeen > 0) {
+                const ageS = Math.max(0, Math.round((Date.now() - entry.lastSeen) / 1000));
+                if (ageS < 60)        seen = `${ageS}s ago`;
+                else if (ageS < 3600) seen = `${Math.round(ageS / 60)}m ago`;
+                else                  seen = `${Math.round(ageS / 3600)}h ago`;
+            }
+
+            let dist = null;
             if (Number.isFinite(stationLat) && Number.isFinite(stationLon)) {
                 const pos = maidenheadToLatLon(normalizeGridSquare(grid));
-                if (pos) dist = `<br>Distance: ${Math.round(haversineKm(stationLat, stationLon, pos.lat, pos.lon) * 0.621371).toLocaleString()} mi`;
+                if (pos) dist = `${Math.round(haversineKm(stationLat, stationLon, pos.lat, pos.lon) * 0.621371).toLocaleString()} mi`;
             }
-            return `${escapeHtml(title)}<br>Mode: ${escapeHtml(mode)} | Band: ${escapeHtml(band)}<br>Signal: ${escapeHtml(snr)}${dist}<br>Seen: ${escapeHtml(seen)}`;
+
+            const meta = [
+                mode  ? `<span style="color:${modeColor};font-weight:600">${escapeHtml(mode)}</span>` : null,
+                band  ? escapeHtml(band) : null,
+                dist  ? escapeHtml(dist) : null,
+                seen  ? escapeHtml(seen) : null,
+                snr   ? `${escapeHtml(snr)}` : null,
+            ].filter(Boolean).join(" · ");
+
+            return `<strong>${escapeHtml(call)}</strong><br>${meta}`;
         }
 
         function getGlobeAtmosphereColor() {
