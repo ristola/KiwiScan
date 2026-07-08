@@ -2267,7 +2267,10 @@
             border: 1px solid var(--line);
             border-radius: 7px;
             background: #101720;
+            cursor: pointer;
+            transition: border-color 0.15s, background 0.15s;
         }
+        .band-card:hover { border-color: rgba(32,184,160,0.5); background: #121d28; }
 
         .band-card::before {
             content: "";
@@ -3921,6 +3924,22 @@
                                 <div class="band-mode">--</div>
                                 <div class="band-bottom"><strong id="band-sig-15m">--</strong>
                                     <div class="spark" id="band-spark-15m"><i style="--h:30%"></i><i style="--h:30%"></i><i
+                                            style="--h:30%"></i><i style="--h:30%"></i><i style="--h:30%"></i></div>
+                                </div>
+                            </article>
+                            <article class="band-card" data-band="12m">
+                                <div class="band-name">12m</div>
+                                <div class="band-mode">--</div>
+                                <div class="band-bottom"><strong id="band-sig-12m">--</strong>
+                                    <div class="spark" id="band-spark-12m"><i style="--h:30%"></i><i style="--h:30%"></i><i
+                                            style="--h:30%"></i><i style="--h:30%"></i><i style="--h:30%"></i></div>
+                                </div>
+                            </article>
+                            <article class="band-card" data-band="10m">
+                                <div class="band-name">10m</div>
+                                <div class="band-mode">--</div>
+                                <div class="band-bottom"><strong id="band-sig-10m">--</strong>
+                                    <div class="spark" id="band-spark-10m"><i style="--h:30%"></i><i style="--h:30%"></i><i
                                             style="--h:30%"></i><i style="--h:30%"></i><i style="--h:30%"></i></div>
                                 </div>
                             </article>
@@ -9310,6 +9329,7 @@
                     <div><div style="font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em">Station</div><div id="eas-modal-station" style="font-size:0.85rem;color:var(--fg);font-weight:600">--</div></div>
                     <div><div style="font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em">Duration</div><div id="eas-modal-duration" style="font-size:0.85rem;color:var(--fg);font-weight:600">-- min</div></div>
                     <div style="grid-column:1/-1"><div style="font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em">Received</div><div id="eas-modal-time" style="font-size:0.85rem;color:var(--fg)">--</div></div>
+                    <div style="grid-column:1/-1" id="eas-modal-areas-wrap" hidden><div style="font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em">Affected Areas</div><div id="eas-modal-areas" style="font-size:0.82rem;color:var(--fg);line-height:1.5"></div></div>
                 </div>
                 <div id="eas-modal-message-wrap" hidden>
                     <div style="font-size:0.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.3rem">Alert Text</div>
@@ -10170,6 +10190,13 @@
             document.getElementById('eas-modal-station').textContent = alert.station || '--';
             document.getElementById('eas-modal-duration').textContent= (alert.duration_min || '--') + ' min';
             document.getElementById('eas-modal-time').textContent    = alert.received_at ? new Date(alert.received_at).toLocaleString() : '--';
+            const areasWrap = document.getElementById('eas-modal-areas-wrap');
+            const areasEl   = document.getElementById('eas-modal-areas');
+            const areaNames = alert.area_names && alert.area_names.length ? alert.area_names : null;
+            if (areasWrap && areasEl) {
+                areasWrap.hidden = !areaNames;
+                if (areaNames) areasEl.textContent = areaNames.join(' · ');
+            }
             const msgWrap = document.getElementById('eas-modal-message-wrap');
             const msgEl   = document.getElementById('eas-modal-message');
             if (msgEl && msgWrap) {
@@ -13879,6 +13906,30 @@
         }
 
         startBtn.addEventListener('click', () => _running ? _stop() : _start());
+
+        // ── Band card click → zoom waterfall to band ──────────────────────
+        const BAND_ZOOM = {
+            '160m': [1.9,    0.2 ],
+            '80m':  [3.75,   0.5 ],
+            '40m':  [7.15,   0.3 ],
+            '30m':  [10.125, 0.05],
+            '20m':  [14.175, 0.35],
+            '17m':  [18.118, 0.1 ],
+            '15m':  [21.225, 0.45],
+            '12m':  [24.94,  0.1 ],
+            '10m':  [28.85,  1.7 ],
+        };
+        document.querySelectorAll('.band-card[data-band]').forEach(card => {
+            card.addEventListener('click', () => {
+                const z = BAND_ZOOM[card.dataset.band];
+                if (!z) return;
+                document.getElementById('wf-center').value = z[0];
+                document.getElementById('wf-span').value   = z[1];
+                document.getElementById('wf-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                if (_running) { _stop(); setTimeout(_start, 150); }
+                else { _start(); }
+            });
+        });
 
         floorEl.addEventListener('input', () => { floorLbl.textContent = floorEl.value + ' dB'; });
         ceilEl.addEventListener('input',  () => { ceilLbl.textContent  = ceilEl.value  + ' dB'; });

@@ -61,6 +61,7 @@ from scipy.signal import firwin, lfilter, lfilter_zi, resample_poly
 from fastapi import APIRouter, Body, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from kiwi_scan.fips_lookup import resolve_same_areas
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["noaa-monitor"])
@@ -503,6 +504,7 @@ class _IQHub:
         self._close_recording()   # close any prior open recording first
         _NOAA_REC_DIR.mkdir(parents=True, exist_ok=True)
         alert_id = entry.get("id") or f"EAS_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
+        entry["id"] = alert_id          # ensure entry carries the stable ID
         safe_id  = re.sub(r"[^\w\-]", "_", alert_id)
         path     = _NOAA_REC_DIR / f"{safe_id}.wav"
         try:
@@ -667,6 +669,7 @@ class _IQHub:
                     logger.info("SAME alert on %.3f MHz: %s", freq_hz / 1e6, line)
                     entry: dict = {"raw": line, "received_at": datetime.utcnow().isoformat()}
                     entry.update(_parse_same(line))
+                    entry["area_names"] = resolve_same_areas(entry.get("areas", []))
                     _recent_eas.append(entry)
                     if len(_recent_eas) > 50:
                         _recent_eas.pop(0)
@@ -1010,9 +1013,9 @@ def noaa_inject_test_alert(event_code: str = Query("RWT")) -> dict:
         raise HTTPException(400, "event_code must be exactly 3 uppercase letters (e.g. TOR, RWT)")
     now = datetime.utcnow()
     julian = now.timetuple().tm_yday
-    # Clarke, Warren, Shenandoah, Frederick counties VA
+    # Clarke (51043), Warren (51187), Shenandoah (51171), Frederick (51069), Rockingham (51165) counties VA
     raw = (
-        f"ZCZC-WXR-{event_code}-051107-051131-051171-051069"
+        f"ZCZC-WXR-{event_code}-051043-051187-051171-051069-051165"
         f"+0030-{julian:03d}{now.hour:02d}{now.minute:02d}-NWSROA/NWS"
     )
     event_label = _SAME_EVENT_NAMES.get(event_code, event_code)
@@ -1032,6 +1035,7 @@ def noaa_inject_test_alert(event_code: str = Query("RWT")) -> dict:
         ),
     }
     entry.update(_parse_same(raw))
+    entry["area_names"] = resolve_same_areas(entry.get("areas", []))
     _recent_eas.append(entry)
     if len(_recent_eas) > 50:
         _recent_eas.pop(0)
@@ -1108,14 +1112,24 @@ def noaa_clear_log() -> dict:
 
 @router.get("/api/noaa-monitor/alerts/{alert_id}/audio")
 async def noaa_alert_audio(alert_id: str) -> StreamingResponse:
-    """Proxy an EAS alert WAV from the noaa-eas-api container."""
+    """Serve EAS alert WAV — local recording first, remote EAS API as fallback."""
     if not re.fullmatch(r"[\w\-]+", alert_id):
         raise HTTPException(400, "Invalid alert ID")
+
+    local_path = _NOAA_REC_DIR / f"{alert_id}.wav"
+    if local_path.exists():
+        def _stream_local():
+            with open(local_path, "rb") as f:
+                while chunk := f.read(65536):
+                    yield chunk
+        return StreamingResponse(_stream_local(), media_type="audio/wav",
+                                 headers={"Content-Length": str(local_path.stat().st_size)})
+
     wav_url = f"{ALERT_URL}/alerts/{alert_id}/audio"
     try:
         remote = urllib.request.urlopen(wav_url, timeout=10)
     except Exception:
-        raise HTTPException(404, "Audio not found on sigmon-2")
+        raise HTTPException(404, "Audio not found")
 
     def _stream():
         while chunk := remote.read(65536):
