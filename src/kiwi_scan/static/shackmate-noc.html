@@ -5461,9 +5461,12 @@
                     const slotMain = isPublic ? label : (isActive ? (mode || band || 'Active') : 'Idle');
 
                     // Build decode stats — use configured mode string as source of truth so all
-                    // modes show even when decode_rates_by_mode omits zero-decode entries
+                    // modes show even when decode_rates_by_mode omits zero-decode entries.
+                    // For no-decode warnings (receiver active but no decodes yet), show mode
+                    // rate lines with warning styling instead of replacing them with "warning".
+                    const isNoDecodeWarn = isWarn && !ch.last_reason && ch.is_no_decode_warning;
                     let metaHtml = '';
-                    if (meta) {
+                    if (meta && !isNoDecodeWarn) {
                         metaHtml = `<div class="slot-meta ${metaClass}">${meta}</div>`;
                     } else if (!isPublic && isActive) {
                         const rByMode = ch.decode_rates_by_mode || {};
@@ -5477,7 +5480,8 @@
                                 const r = rByMode[m] || {};
                                 const rpm = Number(r.decode_rate_per_min ?? 0);
                                 const rpmVal = `${Math.round(rpm)}/m`;
-                                return `<div class="slot-meta"><span class="slot-meta-mode">${m}</span> ${rpmVal}</div>`;
+                                const cls = isNoDecodeWarn ? 'slot-meta warn' : 'slot-meta';
+                                return `<div class="${cls}"><span class="slot-meta-mode">${m}</span> ${rpmVal}</div>`;
                             }).join('');
                         } else if (ch.decode_rate_per_hour != null) {
                             const rph = Number(ch.decode_rate_per_hour);

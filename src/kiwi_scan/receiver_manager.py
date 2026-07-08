@@ -510,7 +510,7 @@ class _ReceiverWorker(threading.Thread):
             udpaf_path = self._resolve_python_udp_sender()
             if udpaf_path is not None:
                 return f"{shlex.quote(self._python_cmd)} -u {shlex.quote(str(udpaf_path))} {int(udp_port)}"
-        return f"{shlex.quote(str(af2udp_path))} {int(udp_port)} 256 48000"
+        return f"{shlex.quote(str(af2udp_path))} {int(udp_port)} 256"
 
     def stop(
         self,
