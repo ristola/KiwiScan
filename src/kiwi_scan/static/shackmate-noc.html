@@ -9394,10 +9394,14 @@
         };
 
         let _activeChannels = SHENANDOAH.map(r => ({...r}));
-        // Restore saved channels on page load
+        // Restore saved channels on page load; deduplicate by freq_hz
         try {
             const _rc = JSON.parse(localStorage.getItem(_RPT_PERSIST_KEY) || 'null');
-            if (Array.isArray(_rc) && _rc.length) _activeChannels = _rc;
+            if (Array.isArray(_rc) && _rc.length) {
+                const _seen = new Set();
+                _activeChannels = _rc.filter(c => { if (_seen.has(c.freq_hz)) return false; _seen.add(c.freq_hz); return true; });
+                if (_activeChannels.length !== _rc.length) _saveRptChannels();
+            }
         } catch (_) {}
 
         let _activeSdr = null;       // { id, label, device, type }
@@ -9641,7 +9645,13 @@
             const lEl = document.getElementById('rpt-add-label');
             const mhz = parseFloat(fEl.value);
             if (!mhz || mhz < 25 || mhz > 1800) return;
-            _activeChannels.push({ freq_hz: Math.round(mhz * 1e6), label: lEl.value.trim() || (mhz.toFixed(3) + ' MHz'), enabled: true });
+            const newHz = Math.round(mhz * 1e6);
+            if (_activeChannels.some(c => c.freq_hz === newHz)) {
+                fEl.style.outline = '2px solid var(--fault)';
+                setTimeout(() => { fEl.style.outline = ''; }, 1200);
+                return;
+            }
+            _activeChannels.push({ freq_hz: newHz, label: lEl.value.trim() || (mhz.toFixed(3) + ' MHz'), enabled: true });
             _activeChannels.sort((a, b) => a.freq_hz - b.freq_hz);
             _saveRptChannels();
             fEl.value = '';
@@ -10387,7 +10397,11 @@
 
         // ── Live monitor panel ───────────────────────────────────────────
 
-        const _startMonitorPanel = (sdr, channels) => {
+        const _startMonitorPanel = (sdr, rawChannels) => {
+            // Deduplicate by freq_hz — duplicate entries share an element ID and
+            // only the first ever gets status updates; keep first occurrence.
+            const seen = new Set();
+            const channels = rawChannels.filter(ch => { if (seen.has(ch.freq_hz)) return false; seen.add(ch.freq_hz); return true; });
             const activeViewBtn = document.querySelector('.nav-btn.is-active');
             const currentView = activeViewBtn?.dataset.view || 'operations';
             const _MODE_LABELS = { 'repeater-monitor': 'Repeater Monitoring', 'vhf-digital': 'VHF Digital' };
