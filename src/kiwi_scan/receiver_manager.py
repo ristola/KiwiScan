@@ -622,6 +622,23 @@ class _ReceiverWorker(threading.Thread):
             proc.wait(timeout=3.0)
         except Exception:
             pass
+        # Kill any orphan process still holding the rigctld port.
+        # If the shell wrapper died without killing its child kiwirecorder,
+        # the orphan keeps port 36400+rx bound and blocks the next spawn.
+        try:
+            _port = self._rigctl_port()
+            _holders = subprocess.run(
+                ["lsof", "-t", "-i", f":{_port}"],
+                capture_output=True, text=True, timeout=2,
+            )
+            for _ophpid in _holders.stdout.strip().split():
+                try:
+                    os.kill(int(_ophpid), signal.SIGKILL)
+                    logger.debug("_terminate_proc killed rigctld orphan pid=%s port=%s", _ophpid, _port)
+                except Exception:
+                    pass
+        except Exception:
+            pass
         self._proc = None
 
     @staticmethod
