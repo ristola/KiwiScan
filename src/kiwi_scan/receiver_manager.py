@@ -2599,7 +2599,14 @@ class ReceiverManager:
         if active_label:
             stale_labels.add(active_label)
 
-        old_adjust = int(old_worker._rx_chan_adjust) if old_worker is not None else 0
+        # For slot-mismatch restarts reset the adjust to 0 so the worker requests
+        # its canonical rx channel (self._rx) fresh.  Carrying over an adapted value
+        # bakes in the wrong offset and puts the worker back in the mismatched slot
+        # every time, creating an infinite drift–restart loop.
+        if "kiwi_assignment_mismatch" in str(reason or ""):
+            old_adjust = 0
+        else:
+            old_adjust = int(old_worker._rx_chan_adjust) if old_worker is not None else 0
         if old_worker is not None:
             self._stop_worker(old_worker)
 
@@ -5692,10 +5699,14 @@ class ReceiverManager:
                         )
                 self._refresh_starting_health_summary_cache(host=str(host), port=int(port), assignments=assignments)
 
+            # Spawn temporary HOLD_RX0/HOLD_RX1 placeholders whenever we start from empty
+            # with fixed receivers, regardless of whether roaming is also desired.
+            # KiwiSDR v1.900 ignores --rx-chan and assigns the lowest-free slot, so without
+            # placeholders occupying 0/1 first, fixed workers destined for RX2-7 land in
+            # slots 0 and 1 instead.
             fixed_only_bootstrap = bool(
                 starting_from_empty
                 and desired_fixed_rxs
-                and not any(int(rx) < 2 for rx in desired_rxs)
                 and not manual_mode_assignments
             )
             bootstrap_placeholder_workers: list[tuple[int, _ReceiverWorker, set[str]]] = []

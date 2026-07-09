@@ -10683,6 +10683,33 @@
                     if (!sdrDef && saved?.sdrId) sdrDef = _allSdrs().find(s => s.id === saved.sdrId);
                     sdrDef = sdrDef || { id: '??', label: st.device, tcpDevice: st.device };
                     _activeSdr = Object.assign({}, _sdrById(sdrDef.id) || {}, sdrDef);
+
+                    // If localStorage has an updated channel list (e.g. user added a channel then
+                    // refreshed), stop the old session and restart with the updated list so the
+                    // ops panel reflects what the user configured.
+                    if (_activeChannels.length > 0) {
+                        const serverFreqs = new Set(st.channels.map(c => c.freq_hz));
+                        const lsHasUpdates = _activeChannels.length !== st.channels.length ||
+                            _activeChannels.some(c => !serverFreqs.has(c.freq_hz));
+                        if (lsHasUpdates) {
+                            const enabledChans = _activeChannels.filter(c => c.enabled !== false);
+                            if (enabledChans.length) {
+                                try { await fetch(KIWISCAN_BASE + '/api/rtl-monitor/stop', { method: 'POST' }); } catch (_) {}
+                                const ctr = Math.round((Math.min(...enabledChans.map(c => c.freq_hz)) + Math.max(...enabledChans.map(c => c.freq_hz))) / 2 / 100000) * 100000;
+                                const restartResp = await fetch(KIWISCAN_BASE + '/api/rtl-monitor/start', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ device: st.device, center_hz: ctr, sample_rate: 2400000, channels: enabledChans }),
+                                }).catch(() => null);
+                                if (restartResp?.ok) {
+                                    _startMonitorPanel(_activeSdr, enabledChans);
+                                    _saveMonitorSession();
+                                    return;
+                                }
+                            }
+                        }
+                    }
+
                     _startMonitorPanel(_activeSdr, st.channels);
                     _applyMonitorStatus(st);
                     _saveMonitorSession();
@@ -10697,11 +10724,12 @@
                 sdrDef = sdrDef || { id: saved.sdrId || '??', label: saved.device, tcpDevice: saved.device };
                 // Don't restore onto an SDR that no longer supports monitoring (e.g. repurposed to vhf-digital).
                 if (sdrDef.type && !['monitor', 'open'].includes(sdrDef.type)) { _clearMonitorSession(); return; }
-                _activeSdr      = Object.assign({}, _sdrById(sdrDef.id) || {}, sdrDef);
-                _activeChannels = saved.channels;
-                _activeMode     = saved.mode || 'repeater-monitor';
+                _activeSdr  = Object.assign({}, _sdrById(sdrDef.id) || {}, sdrDef);
+                // Use localStorage channels (most current); fall back to server-saved list only if empty.
+                if (!_activeChannels.length) _activeChannels = saved.channels;
+                _activeMode = saved.mode || 'repeater-monitor';
 
-                const enabledSaved = saved.channels.filter(c => c.enabled !== false);
+                const enabledSaved = _activeChannels.filter(c => c.enabled !== false);
                 if (!enabledSaved.length) { _clearMonitorSession(); return; }
                 const startResp = await fetch(KIWISCAN_BASE + '/api/rtl-monitor/start', {
                     method: 'POST',
@@ -10715,6 +10743,7 @@
                 });
                 if (!startResp.ok) { _clearMonitorSession(); return; }
                 _startMonitorPanel(_activeSdr, enabledSaved);
+                _saveMonitorSession();
             } catch (_) {}
         };
         _initMonitor();
