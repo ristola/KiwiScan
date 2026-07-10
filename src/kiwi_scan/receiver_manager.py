@@ -1613,6 +1613,22 @@ class _ReceiverWorker(threading.Thread):
                     f"{udp_sender_cmd}"
                 )
             try:
+                # Pre-spawn: kill any orphan process still holding the rigctld port
+                # so kiwirecorder can bind it.  Orphans survive when a previous shell
+                # wrapper dies without propagating SIGKILL to its children.
+                try:
+                    _rp = self._rigctl_port()
+                    _ph = subprocess.run(
+                        ["lsof", "-t", "-i", f":{_rp}"],
+                        capture_output=True, text=True, timeout=2,
+                    )
+                    for _ph_pid in _ph.stdout.strip().split():
+                        try:
+                            os.kill(int(_ph_pid), signal.SIGKILL)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
                 log_path = Path("/tmp") / f"kiwi_{self._target_token}_rx{self._rx}_pipeline.log"
                 log_fp = open(log_path, "a", encoding="utf-8")
                 log_fp.write(f"START {time.strftime('%Y-%m-%d %H:%M:%S')} CMD: {pipeline_cmd}\n")
