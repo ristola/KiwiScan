@@ -1613,20 +1613,27 @@ class _ReceiverWorker(threading.Thread):
                     f"{udp_sender_cmd}"
                 )
             try:
-                # Pre-spawn: kill any orphan process still holding the rigctld port
-                # so kiwirecorder can bind it.  Orphans survive when a previous shell
-                # wrapper dies without propagating SIGKILL to its children.
+                # Pre-spawn: poll until the rigctld port is free, killing any
+                # orphan process that holds it.  A single kill + immediate spawn
+                # has a race where the OS hasn't released the socket yet; polling
+                # with 50 ms gaps makes it reliable even under scheduling pressure.
                 try:
                     _rp = self._rigctl_port()
-                    _ph = subprocess.run(
-                        ["lsof", "-t", "-i", f":{_rp}"],
-                        capture_output=True, text=True, timeout=2,
-                    )
-                    for _ph_pid in _ph.stdout.strip().split():
-                        try:
-                            os.kill(int(_ph_pid), signal.SIGKILL)
-                        except Exception:
-                            pass
+                    _port_free_dl = time.time() + 3.0
+                    while time.time() < _port_free_dl:
+                        _ph = subprocess.run(
+                            ["lsof", "-t", "-i", f":{_rp}"],
+                            capture_output=True, text=True, timeout=1,
+                        )
+                        _ph_pids = [p for p in _ph.stdout.strip().split() if p]
+                        if not _ph_pids:
+                            break
+                        for _ph_pid in _ph_pids:
+                            try:
+                                os.kill(int(_ph_pid), signal.SIGKILL)
+                            except Exception:
+                                pass
+                        time.sleep(0.05)
                 except Exception:
                     pass
                 log_path = Path("/tmp") / f"kiwi_{self._target_token}_rx{self._rx}_pipeline.log"
@@ -1785,6 +1792,18 @@ class _ReceiverWorker(threading.Thread):
                     except Exception:
                         pass
                 self._stop_event.wait(timeout=backoff_s)  # interruptible sleep
+                # Extra wait for slot-mismatch restarts on fixed receivers (rx≥2).
+                # KiwiSDR v1.900 assigns the lowest-free slot, so if roaming workers
+                # are not yet in slots 0/1 the fixed worker reconnects into slot 0
+                # instead of its canonical slot.  A 20 s pause lets roaming workers
+                # stabilise before the next spawn attempt so the slot assignment
+                # succeeds without a spin-loop that saturates the CPU.
+                if (
+                    not self._stop_event.is_set()
+                    and int(self._rx) >= 2
+                    and "mismatch" in str(self._last_spawn_error_reason or "")
+                ):
+                    self._stop_event.wait(timeout=20.0)
 
 
 class ReceiverManager:
