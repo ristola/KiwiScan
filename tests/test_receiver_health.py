@@ -1198,10 +1198,14 @@ def test_apply_assignments_empty_start_bootstraps_fixed_receivers_first(monkeypa
         def __init__(self, assignment: ReceiverAssignment) -> None:
             self.assignment = assignment
             self._rx_chan_adjust = 0
+            self._active_user_label = ReceiverManager._expected_user_label(assignment)
 
         def start(self) -> None:
             started_rxs.append(int(self.assignment.rx))
             live_users[int(self.assignment.rx)] = ReceiverManager._expected_user_label(self.assignment)
+
+        def stop(self, **kwargs) -> None:
+            live_users.pop(int(self.assignment.rx), None)
 
     monkeypatch.setattr(receiver_manager.time, "time", lambda: fake_now["value"])
     monkeypatch.setattr(receiver_manager.time, "sleep", lambda seconds: fake_now.__setitem__("value", fake_now["value"] + seconds))
@@ -1226,8 +1230,14 @@ def test_apply_assignments_empty_start_bootstraps_fixed_receivers_first(monkeypa
     manager.apply_assignments("kiwi.local", 8073, assignments)
 
     assert stable_clear_calls == []
-    assert started_rxs == [2, 3, 0]
-    assert fake_now["value"] == 3.5
+    # Partial config (3 workers): bootstrap_fixed_first + fixed_only_bootstrap active.
+    # Two HOLD_RX0/HOLD_RX1 placeholder workers are spawned first (both record rx=0 and
+    # rx=1), then fixed workers rx2 and rx3, then placeholders are released, then
+    # deferred roaming rx0 starts last.
+    assert started_rxs == [0, 1, 2, 3, 0]
+    # Timing: 0.25 (defer-sleep) + 1.0 (HOLD0 poll) + 1.0 (HOLD1 poll)
+    #       + 1.0 (rx2 poll) + 1.0 (rx3 poll) + 0.25 (roam-defer sleep) + 1.0 (rx0 poll)
+    assert fake_now["value"] == 5.5
     assert manager._health_summary_cache.get("active_receivers") == 3
     assert manager._health_summary_cache.get("overall") == "healthy"
 

@@ -5156,11 +5156,18 @@ class ReceiverManager:
                 and self._band_plan_changed(self._assignments, assignments)
             )
             starting_from_empty = bool(desired_rxs and not current_rxs)
+            # Full 8-slot config: the P-probe eviction loop handles placement
+            # correctly regardless of where the KiwiSDR's round-robin pointer P
+            # sits.  The placeholder (HOLD_RX0/HOLD_RX1) bootstrap assumes P=0
+            # (lowest-free slot = slot 0), which breaks on v1.900+ firmware where
+            # P persists across connections and can start at any slot.
+            _all_8_slots_desired = set(int(rx) for rx in desired_rxs) == set(range(8))
             bootstrap_fixed_first = bool(
                 starting_from_empty
                 and not manual_mode_assignments
                 and desired_fixed_rxs
                 and any(int(rx) < 2 for rx in desired_rxs)
+                and not _all_8_slots_desired
             )
             if starting_from_empty:
                 if bootstrap_fixed_first:
@@ -5751,15 +5758,17 @@ class ReceiverManager:
                         )
                 self._refresh_starting_health_summary_cache(host=str(host), port=int(port), assignments=assignments)
 
-            # Spawn temporary HOLD_RX0/HOLD_RX1 placeholders whenever we start from empty
-            # with fixed receivers, regardless of whether roaming is also desired.
-            # KiwiSDR v1.900 ignores --rx-chan and assigns the lowest-free slot, so without
-            # placeholders occupying 0/1 first, fixed workers destined for RX2-7 land in
-            # slots 0 and 1 instead.
+            # Spawn temporary HOLD_RX0/HOLD_RX1 placeholders when starting from empty
+            # with fixed receivers and NOT a full 8-slot config.  The placeholder
+            # mechanism assumes KiwiSDR assigns the lowest-free slot (P=0), which
+            # holds for partial configs where fewer than 8 slots are used.  For a
+            # full 8-slot config (_all_8_slots_desired), P can be anywhere; the
+            # P-probe eviction loop handles correction without placeholders.
             fixed_only_bootstrap = bool(
                 starting_from_empty
                 and desired_fixed_rxs
                 and not manual_mode_assignments
+                and not _all_8_slots_desired
             )
             bootstrap_placeholder_workers: list[tuple[int, _ReceiverWorker, set[str]]] = []
             bootstrap_placeholder_rxs: set[int] = set()
@@ -5854,7 +5863,12 @@ class ReceiverManager:
                 )
                 time.sleep(_startup_short_pause_s)
             elif starting_from_empty and desired_fixed_rxs and not manual_mode_assignments:
-                _startup_order = desired_fixed_rxs + [int(rx) for rx in sorted(desired_rxs) if int(rx) not in desired_fixed_rxs]
+                if _all_8_slots_desired:
+                    # Natural order 0..7: when P=0 all workers land correctly with no
+                    # correction needed; when P≠0 the eviction loop P-probe fixes placement.
+                    _startup_order = sorted(desired_rxs)
+                else:
+                    _startup_order = desired_fixed_rxs + [int(rx) for rx in sorted(desired_rxs) if int(rx) not in desired_fixed_rxs]
             if fixed_only_bootstrap and desired_fixed_rxs:
                 logger.info(
                     "Fixed-only bootstrap: temporarily occupying RX0/RX1 so fixed RX2-RX7 claim canonical Kiwi slots"
