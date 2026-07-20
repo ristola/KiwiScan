@@ -535,11 +535,10 @@ class AutoSetLoop:
 
         if fixed_health_state != "healthy":
             logger.info(
-                "Fixed receiver health=%s; keeping RX0/RX1 empty until fixed slots recover",
+                "Fixed receiver health=%s; roaming (RX0/RX1) will start alongside fixed recovery "
+                "so all 8 slots are desired — required for P-probe eviction loop to correct placement",
                 fixed_health_state,
             )
-            selected_bands = []
-            band_modes = {}
 
         payload: Dict[str, Any] = {
             "enabled": True,

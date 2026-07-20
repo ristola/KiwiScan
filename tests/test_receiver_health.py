@@ -1945,7 +1945,9 @@ def test_reconcile_marks_fixed_receiver_missing_when_expected_label_absent(monke
     assert reconcile == {5}
 
 
-def test_reconcile_keeps_fixed_receiver_when_expected_label_visible(monkeypatch) -> None:
+def test_reconcile_marks_fixed_receiver_when_visible_in_wrong_slot(monkeypatch) -> None:
+    # Fixed receivers (rx >= 2) must be in their canonical Kiwi slot; label
+    # visible in a different slot is still considered drift → reconcile needed.
     manager = _make_manager()
     assignment = ReceiverAssignment(
         rx=5,
@@ -1974,7 +1976,7 @@ def test_reconcile_keeps_fixed_receiver_when_expected_label_visible(monkeypatch)
         assignments={5: assignment},
     )
 
-    assert reconcile == set()
+    assert reconcile == {5}
 
 
 def test_reconcile_marks_internal_fixed_slot_permutation(monkeypatch) -> None:
@@ -2016,7 +2018,7 @@ def test_reconcile_marks_internal_fixed_slot_permutation(monkeypatch) -> None:
     assert reconcile == {2, 4}
 
 
-def test_reconcile_keeps_offset_fixed_receiver_when_foreign_blocker_present(monkeypatch) -> None:
+def test_reconcile_marks_offset_fixed_receiver_when_foreign_blocker_present(monkeypatch) -> None:
     manager = _make_manager()
     assignment = ReceiverAssignment(
         rx=2,
@@ -2041,7 +2043,7 @@ def test_reconcile_keeps_offset_fixed_receiver_when_foreign_blocker_present(monk
         assignments={2: assignment},
     )
 
-    assert reconcile == set()
+    assert reconcile == {2}
 
 
 def test_health_summary_clears_stale_internal_mismatch_reason_when_receiver_matches(monkeypatch) -> None:
@@ -2160,7 +2162,7 @@ def test_restart_receiver_waits_for_old_label_and_cleans_up_stragglers(monkeypat
         ("wait_missing", {"FIXED20MFT8", "FIXED_20M_FT8", "FIXED_20m_FT8"}),
     ]
     assert ("cleanup_labels", {"FIXED20MFT8", "FIXED_20M_FT8", "FIXED_20m_FT8"}) in events
-    assert ("make_worker", 3) in events
+    assert ("make_worker", 0) in events  # mismatch restarts reset adjust to 0
     assert ("start", None) in events
 
 

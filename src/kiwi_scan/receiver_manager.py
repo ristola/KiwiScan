@@ -4911,10 +4911,9 @@ class ReceiverManager:
             expected_labels = expected_labels_by_rx[int(rx)]
             ignore_slot = bool(getattr(assignment, "ignore_slot_check", False))
             if ignore_slot:
-                # For fixed receivers (ignore_slot_check=True), the Kiwi slot won't
-                # match the app rx number. Still require the expected FIXED_* label to
-                # be visible somewhere on the Kiwi, otherwise stale AUTO users can keep
-                # the worker blocked indefinitely while the local thread looks healthy.
+                # For flexible assignments we require the expected label to be visible
+                # somewhere on Kiwi. For canonical fixed slots (RX2-RX7), visibility on
+                # the wrong slot is still drift and must be reconciled.
                 visible_slots = [
                     int(slot)
                     for slot, lbl in live_users.items()
@@ -4925,6 +4924,8 @@ class ReceiverManager:
                     continue
                 expected_slot = int(rx)
                 if expected_slot not in visible_slots:
+                    if expected_slot >= 2:
+                        out.add(int(rx))
                     blocking_label = str(live_users.get(expected_slot, "") or "").strip()
                     blocking_owner = _managed_owner_for_label(blocking_label, exclude_rx=int(rx))
                     if blocking_owner is not None:
@@ -5161,7 +5162,19 @@ class ReceiverManager:
             # sits.  The placeholder (HOLD_RX0/HOLD_RX1) bootstrap assumes P=0
             # (lowest-free slot = slot 0), which breaks on v1.900+ firmware where
             # P persists across connections and can start at any slot.
-            _all_8_slots_desired = set(int(rx) for rx in desired_rxs) == set(range(8))
+            #
+            # Also disable placeholders for the canonical 6-fixed-only case (RX2-7,
+            # no roaming).  The placeholder logic is equally broken for this config:
+            # two placeholders land at P and P+1 instead of slots 0/1, then fixed
+            # workers fill the wrong remaining slots.  The auto_set_loop is designed
+            # to always include roaming so desired_rxs is 8 slots, but if roaming is
+            # explicitly disabled we fall through to natural sorted startup — less
+            # optimal than a full P-probe rotation, but avoids the placeholder trap.
+            _CANONICAL_FIXED_6 = frozenset(range(2, 8))
+            _all_8_slots_desired = (
+                set(int(rx) for rx in desired_rxs) == set(range(8))
+                or set(int(rx) for rx in desired_rxs) == _CANONICAL_FIXED_6
+            )
             bootstrap_fixed_first = bool(
                 starting_from_empty
                 and not manual_mode_assignments
